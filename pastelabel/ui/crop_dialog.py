@@ -1,4 +1,4 @@
-"""滑窗裁剪配置小窗：左参数（双向联动），右网格预览（绿=保留，红✕=空窗丢弃）。"""
+"""滑窗裁剪配置小窗：左参数（双向联动），右分离小图预览（绿=保留，红=空窗丢弃）。"""
 import os
 
 from PyQt5.QtCore import Qt, QRect, QTimer
@@ -17,7 +17,9 @@ from ..engine.augmenter.crop import (
 
 
 class _CropPreview(QWidget):
-    """参考图缩略 + 窗口框：绿框角标 r{R}c{C}=含标注；红框✕=空窗丢弃。"""
+    """分离小图预览：各窗口拆成分离小图并排且均显示内容；绿=保留，红=空窗仅红框。"""
+
+    _GAP = 6
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -25,60 +27,69 @@ class _CropPreview(QWidget):
         self._image = None
         self._rects = []  # ((x0, y0, cw, ch), kept, r, c)
         self._boxes = []
-        self._aspect = 16 / 9
 
     def set_content(self, image, rects, boxes=()):
         self._image = image
-        self._rects = rects
+        self._rects = list(rects or [])
         self._boxes = list(boxes or [])
-        if image is not None and image.height():
-            self._aspect = image.width() / image.height()
-        self._apply_aspect()
         self.update()
-
-    def _apply_aspect(self):
-        self.setMaximumWidth(max(240, int(self.height() * self._aspect)))
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._apply_aspect()
 
     def paintEvent(self, _):
         p = QPainter(self)
-        if self._image is None:
+        if self._image is None or not self._rects:
             p.drawText(self.rect(), Qt.AlignCenter, tr("未配置"))
             return
-        iw, ih = self._image.width(), self._image.height()
-        if not iw or not ih:
+        rows = max(item[2] for item in self._rects)
+        cols = max(item[3] for item in self._rects)
+        cw0, ch0 = self._rects[0][0][2], self._rects[0][0][3]
+        if rows <= 0 or cols <= 0 or cw0 <= 0 or ch0 <= 0:
             return
-        scale = min(self.width() / iw, self.height() / ih)
-        pw, ph = int(iw * scale), int(ih * scale)
-        ox, oy = (self.width() - pw) // 2, (self.height() - ph) // 2
-        p.drawImage(QRect(ox, oy, pw, ph), self._image)
+        gap = self._GAP
+        tw = (max(1, self.width()) - gap * (cols - 1)) / cols
+        th = tw * ch0 / cw0
+        max_h = max(1, self.height()) - gap * (rows - 1)
+        if th * rows > max_h:  # 高度不够按比例缩
+            k = max_h / (th * rows)
+            tw *= k
+            th *= k
+        ox = (self.width() - (tw * cols + gap * (cols - 1))) / 2
+        oy = (self.height() - (th * rows + gap * (rows - 1))) / 2
+        font = p.font()
+        font.setPointSizeF(max(7.0, font.pointSizeF() - 1))
+        p.setFont(font)
         ab = QColor("#FFD600")
         ab.setAlpha(128)
-        p.setPen(QPen(ab, 2))
-        for b in self._boxes:
-            try:
-                bx, by = float(b.get("x", 0)), float(b.get("y", 0))
-                bw, bh = float(b.get("width", 0)), float(b.get("height", 0))
-            except (TypeError, ValueError):
-                continue
-            if bw <= 0 or bh <= 0:
-                continue
-            p.drawRect(QRect(ox + int(bx * scale), oy + int(by * scale),
-                             max(1, int(bw * scale)), max(1, int(bh * scale))))
         for (x0, y0, cw, ch), kept, r, c in self._rects:
-            rect = QRect(ox + int(x0 * scale), oy + int(y0 * scale),
-                         max(1, int(cw * scale)), max(1, int(ch * scale)))
+            dst = QRect(int(ox + (c - 1) * (tw + gap)),
+                        int(oy + (r - 1) * (th + gap)),
+                        max(1, int(tw)), max(1, int(th)))
+            p.drawImage(dst, self._image, QRect(x0, y0, cw, ch))
+            if self._boxes:
+                sx, sy = dst.width() / cw, dst.height() / ch
+                p.save()
+                p.setClipRect(dst)
+                p.setPen(QPen(ab, 2))
+                for b in self._boxes:
+                    try:
+                        bx = float(b.get("x", 0))
+                        by = float(b.get("y", 0))
+                        bw = float(b.get("width", 0))
+                        bh = float(b.get("height", 0))
+                    except (TypeError, ValueError):
+                        continue
+                    if bw <= 0 or bh <= 0:
+                        continue
+                    p.drawRect(QRect(dst.left() + int((bx - x0) * sx),
+                                     dst.top() + int((by - y0) * sy),
+                                     max(1, int(bw * sx)), max(1, int(bh * sy))))
+                p.restore()
             p.setPen(QPen(QColor("#4CAF50") if kept else QColor("#ff3b30"), 2))
-            p.drawRect(rect)
-            if kept:
-                p.drawText(rect.adjusted(2, 0, -2, -2),
+            p.setBrush(Qt.NoBrush)
+            p.drawRect(dst)
+            if kept and dst.width() >= 44 and dst.height() >= 30:
+                p.setPen(QColor("#ffffff"))
+                p.drawText(dst.adjusted(2, 0, -2, -2),
                            Qt.AlignBottom | Qt.AlignLeft, f"r{r}c{c}")
-            else:
-                p.drawLine(rect.topLeft(), rect.bottomRight())
-                p.drawLine(rect.topRight(), rect.bottomLeft())
 
 
 class CropConfigDialog(QDialog):
@@ -87,8 +98,8 @@ class CropConfigDialog(QDialog):
     def __init__(self, images, boxes_by_index, spec, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("滑窗裁剪设置"))
-        self.setMinimumSize(1170, 470)
-        self.resize(1170, 470)
+        self.setMinimumSize(1170, 600)
+        self.resize(1170, 600)
         self._images = list(images or [])
         self._boxes = boxes_by_index or {}
         self._linking = False
@@ -102,7 +113,7 @@ class CropConfigDialog(QDialog):
         self._ov = QSpinBox(); self._ov.setRange(0, 4096)
         self._rows = QSpinBox(); self._rows.setRange(1, 128)
         self._cols = QSpinBox(); self._cols.setRange(1, 128)
-        self._vis = QSpinBox(); self._vis.setRange(0, 100); self._vis.setSuffix(" %")
+        self._vis = QSpinBox(); self._vis.setRange(50, 100); self._vis.setSuffix(" %")
         self._square = QCheckBox(tr("正方形"))
         self._img = QComboBox()
         self._est = QLabel()
@@ -111,7 +122,7 @@ class CropConfigDialog(QDialog):
         self._w.setValue(int(spec["w"]))
         self._h.setValue(int(spec["h"]))
         self._ov.setValue(int(spec["overlap"]))
-        self._vis.setValue(int(round(spec.get("min_visible", 0.3) * 100)))
+        self._vis.setValue(int(round(spec.get("min_visible", 0.5) * 100)))
         self._square.setChecked(bool(spec.get("square")))
         for p in self._images[:100]:
             self._img.addItem(os.path.basename(p))
@@ -145,10 +156,17 @@ class CropConfigDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("最小可见比例（%）"))); row.addWidget(self._vis); row.addStretch()
         left.addLayout(row)
+        lbl = QLabel(tr("预览图"))
         row = QHBoxLayout()
-        row.addWidget(QLabel(tr("预览图")))
+        row.addWidget(lbl)
         self._img.setFixedWidth(220)
         row.addWidget(self._img)
+        row.addStretch()
+        left.addLayout(row)
+        row = QHBoxLayout()
+        row.addSpacing(lbl.sizeHint().width() + 6)
+        self._dims = QLabel()
+        row.addWidget(self._dims)
         row.addStretch()
         left.addLayout(row)
         left.addWidget(self._est)
@@ -162,7 +180,7 @@ class CropConfigDialog(QDialog):
         body.addLayout(right, 1)
 
         btns = QHBoxLayout()
-        btns.addWidget(QLabel(tr("绿=保留 · 红✕=空窗丢弃")))
+        btns.addWidget(QLabel(tr("绿=保留 · 红=空窗丢弃")))
         btns.addStretch()
         ok = QPushButton(tr("确定")); ok.setObjectName("successBtn"); ok.clicked.connect(self.accept)
         cancel = QPushButton(tr("取消")); cancel.setObjectName("accentBtn"); cancel.clicked.connect(self.reject)
@@ -192,6 +210,10 @@ class CropConfigDialog(QDialog):
             if not img.isNull():
                 return img.width(), img.height()
         return 0, 0
+
+    def _update_dims(self):
+        w, h = self._ref_size()
+        self._dims.setText(f"{w} × {h}" if w and h else "")
 
     # ---- 双向联动 ----
 
@@ -305,12 +327,14 @@ class CropConfigDialog(QDialog):
         self._debounce.start()
 
     def _on_image(self, _idx):
+        self._update_dims()
         self._sync_counts()
         self._debounce.start()
 
     # ---- 预览与结果 ----
 
     def _refresh(self):
+        self._update_dims()
         path = self._current_path()
         if not path:
             return

@@ -248,13 +248,13 @@ panel = ProcessingPanel(editor)
 # 回归：未加载数据集就点勾选（_run_images 未经过 _ensure_boxes_loaded）不得崩溃
 panel._crop_check.setChecked(True)
 spec = panel._get_crop_spec()
-assert spec == {{"w": 640, "h": 640, "overlap": 200, "min_visible": 0.3, "square": True}}, spec
+assert spec == {{"w": 640, "h": 640, "overlap": 200, "min_visible": 0.5, "square": True}}, spec
 
 panel._path_edit.setText(r"{tmp_path.as_posix()}")
 panel._ensure_boxes_loaded()
 panel._crop_spec = None  # 重新按首图派生
 spec = panel._get_crop_spec()
-assert spec == {{"w": 640, "h": 640, "overlap": 200, "min_visible": 0.3, "square": True}}, spec
+assert spec == {{"w": 640, "h": 640, "overlap": 200, "min_visible": 0.5, "square": True}}, spec
 assert "640×640" in panel._crop_summary_lbl.text()
 panel._crop_check.setChecked(False)
 assert panel._get_crop_spec() is None
@@ -293,7 +293,7 @@ assert dlg._w.value() == dlg._h.value()
 dlg._refresh()
 assert dlg._preview._rects and dlg._est.text()
 s = dlg.spec()
-assert s["min_visible"] == 0.3 and s["w"] == dlg._w.value() and s["square"] is True
+assert s["min_visible"] == 0.5 and s["w"] == dlg._w.value() and s["square"] is True  # 0.3 低于下限被钳到 0.5
 print("OK_DIALOG")
 '''
     assert "OK_DIALOG" in _run_real_qt(script)

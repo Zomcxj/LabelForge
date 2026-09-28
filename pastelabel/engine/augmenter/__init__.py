@@ -203,7 +203,7 @@ class Augmenter:
         """滑窗裁剪 1→N：产出全部非空窗口（空窗无条件丢弃）。返回产出数。"""
         iw, ih = original_image.width(), original_image.height()
         cw, ch, ov = normalized_window(iw, ih, crop_spec)
-        min_vis = float(crop_spec.get("min_visible", 0.3))
+        min_vis = float(crop_spec.get("min_visible", 0.5))
         made = 0
         for r, y0 in enumerate(window_starts(ih, ch, ov)):
             for c, x0 in enumerate(window_starts(iw, cw, ov)):

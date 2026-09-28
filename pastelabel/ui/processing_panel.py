@@ -556,7 +556,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
     def _default_crop_spec(self):
         size = 640
         return {"w": size, "h": size, "overlap": 200,  # 默认重叠 200 像素
-                "min_visible": 0.3, "square": True}
+                "min_visible": 0.5, "square": True}
 
     def _on_path_changed(self, _text=""):
         """切换数据集目录：清空本轮裁剪配置与缓存，摘要回到默认口径。"""
