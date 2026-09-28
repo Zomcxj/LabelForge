@@ -318,6 +318,71 @@ def delete_memory_record(index):
     return save_memory_records(records)
 
 
+CROP_TEMPLATES_LIMIT = 3
+
+
+def _normalize_crop_template(spec):
+    """裁剪模板：{w, h, overlap, min_visible, square}，非法条目返回 None。"""
+    if not isinstance(spec, dict):
+        return None
+    try:
+        w = int(spec.get('w', 0))
+        h = int(spec.get('h', 0))
+        overlap = int(spec.get('overlap', 0))
+        min_visible = float(spec.get('min_visible', 0))
+    except (TypeError, ValueError):
+        return None
+    if not (8 <= w <= 8192 and 8 <= h <= 8192):
+        return None
+    if not (0 <= overlap <= 4096):
+        return None
+    if not (0.5 <= min_visible <= 1.0):
+        return None
+    return {
+        'w': w, 'h': h, 'overlap': overlap,
+        'min_visible': round(min_visible, 4),
+        'square': bool(spec.get('square')),
+    }
+
+
+def _crop_template_key(t):
+    return (t['w'], t['h'], t['overlap'], t['min_visible'], t['square'])
+
+
+def load_crop_templates():
+    """加载最近裁剪模板，最多 3 条，最新在前。"""
+    config = load_config()
+    records = config.get('crop_templates', [])
+    if not isinstance(records, list):
+        return []
+    templates = []
+    seen = set()
+    for record in records:
+        item = _normalize_crop_template(record)
+        if item is None:
+            continue
+        key = _crop_template_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        templates.append(item)
+        if len(templates) >= CROP_TEMPLATES_LIMIT:
+            break
+    return templates
+
+
+def add_crop_template(spec):
+    """记录一条裁剪模板：完全相同的去重置顶，最多保留 3 条。"""
+    item = _normalize_crop_template(spec)
+    if item is None:
+        return False
+    key = _crop_template_key(item)
+    rest = [t for t in load_crop_templates() if _crop_template_key(t) != key]
+    config = load_config()
+    config['crop_templates'] = [item] + rest[:CROP_TEMPLATES_LIMIT - 1]
+    return save_config(config)
+
+
 def reset_all():
     """恢复出厂设置：删除配置文件，并把内存里的配置字典还原为默认值。
 

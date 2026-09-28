@@ -248,13 +248,13 @@ panel = ProcessingPanel(editor)
 # 回归：未加载数据集就点勾选（_run_images 未经过 _ensure_boxes_loaded）不得崩溃
 panel._crop_check.setChecked(True)
 spec = panel._get_crop_spec()
-assert spec == {{"w": 640, "h": 640, "overlap": 200, "min_visible": 0.5, "square": True}}, spec
+assert spec == {{"w": 640, "h": 640, "overlap": 200, "min_visible": 0.7, "square": False}}, spec
 
 panel._path_edit.setText(r"{tmp_path.as_posix()}")
 panel._ensure_boxes_loaded()
 panel._crop_spec = None  # 重新按首图派生
 spec = panel._get_crop_spec()
-assert spec == {{"w": 640, "h": 640, "overlap": 200, "min_visible": 0.5, "square": True}}, spec
+assert spec == {{"w": 640, "h": 640, "overlap": 200, "min_visible": 0.7, "square": False}}, spec
 assert "640×640" in panel._crop_summary_lbl.text()
 panel._crop_check.setChecked(False)
 assert panel._get_crop_spec() is None
@@ -423,3 +423,94 @@ assert os.path.exists(os.path.join(d, "z.json"))
 print("OK_RANDOM_FALLBACK")
 '''
     assert "OK_RANDOM_FALLBACK" in _run_real_qt(script)
+
+
+def test_crop_dialog_templates_row_apply_and_recompute(tmp_path):
+    script = f'''
+import os
+os.environ["PASTELABEL_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
+from PyQt5.QtGui import QImage
+from PyQt5.QtWidgets import QApplication, QLabel, QPushButton
+app = QApplication.instance() or QApplication([])
+from pastelabel.ui.crop_dialog import CropConfigDialog
+from pastelabel.core.config_manager import add_crop_template
+from pastelabel.engine.augmenter.crop import normalized_window, window_starts
+
+d = r"{tmp_path.as_posix()}"
+src = os.path.join(d, "t.png")
+QImage(200, 100, QImage.Format_RGB888).save(src)
+boxes = [{{"label": "a", "shape_type": "rectangle", "x": 10, "y": 10, "width": 40, "height": 40}}]
+# 初始 spec 足够大，使模板 overlap 不被旧半窗上限钳制
+init_spec = {{"w": 1024, "h": 768, "overlap": 128, "min_visible": 0.6}}
+
+dlg0 = CropConfigDialog([src], {{0: boxes}}, init_spec)
+row_labels = [w for w in dlg0.findChildren(QLabel) if w.text() == "模板"]
+assert not row_labels, "无模板时不应出现「模板」行"
+
+add_crop_template({{"w": 800, "h": 640, "overlap": 200, "min_visible": 0.5}})
+add_crop_template({{"w": 512, "h": 512, "overlap": 64, "min_visible": 0.75, "square": True}})
+dlg = CropConfigDialog([src], {{0: boxes}}, init_spec)
+
+row_labels = [w for w in dlg.findChildren(QLabel) if w.text() == "模板"]
+assert len(row_labels) == 1, row_labels
+btns = [b for b in dlg.findChildren(QPushButton) if "×" in b.text()]
+assert len(btns) == 2, [b.text() for b in btns]
+texts = sorted(b.text() for b in btns)
+assert texts == ["512×512·重叠64·75%·正方形", "800×640·重叠200·50%"], texts
+
+target = [b for b in btns if b.text() == "800×640·重叠200·50%"][0]
+target.click()
+s = dlg.spec()
+assert s == {{"w": 800, "h": 640, "overlap": 200, "min_visible": 0.5, "square": False}}, s
+cw, ch, ov = normalized_window(200, 100, s)
+assert dlg._cols.value() == len(window_starts(200, cw, ov)), (dlg._cols.value(), cw, ov)
+assert dlg._rows.value() == len(window_starts(100, ch, ov)), (dlg._rows.value(), ch, ov)
+
+target2 = [b for b in btns if b.text() == "512×512·重叠64·75%·正方形"][0]
+target2.click()
+s2 = dlg.spec()
+assert s2["square"] is True and s2["w"] == s2["h"] == 512, s2
+cw2, ch2, ov2 = normalized_window(200, 100, s2)
+assert dlg._cols.value() == len(window_starts(200, cw2, ov2))
+assert dlg._rows.value() == len(window_starts(100, ch2, ov2))
+print("OK_TEMPLATES")
+'''
+    assert "OK_TEMPLATES" in _run_real_qt(script)
+
+
+def test_panel_open_crop_config_records_template(tmp_path):
+    script = f'''
+import os
+os.environ["PASTELABEL_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
+from PyQt5.QtGui import QImage
+from PyQt5.QtWidgets import QApplication
+app = QApplication.instance() or QApplication([])
+from pastelabel.ui.processing_panel import ProcessingPanel
+from pastelabel.core.config_manager import load_crop_templates
+
+d = r"{tmp_path.as_posix()}"
+QImage(100, 80, QImage.Format_RGB888).save(os.path.join(d, "p.png"))
+editor = type("E", (), {{"background_images": []}})()
+panel = ProcessingPanel(editor)
+panel._path_edit.setText(d)
+panel._ensure_boxes_loaded()
+
+spec = {{"w": 800, "h": 640, "overlap": 200, "min_visible": 0.5, "square": False}}
+from pastelabel.ui import crop_dialog as cd
+orig = cd.CropConfigDialog
+class FakeDlg:
+    def __init__(self, *a, **kw): pass
+    def exec_(self): return 1
+    def spec(self): return spec
+cd.CropConfigDialog = FakeDlg
+try:
+    panel._open_crop_config()
+finally:
+    cd.CropConfigDialog = orig
+templates = load_crop_templates()
+assert len(templates) == 1, templates
+assert templates[0]["w"] == 800 and templates[0]["h"] == 640
+assert templates[0]["overlap"] == 200 and templates[0]["min_visible"] == 0.5
+print("OK_PANEL_TEMPLATE")
+'''
+    assert "OK_PANEL_TEMPLATE" in _run_real_qt(script)

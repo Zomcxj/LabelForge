@@ -15,6 +15,7 @@ from .i18n import t as tr
 from .theme import ThemeManager
 from .dwm import set_titlebar_dark
 from ..core.utils import create_app_icon
+from ..core.config_manager import add_crop_template
 from ..engine.yolo_exporter import YoloExporter
 from ..engine.voc_exporter import VocExporter
 from ..engine.coco_exporter import CocoExporter
@@ -556,7 +557,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
     def _default_crop_spec(self):
         size = 640
         return {"w": size, "h": size, "overlap": 200,  # 默认重叠 200 像素
-                "min_visible": 0.5, "square": True}
+                "min_visible": 0.7, "square": False}
 
     def _on_path_changed(self, _text=""):
         """切换数据集目录：清空本轮裁剪配置与缓存，摘要回到默认口径。"""
@@ -598,6 +599,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
                                self._get_crop_spec() or self._default_crop_spec(), self)
         if dlg.exec_() == QDialog.Accepted:
             self._crop_spec = dlg.spec()
+            add_crop_template(self._crop_spec)
             self._update_crop_summary()
 
     def _run_augment(self):

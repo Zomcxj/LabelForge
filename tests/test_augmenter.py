@@ -636,3 +636,71 @@ def test_transform_defaults_use_global_random_when_no_rng_given():
     import random
 
     assert Brightness().rng is random
+
+
+# ---------- include_original 中断回归（当前应失败）----------
+
+def test_augmenter_include_original_stops_when_interrupted():
+    """include_original 循环必须响应中断：标志恒 True 时不应写入任何原图/JSON。"""
+    out = _run_real_qt('''
+import os, tempfile
+from PyQt5.QtGui import QImage, QColor
+from pastelabel.engine.augmenter import Augmenter
+
+src_dir = tempfile.mkdtemp()
+srcs = []
+for i in range(4):
+    img = QImage(32, 32, QImage.Format_RGB888)
+    img.fill(QColor(10 * i, 20, 30))
+    p = os.path.join(src_dir, f"img{i}.png")
+    img.save(p)
+    srcs.append(p)
+boxes = {i: [{"label": "cat", "x": 1, "y": 1, "width": 5, "height": 5}]
+         for i in range(4)}
+
+out_dir = tempfile.mkdtemp()
+res = Augmenter(out_dir, is_interrupted=lambda: True).run(
+    srcs, boxes, [], mode="all", image_ratio=1.0,
+    include_original=True, skip_empty=False)
+assert res == [], res
+files = os.listdir(os.path.join(out_dir, "images"))
+assert files == [], files
+print("OK")
+''')
+    assert "OK" in out
+
+
+def test_augmenter_include_original_stops_midway_when_interrupted():
+    """复制中途中断：第 3 次检查起返回 True 时，写入数量应小于总图数。"""
+    out = _run_real_qt('''
+import os, tempfile
+from PyQt5.QtGui import QImage, QColor
+from pastelabel.engine.augmenter import Augmenter
+
+src_dir = tempfile.mkdtemp()
+srcs = []
+for i in range(4):
+    img = QImage(32, 32, QImage.Format_RGB888)
+    img.fill(QColor(10 * i, 20, 30))
+    p = os.path.join(src_dir, f"img{i}.png")
+    img.save(p)
+    srcs.append(p)
+boxes = {i: [{"label": "cat", "x": 1, "y": 1, "width": 5, "height": 5}]
+         for i in range(4)}
+
+state = {"checks": 0}
+def is_interrupted():
+    state["checks"] += 1
+    return state["checks"] >= 3
+
+out_dir = tempfile.mkdtemp()
+res = Augmenter(out_dir, is_interrupted=is_interrupted).run(
+    srcs, boxes, [], mode="all", image_ratio=1.0,
+    include_original=True, skip_empty=False)
+n_imgs = len([f for f in os.listdir(os.path.join(out_dir, "images"))
+               if f.endswith(".png")])
+assert n_imgs < len(srcs), (n_imgs, len(srcs))
+assert len(res) < len(srcs), (len(res), len(srcs))
+print("OK")
+''')
+    assert "OK" in out

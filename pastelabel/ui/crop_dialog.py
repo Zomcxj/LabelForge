@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
 from .dwm import set_titlebar_dark
 from .i18n import t as tr
 from .theme import ThemeManager
+from ..core.config_manager import load_crop_templates
 from ..engine.augmenter.crop import (
     crop_boxes, normalized_window, size_for_count, window_starts,
 )
@@ -122,7 +123,7 @@ class CropConfigDialog(QDialog):
         self._w.setValue(int(spec["w"]))
         self._h.setValue(int(spec["h"]))
         self._ov.setValue(int(spec["overlap"]))
-        self._vis.setValue(int(round(spec.get("min_visible", 0.5) * 100)))
+        self._vis.setValue(int(round(spec.get("min_visible", 0.7) * 100)))
         self._square.setChecked(bool(spec.get("square")))
         for p in self._images[:100]:
             self._img.addItem(os.path.basename(p))
@@ -156,6 +157,20 @@ class CropConfigDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("最小可见比例（%）"))); row.addWidget(self._vis); row.addStretch()
         left.addLayout(row)
+        templates = load_crop_templates()
+        if templates:
+            box = QVBoxLayout()
+            box.addWidget(QLabel(tr("模板")))
+            for item in templates:
+                txt = tr("template_fmt").format(
+                    w=item["w"], h=item["h"], ov=item["overlap"],
+                    vis=int(round(item["min_visible"] * 100)))
+                if item["square"]:
+                    txt += "·" + tr("正方形")
+                btn = QPushButton(txt)
+                btn.clicked.connect(lambda _c=False, spec=item: self._apply_template(spec))
+                box.addWidget(btn)
+            left.addLayout(box)
         lbl = QLabel(tr("预览图"))
         row = QHBoxLayout()
         row.addWidget(lbl)
@@ -216,6 +231,27 @@ class CropConfigDialog(QDialog):
         self._dims.setText(f"{w} × {h}" if w and h else "")
 
     # ---- 双向联动 ----
+
+    def _apply_template(self, spec):
+        """套用最近模板：只回填参数，行列由当前图自动重算。"""
+        controls = (self._w, self._h, self._ov, self._rows, self._cols,
+                    self._vis, self._square)
+        for c in controls:
+            c.blockSignals(True)
+        self._w.setValue(int(spec["w"]))
+        self._h.setValue(int(spec["h"]))
+        self._ov.setValue(int(spec["overlap"]))
+        self._vis.setValue(int(round(spec["min_visible"] * 100)))
+        self._square.setChecked(bool(spec["square"]))
+        if self._square.isChecked():
+            v = min(self._w.value(), self._h.value())
+            self._w.setValue(v)
+            self._h.setValue(v)
+        self._clamp_ov_max()
+        for c in controls:
+            c.blockSignals(False)
+        self._sync_counts()
+        self._debounce.start()
 
     def _clamp_ov_max(self):
         """重叠上限 = 半窗：保证步长 ≥ 半窗，窗口数不爆炸。"""

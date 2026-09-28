@@ -474,3 +474,102 @@ class TestDefaults:
         loaded = config_manager.load_shortcuts()
         for key in config.SHORTCUT_CONFIG:
             assert key in loaded
+
+
+class TestCropTemplates:
+    SPEC_A = {"w": 800, "h": 640, "overlap": 200, "min_visible": 0.5,
+              "square": False}
+    SPEC_B = {"w": 512, "h": 512, "overlap": 64, "min_visible": 0.75,
+              "square": True}
+
+    def test_add_prepends_new_template(self, tmp_path):
+        original = _with_temp_config(tmp_path)
+        try:
+            assert config_manager.add_crop_template(self.SPEC_A) is True
+            templates = config_manager.load_crop_templates()
+            assert len(templates) == 1
+            assert templates[0]["w"] == 800
+            assert templates[0]["h"] == 640
+            assert templates[0]["overlap"] == 200
+            assert templates[0]["min_visible"] == 0.5
+            assert templates[0]["square"] is False
+        finally:
+            config_manager.CONFIG_PATH = original
+
+    def test_add_duplicate_moves_to_top_without_new_entry(self, tmp_path):
+        original = _with_temp_config(tmp_path)
+        try:
+            config_manager.add_crop_template(self.SPEC_A)
+            config_manager.add_crop_template(self.SPEC_B)
+            assert config_manager.add_crop_template(self.SPEC_A) is True
+            templates = config_manager.load_crop_templates()
+            assert len(templates) == 2
+            assert templates[0]["w"] == 800
+            assert templates[1]["w"] == 512
+        finally:
+            config_manager.CONFIG_PATH = original
+
+    def test_add_limit_three_evicts_oldest(self, tmp_path):
+        original = _with_temp_config(tmp_path)
+        try:
+            for i in range(4):
+                config_manager.add_crop_template(
+                    {"w": 100 + i, "h": 100, "overlap": 10, "min_visible": 0.5})
+            templates = config_manager.load_crop_templates()
+            assert len(templates) == 3
+            assert [t["w"] for t in templates] == [103, 102, 101]
+        finally:
+            config_manager.CONFIG_PATH = original
+
+    def test_add_invalid_spec_returns_false_and_writes_nothing(self, tmp_path):
+        original = _with_temp_config(tmp_path)
+        try:
+            invalid_specs = [
+                None, 42, "x", [],
+                {"w": 800, "h": 640, "overlap": 200},
+                {"w": 4, "h": 640, "overlap": 200, "min_visible": 0.5},
+                {"w": 800, "h": 9000, "overlap": 200, "min_visible": 0.5},
+                {"w": 800, "h": 640, "overlap": 5000, "min_visible": 0.5},
+                {"w": 800, "h": 640, "overlap": -1, "min_visible": 0.5},
+                {"w": 800, "h": 640, "overlap": 200, "min_visible": 0.3},
+                {"w": 800, "h": 640, "overlap": 200, "min_visible": 1.5},
+            ]
+            for spec in invalid_specs:
+                assert config_manager.add_crop_template(spec) is False, spec
+            assert config_manager.load_crop_templates() == []
+            assert "crop_templates" not in config_manager.load_config()
+        finally:
+            config_manager.CONFIG_PATH = original
+
+    def test_load_drops_dirty_history(self, tmp_path):
+        original = _with_temp_config(tmp_path)
+        try:
+            config_manager.save_config({"crop_templates": [
+                {"w": 800, "h": 640, "overlap": 200, "min_visible": 0.5},
+                {"w": 4, "h": 640, "overlap": 200, "min_visible": 0.5},
+                "garbage",
+                {"w": 640, "h": 480, "overlap": 100, "min_visible": 0.6,
+                 "square": True},
+            ]})
+            templates = config_manager.load_crop_templates()
+            assert len(templates) == 2
+            assert templates[0]["w"] == 800
+            assert templates[1]["w"] == 640
+            assert templates[1]["square"] is True
+        finally:
+            config_manager.CONFIG_PATH = original
+
+    def test_load_newest_first_and_dedupes(self, tmp_path):
+        original = _with_temp_config(tmp_path)
+        try:
+            config_manager.save_config({"crop_templates": [
+                {"w": 300, "h": 300, "overlap": 30, "min_visible": 0.7},
+                {"w": 200, "h": 200, "overlap": 20, "min_visible": 0.6},
+                {"w": 200, "h": 200, "overlap": 20, "min_visible": 0.6},
+                {"w": 100, "h": 100, "overlap": 10, "min_visible": 0.5},
+                {"w": 400, "h": 400, "overlap": 40, "min_visible": 0.8},
+            ]})
+            templates = config_manager.load_crop_templates()
+            assert [t["w"] for t in templates] == [300, 200, 100]
+        finally:
+            config_manager.CONFIG_PATH = original
