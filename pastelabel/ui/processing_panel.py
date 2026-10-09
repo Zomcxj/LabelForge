@@ -60,6 +60,9 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         self._crop_spec = None
         self._run_images = []
         self._run_boxes = {}
+        # 构造时 _path_edit 已填好当前数据集，先记下基线，避免首次 _refresh_texts 误判为切换
+        self._last_session_dir = os.path.normcase(
+            os.path.normpath(self._get_session_dir() or ""))
         self._path_edit.textChanged.connect(self._on_path_changed)
         self._pipe_mode = False
         self._pipe_steps = []
@@ -91,6 +94,20 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         self._browse_btn.clicked.connect(self._browse_output_dir)
         path_layout.addWidget(self._browse_btn)
         layout.addLayout(path_layout)
+
+    def _follow_session_dir(self):
+        """数据集变化时无条件跟随，把「数据集目录」切到新路径。
+
+        导出目录 = 该路径父目录下的 exports，不跟随就会把新数据集导出到旧数据集的
+        exports 里。判据是「数据集是否变了」而非「输入框是否为空」——旧实现只在为空时
+        回填，记忆切换数据集后框里仍是旧路径，于是导出路径不跟着走。
+        注意只在数据集变化时写入：_refresh_texts 也会被切语言等无关场合调用，
+        每次都无脑覆盖会把用户手输的路径冲掉。
+        """
+        session = os.path.normcase(os.path.normpath(self._get_session_dir() or ""))
+        if session and session != getattr(self, '_last_session_dir', None):
+            self._path_edit.setText(self._get_session_dir())
+        self._last_session_dir = session
 
     def _get_session_dir(self):
         imgs = self._editor.background_images
@@ -241,8 +258,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
 
     def _refresh_texts(self):
         self.setWindowTitle(tr("数据处理"))
-        if not self._path_edit.text().strip():
-            self._path_edit.setText(self._get_session_dir())
+        self._follow_session_dir()
         self._path_lbl.setText(tr("数据集目录:"))
         self._browse_btn.setText(tr("选择"))
         self._aug_section.set_title(tr("数据增强"))
@@ -259,6 +275,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         self._aug_mode.setCurrentIndex(idx)
         self._aug_btn.setText(tr("增强"))
         self._aug_skip_empty.setText(tr("跳过空标签"))
+        self._aug_uncheck_all_btn.setText(tr("取消全选"))
         self._aug_clear_btn.setText(tr("清空"))
         self._crop_check.setText(tr("滑窗裁剪"))
         self._crop_config_btn.setText(tr("配置…"))
@@ -474,6 +491,12 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         box.exec_()
         return box.clickedButton() == yes_btn
 
+    def _uncheck_all_transforms(self):
+        """一键取消所有已勾选的增强方式（含原图与滑窗裁剪），便于从零重新挑选。"""
+        for _name, (cb, _params, _disp) in self._aug_widgets.items():
+            cb.setChecked(False)
+        self._crop_check.setChecked(False)
+
     def _clear_aug(self):
         if not self._require_path():
             return
@@ -555,9 +578,12 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         return 0, 0
 
     def _default_crop_spec(self):
-        size = 640
-        return {"w": size, "h": size, "overlap": 200,  # 默认重叠 200 像素
-                "min_visible": 0.7, "square": False}
+        from ..engine.augmenter.crop import FILL_RGB_DEFAULT, default_window
+        W, H = self._crop_ref_size()
+        w, h, ov = default_window(W, H)   # 按参考图反推 2行3列、重叠为窗口的 15%
+        return {"w": w, "h": h, "overlap": ov,
+                "min_visible": 0.7, "square": False,
+                "fill": False, "fill_rgb": FILL_RGB_DEFAULT}
 
     def _on_path_changed(self, _text=""):
         """切换数据集目录：清空本轮裁剪配置与缓存，摘要回到默认口径。"""
@@ -582,12 +608,16 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         W, H = self._crop_ref_size()
         if W and H:
             from ..engine.augmenter.crop import normalized_window, window_starts
+            fill = bool(spec.get("fill"))
             cw, ch, ov = normalized_window(W, H, spec)
-            cols = len(window_starts(W, cw, ov))
-            rows = len(window_starts(H, ch, ov))
+            cols = len(window_starts(W, cw, ov, fill))
+            rows = len(window_starts(H, ch, ov, fill))
             spec = {**spec, "overlap": ov}
-        self._crop_summary_lbl.setText(tr("crop_summary").format(
-            w=spec["w"], h=spec["h"], ov=spec["overlap"], rows=rows, cols=cols))
+        txt = tr("crop_summary").format(
+            w=spec["w"], h=spec["h"], ov=spec["overlap"], rows=rows, cols=cols)
+        if spec.get("fill"):
+            txt += " · " + tr("补边")   # 开填充时导出名带 _pad，摘要须点明
+        self._crop_summary_lbl.setText(txt)
 
     def _open_crop_config(self):
         self._ensure_boxes_loaded()

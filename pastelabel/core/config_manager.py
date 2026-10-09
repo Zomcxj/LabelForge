@@ -4,7 +4,7 @@
 import os
 import json
 from . import config as config_module
-from .config import SHORTCUT_CONFIG, STATUSBAR_CONFIG, DETECTION_BOX_CONFIG, MAGNIFIER_CONFIG, LABEL_CACHE_SLOTS, NUDGE_CONFIG, DETECTION_BOX_WHEEL_CONFIG, CROSSHAIR_CONFIG, BOX_BORDER_CONFIG, LABEL_COLORS, OBB_CONFIG
+from .config import SHORTCUT_CONFIG, STATUSBAR_CONFIG, DETECTION_BOX_CONFIG, MAGNIFIER_CONFIG, LABEL_CACHE_SLOTS, NUDGE_CONFIG, DETECTION_BOX_WHEEL_CONFIG, CROSSHAIR_CONFIG, BOX_BORDER_CONFIG, LABEL_COLORS, OBB_CONFIG, normalized_fill_rgb
 
 
 CONFIG_PATH = os.environ.get('PASTELABEL_CONFIG_PATH') or os.path.join(
@@ -322,7 +322,7 @@ CROP_TEMPLATES_LIMIT = 3
 
 
 def _normalize_crop_template(spec):
-    """裁剪模板：{w, h, overlap, min_visible, square}，非法条目返回 None。"""
+    """裁剪模板：{w, h, overlap, min_visible, square, fill, fill_rgb}，非法条目返回 None。"""
     if not isinstance(spec, dict):
         return None
     try:
@@ -342,11 +342,14 @@ def _normalize_crop_template(spec):
         'w': w, 'h': h, 'overlap': overlap,
         'min_visible': round(min_visible, 4),
         'square': bool(spec.get('square')),
+        'fill': bool(spec.get('fill')),
+        'fill_rgb': list(normalized_fill_rgb(spec)),
     }
 
 
 def _crop_template_key(t):
-    return (t['w'], t['h'], t['overlap'], t['min_visible'], t['square'])
+    return (t['w'], t['h'], t['overlap'], t['min_visible'], t['square'],
+            t['fill'], tuple(t['fill_rgb']))
 
 
 def load_crop_templates():

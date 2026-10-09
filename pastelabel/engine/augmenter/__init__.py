@@ -4,10 +4,12 @@ import os
 import random
 from typing import Callable, Dict, List, Tuple, Type
 
-from PyQt5.QtGui import QImage
+from PyQt5.QtGui import QColor, QImage, QPainter
 
 from .base import BaseTransform, get_all_transforms, register_transform
-from .crop import crop_boxes, normalized_window, window_starts
+from .crop import (
+    crop_boxes, normalized_fill_rgb, normalized_window, window_starts,
+)
 
 from . import flipt, color, noise, translate, rotate, scale
 
@@ -202,20 +204,28 @@ class Augmenter:
         return results
 
     def _apply_crop(self, original_image, boxes, crop_spec, base, ext, results):
-        """滑窗裁剪 1→N：产出全部非空窗口（空窗无条件丢弃）。返回产出数。"""
+        """滑窗裁剪 1→N：产出全部非空窗口（空窗无条件丢弃）。返回产出数。
+
+        crop_spec['fill'] 为真时：窗口尺寸不钳到图像内、按等步长网格排布，
+        末行/末列越出图像的部分以 fill_rgb 补齐，命名追加 _pad。
+        """
         iw, ih = original_image.width(), original_image.height()
         cw, ch, ov = normalized_window(iw, ih, crop_spec)
         min_vis = float(crop_spec.get("min_visible", 0.7))
+        pad = bool(crop_spec.get("fill"))
+        rgb = normalized_fill_rgb(crop_spec) if pad else None
         made = 0
-        for r, y0 in enumerate(window_starts(ih, ch, ov)):
-            for c, x0 in enumerate(window_starts(iw, cw, ov)):
+        for r, y0 in enumerate(window_starts(ih, ch, ov, fill=pad)):
+            for c, x0 in enumerate(window_starts(iw, cw, ov, fill=pad)):
                 if self.is_interrupted():
                     return made
                 win_boxes = crop_boxes(boxes, x0, y0, cw, ch, min_vis)
                 if not win_boxes:
                     continue
-                win_img = original_image.copy(x0, y0, cw, ch)
-                suffix = f"_crop_r{r + 1}c{c + 1}"
+                win_img = self._crop_window(original_image, x0, y0, cw, ch, rgb)
+                suffix = f"_crop_r{r + 1}c{c + 1}_ov{ov}"
+                if pad:
+                    suffix += "_pad"
                 out_name = base + suffix + ext
                 win_img.save(os.path.join(self.output_dir, out_name))
                 self._save_labelme_json(
@@ -229,6 +239,19 @@ class Augmenter:
                 })
                 made += 1
         return made
+
+    @staticmethod
+    def _crop_window(original_image, x0, y0, cw, ch, rgb):
+        """切取窗口；rgb 给定时，窗口越出图像边缘的部分以该 RGB 补齐。"""
+        if rgb is None or (x0 + cw <= original_image.width()
+                           and y0 + ch <= original_image.height()):
+            return original_image.copy(x0, y0, cw, ch)
+        win = QImage(cw, ch, original_image.format())
+        win.fill(QColor(*rgb))
+        painter = QPainter(win)
+        painter.drawImage(-x0, -y0, original_image)
+        painter.end()
+        return win
 
     def _build_kwargs(self, cls, ranges, mode):
         kwargs = {}

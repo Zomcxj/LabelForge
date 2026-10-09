@@ -221,6 +221,29 @@ QUALITY_LINT_CONFIG = {
     'max_boxes_pairwise': 500,  # 超过此框数跳过两两比对
 }
 
+# 滑窗裁剪补边默认色（YOLO letterbox 灰）
+FILL_RGB_DEFAULT = (114, 114, 114)
+
+
+def normalized_fill_rgb(spec):
+    """从 spec 取补边色并规范成 (r, g, b) 整数三元组；缺失或损坏一律回落默认灰。
+
+    放在 core 而非 engine：持久化层（config_manager）与引擎层必须共用同一份规则，
+    而 core 是能被独立加载的底层，不能反向依赖 engine。
+    模板从磁盘读回可能损坏，故非数值/长度不符都回落，不抛异常。
+    """
+    raw = (spec or {}).get("fill_rgb")
+    if raw is None:
+        return FILL_RGB_DEFAULT
+    try:
+        parts = [int(c) for c in raw]
+    except (TypeError, ValueError):
+        return FILL_RGB_DEFAULT
+    if len(parts) != 3:
+        return FILL_RGB_DEFAULT
+    return tuple(max(0, min(255, v)) for v in parts)
+
+
 # 出厂默认快照：这些字典在运行时会被就地修改（设置对话框、加载配置），
 # 「恢复默认设置」需要一份未被污染的副本来还原。
 _DEFAULT_SNAPSHOT = {
