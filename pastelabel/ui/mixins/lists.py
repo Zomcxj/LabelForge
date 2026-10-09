@@ -1,8 +1,10 @@
 """Lists UI building mixin."""
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem, QCheckBox, QSpinBox, QFrame
+from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt, QSize, QTimer
 from ...core.config import PASTE_PARAMS
 from ..i18n import t as tr
+from ..icons import SVG_REFRESH, _load_svg_icon
 from ...widgets.drag_out_list import DragOutListWidget
 
 
@@ -63,6 +65,14 @@ class ListsMixin:
         header_layout.addWidget(self.bg_filter_btn)
         if hasattr(self, '_refresh_bg_filter_button'):
             self._refresh_bg_filter_button()
+
+        self.bg_refresh_btn = QPushButton("")
+        self.bg_refresh_btn.setObjectName("navBtn")
+        self.bg_refresh_btn.setFixedSize(28, 22)
+        self.bg_refresh_btn.setIcon(QIcon(_load_svg_icon(SVG_REFRESH, 14)))
+        self.bg_refresh_btn.setToolTip(tr("refresh_bg_hint"))
+        self.bg_refresh_btn.clicked.connect(self._on_refresh_bg_list)
+        header_layout.addWidget(self.bg_refresh_btn)
 
         self.prev_img_btn.clicked.connect(lambda: self.switch_background(-1))
         self.next_img_btn.clicked.connect(lambda: self.switch_background(1))

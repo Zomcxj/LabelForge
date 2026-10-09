@@ -388,6 +388,17 @@ class BackgroundListMixin:
         self.status_label.setText(f"Path: {mode_text}")
         QTimer.singleShot(2000, lambda: self.status_label.setText(""))
 
+    def _on_refresh_bg_list(self):
+        """刷新按钮：就地重扫文件夹增删列表项，不重新导入、不丢未保存标注。"""
+        from PyQt5.QtCore import QTimer
+        changed, added, removed = self.refresh_background_list()
+        if not hasattr(self, 'status_label'):
+            return
+        notice = getattr(self, '_refresh_notice', '') or ''
+        text = notice or tr("refresh_done").format(added=added, removed=removed)
+        self.status_label.setText(text)
+        QTimer.singleShot(2000, lambda: self.status_label.setText(""))
+
     def _refresh_background_path_texts(self):
         """开关切换后原地刷新列表项文本，无需重载数据集。"""
         from ...core.utils import PathUtils

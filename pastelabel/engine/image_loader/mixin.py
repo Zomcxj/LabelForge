@@ -231,6 +231,97 @@ class ImageLoaderMixin:
             self.background_list.viewport().update()
             self._finalize_dataset_load()
 
+    def refresh_background_list(self):
+        """重扫当前背景文件夹，就地增删列表项。返回 (changed, added, removed)。
+
+        与「选择文件夹」重新导入的区别：不弹对话框、不清空内存中未保存的检测框/
+        画布项（按路径迁移到新索引）、不重读首图，只重建列表行（light 装饰仅做
+        一次 exists 检查，不解析 JSON），因此快得多且不丢未保存的标注。
+        类别集合与状态图标交给后台扫描补齐，不阻塞界面。
+        异常情况（无文件夹/读不了/无变化）不弹模态框，只把提示写进
+        _refresh_notice 交给状态栏显示——刷新是高频轻操作，模态框太重。
+        """
+        self._refresh_notice = ""
+        folder = getattr(self, '_memory_background_path', '') or ''
+        if not folder or not os.path.isdir(folder):
+            self._refresh_notice = tr("refresh_need_folder")
+            return False, 0, 0
+        try:
+            names = sorted(os.listdir(folder), key=natural_sort_key)
+        except OSError:
+            self._refresh_notice = tr("refresh_cannot_read")
+            return False, 0, 0
+        new_paths = [os.path.join(folder, n) for n in names
+                     if os.path.splitext(n)[1].lower() in SUPPORTED_IMAGE_EXTENSIONS]
+
+        old_paths = list(self.background_images)
+        if new_paths == old_paths:
+            self._refresh_notice = tr("refresh_no_change")
+            return False, 0, 0
+        old_set, new_set = set(old_paths), set(new_paths)
+        added = [p for p in new_paths if p not in old_set]
+        removed = [p for p in old_paths if p not in new_set]
+
+        # 先把当前图的实时编辑落回按索引缓存，再整体按路径取走
+        cur_idx = self.current_background_index
+        if 0 <= cur_idx < len(old_paths):
+            self.canvas_items_dict[cur_idx] = list(getattr(self, 'canvas_items', []) or [])
+            self.detection_boxes_dict[cur_idx] = list(getattr(self, 'detection_boxes', []) or [])
+            cur_path = old_paths[cur_idx]
+        else:
+            cur_path = None
+        boxes_by_path = {old_paths[i]: list(self.detection_boxes_dict.get(i, []))
+                         for i in range(len(old_paths))}
+        canvas_by_path = {old_paths[i]: list(self.canvas_items_dict.get(i, []))
+                          for i in range(len(old_paths))}
+
+        self.background_images = new_paths
+        self.detection_boxes_dict = {i: boxes_by_path.get(p, [])
+                                     for i, p in enumerate(new_paths)}
+        self.canvas_items_dict = {i: canvas_by_path.get(p, [])
+                                  for i, p in enumerate(new_paths)}
+
+        bg_list = self.background_list
+        bg_list.setUpdatesEnabled(False)
+        try:
+            bg_list.clear()
+            mode = getattr(self, '_bg_annotation_filter', 'all')
+            for i, path in enumerate(new_paths):
+                item = QListWidgetItem(self._display_path_for(path))
+                decorate_background_list_item(item, path, i, light=True)
+                if mode != 'all' and item.data(BG_ROLE_STATUS) != mode:
+                    item.setHidden(True)
+                bg_list.addItem(item)
+        finally:
+            bg_list.setUpdatesEnabled(True)
+
+        if new_paths:
+            if cur_path in new_set:
+                target = new_paths.index(cur_path)
+            else:
+                target = max(0, min(cur_idx, len(new_paths) - 1))
+            self.current_background_index = target
+            self.current_background = self._get_cached_pixmap(new_paths[target])
+            self.detection_boxes = list(self.detection_boxes_dict.get(target, []))
+            self.canvas_items = list(self.canvas_items_dict.get(target, []))
+            row = (self._find_bg_list_row_for_index(target)
+                   if hasattr(self, '_find_bg_list_row_for_index') else target)
+            if row is not None:
+                bg_list.setCurrentRow(row)
+            self.canvas.reset_view()
+            self.canvas.update()
+        else:
+            self.current_background_index = -1
+            self.current_background = None
+            self.detection_boxes = []
+            self.canvas_items = []
+            self.canvas.update()
+        self.update_label_list()
+        self.update_file_count()
+        bg_list.viewport().update()
+        self._start_dataset_label_scan()
+        return True, len(added), len(removed)
+
     def _finalize_dataset_load(self):
         """Dataset fully loaded: apply a pending saved background index (memory restore)."""
         pending = getattr(self, '_pending_memory_index', None)
