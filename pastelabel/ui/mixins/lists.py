@@ -23,13 +23,13 @@ class ListsMixin:
 
         self.prev_img_btn = QPushButton("◀")
         self.prev_img_btn.setObjectName("navBtn")
-        self.prev_img_btn.setFixedWidth(40)
+        self.prev_img_btn.setFixedWidth(35)
         self.prev_img_btn.setFixedHeight(22)
         header_layout.addWidget(self.prev_img_btn)
 
         self.next_img_btn = QPushButton("▶")
         self.next_img_btn.setObjectName("navBtn")
-        self.next_img_btn.setFixedWidth(40)
+        self.next_img_btn.setFixedWidth(35)
         self.next_img_btn.setFixedHeight(22)
         header_layout.addWidget(self.next_img_btn)
 
@@ -40,9 +40,9 @@ class ListsMixin:
         header_layout.addWidget(self.step_label)
 
         self.step_spin = QSpinBox()
-        self.step_spin.setRange(1, 10)
+        self.step_spin.setRange(1, 9)
         self.step_spin.setValue(1)
-        self.step_spin.setFixedWidth(52)
+        self.step_spin.setFixedWidth(48)
         self.step_spin.setFixedHeight(22)
         self.step_spin.setAlignment(Qt.AlignCenter)
         self.step_spin.setButtonSymbols(QSpinBox.PlusMinus)

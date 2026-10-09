@@ -246,7 +246,7 @@ class ThemeManager:
             QSpinBox, QDoubleSpinBox {{
                 border: 1px solid {t['border_color']};
                 border-radius: 6px;
-                padding: 3px 6px;
+                padding: 3px 2px;
                 background-color: {t['widget_bg']};
                 color: {t['text_primary']};
             }}
