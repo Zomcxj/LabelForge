@@ -265,9 +265,19 @@ def lint_shapes(shapes, image_width, image_height, label_index=None):
             # 640 输入下 8px 恰好等于 1.25%，归一化档与 tiny_box 完全重叠。
             # 归一化结论与分辨率无关、信息量更大，故命中时不再重复报 tiny_box；
             # 只有比例判为通过、但绝对像素仍可疑时（如小图上的退化框）才报后者。
+            # min_side/both_below 给第 4 列提示用：标注员需要知道该拉宽、拉高
+            # 还是整个框都得放大。both_below 用命中档自己的线（fail 档对
+            # fail 线、warn 档对 warn 线），与 ratio 的判档口径一致。
+            threshold = (QUALITY_LINT_CONFIG['tiny_fail_ratio']
+                         if kind == 'tiny_unreachable'
+                         else QUALITY_LINT_CONFIG['tiny_warn_ratio'])
+            width_ratio = w / image_width
+            height_ratio = h / image_height
             issues.append({
                 'kind': kind, 'label': box.get('label', ''),
                 'box_index': i, 'ratio': ratio,
+                'min_side': 'width' if width_ratio <= height_ratio else 'height',
+                'both_below': width_ratio < threshold and height_ratio < threshold,
                 'detail': f"{ratio * 100:.2f}% W:{w:.0f} H:{h:.0f}",
             })
             continue

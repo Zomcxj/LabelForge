@@ -243,6 +243,9 @@ _strings = {
         "标记保留": "标记保留",
         "标记保留选中的 {n} 项": "标记保留选中的 {n} 项",
         "标记失败": "标记失败",
+        "宽不足": "宽不足",
+        "高不足": "高不足",
+        "宽高均不足": "宽高均不足",
         "未找到可统计的检测框": "未找到可统计的检测框",
         "存在常规配置检不到的目标：建议提高训练分辨率或启用滑窗切片；确有意的细长目标可右键「标记保留」":
             "存在常规配置检不到的目标：建议提高训练分辨率或启用滑窗切片；确有意的细长目标可右键「标记保留」",
@@ -782,6 +785,9 @@ _strings = {
         "标记保留": "Mark as kept",
         "标记保留选中的 {n} 项": "Mark {n} selected as kept",
         "标记失败": "Marking failed",
+        "宽不足": "width too small",
+        "高不足": "height too small",
+        "宽高均不足": "width and height too small",
         "未找到可统计的检测框": "No detection boxes to measure",
         "存在常规配置检不到的目标：建议提高训练分辨率或启用滑窗切片；确有意的细长目标可右键「标记保留」":
             "Some targets are undetectable at default settings: raise the training resolution or enable sliding-window slicing. Right-click and choose \"Mark as kept\" for intentionally elongated targets.",

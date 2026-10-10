@@ -29,6 +29,18 @@ def _safe_num(value):
     return num if math.isfinite(num) else 0.0
 
 
+def _progress_qss(t):
+    """质检进度条样式：圆角与 QProgressDialog 一致（8px，chunk 同圆角）。
+
+    单独成函数是因为 stylesheet 拼在 __init__ 的大 f-string 里没法直接测。
+    """
+    return f"""QProgressBar {{ border: none; border-radius: 8px;
+                background-color: {t['scrollbar_bg']}; text-align: center;
+                color: {t['text_primary']}; height: 16px; }}
+            QProgressBar::chunk {{ background-color: {t['accent']};
+                border-radius: 8px; }}"""
+
+
 class QualityLintDialog(QDialog):
     issue_activated = pyqtSignal(object)
     ignore_requested = pyqtSignal(object, str)   # (issue, scope: 'item' | 'kind')
@@ -56,9 +68,7 @@ class QualityLintDialog(QDialog):
                 border: 1px solid {t['border_color']}; padding: 4px; font-weight: bold; }}
             QTableWidget QTableCornerButton::section {{ background-color: {t['panel_bg']};
                 border: 1px solid {t['border_color']}; }}
-            QProgressBar {{ border: 1px solid {t['border_color']}; background: {t['panel_bg']};
-                text-align: center; height: 16px; }}
-            QProgressBar::chunk {{ background-color: {t['accent']}; }}
+            {_progress_qss(t)}
             QComboBox {{ background-color: {t['panel_bg']}; color: {t['text_primary']};
                 border: 1px solid {t['border_color']}; padding: 2px 6px; }}
         """)
@@ -128,7 +138,7 @@ class QualityLintDialog(QDialog):
             self._rebuild_filter_combo()
             self._apply_filter()
             self._update_tiny_report()
-            self.progress.setValue(self.progress.maximum())
+            self.progress.setVisible(False)
             self.status_label.setText(tr("扫描失败"))
             self.summary_label.setText(tr("扫描失败"))
             return
@@ -141,6 +151,8 @@ class QualityLintDialog(QDialog):
         self._update_tiny_report()
         self.status_label.setText("")
         self.progress.setValue(self.progress.maximum())
+        # 扫描结束进度条就没用了，钉在 100% 只占地方；重扫会新建弹窗，无需恢复
+        self.progress.setVisible(False)
         self._update_summary(summary)
 
     @staticmethod
@@ -214,7 +226,12 @@ class QualityLintDialog(QDialog):
         return None
 
     def _size_hint_text(self, issue):
-        """第 4 列：小目标两档给"占比 + 建议"，其它 kind 沿用 detail。"""
+        """第 4 列：小目标两档给"宽/高 + 占比 + 建议"，其它 kind 沿用 detail。
+
+        引擎给的 min_side/both_below 说明该拉宽、拉高还是整个放大；
+        both_below 优先 —— 两侧都低于命中档的线时单侧说法是错的。
+        老数据没有这两个键时退回纯占比，不能抛。
+        """
         if not isinstance(issue, dict):
             return ""
         kind = issue.get('kind')
@@ -224,10 +241,19 @@ class QualityLintDialog(QDialog):
         pct = None
         if isinstance(ratio, (int, float)) and math.isfinite(ratio):
             pct = f"{ratio * 100.0:.2f}%"
+        if issue.get('both_below'):
+            side = tr("宽高均不足")
+        elif issue.get('min_side') == 'width':
+            side = tr("宽不足")
+        elif issue.get('min_side') == 'height':
+            side = tr("高不足")
+        else:
+            side = ""
+        size = f"{side} {pct}" if side and pct else (side or pct or "")
         advice = (tr("常规配置检不到，建议提高分辨率或滑窗切片")
                   if kind == 'tiny_unreachable'
                   else tr("需 P2 检测头或裁剪放大"))
-        return f"{pct} · {advice}" if pct else advice
+        return f"{size} · {advice}" if size else advice
 
     def _update_summary(self, summary):
         parts = []

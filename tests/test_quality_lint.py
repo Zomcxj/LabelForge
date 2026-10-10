@@ -33,6 +33,45 @@ def test_tiny_box_detected():
     assert {i["kind"] for i in issues} == {"tiny_box"}
 
 
+def test_tiny_issue_records_width_as_small_side():
+    """200x200 图上 1x2 框：宽 0.5% 踩 fail 线、高 1.0% 达标 —— 只有宽不足。"""
+    issues = lint_shapes([_box(w=1, h=2)], 200, 200)
+    tiny = [i for i in issues if i["kind"] == "tiny_unreachable"]
+    assert len(tiny) == 1
+    assert tiny[0]["min_side"] == "width"
+    assert tiny[0]["both_below"] is False
+
+
+def test_tiny_issue_records_height_as_small_side():
+    issues = lint_shapes([_box(w=2, h=1)], 200, 200)
+    tiny = [i for i in issues if i["kind"] == "tiny_unreachable"]
+    assert tiny[0]["min_side"] == "height"
+    assert tiny[0]["both_below"] is False
+
+
+def test_tiny_issue_marks_both_sides_below_fail_line():
+    """1x1 框：宽高都是 0.5%，都低于 0.625% fail 线。"""
+    issues = lint_shapes([_box(w=1, h=1)], 200, 200)
+    tiny = [i for i in issues if i["kind"] == "tiny_unreachable"]
+    assert tiny[0]["both_below"] is True
+
+
+def test_tiny_issue_warn_tier_compares_against_warn_line():
+    """100x100 图上 0.8x0.8 框：0.8% 落 warn 档；两侧都低于 1.25% warn 线。"""
+    issues = lint_shapes([_box(w=0.8, h=0.8)], 100, 100)
+    tiny = [i for i in issues if i["kind"] == "tiny_needs_p2"]
+    assert len(tiny) == 1
+    assert tiny[0]["both_below"] is True
+
+
+def test_tiny_issue_warn_tier_single_side_below():
+    """0.8x1.4 框：min 0.8% 落 warn 档；高 1.4% ≥ 1.25% —— 只有宽不足。"""
+    issues = lint_shapes([_box(w=0.8, h=1.4)], 100, 100)
+    tiny = [i for i in issues if i["kind"] == "tiny_needs_p2"]
+    assert tiny[0]["min_side"] == "width"
+    assert tiny[0]["both_below"] is False
+
+
 def test_duplicate_boxes_same_label_detected():
     a = _box(x=0, y=0, w=100, h=100)
     b = _box(x=2, y=2, w=100, h=100)
@@ -2285,6 +2324,98 @@ def test_size_hint_distinguishes_the_two_tiers():
     assert fail != warn
     assert "滑窗" in fail
     assert "P2" in warn
+
+
+def test_size_hint_names_the_small_side():
+    """提示要说明是宽、高还是宽高都不满足 —— 标注员才知道该往哪个方向改。"""
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    d = QualityLintDialog.__new__(QualityLintDialog)
+    wide_only = d._size_hint_text({"kind": "tiny_unreachable", "ratio": 0.0045,
+                                   "min_side": "width", "both_below": False})
+    assert wide_only.startswith("宽不足 0.45%")
+    assert "滑窗" in wide_only
+    tall_only = d._size_hint_text({"kind": "tiny_needs_p2", "ratio": 0.008,
+                                   "min_side": "height", "both_below": False})
+    assert tall_only.startswith("高不足 0.80%")
+    both = d._size_hint_text({"kind": "tiny_unreachable", "ratio": 0.0045,
+                              "min_side": "width", "both_below": True})
+    assert both.startswith("宽高均不足 0.45%")
+
+
+def test_size_hint_both_below_wins_over_min_side():
+    """两侧都低于命中档的线时，"宽高均不足"必须压过 min_side 的单侧说法。"""
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    d = QualityLintDialog.__new__(QualityLintDialog)
+    text = d._size_hint_text({"kind": "tiny_needs_p2", "ratio": 0.008,
+                              "min_side": "height", "both_below": True})
+    assert text.startswith("宽高均不足")
+    assert "高不足" not in text
+
+
+def test_progress_bar_hidden_after_successful_result():
+    """扫描完成后进度条该藏起来，一直钉在 100% 只占地方。"""
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+
+    class _Bar:
+        def __init__(self):
+            self.visible = True
+            self.max = 100
+        def setMaximum(self, m):
+            self.max = m
+        def setValue(self, v):
+            pass
+        def maximum(self):
+            return self.max
+        def setVisible(self, v):
+            self.visible = bool(v)
+
+    d = QualityLintDialog.__new__(QualityLintDialog)
+    d._all_issues = []
+    d._kind_filter = None
+    d._scanned_images = 0
+    d._tiny_report = None
+    d.status_label = type("L", (), {"setText": lambda self, s: None})()
+    d.summary_label = type("L", (), {"setText": lambda self, s: None})()
+    d.progress = _Bar()
+    d._rebuild_filter_combo = lambda: None
+    d._apply_filter = lambda: None
+    d._update_tiny_report = lambda: None
+    d._update_summary = lambda summary: None
+    d.set_result({"summary": {"scanned_images": 3}, "issues": [], "tiny_report": {}})
+    assert d.progress.visible is False
+
+
+def test_progress_bar_hidden_after_failed_result():
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    d = QualityLintDialog.__new__(QualityLintDialog)
+    d._all_issues = []
+    d._kind_filter = None
+    d._scanned_images = 0
+    d._tiny_report = None
+    d.status_label = type("L", (), {"setText": lambda self, s: None})()
+    d.summary_label = type("L", (), {"setText": lambda self, s: None})()
+    d.progress = type("B", (), {
+        "visible": True,
+        "setMaximum": lambda self, m: None,
+        "setValue": lambda self, v: None,
+        "maximum": lambda self: 100,
+        "setVisible": lambda self, v: setattr(self, "visible", bool(v)),
+    })()
+    d._rebuild_filter_combo = lambda: None
+    d._apply_filter = lambda: None
+    d._update_tiny_report = lambda: None
+    d.set_result({"error": True})
+    assert d.progress.visible is False
+
+
+def test_progress_bar_stylesheet_is_rounded():
+    """质检进度条圆角与 QProgressDialog 一致（8px，chunk 同圆角）。"""
+    from pastelabel.ui import quality_lint_dialog as mod
+    qss = mod._progress_qss({"scrollbar_bg": "#202020", "text_primary": "#f5f5f5",
+                             "accent": "#2950ff"})
+    assert qss.count("border-radius: 8px") == 2, qss
+    assert "#202020" in qss and "#2950ff" in qss
+    assert "QProgressBar::chunk" in qss
 
 
 def test_tiny_report_text_uses_measured_as_denominator():
