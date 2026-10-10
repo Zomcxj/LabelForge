@@ -25,12 +25,20 @@ class ListsMixin:
         self.prev_img_btn.setObjectName("navBtn")
         self.prev_img_btn.setFixedWidth(35)
         self.prev_img_btn.setFixedHeight(22)
+        # 长按连切：按住 400ms 后每 120ms 重发一次 clicked，走既有的
+        # switch_background 接线；单击行为不变（第一次点击立即触发）。
+        self.prev_img_btn.setAutoRepeat(True)
+        self.prev_img_btn.setAutoRepeatDelay(400)
+        self.prev_img_btn.setAutoRepeatInterval(120)
         header_layout.addWidget(self.prev_img_btn)
 
         self.next_img_btn = QPushButton("▶")
         self.next_img_btn.setObjectName("navBtn")
         self.next_img_btn.setFixedWidth(35)
         self.next_img_btn.setFixedHeight(22)
+        self.next_img_btn.setAutoRepeat(True)
+        self.next_img_btn.setAutoRepeatDelay(400)
+        self.next_img_btn.setAutoRepeatInterval(120)
         header_layout.addWidget(self.next_img_btn)
 
         header_layout.addSpacing(4)

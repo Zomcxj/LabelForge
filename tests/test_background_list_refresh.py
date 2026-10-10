@@ -108,6 +108,19 @@ print("OK_REFRESH_BUTTON")
     assert "OK_REFRESH_BUTTON" in _run_qt(script)
 
 
+def test_nav_arrow_buttons_support_press_and_hold(tmp_path):
+    # 长按 ◀/▶ 连续切图：Qt 内置 autoRepeat —— 按住不松手时 clicked 会
+    # 先按 delay 再按 interval 持续重发，走既有的 switch_background 接线。
+    script = _BOOT.format(d=tmp_path.as_posix()) + '''
+for btn in (window.prev_img_btn, window.next_img_btn):
+    assert btn.autoRepeat() is True, btn.text()
+    assert 250 <= btn.autoRepeatDelay() <= 700, btn.autoRepeatDelay()
+    assert 60 <= btn.autoRepeatInterval() <= 250, btn.autoRepeatInterval()
+print("OK_NAV_REPEAT")
+'''
+    assert "OK_NAV_REPEAT" in _run_qt(script)
+
+
 def test_refresh_without_folder_or_without_change_is_noop(tmp_path):
     # 没加载过文件夹 → 提示且不崩；文件夹没变化 → 空操作，不动内存里的框。
     script = f'''
