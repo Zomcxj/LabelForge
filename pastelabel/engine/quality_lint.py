@@ -37,6 +37,9 @@ TINY_RATIO_EDGES = (0.0, 0.003125, 0.00625, 0.0125, 0.025,
 #: 标注员人工确认「保留」的标记，写在 LabelMe shape 的 flags 里
 TINY_KEEP_FLAG = 'tiny_keep'
 
+#: 可被「标记保留」豁免的两类小目标问题
+TINY_KINDS = ('tiny_unreachable', 'tiny_needs_p2')
+
 
 def _bbox(box):
     """(x1, y1, x2, y2)；优先用 x/y/width/height，缺失时回退 points。
@@ -116,17 +119,64 @@ def tiny_ratio_kind(ratio):
     return None
 
 
+def _ratio_bin(ratio):
+    """ratio 落在哪个桶：恰好等于边界时归上界那个桶，与 < 判档口径一致。"""
+    idx = bisect.bisect_right(TINY_RATIO_EDGES, ratio) - 1
+    if idx < 0:
+        return 0
+    return min(idx, len(TINY_RATIO_EDGES) - 2)
+
+
 def _ratio_histogram(ratios, edges=TINY_RATIO_EDGES):
-    """按 edges 分桶计数；恰好落在边界上的值归上界那个桶，与 < 判档口径一致。"""
+    """按 edges 分桶计数；边界值归上界桶，避免直方图与判档自相矛盾。"""
     counts = [0] * (len(edges) - 1)
     for r in ratios:
-        idx = bisect.bisect_right(edges, r) - 1
-        if idx < 0:
-            idx = 0
-        elif idx >= len(counts):
-            idx = len(counts) - 1
-        counts[idx] += 1
+        counts[_ratio_bin(r)] += 1
     return {'edges': list(edges), 'counts': counts}
+
+
+def report_with_exemptions(report, exempted_ratios):
+    """把刚「标记保留」的框并入报告：从三档与直方图移出、计入 exempt。
+
+    标记后重扫整库只为更新几个计数代价太高（大数据集会卡住 UI），
+    但报告停在旧数字会让标注员以为「保留」没生效。issue 自带 ratio，
+    所以这里做精准减法即可；分桶仍走 _ratio_bin，不复制阈值逻辑。
+
+    返回新 dict，不改入参 —— 调用方可能还持有旧引用。
+    """
+    if not isinstance(report, dict):
+        return report
+    updated = dict(report)
+    hist = report.get('histogram')
+    if isinstance(hist, dict):
+        updated['histogram'] = {'edges': list(hist.get('edges') or []),
+                                'counts': list(hist.get('counts') or [])}
+    counts = (updated.get('histogram') or {}).get('counts')
+    moved = 0
+    cfg = QUALITY_LINT_CONFIG
+    for ratio in (exempted_ratios or []):
+        if not isinstance(ratio, (int, float)) or not math.isfinite(ratio):
+            continue
+        moved += 1
+        if counts and 0 <= _ratio_bin(ratio) < len(counts):
+            counts[_ratio_bin(ratio)] = max(0, counts[_ratio_bin(ratio)] - 1)
+        if ratio < cfg['tiny_fail_ratio']:
+            updated['fail'] = max(0, _safe_int(updated.get('fail')) - 1)
+        elif ratio < cfg['tiny_warn_ratio']:
+            updated['warn'] = max(0, _safe_int(updated.get('warn')) - 1)
+        if ratio >= cfg['tiny_stable_ratio']:
+            updated['stable'] = max(0, _safe_int(updated.get('stable')) - 1)
+    if not moved:
+        return updated
+    measured = max(0, _safe_int(updated.get('measured')) - moved)
+    fail = _safe_int(updated.get('fail'))
+    warn = _safe_int(updated.get('warn'))
+    updated['measured'] = measured
+    # pass 由 measured 反推而不是相减，保证三档恒等于 measured
+    updated['pass'] = max(0, measured - fail - warn)
+    updated['exempt'] = _safe_int(updated.get('exempt')) + moved
+    updated['total'] = measured + updated['exempt']
+    return updated
 
 
 def collect_tiny_ratios(shapes, image_width, image_height):
@@ -627,6 +677,137 @@ def _remove_shapes_matching(json_path, boxes):
     if not _write_json(json_path, data):
         return 0, False
     return removed, True
+
+
+def _set_keep_flag(shape):
+    """就地给 shape 打上 tiny_keep，保留原有 flags；返回是否新打上的。"""
+    flags = shape.get('flags')
+    if not isinstance(flags, dict):
+        flags = {}
+        shape['flags'] = flags
+    if flags.get(TINY_KEEP_FLAG):
+        return False
+    flags[TINY_KEEP_FLAG] = True
+    return True
+
+
+def _mark_shapes_at_indices(json_path, indices):
+    """未加载图：按 shapes 索引写 flags.tiny_keep 并写回，保留其它字段。
+
+    返回 (marked, ok)。ok=False 表示读取/写入失败或索引全部越界
+    （说明磁盘与扫描结果已不一致，不能静默当成成功）。
+    已标记过的框算命中但不算新增，重复标记是幂等的。
+    """
+    index_set = set(indices or [])
+    if not index_set:
+        return 0, True
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        return 0, False
+    if not isinstance(data, dict) or not isinstance(data.get('shapes'), list):
+        return 0, False
+    shapes = data['shapes']
+    matched = changed = 0
+    for i in sorted(index_set):
+        if not (0 <= i < len(shapes)) or not isinstance(shapes[i], dict):
+            continue
+        matched += 1
+        if _set_keep_flag(shapes[i]):
+            changed += 1
+    if matched <= 0:
+        return 0, False
+    if changed and not _write_json(json_path, data):
+        return 0, False
+    return matched, True
+
+
+def _mark_shapes_matching(json_path, boxes):
+    """已加载图：按内容签名匹配磁盘 shape 后写标记，避免顺序不一致标错框。
+
+    内存里 box_index 指向内存列表，而磁盘 shapes 顺序可能不同（磁盘滞后），
+    直接按下标写会把豁免标到隔壁框上。返回 (matched, ok)。
+    文件不存在（内存独有）视为成功，由内存同步兜底。
+    """
+    pending = {}
+    for box in boxes or []:
+        sig = box_signature(box)
+        if sig is not None:
+            pending[sig] = pending.get(sig, 0) + 1
+    if not pending:
+        return 0, True
+    if not os.path.exists(json_path):
+        return 0, True
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        return 0, False
+    if not isinstance(data, dict) or not isinstance(data.get('shapes'), list):
+        return 0, False
+    matched = changed = 0
+    for shape in data['shapes']:
+        if not isinstance(shape, dict):
+            continue
+        sig = box_signature(shape)
+        if sig is None or pending.get(sig, 0) <= 0:
+            continue
+        pending[sig] -= 1
+        matched += 1
+        if _set_keep_flag(shape):
+            changed += 1
+    if matched <= 0:
+        return 0, False
+    if changed and not _write_json(json_path, data):
+        return 0, False
+    return matched, True
+
+
+def mark_tiny_keep(selected_issues, image_paths, memory_boxes=None):
+    """把选中的小目标问题标记为「保留」：写 flags.tiny_keep 到 sidecar 与内存。
+
+    返回 {'marked', 'images_changed', 'failed'}，failed 是路径列表。
+    只处理 TINY_KINDS 两类 —— 它们的豁免语义是"这个框就是有意这么小"，
+    与按 detail 字符串忽略不是一回事（框改 1px 后者就静默失配）。
+
+    内存与磁盘必须一起改：已加载图重扫时以内存为准，只写盘豁免不生效；
+    反之只写内存则重载后问题复现。磁盘写失败时不动内存，避免两边不一致。
+    """
+    memory_boxes = memory_boxes or {}
+    image_paths = list(image_paths or [])
+    result = {'marked': 0, 'images_changed': 0, 'failed': []}
+    per_image = {}
+    for issue in selected_issues or []:
+        if not isinstance(issue, dict) or issue.get('kind') not in TINY_KINDS:
+            continue
+        index = issue.get('image_index')
+        box_index = issue.get('box_index')
+        if not isinstance(index, int) or not (0 <= index < len(image_paths)):
+            continue
+        if not isinstance(box_index, int) or box_index < 0:
+            continue
+        per_image.setdefault(index, []).append(box_index)
+    for index in sorted(per_image):
+        path = image_paths[index]
+        json_path = f"{os.path.splitext(path)[0]}.json"
+        box_indices = sorted(set(per_image[index]))
+        targets = []
+        if index in memory_boxes:
+            memory = list(memory_boxes.get(index) or [])
+            targets = [memory[bi] for bi in box_indices
+                       if 0 <= bi < len(memory) and isinstance(memory[bi], dict)]
+            marked, ok = _mark_shapes_matching(json_path, targets)
+        else:
+            marked, ok = _mark_shapes_at_indices(json_path, box_indices)
+        if not ok:
+            result['failed'].append(path)
+            continue
+        for box in targets:
+            _set_keep_flag(box)
+        result['marked'] += marked or len(targets)
+        result['images_changed'] += 1
+    return result
 
 
 def _selected_removal_indices(shapes, selected, target_label):

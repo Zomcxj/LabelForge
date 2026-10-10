@@ -360,6 +360,8 @@ qtcore.Qt = type('Qt', (), {
     'Vertical': 2,
     'LeftDockWidgetArea': 1, 'RightDockWidgetArea': 2,
     'TopDockWidgetArea': 4, 'BottomDockWidgetArea': 8,
+    # item data 角色，取真实 Qt 的值；质检弹窗靠 UserRole 挂 issue
+    'DisplayRole': 0, 'EditRole': 2, 'ToolTipRole': 3, 'UserRole': 0x0100,
 })()
 qtcore.QPoint = type('QPoint', (), {'__init__': lambda self, x=0, y=0: None})
 qtcore.QPointF = type('QPointF', (), {'__init__': lambda self, x=0, y=0: None})
@@ -534,6 +536,8 @@ qtwidgets.QTableWidgetItem = type('QTableWidgetItem', (), {
     'data': lambda self, *a: None,
     'text': lambda self: '',
     'setText': lambda self, *a: None,
+    'setBackground': lambda self, *a: None,
+    'setToolTip': lambda self, *a: None,
 })
 qtwidgets.QHeaderView = type('QHeaderView', (), {
     'Stretch': 1, 'ResizeToContents': 2, 'Interactive': 0,

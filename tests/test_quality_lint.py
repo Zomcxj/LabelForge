@@ -1154,8 +1154,11 @@ def test_dialog_table_has_no_box_column_and_shows_two_labels():
     import inspect
     from pastelabel.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog.__init__)
-    assert "QTableWidget(0, 3)" in src
+    # 仍是"不要 Box 列"：四列是 框类型/类别/背景图/尺寸提示，没有坐标列。
+    # 第 4 列是小目标审核的提示文案落点（需求要求审核界面直接显示提示）。
+    assert "QTableWidget(0, 4)" in src
     assert '"Box"' not in src
+    assert "尺寸/提示" in src
     label_src = inspect.getsource(QualityLintDialog._issue_label_text)
     assert "label_a" in label_src and "label_b" in label_src
 
@@ -2052,6 +2055,535 @@ def test_tiny_report_drops_non_finite_ratios():
     assert report["pass"] == 1
     assert report["stable"] == 1
     assert sum(report["histogram"]["counts"]) == 1
+
+
+# ---- 「标记保留」：写 flags.tiny_keep 到 sidecar 与内存 ----
+
+def _tiny_issue(index, path, box_index, kind="tiny_unreachable"):
+    return {"kind": kind, "label": "wire", "box_index": box_index,
+            "ratio": 0.001, "detail": "0.10% W:3 H:3",
+            "image_index": index, "image_path": path}
+
+
+def test_mark_tiny_keep_writes_flag_to_sidecar(tmp_path):
+    from pastelabel.engine.quality_lint import mark_tiny_keep
+    img = _write_image_and_json(tmp_path, "m", [
+        {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
+         "shape_type": "rectangle"},
+        {"label": "car", "x": 100, "y": 0, "width": 80, "height": 80,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    result = mark_tiny_keep([_tiny_issue(0, img, 0)], [img])
+
+    assert result["marked"] == 1
+    assert result["images_changed"] == 1
+    assert result["failed"] == []
+    data = json.loads((tmp_path / "m.json").read_text(encoding="utf-8"))
+    assert data["shapes"][0]["flags"] == {"tiny_keep": True}
+    assert "flags" not in data["shapes"][1]      # 没选中的框不能被动到
+    assert data["imageWidth"] == 640             # 其它字段原样保留
+
+
+def test_mark_tiny_keep_preserves_existing_flags(tmp_path):
+    """贴图的 flags.paste 不能被覆盖掉，否则贴图标记丢失。"""
+    from pastelabel.engine.quality_lint import mark_tiny_keep
+    img = _write_image_and_json(tmp_path, "k", [
+        {"label": "logo", "x": 0, "y": 0, "width": 3, "height": 3,
+         "shape_type": "rectangle", "flags": {"paste": True}},
+    ], image_size=(640, 640))
+
+    mark_tiny_keep([_tiny_issue(0, img, 0)], [img])
+
+    shape = json.loads(
+        (tmp_path / "k.json").read_text(encoding="utf-8"))["shapes"][0]
+    assert shape["flags"] == {"paste": True, "tiny_keep": True}
+
+
+def test_mark_tiny_keep_is_idempotent(tmp_path):
+    """重复标记同一框不该报错，也不该重复计数成两次改动。"""
+    from pastelabel.engine.quality_lint import mark_tiny_keep
+    img = _write_image_and_json(tmp_path, "i", [
+        {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+    issue = _tiny_issue(0, img, 0)
+
+    mark_tiny_keep([issue], [img])
+    second = mark_tiny_keep([issue], [img])
+
+    assert second["failed"] == []
+    shape = json.loads(
+        (tmp_path / "i.json").read_text(encoding="utf-8"))["shapes"][0]
+    assert shape["flags"] == {"tiny_keep": True}
+
+
+def test_mark_tiny_keep_updates_memory_boxes(tmp_path):
+    """已加载图重扫时以内存为准，只写盘的话豁免不会生效。"""
+    from pastelabel.engine.quality_lint import mark_tiny_keep
+    img = _write_image_and_json(tmp_path, "mem", [
+        {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+    memory = {0: [{"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
+                   "shape_type": "rectangle"}]}
+
+    result = mark_tiny_keep([_tiny_issue(0, img, 0)], [img],
+                            memory_boxes=memory)
+
+    assert result["marked"] == 1
+    assert memory[0][0]["flags"] == {"tiny_keep": True}
+
+
+def test_mark_tiny_keep_matches_disk_by_signature_not_index(tmp_path):
+    """已加载图的 box_index 指向内存列表，磁盘顺序可能不同 —— 必须按签名匹配。
+
+    内存里目标框排在第 0 位，磁盘上排在第 1 位。若按下标写盘就会把
+    tiny_keep 标到旁边那个大框上，豁免错对象。
+    """
+    from pastelabel.engine.quality_lint import mark_tiny_keep
+    img = _write_image_and_json(tmp_path, "sig", [
+        {"label": "car", "x": 100, "y": 0, "width": 80, "height": 80,
+         "shape_type": "rectangle"},
+        {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+    memory = {0: [
+        {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
+         "shape_type": "rectangle"},
+        {"label": "car", "x": 100, "y": 0, "width": 80, "height": 80,
+         "shape_type": "rectangle"},
+    ]}
+
+    mark_tiny_keep([_tiny_issue(0, img, 0)], [img], memory_boxes=memory)
+
+    shapes = json.loads(
+        (tmp_path / "sig.json").read_text(encoding="utf-8"))["shapes"]
+    by_label = {s["label"]: s for s in shapes}
+    assert by_label["wire"]["flags"] == {"tiny_keep": True}
+    assert "flags" not in by_label["car"]
+
+
+def test_mark_tiny_keep_skips_other_kinds(tmp_path):
+    """只有两个小目标 kind 能「保留」，重复框之类没有这个语义。"""
+    from pastelabel.engine.quality_lint import mark_tiny_keep
+    img = _write_image_and_json(tmp_path, "o", [
+        {"label": "a", "x": 0, "y": 0, "width": 100, "height": 100,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    result = mark_tiny_keep(
+        [_tiny_issue(0, img, 0, kind="duplicate"),
+         _tiny_issue(0, img, 0, kind="out_of_bounds")], [img])
+
+    assert result["marked"] == 0
+    assert result["images_changed"] == 0
+    data = json.loads((tmp_path / "o.json").read_text(encoding="utf-8"))
+    assert "flags" not in data["shapes"][0]
+
+
+def test_mark_tiny_keep_reports_missing_sidecar(tmp_path):
+    from pastelabel.engine.quality_lint import mark_tiny_keep
+    img = tmp_path / "gone.png"
+    img.write_bytes(b"x")
+
+    result = mark_tiny_keep([_tiny_issue(0, str(img), 0)], [str(img)])
+
+    assert result["marked"] == 0
+    assert result["failed"] == [str(img)]
+
+
+def test_mark_tiny_keep_rejects_out_of_range_index(tmp_path):
+    """扫描结果与磁盘不一致时不能越界写，也不能静默当成成功。"""
+    from pastelabel.engine.quality_lint import mark_tiny_keep
+    img = _write_image_and_json(tmp_path, "r", [
+        {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    result = mark_tiny_keep([_tiny_issue(0, img, 9)], [img])
+
+    assert result["marked"] == 0
+    assert result["failed"] == [img]
+
+
+def test_marked_box_disappears_from_rescan(tmp_path):
+    """验收闭环：标记 → 重扫 → 问题消失且计入 exempt。"""
+    from pastelabel.engine.quality_lint import lint_dataset, mark_tiny_keep
+    img = _write_image_and_json(tmp_path, "loop", [
+        {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
+         "shape_type": "rectangle"},
+        {"label": "car", "x": 100, "y": 0, "width": 100, "height": 100,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    before = lint_dataset([img])
+    assert before["summary"]["tiny_unreachable"] == 1
+
+    mark_tiny_keep([dict(before["issues"][0])], [img])
+    after = lint_dataset([img])
+
+    assert after["issues"] == []
+    assert after["tiny_report"]["exempt"] == 1
+    assert after["tiny_report"]["fail"] == 0
+    assert after["tiny_report"]["pass"] == 1
+
+
+# ---- 质检弹窗：第 4 列提示 / 严重度着色 / 标记保留 / 报告区 ----
+
+def test_severity_of_tiny_kinds():
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    sev = QualityLintDialog._severity_of
+    assert sev({"kind": "tiny_unreachable"}) == "fail"
+    assert sev({"kind": "tiny_needs_p2"}) == "warn"
+    assert sev({"kind": "tiny_box"}) is None
+    assert sev({"kind": "out_of_bounds"}) is None
+    assert sev({}) is None
+    assert sev(None) is None
+
+
+def test_size_hint_column_shows_ratio_and_advice():
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    d = QualityLintDialog.__new__(QualityLintDialog)
+    fail = d._size_hint_text({"kind": "tiny_unreachable", "ratio": 0.0047})
+    assert fail.startswith("0.47%")
+    assert "滑窗" in fail
+    warn = d._size_hint_text({"kind": "tiny_needs_p2", "ratio": 0.0094})
+    assert warn.startswith("0.94%")
+    # 其它 kind 沿用 detail，第 4 列对它们不是新语义
+    assert d._size_hint_text(
+        {"kind": "duplicate", "detail": "IoU:0.90 #1"}) == "IoU:0.90 #1"
+
+
+def test_size_hint_survives_missing_or_bad_ratio():
+    """缺 ratio / NaN / None 都不能抛，UI 里一处异常会整表画不出来。"""
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    d = QualityLintDialog.__new__(QualityLintDialog)
+    assert d._size_hint_text({"kind": "tiny_needs_p2"})
+    assert d._size_hint_text({"kind": "tiny_needs_p2", "ratio": float("nan")})
+    assert d._size_hint_text({"kind": "tiny_needs_p2", "ratio": "bogus"})
+    assert d._size_hint_text(None) == ""
+
+
+def test_size_hint_distinguishes_the_two_tiers():
+    """两档建议必须不同，否则标注员看不出该裁剪放大还是只需 P2。
+
+    必须用相同的 ratio：文本前缀是百分比，若两档各取一个真实值，
+    百分比本身就不同，建议文案即使写成一样也照样"通过"。
+    """
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    d = QualityLintDialog.__new__(QualityLintDialog)
+    ratio = 0.00625
+    fail = d._size_hint_text({"kind": "tiny_unreachable", "ratio": ratio})
+    warn = d._size_hint_text({"kind": "tiny_needs_p2", "ratio": ratio})
+    assert fail != warn
+    assert "滑窗" in fail
+    assert "P2" in warn
+
+
+def test_tiny_report_text_uses_measured_as_denominator():
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    text = QualityLintDialog._tiny_report_text({
+        "measured": 200, "fail": 10, "warn": 30, "pass": 160,
+        "stable": 120, "exempt": 5, "total": 205})
+    assert "10" in text and "5.0%" in text       # 10/200，不是 10/205
+    assert "30" in text and "15.0%" in text
+    assert "160" in text and "80.0%" in text
+    assert "5" in text                           # 豁免单列
+
+
+def test_tiny_report_text_handles_empty_and_bad_input():
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    assert QualityLintDialog._tiny_report_text({"measured": 0})
+    assert QualityLintDialog._tiny_report_text({})
+    assert QualityLintDialog._tiny_report_text(None) == ""
+
+
+def test_context_menu_gives_keep_not_detail_ignore_for_tiny_kinds():
+    """新 kind 的 detail 含实时百分比，按 detail 忽略改框即失配。
+
+    所以这两类只给「标记保留」（写 flags，跟框走）与「忽略此类」（整类，
+    detail 无关），不给基于 detail 的「忽略此项」。
+    """
+    import inspect
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    src = inspect.getsource(QualityLintDialog._on_context_menu)
+    assert "TINY_KINDS" in src
+    assert "mark_keep_requested" in src
+
+
+def test_dialog_exposes_mark_keep_signal():
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    assert hasattr(QualityLintDialog, "mark_keep_requested")
+
+
+def _fake_table_env(monkeypatch):
+    """给弹窗注入记录型假表格/假 item/记录型 QColor。
+
+    conftest 把 PyQt5 整个 mock 掉：QTableWidgetItem 记不住 text/背景，
+    QColor.name() 恒返回同一个值，所以底色只能靠"构造时传了什么颜色串"
+    来区分 —— 光比实例身份没用，两档各调一次 QColor 就是两个不同实例。
+    弹窗里是模块级引用，必须 patch 模块属性才生效。
+    """
+    from pastelabel.ui import quality_lint_dialog as mod
+
+    class _Item:
+        def __init__(self, text=""):
+            self.text = str(text)
+            self.bg = None
+            self.tooltip = None
+            self.role_data = None
+
+        def setBackground(self, color):
+            self.bg = color
+
+        def setToolTip(self, tip):
+            self.tooltip = tip
+
+        def setData(self, role, value):
+            self.role_data = value
+
+    class _Table:
+        def __init__(self):
+            self.cells = {}
+            self.rows = 0
+
+        def setRowCount(self, n):
+            self.rows = n
+
+        def setItem(self, row, col, item):
+            self.cells[(row, col)] = item
+
+        def item(self, row, col):
+            return self.cells.get((row, col))
+
+    class _Color:
+        """记住构造参数，测试才能断言用的是 danger_light 而不是 warning_light。"""
+        def __init__(self, spec=None):
+            self.spec = spec
+
+        def name(self):
+            return str(self.spec)
+
+    monkeypatch.setattr(mod, "QTableWidgetItem", _Item)
+    monkeypatch.setattr(mod, "QColor", _Color)
+    dialog = mod.QualityLintDialog.__new__(mod.QualityLintDialog)
+    dialog.table = _Table()
+    return dialog, dialog.table
+
+
+def test_dialog_paints_severity_rows(monkeypatch):
+    """需求要求"高亮"：🔴 红底、🟡 黄底，不能只靠文字。"""
+    from pastelabel.ui.theme import ThemeManager
+    dialog, table = _fake_table_env(monkeypatch)
+    theme = ThemeManager.get_theme()
+    issues = [
+        {"kind": "tiny_unreachable", "label": "wire", "ratio": 0.0047,
+         "image_path": "a.png"},
+        {"kind": "tiny_needs_p2", "label": "dot", "ratio": 0.0094,
+         "image_path": "b.png"},
+        {"kind": "out_of_bounds", "label": "cat", "detail": "(1,1,9,9) vs 5x5",
+         "image_path": "c.png"},
+    ]
+    dialog._issues = issues
+
+    dialog._populate_table()
+
+    assert table.rows == 3
+    # 第 4 列确实是提示文案，不是坐标
+    assert table.item(0, 3).text.startswith("0.47%")
+    assert "滑窗" in table.item(0, 3).text
+    assert table.item(1, 3).text.startswith("0.94%")
+    # 🔴/🟡 行四格都有底色，且必须取自对应严重度的主题色；无关 kind 不着色
+    for col in range(4):
+        assert table.item(0, col).bg.name() == theme['danger_light']
+        assert table.item(1, col).bg.name() == theme['warning_light']
+        assert table.item(2, col).bg is None
+    assert theme['danger_light'] != theme['warning_light']
+    # 非小目标 kind 的第 4 列沿用 detail
+    assert table.item(2, 3).text == "(1,1,9,9) vs 5x5"
+    # 提示列有 tooltip，列宽不够时能悬停看全文
+    assert table.item(0, 3).tooltip.startswith("0.47%")
+    # 每个格子都挂着 issue，双击跳图/右键菜单靠它
+    assert table.item(0, 0).role_data is issues[0]
+
+
+def test_size_hint_handles_issue_without_ratio_gracefully_in_table(monkeypatch):
+    """ratio 缺失时第 4 列退化成纯建议文字，不能让整表画不出来。"""
+    dialog, table = _fake_table_env(monkeypatch)
+    dialog._issues = [{"kind": "tiny_unreachable", "label": "wire",
+                       "image_path": "a.png"}]
+
+    dialog._populate_table()
+
+    assert "滑窗" in table.item(0, 3).text
+    assert "%" not in table.item(0, 3).text
+
+
+def test_dialog_shows_report_area():
+    import inspect
+    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    src = inspect.getsource(QualityLintDialog.set_result)
+    assert "tiny_report" in src
+    init_src = inspect.getsource(QualityLintDialog.__init__)
+    assert "HealthBarChart" in init_src
+
+
+def test_report_with_exemptions_moves_counts_not_just_subtracts():
+    """标记保留后报告不能停在旧数字，否则标注员以为没生效。"""
+    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
+    base = tiny_report([0.004, 0.009, 0.5, 0.6], 0)
+    assert (base["fail"], base["warn"], base["pass"]) == (1, 1, 2)
+
+    updated = report_with_exemptions(base, [0.004])
+
+    assert updated["fail"] == 0
+    assert updated["measured"] == 3
+    assert updated["exempt"] == 1
+    assert updated["total"] == 4
+    assert updated["fail"] + updated["warn"] + updated["pass"] == 3
+
+
+def test_report_with_exemptions_recomputes_pass_when_exempting_a_passing_box():
+    """豁免的是"可通过"的框时，pass 必须跟着降，不能沿用旧值。
+
+    只测豁免 🔴 框看不出区别（pass 本来就不变），三档恒等式会碰巧成立。
+    这条专门豁免一个通过档的框，逼出"pass 必须由 measured 反推"。
+    """
+    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
+    base = tiny_report([0.004, 0.009, 0.5, 0.6], 0)
+    assert (base["fail"], base["warn"], base["pass"], base["stable"]) == (1, 1, 2, 2)
+
+    updated = report_with_exemptions(base, [0.5])
+
+    assert updated["measured"] == 3
+    assert updated["fail"] == 1
+    assert updated["warn"] == 1
+    assert updated["pass"] == 1          # 0.6 仍在通过档，0.5 已豁免
+    assert updated["stable"] == 1
+    assert updated["exempt"] == 1
+    assert updated["fail"] + updated["warn"] + updated["pass"] == 3
+
+
+def test_report_with_exemptions_does_not_mutate_input():
+    """调用方可能还持有旧 dict 引用，就地改会让两份报告都变。"""
+    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
+    base = tiny_report([0.004, 0.5], 0)
+    before = {"counts": list(base["histogram"]["counts"]),
+              "fail": base["fail"], "measured": base["measured"],
+              "pass": base["pass"]}
+
+    updated = report_with_exemptions(base, [0.004, 0.5])
+
+    assert base["histogram"]["counts"] == before["counts"]
+    assert base["fail"] == before["fail"]
+    assert base["measured"] == before["measured"]
+    assert base["pass"] == before["pass"]
+    assert updated is not base
+    assert updated["histogram"] is not base["histogram"]
+
+
+def test_report_with_exemptions_updates_histogram_bin():
+    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
+    base = tiny_report([0.004], 0)
+    assert base["histogram"]["counts"][1] == 1     # 0.4% 落 [0.3125%, 0.625%)
+
+    updated = report_with_exemptions(base, [0.004])
+
+    assert updated["histogram"]["counts"][1] == 0
+    assert sum(updated["histogram"]["counts"]) == 0
+
+
+def test_report_with_exemptions_clamps_at_zero():
+    """报告与实际不一致时也不能算出负数，UI 会直接显示出来。"""
+    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
+    base = tiny_report([], 0)
+    updated = report_with_exemptions(base, [0.001, 0.002])
+    assert updated["fail"] == 0
+    assert updated["measured"] == 0
+    assert updated["pass"] == 0
+
+
+def test_report_with_exemptions_ignores_bad_ratios():
+    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
+    base = tiny_report([0.004], 0)
+    updated = report_with_exemptions(
+        base, [float("nan"), "bogus", None])
+    assert updated["fail"] == 1
+    assert updated["measured"] == 1
+    assert updated["exempt"] == 0
+
+
+def test_report_with_exemptions_noop_returns_equivalent():
+    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
+    base = tiny_report([0.004], 0)
+    assert report_with_exemptions(base, [])["fail"] == 1
+    assert report_with_exemptions(None, [0.004]) is None
+
+
+def test_mixin_wires_mark_keep_to_sidecar_write():
+    import inspect
+    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    src = inspect.getsource(QualityLintMixin._open_quality_lint)
+    assert "mark_keep_requested" in src
+    handler = inspect.getsource(QualityLintMixin._mark_lint_tiny_keep)
+    assert "mark_tiny_keep" in handler
+    # 已加载图重扫以内存为准，必须把内存框一起刷新
+    assert "detection_boxes" in handler
+
+
+def test_i18n_small_target_audit_terms():
+    from pastelabel.ui.i18n import _strings
+    for key in (
+            "小目标不可检出", "小目标需放大",
+            "尺寸/提示", "小目标可检测性", "检测框",
+            "不可检出", "需放大", "可通过", "稳定检出",
+            "已标记保留", "标记保留", "标记保留选中的 {n} 项", "标记失败",
+            "未找到可统计的检测框", "min(w,h) 占原图比例", "检测框数",
+            "无分布数据", "常规配置检不到，建议提高分辨率或滑窗切片",
+            "需 P2 检测头或裁剪放大",
+            "存在常规配置检不到的目标：建议提高训练分辨率或启用滑窗切片；"
+            "确有意的细长目标可右键「标记保留」"):
+        assert key in _strings["zh"], key
+        assert key in _strings["en"], key
+
+
+def test_every_literal_tr_key_in_lint_ui_is_translated():
+    """扫描质检 UI 源码里的 tr("字面量")，逐条验证中英词典都有。
+
+    显式列表测试会漏：新加文案时忘了同步 i18n，中文环境一切正常，
+    切英文才显示中文。这条从源码自动提取，以后加文案不需要再维护列表。
+    KIND_LABELS 的中文名也走 tr()，一并覆盖。
+
+    用 ast 而不是正则：源码里的长文案常写成跨行相邻字面量（隐式拼接），
+    正则只会截到第一段，提取出词典里根本不存在的"半个键"。
+    ast 会把相邻字面量合并成一个 Constant，正好是运行时真正的键。
+    """
+    import ast
+    from pathlib import Path
+    from pastelabel.ui.i18n import _strings
+    from pastelabel.engine.quality_lint import KIND_LABELS
+    root = Path(__file__).resolve().parents[1] / "pastelabel"
+    sources = [
+        root / "ui" / "quality_lint_dialog.py",
+        root / "ui" / "mixins" / "quality_lint.py",
+    ]
+    keys = {v for v in KIND_LABELS.values()}
+    for path in sources:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            if not (isinstance(func, ast.Name) and func.id == "tr"):
+                continue
+            arg = node.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                keys.add(arg.value)
+    assert len(keys) > 30, f"扫描到的键异常偏少，提取逻辑可能失效: {len(keys)}"
+    for key in sorted(keys):
+        assert key in _strings["zh"], f"zh 缺: {key}"
+        assert key in _strings["en"], f"en 缺: {key}"
 
 
 def test_kind_labels_cover_new_tiny_kinds():

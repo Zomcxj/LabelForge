@@ -70,11 +70,52 @@ class QualityLintMixin:
         dialog.delete_requested.connect(
             lambda items, target, d=dialog:
             self._delete_cross_label_overlaps(d, items, target))
+        dialog.mark_keep_requested.connect(
+            lambda items, d=dialog: self._mark_lint_tiny_keep(d, items))
         dialog.rejected.connect(lambda w=worker: self._cleanup_lint_worker(w))
         self._lint_worker = worker
         self._lint_dialog = dialog
         worker.start()
         dialog.show()
+
+    def _mark_lint_tiny_keep(self, dialog, issues):
+        """标记保留：写 flags.tiny_keep 到 sidecar 与内存，再把问题从弹窗移走。
+
+        与「忽略」不同，豁免跟着框走（存在 JSON 里），框改尺寸仍生效；
+        磁盘与内存必须一起改，否则已加载图重扫时以内存为准，豁免不生效。
+        """
+        issues = [i for i in (issues or []) if i.get('kind')]
+        if not issues:
+            return
+        from ...engine.quality_lint import mark_tiny_keep, report_with_exemptions
+        memory_boxes = {
+            idx: list(boxes) for idx, boxes in
+            (getattr(self, 'detection_boxes_dict', None) or {}).items()
+            if boxes
+        }
+        result = mark_tiny_keep(
+            issues, list(getattr(self, 'background_images', None) or []),
+            memory_boxes=memory_boxes)
+        failed = result.get('failed') or []
+        if failed:
+            self.status_label.setText(tr("标记失败") + f": {len(failed)}")
+        # 内存框引用是 detection_boxes_dict 里的同一批 dict，mark_tiny_keep
+        # 已就地打上 flags；当前显示图需要重取，画布选中态不变。
+        current = getattr(self, 'current_background_index', -1)
+        if isinstance(current, int) and current in memory_boxes:
+            self.detection_boxes = list(memory_boxes.get(current) or [])
+        # 报告停在旧数字会让人以为没生效：issue 自带 ratio，做精准减法
+        report = getattr(dialog, '_tiny_report', None)
+        ratios = [i.get('ratio') for i in issues if i.get('ratio') is not None]
+        if isinstance(report, dict) and report and ratios:
+            dialog._tiny_report = report_with_exemptions(report, ratios)
+            dialog._update_tiny_report()
+        dialog._remove_issues(issues)
+        marked = result.get('marked') or 0
+        text = (tr("已标记保留") + f" · {marked}") if not failed else tr("标记失败")
+        if not failed and self._maybe_advance_lint_issue(dialog, set_status=False):
+            text += f" · {tr('已跳到下一张问题图')}"
+        self.status_label.setText(text)
 
     def _ignore_lint_issue(self, dialog, issue, scope):
         """记录忽略规则：scope='kind' 整类忽略，'item' 仅此 detail。"""

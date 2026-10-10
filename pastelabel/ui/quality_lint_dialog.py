@@ -2,8 +2,10 @@
 
 非模态（show 而非 exec_），打开后可继续操作主窗口。
 """
+import math
 import os
 
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QProgressBar, QMenu,
@@ -14,7 +16,17 @@ from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from .dialog_helpers import center_on_parent
 from .i18n import t as tr
 from .theme import ThemeManager
-from ..engine.quality_lint import KIND_LABELS
+from .widgets.health_charts import HealthBarChart
+from ..engine.quality_lint import KIND_LABELS, TINY_KINDS
+
+
+def _safe_num(value):
+    """报告里的数一律容错：缺失/NaN/Inf/字符串都归 0，UI 不该因为脏数据崩。"""
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return num if math.isfinite(num) else 0.0
 
 
 class QualityLintDialog(QDialog):
@@ -22,6 +34,7 @@ class QualityLintDialog(QDialog):
     ignore_requested = pyqtSignal(object, str)   # (issue, scope: 'item' | 'kind')
     ignore_many_requested = pyqtSignal(object, str)  # (issues list, scope)
     delete_requested = pyqtSignal(object, str)  # (选中的问题列表, 目标类别)
+    mark_keep_requested = pyqtSignal(object)  # 小目标问题列表：写 flags.tiny_keep
 
     def __init__(self, parent=None, total=0):
         super().__init__(parent)
@@ -29,6 +42,7 @@ class QualityLintDialog(QDialog):
         self._all_issues = []
         self._kind_filter = None
         self._scanned_images = 0
+        self._tiny_report = None
         self.setWindowTitle(tr("标注质检"))
         self.setMinimumSize(720, 580)
         t = ThemeManager.get_theme()
@@ -69,14 +83,26 @@ class QualityLintDialog(QDialog):
         self.summary_label = QLabel("")
         self.summary_label.setWordWrap(True)
         layout.addWidget(self.summary_label)
+        # 小目标可检测性报告：三档占比 + min(w,h) 分布。审核只看质检记录，
+        # 不在画布上标记（用户明确要求），所以结论集中在这里给。
+        self.tiny_report_label = QLabel("")
+        self.tiny_report_label.setWordWrap(True)
+        self.tiny_report_label.setVisible(False)
+        layout.addWidget(self.tiny_report_label)
+        self.tiny_chart = HealthBarChart(self, height=120)
+        self.tiny_chart.setVisible(False)
+        layout.addWidget(self.tiny_chart)
         self.hint_label = QLabel(
             f"{tr('双击跳转到问题图')} · {tr('右键忽略')} · {tr('Ctrl/Shift 多选')}")
         self.hint_label.setStyleSheet("font-size: 11px; opacity: 0.7;")
         layout.addWidget(self.hint_label)
-        self.table = QTableWidget(0, 3)
+        self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(
-            [tr("框类型"), tr("类别"), tr("背景图:")])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            [tr("框类型"), tr("类别"), tr("背景图:"), tr("尺寸/提示")])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        # 提示列是审核时最常读的内容，给它固定宽度免得被前三列挤没
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -98,8 +124,10 @@ class QualityLintDialog(QDialog):
         if result.get('error'):
             self._all_issues = []
             self._scanned_images = 0
+            self._tiny_report = None
             self._rebuild_filter_combo()
             self._apply_filter()
+            self._update_tiny_report()
             self.progress.setValue(self.progress.maximum())
             self.status_label.setText(tr("扫描失败"))
             self.summary_label.setText(tr("扫描失败"))
@@ -107,11 +135,99 @@ class QualityLintDialog(QDialog):
         summary = result.get('summary') or {}
         self._all_issues = list(result.get('issues') or [])
         self._scanned_images = int(summary.get('scanned_images') or 0)
+        self._tiny_report = result.get('tiny_report') or {}
         self._rebuild_filter_combo()
         self._apply_filter()
+        self._update_tiny_report()
         self.status_label.setText("")
         self.progress.setValue(self.progress.maximum())
         self._update_summary(summary)
+
+    @staticmethod
+    def _tiny_report_text(report):
+        """报告文字：三档计数与占比 + 稳定线 + 已豁免数。
+
+        占比分母用 measured（未豁免的矩形框数），豁免单列 —— 否则
+        标注员点几次「保留」就会看到通过率虚高，报告失去参考价值。
+        """
+        if not isinstance(report, dict):
+            return ""
+        measured = _safe_num(report.get('measured'))
+        exempt = _safe_num(report.get('exempt'))
+        total = _safe_num(report.get('total')) or (measured + exempt)
+        if total <= 0:
+            return tr("未找到可统计的检测框")
+
+        def _part(label, key):
+            n = _safe_num(report.get(key))
+            pct = (n / measured * 100.0) if measured > 0 else 0.0
+            return f"{tr(label)} {n} ({pct:.1f}%)"
+
+        parts = [tr("小目标可检测性") + f" · {tr('检测框')} {measured}"]
+        parts.append(_part("不可检出", 'fail'))
+        parts.append(_part("需放大", 'warn'))
+        parts.append(_part("可通过", 'pass'))
+        stable = _safe_num(report.get('stable'))
+        parts.append(f"{tr('稳定检出')} {stable}")
+        if exempt:
+            parts.append(f"{tr('已标记保留')} {exempt}")
+        text = " | ".join(parts)
+        if _safe_num(report.get('fail')) > 0:
+            text += "\n" + tr(
+                "存在常规配置检不到的目标：建议提高训练分辨率或启用滑窗切片；"
+                "确有意的细长目标可右键「标记保留」")
+        return text
+
+    def _update_tiny_report(self):
+        report = getattr(self, '_tiny_report', None)
+        has = isinstance(report, dict) and bool(report)
+        self.tiny_report_label.setVisible(has)
+        self.tiny_chart.setVisible(has)
+        if not has:
+            return
+        self.tiny_report_label.setText(self._tiny_report_text(report))
+        hist = report.get('histogram') or {}
+        edges = list(hist.get('edges') or [])
+        counts = list(hist.get('counts') or [])
+        if len(edges) >= 2 and counts:
+            self.tiny_chart.set_histogram(
+                edges, counts,
+                xlabel=tr("min(w,h) 占原图比例"),
+                ylabel=tr("检测框数"))
+        else:
+            self.tiny_chart.set_placeholder(tr("无分布数据"))
+
+    @staticmethod
+    def _severity_of(issue):
+        """'fail' / 'warn' / None：只有两个归一化档参与着色。
+
+        tiny_box 是绝对像素的"退化框"判断，与训练可行性不是一回事，
+        不给红黄底色，避免和审核结论混为一谈。
+        """
+        if not isinstance(issue, dict):
+            return None
+        kind = issue.get('kind')
+        if kind == 'tiny_unreachable':
+            return 'fail'
+        if kind == 'tiny_needs_p2':
+            return 'warn'
+        return None
+
+    def _size_hint_text(self, issue):
+        """第 4 列：小目标两档给"占比 + 建议"，其它 kind 沿用 detail。"""
+        if not isinstance(issue, dict):
+            return ""
+        kind = issue.get('kind')
+        if kind not in TINY_KINDS:
+            return str(issue.get('detail') or '')
+        ratio = issue.get('ratio')
+        pct = None
+        if isinstance(ratio, (int, float)) and math.isfinite(ratio):
+            pct = f"{ratio * 100.0:.2f}%"
+        advice = (tr("常规配置检不到，建议提高分辨率或滑窗切片")
+                  if kind == 'tiny_unreachable'
+                  else tr("需 P2 检测头或裁剪放大"))
+        return f"{pct} · {advice}" if pct else advice
 
     def _update_summary(self, summary):
         parts = []
@@ -207,16 +323,30 @@ class QualityLintDialog(QDialog):
 
     def _populate_table(self):
         self.table.setRowCount(len(self._issues))
+        t = ThemeManager.get_theme()
+        # 🔴 红底 / 🟡 黄底：审核时靠底色扫，不必逐行读文字
+        severity_bg = {
+            'fail': QColor(t['danger_light']),
+            'warn': QColor(t['warning_light']),
+        }
         for row, issue in enumerate(self._issues):
             items = [
                 tr(KIND_LABELS.get(issue.get('kind'), issue.get('kind', ''))),
                 self._issue_label_text(issue),
                 os.path.basename(issue.get('image_path', '') or ''),
+                self._size_hint_text(issue),
             ]
+            bg = severity_bg.get(self._severity_of(issue))
             for col, text in enumerate(items):
                 item = QTableWidgetItem(str(text))
                 item.setData(Qt.UserRole, issue)
+                if bg is not None:
+                    item.setBackground(bg)
                 self.table.setItem(row, col, item)
+            # 提示列文字最长且最常被读，列宽受限时悬停可看全文
+            hint_item = self.table.item(row, 3)
+            if hint_item is not None:
+                hint_item.setToolTip(str(items[3]))
 
     def _selected_issues(self):
         rows = sorted({i.row() for i in self.table.selectedIndexes()})
@@ -298,8 +428,9 @@ class QualityLintDialog(QDialog):
         if issue not in selected:
             selected = [issue]
         menu = QMenu(self)
-        kind_label = tr(KIND_LABELS.get(issue.get('kind'), issue.get('kind', '')))
-        if issue.get('kind') == 'cross_label_overlap':
+        kind = issue.get('kind')
+        kind_label = tr(KIND_LABELS.get(kind, kind or ''))
+        if kind == 'cross_label_overlap':
             cross_selected = [
                 i for i in selected if i.get('kind') == 'cross_label_overlap']
             labels = self._cross_labels_in(cross_selected)
@@ -314,12 +445,41 @@ class QualityLintDialog(QDialog):
                 menu.addAction(action)
             if labels:
                 menu.addSeparator()
+        if kind in TINY_KINDS:
+            # 小目标两类的 detail 里带实时比例与像素（"0.94% W:6 H:6"），
+            # 框改 1px 就失配，按 detail 忽略会静默失效。豁免只能走
+            # flags.tiny_keep（跟着框走），整类忽略则与 detail 无关，两者都保留。
+            tiny_selected = [i for i in selected if i.get('kind') in TINY_KINDS]
+            if len(tiny_selected) > 1:
+                text = tr("标记保留选中的 {n} 项").replace(
+                    "{n}", str(len(tiny_selected)))
+            else:
+                text = tr("标记保留")
+            keep = QAction(text, self)
+            keep.triggered.connect(
+                lambda _, items=tiny_selected:
+                self.mark_keep_requested.emit(items))
+            menu.addAction(keep)
+            ignore_kind = QAction(
+                tr("忽略此类问题").replace("{kind}", kind_label), self)
+            ignore_kind.triggered.connect(
+                lambda _, i=issue: self.ignore_requested.emit(i, 'kind'))
+            menu.addAction(ignore_kind)
+            menu.exec_(self.table.viewport().mapToGlobal(pos))
+            return
         if len(selected) > 1:
-            ignore_many = QAction(
-                tr("忽略选中的 {n} 项").replace("{n}", str(len(selected))), self)
-            ignore_many.triggered.connect(
-                lambda _, items=selected: self.ignore_many_requested.emit(items, 'item'))
-            menu.addAction(ignore_many)
+            # 多选忽略是按 detail 记规则，小目标两类的 detail 会变，
+            # 混在里面对它们无效，故先剔除，避免用户以为已豁免。
+            detail_selected = [
+                i for i in selected if i.get('kind') not in TINY_KINDS]
+            if len(detail_selected) > 1:
+                ignore_many = QAction(
+                    tr("忽略选中的 {n} 项").replace(
+                        "{n}", str(len(detail_selected))), self)
+                ignore_many.triggered.connect(
+                    lambda _, items=detail_selected:
+                    self.ignore_many_requested.emit(items, 'item'))
+                menu.addAction(ignore_many)
         ignore_kind = QAction(
             tr("忽略此类问题").replace("{kind}", kind_label), self)
         ignore_kind.triggered.connect(
