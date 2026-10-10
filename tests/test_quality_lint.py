@@ -1038,7 +1038,10 @@ def test_lint_image_shapes_skips_pairwise_over_limit():
         {"label": "cat", "x": 0, "y": 0, "width": 10, "height": 10}
         for _ in range(limit + 1)
     ]
-    issues = lint_image_shapes("a.png", shapes, 10000, 10000)
+    # 图取 500x500：10px 框占 2%，比例判为通过。这里要验的是"超框数就跳过
+    # 两两比对"，若沿用早先随手写的 10000x10000，每个框只占 0.1% 会被小目标
+    # 检查判成 🔴，501 条噪声会淹掉本测试真正断言的那一条。
+    issues = lint_image_shapes("a.png", shapes, 500, 500)
     assert [i["kind"] for i in issues] == ["skipped_pairwise"]
 
 
@@ -1875,3 +1878,255 @@ def test_i18n_scanned_images_key_has_en_translation():
     from pastelabel.ui.i18n import _strings
     assert _strings["zh"]["扫描图片"] == "扫描图片"
     assert _strings["en"]["扫描图片"] == "Scanned images"
+
+
+# ---- 小目标可检测性审核：min(w/W, h/H) 三档判据 ----
+# 640 图上阈值换算成像素正好是 4px / 8px / 16px，测试统一用 640 便于对齐。
+
+def test_tiny_unreachable_below_fail_ratio():
+    """3px = 0.47% < 0.625%：常规配置根本检不到。"""
+    assert {i["kind"] for i in lint_shapes([_box(w=3, h=3)], 640, 640)} == {
+        "tiny_unreachable"}
+
+
+def test_tiny_needs_p2_between_fail_and_warn():
+    """6px = 0.94%，落在 [0.625%, 1.25%)：需 P2 头或滑窗放大。"""
+    assert {i["kind"] for i in lint_shapes([_box(w=6, h=6)], 640, 640)} == {
+        "tiny_needs_p2"}
+
+
+def test_fail_ratio_boundary_belongs_to_warn_tier():
+    """正好 4px = 0.625% 是 🟡 不是 🔴（下界取闭区间）。"""
+    assert {i["kind"] for i in lint_shapes([_box(w=4, h=4)], 640, 640)} == {
+        "tiny_needs_p2"}
+
+
+def test_warn_ratio_boundary_passes_clean():
+    """正好 8px = 1.25% 通过；8 也不小于 min_box_side，两类都不报。"""
+    assert lint_shapes([_box(w=8, h=8)], 640, 640) == []
+
+
+def test_worse_axis_decides_ratio():
+    """1000x5 的电线：宽占 50% 很健康，高只占 0.5% → 取较差轴判 🔴。
+
+    这也是不能用 sqrt(w*h) 定级的原因：等效面积 70px 看着正常，实际厚度 5px。
+    """
+    assert {i["kind"] for i in
+            lint_shapes([_box(x=0, y=0, w=1000, h=5)], 2000, 1000)} == {
+        "tiny_unreachable"}
+
+
+def test_ratio_normalizes_per_axis_not_against_square():
+    """非方图按轴各比各的：宽比 W、高比 H，不能拿同一个分母。"""
+    # 10/1600 = 0.625% 正好踩 🟡 下界；若误用 W=800 当分母则是 1.25% 会通过
+    assert {i["kind"] for i in
+            lint_shapes([_box(x=0, y=0, w=40, h=10)], 800, 1600)} == {
+        "tiny_needs_p2"}
+    # 20/1600 = 1.25% 通过
+    assert lint_shapes([_box(x=0, y=0, w=40, h=20)], 800, 1600) == []
+
+
+def test_new_tier_suppresses_tiny_box_on_same_shape():
+    """640 图上 8px 恰好等于 1.25%，两类完全重叠 → 只报信息量更大的那条。"""
+    issues = lint_shapes([_box(w=3, h=3)], 640, 640)
+    assert [i["kind"] for i in issues] == ["tiny_unreachable"]
+
+
+def test_tiny_box_kept_when_ratio_says_healthy():
+    """小图上的退化框：200x200 上 5px 占 2.5% 比例健康，绝对像素仍可疑。"""
+    assert {i["kind"] for i in lint_shapes([_box(w=5, h=50)], 200, 200)} == {
+        "tiny_box"}
+
+
+def test_keypoint_never_reported_as_tiny_target():
+    """关键点宽高恒为 0，比例算出来是 0，不跳过会把每个关键点判成 🔴。
+
+    只断言不参与比例判档：孤立关键点本来就会被既有的 group_mismatch
+    报「无同组框」，那是另一码事，不该在这里被掩盖或误伤。
+    """
+    kp = {"label": "nose", "shape_type": "point", "points": [[5, 5]],
+          "x": 5, "y": 5, "width": 0, "height": 0}
+    kinds = {i["kind"] for i in lint_shapes([kp], 640, 640)}
+    assert "tiny_unreachable" not in kinds
+    assert "tiny_needs_p2" not in kinds
+    assert "tiny_box" not in kinds
+
+
+def test_polygon_skipped_by_ratio_check():
+    """只看 box：多边形的 bbox 不代表目标本身，不参与比例判档。"""
+    poly = {"label": "road", "shape_type": "polygon",
+            "points": [[0, 0], [3, 0], [3, 3]],
+            "x": 0, "y": 0, "width": 3, "height": 3}
+    kinds = {i["kind"] for i in lint_shapes([poly], 640, 640)}
+    assert "tiny_unreachable" not in kinds
+    assert "tiny_needs_p2" not in kinds
+
+
+def test_missing_image_size_falls_back_to_absolute_check_only():
+    """没有 imageWidth/Height 时比例无从算起，只保留绝对像素检查。"""
+    assert {i["kind"] for i in lint_shapes([_box(w=3, h=3)], 0, 0)} == {
+        "tiny_box"}
+
+
+def test_exempt_flag_silences_both_size_checks():
+    """标了「保留」→ 归一化与绝对像素两类尺寸问题都不再报。
+
+    1000x5 的电线同时命中 🔴 和 tiny_box，只豁免其一会让「保留」形同虚设。
+    """
+    wire = _box(x=0, y=0, w=1000, h=5, flags={"tiny_keep": True})
+    assert lint_shapes([wire], 2000, 1000) == []
+
+
+def test_exempt_flag_does_not_silence_other_kinds():
+    """豁免只管尺寸，越界这类真问题仍要报。"""
+    box = _box(x=-50, y=0, w=3, h=3, flags={"tiny_keep": True})
+    assert {i["kind"] for i in lint_shapes([box], 640, 640)} == {
+        "out_of_bounds"}
+
+
+def test_tiny_issue_carries_ratio_for_ui_column():
+    """第 4 列要直接显示百分比，不能让 UI 去反解 detail 字符串。"""
+    issues = lint_shapes([_box(w=6, h=6)], 640, 640)
+    assert issues[0]["ratio"] == 6 / 640
+
+
+def test_normalized_min_side_helper_returns_none_when_undefined():
+    from pastelabel.engine.quality_lint import normalized_min_side
+    assert normalized_min_side(_box(x=0, y=0, w=10, h=20), 100, 100) == 0.1
+    assert normalized_min_side(
+        {"shape_type": "point", "points": [[1, 1]]}, 100, 100) is None
+    assert normalized_min_side(_box(w=10, h=20), 0, 100) is None
+    assert normalized_min_side(_box(w=10, h=20), 100, 0) is None
+    assert normalized_min_side(_box(w=0, h=20), 100, 100) is None
+    assert normalized_min_side(_box(w=-4, h=20), 100, 100) is None
+    assert normalized_min_side("bogus", 100, 100) is None
+    assert normalized_min_side({}, 100, 100) is None
+    assert normalized_min_side(None, 100, 100) is None
+
+
+def test_kind_labels_cover_new_tiny_kinds():
+    from pastelabel.engine.quality_lint import KIND_LABELS
+    assert "tiny_unreachable" in KIND_LABELS
+    assert "tiny_needs_p2" in KIND_LABELS
+
+
+def test_tiny_report_counts_three_tiers(tmp_path):
+    from pastelabel.engine.quality_lint import lint_dataset
+    img = _write_image_and_json(tmp_path, "t", [
+        {"label": "a", "x": 0, "y": 0, "width": 3, "height": 3,
+         "shape_type": "rectangle"},
+        {"label": "b", "x": 100, "y": 0, "width": 6, "height": 6,
+         "shape_type": "rectangle"},
+        {"label": "c", "x": 200, "y": 0, "width": 20, "height": 20,
+         "shape_type": "rectangle"},
+        {"label": "d", "x": 300, "y": 0, "width": 40, "height": 40,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    report = lint_dataset([img])["tiny_report"]
+
+    assert report["total"] == 4
+    assert report["fail"] == 1        # 3px = 0.47%
+    assert report["warn"] == 1        # 6px = 0.94%
+    assert report["pass"] == 2        # 20px / 40px
+    assert report["stable"] == 2      # 都 >= 16px(2.5%)
+    assert report["exempt"] == 0
+
+
+def test_tiny_report_histogram_bins_are_decision_aligned(tmp_path):
+    """分桶边界必须压在 0.625%/1.25%/2.5% 上，等宽分桶会把决策区糊成一坨。"""
+    from pastelabel.engine.quality_lint import lint_dataset, TINY_RATIO_EDGES
+    assert 0.00625 in TINY_RATIO_EDGES
+    assert 0.0125 in TINY_RATIO_EDGES
+    assert 0.025 in TINY_RATIO_EDGES
+
+    img = _write_image_and_json(tmp_path, "h", [
+        {"label": "a", "x": 0, "y": 0, "width": 1, "height": 1,
+         "shape_type": "rectangle"},
+        {"label": "b", "x": 100, "y": 0, "width": 300, "height": 300,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    hist = lint_dataset([img])["tiny_report"]["histogram"]
+
+    assert hist["edges"] == list(TINY_RATIO_EDGES)
+    assert len(hist["counts"]) == len(TINY_RATIO_EDGES) - 1
+    assert sum(hist["counts"]) == 2
+    assert hist["counts"][0] == 1     # 1px = 0.156% 落 [0, 0.3125%)
+    assert hist["counts"][7] == 1     # 300px = 46.9% 落 [20%, 50%)
+
+
+def test_tiny_report_histogram_boundary_value_goes_to_upper_bin(tmp_path):
+    """正好踩在桶边界上的值归上界那个桶，必须与 < 判档口径一致。
+
+    4px/640 = 0.625% 正是 🟡 档下界，也得落进 🟡 桶 [0.625%, 1.25%)。
+    若归到下界那个桶，直方图会把"刚好不算 🔴"的框画进 🔴 区，
+    图形与判档自相矛盾 —— 这条只有在值恰好等于边界时才暴露。
+    """
+    from pastelabel.engine.quality_lint import lint_dataset
+    img = _write_image_and_json(tmp_path, "b", [
+        {"label": "a", "x": 0, "y": 0, "width": 4, "height": 4,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    hist = lint_dataset([img])["tiny_report"]["histogram"]
+
+    assert hist["counts"][2] == 1     # bin 2 = [0.625%, 1.25%) = 🟡 区
+    assert hist["counts"][1] == 0     # bin 1 = [0.3125%, 0.625%) = 🔴 区
+
+
+def test_tiny_report_counts_exempt_separately(tmp_path):
+    """豁免框单列，不混进三档占比，否则「保留」会虚增通过数。"""
+    from pastelabel.engine.quality_lint import lint_dataset
+    img = _write_image_and_json(tmp_path, "e", [
+        {"label": "wire", "x": 0, "y": 0, "width": 600, "height": 3,
+         "shape_type": "rectangle", "flags": {"tiny_keep": True}},
+        {"label": "car", "x": 0, "y": 100, "width": 100, "height": 100,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    report = lint_dataset([img])["tiny_report"]
+
+    assert report["exempt"] == 1
+    assert report["total"] == 2
+    assert report["measured"] == 1          # 占比分母只算未豁免的
+    assert report["fail"] == 0
+    assert report["pass"] == 1
+    assert report["fail"] + report["warn"] + report["pass"] == report["measured"]
+    assert sum(report["histogram"]["counts"]) == 1
+
+
+def test_tiny_report_present_even_when_no_issues(tmp_path):
+    """干净数据集也要有报告，否则直方图无从显示。"""
+    from pastelabel.engine.quality_lint import lint_dataset
+    img = _write_image_and_json(tmp_path, "ok", [
+        {"label": "car", "x": 0, "y": 0, "width": 100, "height": 100,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    result = lint_dataset([img])
+
+    assert result["issues"] == []
+    assert result["tiny_report"]["total"] == 1
+    assert result["tiny_report"]["pass"] == 1
+
+
+def test_tiny_report_on_empty_dataset(tmp_path):
+    from pastelabel.engine.quality_lint import lint_dataset
+    report = lint_dataset([])["tiny_report"]
+    assert report["total"] == 0
+    assert sum(report["histogram"]["counts"]) == 0
+
+
+def test_summary_initializes_new_tiny_kinds(tmp_path):
+    """UI 直接读 summary[kind]，键必须恒在（哪怕计数为 0）。"""
+    from pastelabel.engine.quality_lint import lint_dataset
+    img = _write_image_and_json(tmp_path, "s", [
+        {"label": "a", "x": 0, "y": 0, "width": 3, "height": 3,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    summary = lint_dataset([img])["summary"]
+
+    assert summary["tiny_unreachable"] == 1
+    assert summary["tiny_needs_p2"] == 0

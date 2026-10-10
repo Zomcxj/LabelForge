@@ -1,9 +1,10 @@
 """标注质检 lint：纯逻辑，无 Qt 控件依赖。
 
-检查项：越界框 / 超小框 / 重复框（同类高 IoU）/ 异类重叠（高 IoU）/
-近似名 / group 不一致。缺 sidecar / 空标注由背景图列表状态图标负责，
-质检不再上报。
+检查项：越界框 / 超小框 / 小目标不可检出 / 小目标需放大 / 重复框（同类高 IoU）/
+异类重叠（高 IoU）/ 近似名 / group 不一致。缺 sidecar / 空标注由背景图列表状态
+图标负责，质检不再上报。
 """
+import bisect
 import json
 import os
 import concurrent.futures
@@ -17,12 +18,23 @@ from ..core.utils import calculate_iou
 KIND_LABELS = {
     'out_of_bounds': '越界框',
     'tiny_box': '超小框',
+    'tiny_unreachable': '小目标不可检出',
+    'tiny_needs_p2': '小目标需放大',
     'duplicate': '重复框',
     'cross_label_overlap': '异类重叠',
     'similar_name': '近似名',
     'group_mismatch': 'group 不一致',
     'skipped_pairwise': '跳过两两比对',
 }
+
+#: 归一化短边比例的直方图分桶边界。刻意压在判档阈值上而不是等宽分桶：
+#: 数据集里大框占多数时，等宽桶会把 0~2.5% 的整个决策区糊进第一桶，
+#: 看不出"该不该上滑窗"。前两个桶是 🔴 区、第三个是 🟡 区、其余为 ✅。
+TINY_RATIO_EDGES = (0.0, 0.003125, 0.00625, 0.0125, 0.025,
+                    0.05, 0.1, 0.2, 0.5, 1.0)
+
+#: 标注员人工确认「保留」的标记，写在 LabelMe shape 的 flags 里
+TINY_KEEP_FLAG = 'tiny_keep'
 
 
 def _bbox(box):
@@ -49,6 +61,107 @@ def _bbox(box):
         return (float(x), float(y), float(x) + float(w), float(y) + float(h))
     except (TypeError, ValueError):
         return None
+
+
+def normalized_min_side(box, image_width, image_height):
+    """框短边占原图对应边的比例 min(w/W, h/H)；不可计算时返回 None。
+
+    只看矩形检测框：关键点宽高恒为 0（比例会算成 0，等于把每个关键点判死），
+    多边形的 bbox 也不代表目标本身，两者都跳过。等比缩放下这个比例在训练输入
+    里保持不变，所以能直接当"模型眼里目标有多大"用，不需要知道 imgsz。
+    """
+    if not isinstance(box, dict):
+        return None
+    if (box.get('shape_type') or 'rectangle') != 'rectangle':
+        return None
+    if not image_width or not image_height:
+        return None
+    rect = _bbox(box)
+    if rect is None:
+        return None
+    w = rect[2] - rect[0]
+    h = rect[3] - rect[1]
+    if w <= 0 or h <= 0:
+        return None
+    try:
+        return min(w / float(image_width), h / float(image_height))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def is_tiny_exempt(box):
+    """标注员已人工确认「保留」：电线、栏杆这类有意为之的细长目标。"""
+    if not isinstance(box, dict):
+        return False
+    flags = box.get('flags')
+    return bool(isinstance(flags, dict) and flags.get(TINY_KEEP_FLAG))
+
+
+def tiny_ratio_kind(ratio):
+    """比例 → 问题 kind；通过返回 None。下界取闭区间：正好踩线算较好的那档。"""
+    if ratio is None:
+        return None
+    if ratio < QUALITY_LINT_CONFIG['tiny_fail_ratio']:
+        return 'tiny_unreachable'
+    if ratio < QUALITY_LINT_CONFIG['tiny_warn_ratio']:
+        return 'tiny_needs_p2'
+    return None
+
+
+def _ratio_histogram(ratios, edges=TINY_RATIO_EDGES):
+    """按 edges 分桶计数；恰好落在边界上的值归上界那个桶，与 < 判档口径一致。"""
+    counts = [0] * (len(edges) - 1)
+    for r in ratios:
+        idx = bisect.bisect_right(edges, r) - 1
+        if idx < 0:
+            idx = 0
+        elif idx >= len(counts):
+            idx = len(counts) - 1
+        counts[idx] += 1
+    return {'edges': list(edges), 'counts': counts}
+
+
+def collect_tiny_ratios(shapes, image_width, image_height):
+    """(ratios, exempt_count)：报告口径，与 lint_shapes 判档共用同一套规则。"""
+    ratios, exempt = [], 0
+    for box in (shapes or []):
+        if not isinstance(box, dict):
+            continue
+        if (box.get('shape_type') or 'rectangle') != 'rectangle':
+            continue
+        if is_tiny_exempt(box):
+            exempt += 1
+            continue
+        r = normalized_min_side(box, image_width, image_height)
+        if r is not None:
+            ratios.append(r)
+    return ratios, exempt
+
+
+def tiny_report(ratios, exempt_count=0):
+    """数据集级小目标报告：三档计数 + 稳定线 + 分布直方图。
+
+    ratios 只含未被豁免的矩形框；三档占比的分母是 measured，exempt 单列，
+    这样「保留」不会虚增通过数。total = measured + exempt = 矩形框总数。
+    """
+    cfg = QUALITY_LINT_CONFIG
+    fail_r = cfg['tiny_fail_ratio']
+    warn_r = cfg['tiny_warn_ratio']
+    stable_r = cfg['tiny_stable_ratio']
+    ratios = [r for r in (ratios or []) if isinstance(r, (int, float))]
+    fail = sum(1 for r in ratios if r < fail_r)
+    warn = sum(1 for r in ratios if fail_r <= r < warn_r)
+    exempt = int(exempt_count or 0)
+    return {
+        'total': len(ratios) + exempt,
+        'measured': len(ratios),
+        'fail': fail,
+        'warn': warn,
+        'pass': len(ratios) - fail - warn,
+        'stable': sum(1 for r in ratios if r >= stable_r),
+        'exempt': exempt,
+        'histogram': _ratio_histogram(ratios),
+    }
 
 
 def lint_shapes(shapes, image_width, image_height, label_index=None):
@@ -81,6 +194,23 @@ def lint_shapes(shapes, image_width, image_height, label_index=None):
             continue
         w = rect[2] - rect[0]
         h = rect[3] - rect[1]
+        if is_tiny_exempt(box):
+            # 人工确认保留：两类尺寸问题都不再报。1000x5 的电线会同时命中
+            # 归一化 🔴 和 tiny_box，只豁免其一会让「保留」形同虚设。
+            # 越界/重复等在别的循环里判，不受这里影响。
+            continue
+        ratio = normalized_min_side(box, image_width, image_height)
+        kind = tiny_ratio_kind(ratio)
+        if kind is not None:
+            # 640 输入下 8px 恰好等于 1.25%，归一化档与 tiny_box 完全重叠。
+            # 归一化结论与分辨率无关、信息量更大，故命中时不再重复报 tiny_box；
+            # 只有比例判为通过、但绝对像素仍可疑时（如小图上的退化框）才报后者。
+            issues.append({
+                'kind': kind, 'label': box.get('label', ''),
+                'box_index': i, 'ratio': ratio,
+                'detail': f"{ratio * 100:.2f}% W:{w:.0f} H:{h:.0f}",
+            })
+            continue
         if min(w, h) < min_side:
             issues.append({
                 'kind': 'tiny_box', 'label': box.get('label', ''),
@@ -316,7 +446,7 @@ def lint_single_image(index, path, memory_boxes=None):
 
 def lint_dataset(image_paths, memory_boxes=None, progress_cb=None,
                  is_interrupted=None):
-    """扫描数据集，返回 {'issues': [...], 'summary': {...}}。
+    """扫描数据集，返回 {'issues': [...], 'summary': {...}, 'tiny_report': {...}}。
 
     memory_boxes: {index: [box,...]}，已加载图以内存为准。
     """
@@ -326,15 +456,20 @@ def lint_dataset(image_paths, memory_boxes=None, progress_cb=None,
     summary = {
         'scanned_images': 0,
         'out_of_bounds': 0, 'tiny_box': 0, 'duplicate': 0,
+        'tiny_unreachable': 0, 'tiny_needs_p2': 0,
         'cross_label_overlap': 0, 'similar_name': 0, 'group_mismatch': 0,
         'skipped_pairwise': 0,
     }
+    tiny_ratios = []
+    tiny_exempt = 0
     total = len(image_paths)
     done = 0
 
     def _one(index, path):
         shapes, img_w, img_h = image_shapes_for_lint(index, path, memory_boxes)
-        return index, path, shapes, img_w, img_h
+        # 报告要的比例在 worker 线程里顺手算掉：shapes 已在手，零额外 IO
+        ratios, exempt = collect_tiny_ratios(shapes, img_w, img_h)
+        return index, path, shapes, img_w, img_h, ratios, exempt
 
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=8)
     interrupted = False
@@ -344,8 +479,11 @@ def lint_dataset(image_paths, memory_boxes=None, progress_cb=None,
             if is_interrupted and is_interrupted():
                 interrupted = True
                 break
-            index, path, shapes, img_w, img_h = future.result()
+            (index, path, shapes, img_w, img_h,
+             ratios, exempt) = future.result()
             done += 1
+            tiny_ratios.extend(ratios)
+            tiny_exempt += exempt
             for issue in lint_image_shapes(path, shapes, img_w, img_h):
                 issue['image_index'] = index
                 issue['image_path'] = path
@@ -361,7 +499,8 @@ def lint_dataset(image_paths, memory_boxes=None, progress_cb=None,
     finally:
         # 中断时放弃排队中的读盘任务，避免 wait() 被未开始的 future 拖住
         pool.shutdown(wait=not interrupted, cancel_futures=interrupted)
-    return {'issues': issues, 'summary': summary}
+    return {'issues': issues, 'summary': summary,
+            'tiny_report': tiny_report(tiny_ratios, tiny_exempt)}
 
 
 class QualityLintWorker(QThread):

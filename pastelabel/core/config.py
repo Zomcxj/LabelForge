@@ -219,6 +219,12 @@ QUALITY_LINT_CONFIG = {
     'cross_iou': 0.85,          # 异类框重叠判定 IoU 阈值
     'name_edit_distance': 0,    # 近似名编辑距离阈值（0=仅大小写/空白差异，避免业务命名误报）
     'max_boxes_pairwise': 500,  # 超过此框数跳过两两比对
+    # 小目标可检测性：min(w/W, h/H) 归一化短边比例分档。等比缩放下这个比例
+    # 在训练输入里保持不变，可直接当"模型眼里目标有多大"用。三个数值分别
+    # 对应 640 输入下的 4px / 8px / 16px。
+    'tiny_fail_ratio': 0.00625,   # 低于此值：常规配置检不到（🔴）
+    'tiny_warn_ratio': 0.0125,    # 低于此值：需 P2 头或滑窗放大（🟡）
+    'tiny_stable_ratio': 0.025,   # 达到此值：稳定检出（报告参考线，不产问题）
 }
 
 # 滑窗裁剪补边默认色（YOLO letterbox 灰）
