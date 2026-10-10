@@ -369,6 +369,17 @@ def test_hist_header_shows_total_not_peak():
     assert _hist_header('框数', []) == '框数: 0'
 
 
+# Qt 子进程在解释器退出阶段析构顺序不定，偶发挂死或崩溃（已观察到 paint
+# 测试在整套件里从 0.7s 变成 >120s 超时）。断言全部通过、标记打印之后
+# 立即 flush + os._exit(0)，绕开不可控的析构阶段。os._exit 不冲刷缓冲，
+# 必须先 flush，否则 pytest 收不到 OK 标记会误报失败。
+_QT_EXIT_GUARD = '''
+import os, sys
+sys.stdout.flush()
+os._exit(0)
+'''
+
+
 def test_chart_paint_offscreen_real_qt(tmp_path):
     import os
     import subprocess
@@ -429,7 +440,7 @@ print("OK")
                                  "/System/Library/Fonts") if Path(p).is_dir()), None)
     if font_dir:
         env["QT_QPA_FONTDIR"] = font_dir
-    result = subprocess.run([sys.executable, "-c", script], cwd=root, env=env,
+    result = subprocess.run([sys.executable, "-c", script + _QT_EXIT_GUARD], cwd=root, env=env,
                             text=True, capture_output=True, timeout=120)
     assert result.returncode == 0, result.stderr
 
@@ -989,7 +1000,7 @@ editor._close_health_worker()
 print("OK")
 '''
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(root)}
-    result = subprocess.run([sys.executable, "-c", script], cwd=root, env=env,
+    result = subprocess.run([sys.executable, "-c", script + _QT_EXIT_GUARD], cwd=root, env=env,
                             text=True, capture_output=True, timeout=120)
     assert result.returncode == 0, result.stderr
 
@@ -1125,7 +1136,7 @@ editor._close_health_worker()
 print("OK")
 '''
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(root)}
-    result = subprocess.run([sys.executable, "-c", script], cwd=root, env=env,
+    result = subprocess.run([sys.executable, "-c", script + _QT_EXIT_GUARD], cwd=root, env=env,
                             text=True, capture_output=True, timeout=120)
     assert result.returncode == 0, result.stderr
 
@@ -1230,7 +1241,7 @@ editor._close_health_worker()
 print("OK")
 '''
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(root)}
-    result = subprocess.run([sys.executable, "-c", script], cwd=root, env=env,
+    result = subprocess.run([sys.executable, "-c", script + _QT_EXIT_GUARD], cwd=root, env=env,
                             text=True, capture_output=True, timeout=120)
     assert result.returncode == 0, result.stderr
 
@@ -1330,7 +1341,7 @@ editor._close_health_worker()
 print("OK")
 '''.replace("IMAGE_PATH", repr(str(img)))
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(root)}
-    result = subprocess.run([sys.executable, "-c", script], cwd=root, env=env,
+    result = subprocess.run([sys.executable, "-c", script + _QT_EXIT_GUARD], cwd=root, env=env,
                             text=True, capture_output=True, timeout=120)
     assert result.returncode == 0, result.stderr
 
@@ -1499,6 +1510,6 @@ editor._close_health_worker()
 print("OK")
 '''
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(root)}
-    result = subprocess.run([sys.executable, "-c", script], cwd=root, env=env,
+    result = subprocess.run([sys.executable, "-c", script + _QT_EXIT_GUARD], cwd=root, env=env,
                             text=True, capture_output=True, timeout=120)
     assert result.returncode == 0, result.stderr

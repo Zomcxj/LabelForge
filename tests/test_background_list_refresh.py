@@ -6,13 +6,34 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# load_background_folder 会拉起后台标签扫描线程。不关窗就退出，解释器销毁
+# ImageEditor 时线程还活着，Windows 上约 10% 概率在收尾阶段崩掉
+# （0xC0000409 fail-fast / 0xC0000005 访问违例），退出码非零但 stdout/stderr
+# 全空，看起来像"测试失败了"，实际业务断言早已通过并打印了标记。
+# 处置分两层：
+# 1) window.close() 走真实关闭路径（closeEvent 会请求中断扫描线程并
+#    wait(2000)），顺便验证关闭流程本身不挂死；再排空事件让删除落地。
+# 2) 做完上面这些后 flush + os._exit(0)：解释器退出阶段 Qt 对象析构顺序
+#    不定，即使关窗干净仍有约 1/60 概率崩在析构里，与被测逻辑无关，
+#    不值得继续追。必须先 flush —— os._exit 不冲刷缓冲，标记会丢，
+#    断言就误报失败。不能只用 os._exit 跳过关闭，那会掩盖真实的挂死。
+_TEARDOWN = (
+    "\nwindow.close()\n"
+    "for _ in range(200):\n"
+    "    app.processEvents()\n"
+    "import sys\n"
+    "sys.stdout.flush()\n"
+    "os._exit(0)\n"
+)
+
 
 def _run_qt(script, timeout=180):
     """真实 Qt 子进程执行；显式 UTF-8 + 超时，避免 gbk 解码崩溃与无限挂起。"""
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT),
                         "PYTHONIOENCODING": "utf-8"}
     try:
-        r = subprocess.run([sys.executable, "-c", script], cwd=ROOT, env=env,
+        r = subprocess.run([sys.executable, "-c", script + _TEARDOWN], cwd=ROOT,
+                           env=env,
                            text=True, capture_output=True, timeout=timeout,
                            encoding="utf-8", errors="replace")
     except subprocess.TimeoutExpired as e:
