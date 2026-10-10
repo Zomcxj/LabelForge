@@ -1149,6 +1149,29 @@ def test_labelme_labelme_keeps_paste_flags(tmp_path):
     assert by_label["car"]["flags"] == {}
 
 
+def test_labelme_labelme_keeps_custom_audit_flags(tmp_path):
+    """质检豁免标记 flags.tiny_keep 不是 paste，转换同样不能丢。
+
+    转换器读的是整个 flags 字典（不是只挑 paste），所以这条本来就成立；
+    钉住它，避免以后有人把 flags 处理收窄成只认 paste。
+    """
+    src = _labelme_dir_with_shapes(tmp_path, [
+        {"label": "wire", "shape_type": "rectangle",
+         "points": [[10, 10], [400, 12]],
+         "group_id": None, "flags": {"tiny_keep": True}},
+        {"label": "car", "shape_type": "rectangle",
+         "points": [[50, 50], [80, 80]],
+         "group_id": None, "flags": {"paste": True, "tiny_keep": True}},
+    ])
+    out = tmp_path / "out"
+    ST.convert_paths("labelme", src, src, "labelme", str(out),
+                     overwrite=True, task="auto")
+    shapes = json.loads((out / "a.json").read_text(encoding="utf-8"))["shapes"]
+    by_label = {s["label"]: s for s in shapes}
+    assert by_label["wire"]["flags"] == {"tiny_keep": True}
+    assert by_label["car"]["flags"] == {"paste": True, "tiny_keep": True}
+
+
 def test_labelme_rotation_to_yolo_obb(tmp_path):
     src = _labelme_dir_with_shapes(tmp_path, [{
         "label": "car", "shape_type": "rotation",

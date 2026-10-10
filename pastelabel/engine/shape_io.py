@@ -13,7 +13,7 @@ def box_from_labelme_shape(shape):
         if len(points) != 1:
             return None
         x, y = points[0][0], points[0][1]
-        return {
+        point_box = {
             "x": x, "y": y, "width": 0, "height": 0,
             "label": shape.get("label") or "",
             "shape_type": shape_type,
@@ -21,6 +21,9 @@ def box_from_labelme_shape(shape):
             "points": [list(points[0])],
             "is_paste": is_paste,
         }
+        if flags:
+            point_box["flags"] = dict(flags)
+        return point_box
     if len(points) < 2:
         return None
     label = shape.get("label") or ""
@@ -42,6 +45,11 @@ def box_from_labelme_shape(shape):
         box["points"] = [list(p) for p in points]
     if "visible" in shape:
         box["visible"] = shape["visible"]
+    # 自定义 flag（如质检豁免 tiny_keep）要跟着 box 走，否则载入即丢、
+    # labelme_shape_from_box 再存回去时也就无从恢复。空 flags 不塞键，
+    # 让绝大多数无 flag 的 JSON 载入结果与历史行为完全一致。
+    if flags:
+        box["flags"] = dict(flags)
     return box
 
 

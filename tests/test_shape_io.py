@@ -148,3 +148,76 @@ def test_labelme_shape_from_box_rebuilds_paste_flag_from_is_paste():
         {"label": "logo", "x": 0, "y": 0, "width": 1, "height": 1,
          "is_paste": True})
     assert shape["flags"] == {"paste": True}
+
+
+# ---- flags 透传：审核豁免等自定义标记不能在载入时被丢弃 ----
+
+def test_box_from_labelme_shape_preserves_unknown_flags():
+    """只挑 paste 会丢掉 tiny_keep，豁免标记保存一次就失效。"""
+    box = box_from_labelme_shape({
+        "label": "wire", "shape_type": "rectangle",
+        "points": [[0, 0], [10, 0], [10, 2], [0, 2]],
+        "flags": {"tiny_keep": True},
+    })
+    assert box["flags"] == {"tiny_keep": True}
+
+
+def test_unknown_flag_survives_full_roundtrip():
+    """回归护栏：载入 → 保存 → 再载入，自定义 flag 必须仍在。"""
+    shape = {
+        "label": "wire", "shape_type": "rectangle",
+        "points": [[0, 0], [10, 0], [10, 2], [0, 2]],
+        "flags": {"tiny_keep": True},
+    }
+    again = box_from_labelme_shape(
+        labelme_shape_from_box(box_from_labelme_shape(shape)))
+    assert again["flags"] == {"tiny_keep": True}
+
+
+def test_point_shape_preserves_flags():
+    """point 分支同样要透传，否则关键点的豁免标记会丢。"""
+    box = box_from_labelme_shape({
+        "label": "nose", "shape_type": "point", "points": [[12.5, 30.0]],
+        "flags": {"tiny_keep": True},
+    })
+    assert box is not None
+    assert box["flags"] == {"tiny_keep": True}
+
+
+def test_box_without_flags_has_no_flags_key():
+    """无 flags 的 JSON 载入后不塞空字典，保持与改动前完全一致。"""
+    box = box_from_labelme_shape({
+        "label": "cat",
+        "points": [[10, 20], [110, 20], [110, 80], [10, 80]],
+    })
+    assert "flags" not in box
+
+
+def test_empty_flags_dict_does_not_add_key():
+    box = box_from_labelme_shape({
+        "label": "cat", "flags": {},
+        "points": [[10, 20], [110, 20], [110, 80], [10, 80]],
+    })
+    assert "flags" not in box
+
+
+def test_paste_and_custom_flags_coexist_without_conflict():
+    """透传改动不能让 is_paste 与 flags 打架。"""
+    box = box_from_labelme_shape({
+        "label": "logo",
+        "points": [[0, 0], [4, 0], [4, 4], [0, 4]],
+        "flags": {"paste": True, "tiny_keep": True},
+    })
+    assert box["is_paste"] is True
+    assert labelme_shape_from_box(box)["flags"] == {
+        "paste": True, "tiny_keep": True}
+
+
+def test_non_dict_flags_ignored_not_crash():
+    box = box_from_labelme_shape({
+        "label": "cat", "flags": "bogus",
+        "points": [[10, 20], [110, 20], [110, 80], [10, 80]],
+    })
+    assert box is not None
+    assert "flags" not in box
+    assert box["is_paste"] is False
