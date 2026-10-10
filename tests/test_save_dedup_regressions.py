@@ -26,7 +26,13 @@ def test_deduplicate_rectangles_keeps_first_item_when_later_item_iou_is_at_least
     assert kept == [items[0]]
 
 
-def test_deduplicate_rectangles_ignores_label_when_comparing_same_type_rectangles():
+def test_deduplicate_rectangles_keeps_different_labels_with_same_geometry():
+    """不同类别即使几何几乎重合也都要保留。
+
+    旧行为按纯几何去重、忽略 label，会把「不同类高度重合框」静默删掉一份；
+    推理结果里这种情况很常见（模型对同一区域给出多个类别候选），
+    保存/重载后标注数量就对不上了。
+    """
     boxes = [
         {'label': 'first', 'x': 10, 'y': 10, 'width': 100, 'height': 100},
         {'label': 'later', 'x': 11, 'y': 10, 'width': 100, 'height': 100},
@@ -36,7 +42,32 @@ def test_deduplicate_rectangles_ignores_label_when_comparing_same_type_rectangle
         boxes, lambda box: Rect(box['x'], box['y'], box['width'], box['height'])
     )
 
+    assert kept == boxes
+
+
+def test_deduplicate_rectangles_drops_same_label_duplicate():
+    boxes = [
+        {'label': 'cat', 'x': 10, 'y': 10, 'width': 100, 'height': 100},
+        {'label': 'cat', 'x': 11, 'y': 10, 'width': 100, 'height': 100},
+    ]
+
+    kept = SaveManager._deduplicate_rectangles(
+        boxes, lambda box: Rect(box['x'], box['y'], box['width'], box['height'])
+    )
+
     assert kept == [boxes[0]]
+
+
+def test_deduplicate_rectangles_without_label_still_dedupes_geometry():
+    """无 label 的条目（贴图 canvas_items）保持原有纯几何去重。"""
+    items = [
+        (None, Rect(10, 10, 100, 100), 'first'),
+        (None, Rect(11, 10, 100, 100), 'later'),
+    ]
+
+    kept = SaveManager._deduplicate_rectangles(items, lambda item: item[1])
+
+    assert kept == [items[0]]
 
 
 def test_deduplicate_rectangles_keeps_rectangles_below_98_percent_iou():

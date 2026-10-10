@@ -58,7 +58,7 @@ jobs:
               curl -fsSL https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -o /tmp/miniforge.sh
               bash /tmp/miniforge.sh -b -p /opt/conda
               /opt/conda/bin/conda install -y python=3.12 pyqt
-              /opt/conda/bin/python -m pip install -q pyinstaller numpy
+              /opt/conda/bin/python -m pip install -q pyinstaller numpy onnxruntime
 
               /opt/conda/bin/python -m PyInstaller pastelabel/PasteLabel.spec --noconfirm
             "

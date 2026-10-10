@@ -46,6 +46,9 @@ PasteLabel/
 │   │   ├── dataset_converter.py # 数据集格式转换（LabelMe/YOLO/COCO/VOC + 任务类型）
 │   │   ├── dataset_health.py   # 数据集健康统计（分布数据与建议，纯逻辑）
 │   │   ├── event_handler.py
+│   │   ├── inference_image.py # QImage ↔ 模型输入（取图/letterbox 绘制）
+│   │   ├── inference_task.py  # 推理配置校验、结果合并与 sidecar 写回（纯逻辑）
+│   │   ├── onnx_inference.py  # ONNX 检测推理核心（v5/v8 解码、NMS、letterbox，无 Qt 依赖）
 │   │   ├── image_loader/
 │   │   │   ├── __init__.py
 │   │   │   ├── mixin.py
@@ -80,6 +83,7 @@ PasteLabel/
 │   │   ├── dwm.py
 │   │   ├── i18n.py
 │   │   ├── icons.py           # SVG 图标常量与渲染辅助函数
+│   │   ├── inference_dialog.py # 模型推理窗口（模型配置/单张批量/进度）
 │   │   ├── main_window.py     # ImageEditor 协调器
 │   │   ├── memory_dialog.py
 │   │   ├── processing_panel.py # ProcessingPanel 执行与日志逻辑
@@ -93,6 +97,7 @@ PasteLabel/
 │   │       ├── cache_menu.py
 │   │       ├── dataset_classifier.py
 │   │       ├── dataset_tools.py
+│   │       ├── inference.py
 │   │       ├── label_cache_slot.py
 │   │       ├── lists.py
 │   │       ├── memory_record.py

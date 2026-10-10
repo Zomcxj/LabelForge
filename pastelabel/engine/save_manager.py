@@ -328,15 +328,29 @@ class SaveManager(QObject):
 
     @staticmethod
     def _deduplicate_rectangles(items, get_rect):
-        """按列表顺序保留同类矩形中首个 IoU 达 98% 的对象。"""
+        """按列表顺序保留首个 IoU 达 98% 的对象；带 label 的按类别分别去重。
+
+        类别必须参与去重：推理结果里不同类别的框常常高度重合，纯几何去重会把
+        它们静默删掉，保存/重载后标注数量就对不上了。
+        """
         kept = []
         for item in items:
             rect = get_rect(item)
             box = (rect.x(), rect.y(), rect.x() + rect.width(), rect.y() + rect.height())
-            if any(calculate_iou(box, (
-                saved_rect.x(), saved_rect.y(),
-                saved_rect.x() + saved_rect.width(), saved_rect.y() + saved_rect.height(),
-            )) >= 0.98 for saved_rect in (get_rect(saved) for saved in kept)):
+            label = item.get('label') if isinstance(item, dict) else None
+            duplicates = False
+            for saved in kept:
+                saved_rect = get_rect(saved)
+                if label is not None and isinstance(saved, dict):
+                    if saved.get('label') != label:
+                        continue
+                if calculate_iou(box, (
+                    saved_rect.x(), saved_rect.y(),
+                    saved_rect.x() + saved_rect.width(), saved_rect.y() + saved_rect.height(),
+                )) >= 0.98:
+                    duplicates = True
+                    break
+            if duplicates:
                 continue
             kept.append(item)
         return kept

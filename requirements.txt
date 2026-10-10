@@ -1,2 +1,5 @@
 PyQt5>=5.15
 numpy>=1.26.0
+# ONNX 推理运行时。CPU 包与 GPU 包都导入为 onnxruntime，二选一安装：
+# 只要 GPU 就用 onnxruntime-gpu 替换本行（需要匹配的 CUDA/cuDNN）。
+onnxruntime>=1.16

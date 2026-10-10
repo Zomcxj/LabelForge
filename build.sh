@@ -252,7 +252,12 @@ a = Analysis(
         'pastelabel.engine.dataset_converter',
         'pastelabel.engine.shape_io',
         'pastelabel.ui.dataset_tools_dialog', 'pastelabel.ui.mixins.dataset_tools',
+        'pastelabel.ui.inference_dialog', 'pastelabel.ui.mixins.inference',
+        'pastelabel.engine.onnx_inference', 'pastelabel.engine.inference_image',
+        'pastelabel.engine.inference_task',
         'numpy',
+        # onnxruntime 在函数内导入，显式声明避免打包时漏收原生库
+        'onnxruntime',
         'pastelabel.canvas', 'pastelabel.canvas.canvas', 'pastelabel.canvas.canvas_renderer',
         'pastelabel.canvas.canvas_interaction', 'pastelabel.canvas.canvas_drawing',
         'pastelabel.canvas.canvas_menu',
@@ -264,7 +269,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     # 通用体积护栏：本项目只用 PyQt5 + numpy + 标准库，其余大块依赖一律不打进包
-    excludes=['tkinter', 'matplotlib', 'pandas', 'pytest', 'PySide6', 'sklearn', 'torch', 'torchvision', 'tensorflow', 'keras', 'onnxruntime', 'cv2', 'av',
+    excludes=['tkinter', 'matplotlib', 'pandas', 'pytest', 'PySide6', 'sklearn', 'torch', 'torchvision', 'tensorflow', 'keras', 'cv2', 'av',
               'IPython', 'ipykernel', 'jedi', 'prompt_toolkit', 'pygments', 'backcall', 'stack_data',
               'matplotlib_inline', 'notebook', 'nbformat', 'nbclient', 'traitlets', 'zmq',
               'pyreadline3', 'pickleshare', 'nest_asyncio', 'appnope', 'gevent', 'html5lib', 'bs4',

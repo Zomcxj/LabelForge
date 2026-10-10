@@ -28,6 +28,7 @@ from .mixins.theme import ThemeMixin
 from .mixins.translation import TranslationMixin
 from .mixins.dataset_classifier import DatasetClassifierMixin
 from .mixins.dataset_tools import DatasetToolsMixin
+from .mixins.inference import InferenceMixin
 from .mixins.toolbar import ToolbarMixin
 from .mixins.options_popup import OptionsPopupMixin
 from .mixins.cache_menu import CacheMenuMixin
@@ -37,7 +38,7 @@ from .mixins.panels import PanelsMixin
 
 class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin, QualityLintMixin, MemoryRecordMixin, LabelCacheSlotMixin,
                    ToolbarMixin, OptionsPopupMixin, CacheMenuMixin, ListsMixin, PanelsMixin, ImageLoaderMixin, PasteEngineMixin,
-                   DatasetClassifierMixin, DatasetToolsMixin, EventHandlerMixin, QMainWindow):
+                   DatasetClassifierMixin, DatasetToolsMixin, InferenceMixin, EventHandlerMixin, QMainWindow):
     """贴图标注工具主窗口"""
 
     def __init__(self):

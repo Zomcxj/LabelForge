@@ -51,6 +51,17 @@ def _normalize_lint_ignored_rules(rules):
     return normalized
 
 
+def _normalize_inference_settings(raw):
+    """推理配置：只保留已知字段，避免旧配置里的杂项一直留在文件里。"""
+    from pastelabel.engine.inference_task import normalize_settings
+    if not isinstance(raw, dict):
+        raw = {}
+    normalized = normalize_settings(raw)
+    normalized.pop("class_filter", None)
+    normalized.pop("replace_auto", None)
+    return normalized
+
+
 def _filter_shortcuts(shortcuts):
     """过滤已禁用的快捷键动作，避免旧配置继续生效。"""
     if not isinstance(shortcuts, dict):
@@ -433,6 +444,7 @@ def load_all():
         'label_cache_slots': _normalize_label_cache_slots(config.get('label_cache_slots')),
         'nudge_step': int(config.get('nudge_step', NUDGE_CONFIG['step'])),
         'lint_ignored_rules': _normalize_lint_ignored_rules(config.get('lint_ignored_rules')),
+        'inference_settings': _normalize_inference_settings(config.get('inference_settings')),
         'detection_box_scale_step': float(config.get(
             'detection_box_scale_step',
             legacy_wheel_scale_step if legacy_wheel_scale_step is not None else DETECTION_BOX_WHEEL_CONFIG['detection_box_scale_step'],
@@ -467,7 +479,7 @@ def save_all(shortcuts=None, theme=None, language=None, max_labels=None,
                detection_box_wheel_edge_step=None,
               crosshair_width=None, crosshair_color=None, crosshair_alpha=None,
                box_border_width=None, label_colors=None, label_color_map=None,
-               lint_ignored_rules=None):
+               lint_ignored_rules=None, inference_settings=None):
     """保存所有配置"""
     config = load_config()
     if shortcuts is not None:
@@ -531,4 +543,6 @@ def save_all(shortcuts=None, theme=None, language=None, max_labels=None,
         config['label_colors'] = _normalize_label_colors(label_colors, extend=True)
     if label_color_map is not None:
         config['label_color_map'] = _normalize_label_color_map(label_color_map)
+    if inference_settings is not None:
+        config['inference_settings'] = _normalize_inference_settings(inference_settings)
     return save_config(config)

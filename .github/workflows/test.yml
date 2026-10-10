@@ -25,7 +25,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install test dependencies
-        run: pip install pytest numpy PyQt5
+        # onnx 仅测试用：现场生成合成模型供端到端测试，运行时不需要
+        run: pip install pytest numpy PyQt5 onnxruntime onnx
 
       - name: Run tests
         run: pytest tests/ -q
