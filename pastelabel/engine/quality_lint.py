@@ -6,6 +6,7 @@
 """
 import bisect
 import json
+import math
 import os
 import concurrent.futures
 
@@ -79,14 +80,21 @@ def normalized_min_side(box, image_width, image_height):
     rect = _bbox(box)
     if rect is None:
         return None
-    w = rect[2] - rect[0]
-    h = rect[3] - rect[1]
-    if w <= 0 or h <= 0:
-        return None
+    # NaN/Inf 必须显式挡掉：json.loads 默认接受 NaN 字面量，而 `nan <= 0`
+    # 为 False 会绕过下面的退化守卫，一路算进报告，最后被当成"最大的健康
+    # 目标"落进直方图末桶。dataset_health 用 _finite_float 防的是同一件事。
     try:
-        return min(w / float(image_width), h / float(image_height))
-    except (TypeError, ValueError, ZeroDivisionError):
+        w = float(rect[2] - rect[0])
+        h = float(rect[3] - rect[1])
+        iw = float(image_width)
+        ih = float(image_height)
+    except (TypeError, ValueError):
         return None
+    if not all(math.isfinite(v) for v in (w, h, iw, ih)):
+        return None
+    if w <= 0 or h <= 0 or iw <= 0 or ih <= 0:
+        return None
+    return min(w / iw, h / ih)
 
 
 def is_tiny_exempt(box):
@@ -148,7 +156,9 @@ def tiny_report(ratios, exempt_count=0):
     fail_r = cfg['tiny_fail_ratio']
     warn_r = cfg['tiny_warn_ratio']
     stable_r = cfg['tiny_stable_ratio']
-    ratios = [r for r in (ratios or []) if isinstance(r, (int, float))]
+    # 公开函数自己设防：非有限值一律丢弃，不能只依赖调用方给干净数据
+    ratios = [r for r in (ratios or [])
+              if isinstance(r, (int, float)) and math.isfinite(r)]
     fail = sum(1 for r in ratios if r < fail_r)
     warn = sum(1 for r in ratios if fail_r <= r < warn_r)
     exempt = int(exempt_count or 0)

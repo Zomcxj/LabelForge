@@ -204,12 +204,18 @@ def test_lint_dataset_skips_pairwise_over_limit(tmp_path):
         {"label": "cat", "x": 0, "y": 0, "width": 50, "height": 50}
         for _ in range(limit + 1)
     ]
-    img = _write_image_and_json(tmp_path, "e", shapes, image_size=(10000, 10000))
+    # 1000x1000 让 50px 框占 5%（比例健康）。早先写的 10000x10000 只有 0.5%，
+    # 会额外产出 501 条小目标问题；本测试只断言 duplicate/skipped_pairwise 计数
+    # 所以看不出被污染，但日后谁加一条 issue 总数断言就会莫名炸掉。
+    img = _write_image_and_json(tmp_path, "e", shapes, image_size=(1000, 1000))
 
     results = lint_dataset([img])
 
     assert results['summary']['duplicate'] == 0
     assert results['summary']['skipped_pairwise'] == 1
+    # 钉住"夹具尺寸是干净的"这一前提，被污染时直接失败而不是悄悄通过
+    assert results['summary']['tiny_unreachable'] == 0
+    assert results['summary']['tiny_needs_p2'] == 0
 
 
 def test_lint_dataset_interruptible(tmp_path):
@@ -2002,6 +2008,50 @@ def test_normalized_min_side_helper_returns_none_when_undefined():
     assert normalized_min_side("bogus", 100, 100) is None
     assert normalized_min_side({}, 100, 100) is None
     assert normalized_min_side(None, 100, 100) is None
+
+
+def test_non_finite_geometry_is_not_judged_as_healthy():
+    """损坏 sidecar 里的 NaN/Inf 不能算成"通过"，否则虚增通过率。
+
+    json.loads 默认接受 NaN/Infinity 字面量，而 `nan <= 0` 为 False，
+    会绕过退化宽高守卫一路算到比例里。dataset_health 早为同一类问题
+    设过 _finite_float 防线，这里必须同样处理。
+    """
+    from pastelabel.engine.quality_lint import normalized_min_side
+    nan = float("nan")
+    inf = float("inf")
+    assert normalized_min_side(_box(w=nan, h=20), 640, 640) is None
+    assert normalized_min_side(_box(w=inf, h=20), 640, 640) is None
+    assert normalized_min_side(_box(w=20, h=20), nan, 640) is None
+    assert normalized_min_side(_box(w=20, h=20), inf, 640) is None
+
+
+def test_non_finite_width_excluded_from_report(tmp_path):
+    """NaN 宽的框既不进三档计数也不进直方图，更不能落进"最大目标"那一桶。"""
+    from pastelabel.engine.quality_lint import lint_dataset
+    img = _write_image_and_json(tmp_path, "nan", [
+        {"label": "broken", "x": 0, "y": 0, "width": float("nan"),
+         "height": 20, "shape_type": "rectangle"},
+        {"label": "car", "x": 0, "y": 100, "width": 100, "height": 100,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    report = lint_dataset([img])["tiny_report"]
+
+    assert report["measured"] == 1        # 只有 car 参与统计
+    assert report["pass"] == 1
+    assert sum(report["histogram"]["counts"]) == 1
+    assert report["histogram"]["counts"][-1] == 0   # 没被当成最大那一档
+
+
+def test_tiny_report_drops_non_finite_ratios():
+    """公开函数自己也要设防，不能只依赖调用方给干净数据。"""
+    from pastelabel.engine.quality_lint import tiny_report
+    report = tiny_report([float("nan"), float("inf"), 0.5], 0)
+    assert report["measured"] == 1
+    assert report["pass"] == 1
+    assert report["stable"] == 1
+    assert sum(report["histogram"]["counts"]) == 1
 
 
 def test_kind_labels_cover_new_tiny_kinds():
