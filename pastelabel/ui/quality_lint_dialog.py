@@ -5,7 +5,6 @@
 import math
 import os
 
-from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QProgressBar, QMenu,
@@ -209,22 +208,6 @@ class QualityLintDialog(QDialog):
         else:
             self.tiny_chart.set_placeholder(tr("无分布数据"))
 
-    @staticmethod
-    def _severity_of(issue):
-        """'fail' / 'warn' / None：只有两个归一化档参与着色。
-
-        tiny_box 是绝对像素的"退化框"判断，与训练可行性不是一回事，
-        不给红黄底色，避免和审核结论混为一谈。
-        """
-        if not isinstance(issue, dict):
-            return None
-        kind = issue.get('kind')
-        if kind == 'tiny_unreachable':
-            return 'fail'
-        if kind == 'tiny_needs_p2':
-            return 'warn'
-        return None
-
     def _size_hint_text(self, issue):
         """第 4 列：小目标两档给"宽/高 + 占比 + 建议"，其它 kind 沿用 detail。
 
@@ -349,12 +332,8 @@ class QualityLintDialog(QDialog):
 
     def _populate_table(self):
         self.table.setRowCount(len(self._issues))
-        t = ThemeManager.get_theme()
-        # 🔴 红底 / 🟡 黄底：审核时靠底色扫，不必逐行读文字
-        severity_bg = {
-            'fail': QColor(t['danger_light']),
-            'warn': QColor(t['warning_light']),
-        }
+        # 一律不着色（用户裁决）：审核靠第 4 列文字，红黄底反而把审核结论
+        # 和普通问题（越界/超小框/重复…）混在一起。
         for row, issue in enumerate(self._issues):
             items = [
                 tr(KIND_LABELS.get(issue.get('kind'), issue.get('kind', ''))),
@@ -362,12 +341,9 @@ class QualityLintDialog(QDialog):
                 os.path.basename(issue.get('image_path', '') or ''),
                 self._size_hint_text(issue),
             ]
-            bg = severity_bg.get(self._severity_of(issue))
             for col, text in enumerate(items):
                 item = QTableWidgetItem(str(text))
                 item.setData(Qt.UserRole, issue)
-                if bg is not None:
-                    item.setBackground(bg)
                 self.table.setItem(row, col, item)
             # 提示列文字最长且最常被读，列宽受限时悬停可看全文
             hint_item = self.table.item(row, 3)

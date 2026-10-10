@@ -2276,17 +2276,6 @@ def test_marked_box_disappears_from_rescan(tmp_path):
 
 # ---- 质检弹窗：第 4 列提示 / 严重度着色 / 标记保留 / 报告区 ----
 
-def test_severity_of_tiny_kinds():
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
-    sev = QualityLintDialog._severity_of
-    assert sev({"kind": "tiny_unreachable"}) == "fail"
-    assert sev({"kind": "tiny_needs_p2"}) == "warn"
-    assert sev({"kind": "tiny_box"}) is None
-    assert sev({"kind": "out_of_bounds"}) is None
-    assert sev({}) is None
-    assert sev(None) is None
-
-
 def test_size_hint_column_shows_ratio_and_advice():
     from pastelabel.ui.quality_lint_dialog import QualityLintDialog
     d = QualityLintDialog.__new__(QualityLintDialog)
@@ -2455,12 +2444,11 @@ def test_dialog_exposes_mark_keep_signal():
 
 
 def _fake_table_env(monkeypatch):
-    """给弹窗注入记录型假表格/假 item/记录型 QColor。
+    """给弹窗注入记录型假表格/假 item。
 
-    conftest 把 PyQt5 整个 mock 掉：QTableWidgetItem 记不住 text/背景，
-    QColor.name() 恒返回同一个值，所以底色只能靠"构造时传了什么颜色串"
-    来区分 —— 光比实例身份没用，两档各调一次 QColor 就是两个不同实例。
-    弹窗里是模块级引用，必须 patch 模块属性才生效。
+    conftest 把 PyQt5 整个 mock 掉：QTableWidgetItem 记不住 text，
+    表格内容只能靠记录型替身断言。弹窗里是模块级引用，
+    必须 patch 模块属性才生效。（行不着色后不再需要记录型 QColor。)
     """
     from pastelabel.ui import quality_lint_dialog as mod
 
@@ -2494,26 +2482,15 @@ def _fake_table_env(monkeypatch):
         def item(self, row, col):
             return self.cells.get((row, col))
 
-    class _Color:
-        """记住构造参数，测试才能断言用的是 danger_light 而不是 warning_light。"""
-        def __init__(self, spec=None):
-            self.spec = spec
-
-        def name(self):
-            return str(self.spec)
-
     monkeypatch.setattr(mod, "QTableWidgetItem", _Item)
-    monkeypatch.setattr(mod, "QColor", _Color)
     dialog = mod.QualityLintDialog.__new__(mod.QualityLintDialog)
     dialog.table = _Table()
     return dialog, dialog.table
 
 
-def test_dialog_paints_severity_rows(monkeypatch):
-    """需求要求"高亮"：🔴 红底、🟡 黄底，不能只靠文字。"""
-    from pastelabel.ui.theme import ThemeManager
+def test_dialog_rows_have_no_severity_tint(monkeypatch):
+    """表格一律不着色（用户裁决）：审核读第 4 列文字，底色反而与普通问题混淆。"""
     dialog, table = _fake_table_env(monkeypatch)
-    theme = ThemeManager.get_theme()
     issues = [
         {"kind": "tiny_unreachable", "label": "wire", "ratio": 0.0047,
          "image_path": "a.png"},
@@ -2531,12 +2508,10 @@ def test_dialog_paints_severity_rows(monkeypatch):
     assert table.item(0, 3).text.startswith("0.47%")
     assert "滑窗" in table.item(0, 3).text
     assert table.item(1, 3).text.startswith("0.94%")
-    # 🔴/🟡 行四格都有底色，且必须取自对应严重度的主题色；无关 kind 不着色
-    for col in range(4):
-        assert table.item(0, col).bg.name() == theme['danger_light']
-        assert table.item(1, col).bg.name() == theme['warning_light']
-        assert table.item(2, col).bg is None
-    assert theme['danger_light'] != theme['warning_light']
+    # 任何 kind、任何格子都不给底色
+    for row in range(3):
+        for col in range(4):
+            assert table.item(row, col).bg is None, (row, col)
     # 非小目标 kind 的第 4 列沿用 detail
     assert table.item(2, 3).text == "(1,1,9,9) vs 5x5"
     # 提示列有 tooltip，列宽不够时能悬停看全文
