@@ -121,6 +121,57 @@ print("OK_NAV_REPEAT")
     assert "OK_NAV_REPEAT" in _run_qt(script)
 
 
+def test_drop_folder_onto_canvas_loads_it_as_backgrounds(tmp_path):
+    # 文件夹拖到画布/窗口 = 直接打开该数据集（替换语义，与文件夹按钮一致）；
+    # 拖入单张图片才是追加。dragEnter 也要接受文件夹（否则光标显示禁止）。
+    script = _BOOT.format(d=tmp_path.as_posix()) + '''
+from PyQt5.QtCore import QUrl, QPoint, Qt, QMimeData
+from PyQt5.QtGui import QImage, QDragEnterEvent, QDropEvent
+
+other = os.path.join(d, "imgs2")
+os.makedirs(other, exist_ok=True)
+QImage(40, 30, QImage.Format_RGB888).save(os.path.join(other, "x.png"))
+QImage(40, 30, QImage.Format_RGB888).save(os.path.join(other, "y.png"))
+
+mime = QMimeData()
+mime.setUrls([QUrl.fromLocalFile(other)])
+enter = QDragEnterEvent(QPoint(10, 10), Qt.CopyAction, mime,
+                        Qt.LeftButton, Qt.NoModifier)
+enter.ignore()
+window.dragEnterEvent(enter)
+assert enter.isAccepted(), "拖文件夹必须被接受，否则光标是禁止符号"
+
+event = QDropEvent(QPoint(10, 10), Qt.CopyAction, mime,
+                   Qt.LeftButton, Qt.NoModifier)
+window.dropEvent(event)
+for _ in range(4000):
+    if len(window.background_images) >= 2:
+        break
+    app.processEvents()
+assert [os.path.basename(p) for p in window.background_images] == ["x.png", "y.png"], \\
+    window.background_images
+assert window.current_background is not None
+
+# 只拖非图片文件（.txt）→ 不接受、不改动当前列表
+txt = os.path.join(d, "readme.txt")
+open(txt, "w", encoding="utf-8").close()
+mime2 = QMimeData()
+mime2.setUrls([QUrl.fromLocalFile(txt)])
+enter2 = QDragEnterEvent(QPoint(10, 10), Qt.CopyAction, mime2,
+                         Qt.LeftButton, Qt.NoModifier)
+enter2.ignore()
+window.dragEnterEvent(enter2)
+assert not enter2.isAccepted(), "txt 不该被接受"
+before = list(window.background_images)
+drop2 = QDropEvent(QPoint(10, 10), Qt.CopyAction, mime2,
+                   Qt.LeftButton, Qt.NoModifier)
+window.dropEvent(drop2)
+assert list(window.background_images) == before, "txt 拖入不能改列表"
+print("OK_DROP_FOLDER")
+'''
+    assert "OK_DROP_FOLDER" in _run_qt(script)
+
+
 def test_refresh_without_folder_or_without_change_is_noop(tmp_path):
     # 没加载过文件夹 → 提示且不崩；文件夹没变化 → 空操作，不动内存里的框。
     script = f'''

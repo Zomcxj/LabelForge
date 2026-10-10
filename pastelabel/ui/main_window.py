@@ -559,17 +559,30 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
     # ========== 拖拽：拖入图片文件上传 ==========
 
     def dragEnterEvent(self, event: QDragEnterEvent):
-        """接受图片和JSON文件拖入"""
+        """接受图片和JSON文件拖入；文件夹整体拖入按数据集加载"""
         if event.mimeData().hasUrls():
             for url in event.mimeData().urls():
-                ext = os.path.splitext(url.toLocalFile())[1].lower()
+                path = url.toLocalFile()
+                # 文件夹没有扩展名，必须先于扩展名判断
+                if os.path.isdir(path):
+                    event.acceptProposedAction()
+                    return
+                ext = os.path.splitext(path)[1].lower()
                 if ext in ('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.json'):
                     event.acceptProposedAction()
                     return
 
     def dropEvent(self, event: QDropEvent):
-        """处理拖入的图片和JSON文件"""
+        """处理拖入的图片和JSON文件；拖入文件夹则整包按数据集加载"""
         from ..core.config import SUPPORTED_IMAGE_EXTENSIONS
+        # 文件夹优先：拖目录 = 打开该数据集（替换当前，与文件夹按钮同路径）。
+        # 拖入多结构（文件夹+散图）时以文件夹为准，不做混合追加。
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if os.path.isdir(path):
+                self.load_background_folder(path)
+                event.acceptProposedAction()
+                return
         existing = {os.path.normpath(p) for p in self.background_images}
         images = []
         jsons = []
