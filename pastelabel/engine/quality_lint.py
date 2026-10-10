@@ -135,50 +135,6 @@ def _ratio_histogram(ratios, edges=TINY_RATIO_EDGES):
     return {'edges': list(edges), 'counts': counts}
 
 
-def report_with_exemptions(report, exempted_ratios):
-    """把刚「标记保留」的框并入报告：从三档与直方图移出、计入 exempt。
-
-    标记后重扫整库只为更新几个计数代价太高（大数据集会卡住 UI），
-    但报告停在旧数字会让标注员以为「保留」没生效。issue 自带 ratio，
-    所以这里做精准减法即可；分桶仍走 _ratio_bin，不复制阈值逻辑。
-
-    返回新 dict，不改入参 —— 调用方可能还持有旧引用。
-    """
-    if not isinstance(report, dict):
-        return report
-    updated = dict(report)
-    hist = report.get('histogram')
-    if isinstance(hist, dict):
-        updated['histogram'] = {'edges': list(hist.get('edges') or []),
-                                'counts': list(hist.get('counts') or [])}
-    counts = (updated.get('histogram') or {}).get('counts')
-    moved = 0
-    cfg = QUALITY_LINT_CONFIG
-    for ratio in (exempted_ratios or []):
-        if not isinstance(ratio, (int, float)) or not math.isfinite(ratio):
-            continue
-        moved += 1
-        if counts and 0 <= _ratio_bin(ratio) < len(counts):
-            counts[_ratio_bin(ratio)] = max(0, counts[_ratio_bin(ratio)] - 1)
-        if ratio < cfg['tiny_fail_ratio']:
-            updated['fail'] = max(0, _safe_int(updated.get('fail')) - 1)
-        elif ratio < cfg['tiny_warn_ratio']:
-            updated['warn'] = max(0, _safe_int(updated.get('warn')) - 1)
-        if ratio >= cfg['tiny_stable_ratio']:
-            updated['stable'] = max(0, _safe_int(updated.get('stable')) - 1)
-    if not moved:
-        return updated
-    measured = max(0, _safe_int(updated.get('measured')) - moved)
-    fail = _safe_int(updated.get('fail'))
-    warn = _safe_int(updated.get('warn'))
-    updated['measured'] = measured
-    # pass 由 measured 反推而不是相减，保证三档恒等于 measured
-    updated['pass'] = max(0, measured - fail - warn)
-    updated['exempt'] = _safe_int(updated.get('exempt')) + moved
-    updated['total'] = measured + updated['exempt']
-    return updated
-
-
 def collect_tiny_ratios(shapes, image_width, image_height):
     """(ratios, exempt_count)：报告口径，与 lint_shapes 判档共用同一套规则。"""
     ratios, exempt = [], 0

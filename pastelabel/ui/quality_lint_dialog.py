@@ -15,17 +15,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from .dialog_helpers import center_on_parent
 from .i18n import t as tr
 from .theme import ThemeManager
-from .widgets.health_charts import HealthBarChart
 from ..engine.quality_lint import KIND_LABELS, TINY_KINDS
-
-
-def _safe_num(value):
-    """报告里的数一律容错：缺失/NaN/Inf/字符串都归 0，UI 不该因为脏数据崩。"""
-    try:
-        num = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    return num if math.isfinite(num) else 0.0
 
 
 def _progress_qss(t):
@@ -53,7 +43,6 @@ class QualityLintDialog(QDialog):
         self._all_issues = []
         self._kind_filter = None
         self._scanned_images = 0
-        self._tiny_report = None
         self.setWindowTitle(tr("标注质检"))
         self.setMinimumSize(720, 580)
         t = ThemeManager.get_theme()
@@ -92,15 +81,6 @@ class QualityLintDialog(QDialog):
         self.summary_label = QLabel("")
         self.summary_label.setWordWrap(True)
         layout.addWidget(self.summary_label)
-        # 小目标可检测性报告：三档占比 + min(w,h) 分布。审核只看质检记录，
-        # 不在画布上标记（用户明确要求），所以结论集中在这里给。
-        self.tiny_report_label = QLabel("")
-        self.tiny_report_label.setWordWrap(True)
-        self.tiny_report_label.setVisible(False)
-        layout.addWidget(self.tiny_report_label)
-        self.tiny_chart = HealthBarChart(self, height=120)
-        self.tiny_chart.setVisible(False)
-        layout.addWidget(self.tiny_chart)
         self.hint_label = QLabel(
             f"{tr('双击跳转到问题图')} · {tr('右键忽略')} · {tr('Ctrl/Shift 多选')}")
         self.hint_label.setStyleSheet("font-size: 11px; opacity: 0.7;")
@@ -133,10 +113,8 @@ class QualityLintDialog(QDialog):
         if result.get('error'):
             self._all_issues = []
             self._scanned_images = 0
-            self._tiny_report = None
             self._rebuild_filter_combo()
             self._apply_filter()
-            self._update_tiny_report()
             self.progress.setVisible(False)
             self.status_label.setText(tr("扫描失败"))
             self.summary_label.setText(tr("扫描失败"))
@@ -144,69 +122,13 @@ class QualityLintDialog(QDialog):
         summary = result.get('summary') or {}
         self._all_issues = list(result.get('issues') or [])
         self._scanned_images = int(summary.get('scanned_images') or 0)
-        self._tiny_report = result.get('tiny_report') or {}
         self._rebuild_filter_combo()
         self._apply_filter()
-        self._update_tiny_report()
         self.status_label.setText("")
         self.progress.setValue(self.progress.maximum())
         # 扫描结束进度条就没用了，钉在 100% 只占地方；重扫会新建弹窗，无需恢复
         self.progress.setVisible(False)
         self._update_summary(summary)
-
-    @staticmethod
-    def _tiny_report_text(report):
-        """报告文字：三档计数与占比 + 稳定线 + 已豁免数。
-
-        占比分母用 measured（未豁免的矩形框数），豁免单列 —— 否则
-        标注员点几次「保留」就会看到通过率虚高，报告失去参考价值。
-        """
-        if not isinstance(report, dict):
-            return ""
-        measured = _safe_num(report.get('measured'))
-        exempt = _safe_num(report.get('exempt'))
-        total = _safe_num(report.get('total')) or (measured + exempt)
-        if total <= 0:
-            return tr("未找到可统计的检测框")
-
-        def _part(label, key):
-            n = _safe_num(report.get(key))
-            pct = (n / measured * 100.0) if measured > 0 else 0.0
-            return f"{tr(label)} {n} ({pct:.1f}%)"
-
-        parts = [tr("小目标可检测性") + f" · {tr('检测框')} {measured}"]
-        parts.append(_part("不可检出", 'fail'))
-        parts.append(_part("需放大", 'warn'))
-        parts.append(_part("可通过", 'pass'))
-        stable = _safe_num(report.get('stable'))
-        parts.append(f"{tr('稳定检出')} {stable}")
-        if exempt:
-            parts.append(f"{tr('已标记保留')} {exempt}")
-        text = " | ".join(parts)
-        if _safe_num(report.get('fail')) > 0:
-            text += "\n" + tr(
-                "存在常规配置检不到的目标：建议提高训练分辨率或启用滑窗切片；"
-                "确有意的细长目标可右键「标记保留」")
-        return text
-
-    def _update_tiny_report(self):
-        report = getattr(self, '_tiny_report', None)
-        has = isinstance(report, dict) and bool(report)
-        self.tiny_report_label.setVisible(has)
-        self.tiny_chart.setVisible(has)
-        if not has:
-            return
-        self.tiny_report_label.setText(self._tiny_report_text(report))
-        hist = report.get('histogram') or {}
-        edges = list(hist.get('edges') or [])
-        counts = list(hist.get('counts') or [])
-        if len(edges) >= 2 and counts:
-            self.tiny_chart.set_histogram(
-                edges, counts,
-                xlabel=tr("min(w,h) 占原图比例"),
-                ylabel=tr("检测框数"))
-        else:
-            self.tiny_chart.set_placeholder(tr("无分布数据"))
 
     def _size_hint_text(self, issue):
         """第 4 列：小目标两档给"宽/高 + 占比 + 建议"，其它 kind 沿用 detail。

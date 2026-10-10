@@ -2362,15 +2362,13 @@ def test_progress_bar_hidden_after_successful_result():
     d._all_issues = []
     d._kind_filter = None
     d._scanned_images = 0
-    d._tiny_report = None
     d.status_label = type("L", (), {"setText": lambda self, s: None})()
     d.summary_label = type("L", (), {"setText": lambda self, s: None})()
     d.progress = _Bar()
     d._rebuild_filter_combo = lambda: None
     d._apply_filter = lambda: None
-    d._update_tiny_report = lambda: None
     d._update_summary = lambda summary: None
-    d.set_result({"summary": {"scanned_images": 3}, "issues": [], "tiny_report": {}})
+    d.set_result({"summary": {"scanned_images": 3}, "issues": []})
     assert d.progress.visible is False
 
 
@@ -2380,7 +2378,6 @@ def test_progress_bar_hidden_after_failed_result():
     d._all_issues = []
     d._kind_filter = None
     d._scanned_images = 0
-    d._tiny_report = None
     d.status_label = type("L", (), {"setText": lambda self, s: None})()
     d.summary_label = type("L", (), {"setText": lambda self, s: None})()
     d.progress = type("B", (), {
@@ -2392,7 +2389,6 @@ def test_progress_bar_hidden_after_failed_result():
     })()
     d._rebuild_filter_combo = lambda: None
     d._apply_filter = lambda: None
-    d._update_tiny_report = lambda: None
     d.set_result({"error": True})
     assert d.progress.visible is False
 
@@ -2405,24 +2401,6 @@ def test_progress_bar_stylesheet_is_rounded():
     assert qss.count("border-radius: 8px") == 2, qss
     assert "#202020" in qss and "#2950ff" in qss
     assert "QProgressBar::chunk" in qss
-
-
-def test_tiny_report_text_uses_measured_as_denominator():
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
-    text = QualityLintDialog._tiny_report_text({
-        "measured": 200, "fail": 10, "warn": 30, "pass": 160,
-        "stable": 120, "exempt": 5, "total": 205})
-    assert "10" in text and "5.0%" in text       # 10/200，不是 10/205
-    assert "30" in text and "15.0%" in text
-    assert "160" in text and "80.0%" in text
-    assert "5" in text                           # 豁免单列
-
-
-def test_tiny_report_text_handles_empty_and_bad_input():
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
-    assert QualityLintDialog._tiny_report_text({"measured": 0})
-    assert QualityLintDialog._tiny_report_text({})
-    assert QualityLintDialog._tiny_report_text(None) == ""
 
 
 def test_context_menu_gives_keep_not_detail_ignore_for_tiny_kinds():
@@ -2530,107 +2508,6 @@ def test_size_hint_handles_issue_without_ratio_gracefully_in_table(monkeypatch):
 
     assert "滑窗" in table.item(0, 3).text
     assert "%" not in table.item(0, 3).text
-
-
-def test_dialog_shows_report_area():
-    import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
-    src = inspect.getsource(QualityLintDialog.set_result)
-    assert "tiny_report" in src
-    init_src = inspect.getsource(QualityLintDialog.__init__)
-    assert "HealthBarChart" in init_src
-
-
-def test_report_with_exemptions_moves_counts_not_just_subtracts():
-    """标记保留后报告不能停在旧数字，否则标注员以为没生效。"""
-    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
-    base = tiny_report([0.004, 0.009, 0.5, 0.6], 0)
-    assert (base["fail"], base["warn"], base["pass"]) == (1, 1, 2)
-
-    updated = report_with_exemptions(base, [0.004])
-
-    assert updated["fail"] == 0
-    assert updated["measured"] == 3
-    assert updated["exempt"] == 1
-    assert updated["total"] == 4
-    assert updated["fail"] + updated["warn"] + updated["pass"] == 3
-
-
-def test_report_with_exemptions_recomputes_pass_when_exempting_a_passing_box():
-    """豁免的是"可通过"的框时，pass 必须跟着降，不能沿用旧值。
-
-    只测豁免 🔴 框看不出区别（pass 本来就不变），三档恒等式会碰巧成立。
-    这条专门豁免一个通过档的框，逼出"pass 必须由 measured 反推"。
-    """
-    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
-    base = tiny_report([0.004, 0.009, 0.5, 0.6], 0)
-    assert (base["fail"], base["warn"], base["pass"], base["stable"]) == (1, 1, 2, 2)
-
-    updated = report_with_exemptions(base, [0.5])
-
-    assert updated["measured"] == 3
-    assert updated["fail"] == 1
-    assert updated["warn"] == 1
-    assert updated["pass"] == 1          # 0.6 仍在通过档，0.5 已豁免
-    assert updated["stable"] == 1
-    assert updated["exempt"] == 1
-    assert updated["fail"] + updated["warn"] + updated["pass"] == 3
-
-
-def test_report_with_exemptions_does_not_mutate_input():
-    """调用方可能还持有旧 dict 引用，就地改会让两份报告都变。"""
-    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
-    base = tiny_report([0.004, 0.5], 0)
-    before = {"counts": list(base["histogram"]["counts"]),
-              "fail": base["fail"], "measured": base["measured"],
-              "pass": base["pass"]}
-
-    updated = report_with_exemptions(base, [0.004, 0.5])
-
-    assert base["histogram"]["counts"] == before["counts"]
-    assert base["fail"] == before["fail"]
-    assert base["measured"] == before["measured"]
-    assert base["pass"] == before["pass"]
-    assert updated is not base
-    assert updated["histogram"] is not base["histogram"]
-
-
-def test_report_with_exemptions_updates_histogram_bin():
-    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
-    base = tiny_report([0.004], 0)
-    assert base["histogram"]["counts"][1] == 1     # 0.4% 落 [0.3125%, 0.625%)
-
-    updated = report_with_exemptions(base, [0.004])
-
-    assert updated["histogram"]["counts"][1] == 0
-    assert sum(updated["histogram"]["counts"]) == 0
-
-
-def test_report_with_exemptions_clamps_at_zero():
-    """报告与实际不一致时也不能算出负数，UI 会直接显示出来。"""
-    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
-    base = tiny_report([], 0)
-    updated = report_with_exemptions(base, [0.001, 0.002])
-    assert updated["fail"] == 0
-    assert updated["measured"] == 0
-    assert updated["pass"] == 0
-
-
-def test_report_with_exemptions_ignores_bad_ratios():
-    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
-    base = tiny_report([0.004], 0)
-    updated = report_with_exemptions(
-        base, [float("nan"), "bogus", None])
-    assert updated["fail"] == 1
-    assert updated["measured"] == 1
-    assert updated["exempt"] == 0
-
-
-def test_report_with_exemptions_noop_returns_equivalent():
-    from pastelabel.engine.quality_lint import report_with_exemptions, tiny_report
-    base = tiny_report([0.004], 0)
-    assert report_with_exemptions(base, [])["fail"] == 1
-    assert report_with_exemptions(None, [0.004]) is None
 
 
 def test_mixin_wires_mark_keep_to_sidecar_write():

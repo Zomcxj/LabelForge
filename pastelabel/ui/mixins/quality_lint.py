@@ -87,7 +87,7 @@ class QualityLintMixin:
         issues = [i for i in (issues or []) if i.get('kind')]
         if not issues:
             return
-        from ...engine.quality_lint import mark_tiny_keep, report_with_exemptions
+        from ...engine.quality_lint import mark_tiny_keep
         memory_boxes = {
             idx: list(boxes) for idx, boxes in
             (getattr(self, 'detection_boxes_dict', None) or {}).items()
@@ -104,12 +104,6 @@ class QualityLintMixin:
         current = getattr(self, 'current_background_index', -1)
         if isinstance(current, int) and current in memory_boxes:
             self.detection_boxes = list(memory_boxes.get(current) or [])
-        # 报告停在旧数字会让人以为没生效：issue 自带 ratio，做精准减法
-        report = getattr(dialog, '_tiny_report', None)
-        ratios = [i.get('ratio') for i in issues if i.get('ratio') is not None]
-        if isinstance(report, dict) and report and ratios:
-            dialog._tiny_report = report_with_exemptions(report, ratios)
-            dialog._update_tiny_report()
         dialog._remove_issues(issues)
         marked = result.get('marked') or 0
         text = (tr("已标记保留") + f" · {marked}") if not failed else tr("标记失败")
