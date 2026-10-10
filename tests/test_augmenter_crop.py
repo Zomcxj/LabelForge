@@ -241,6 +241,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Qt 子进程在解释器退出阶段析构顺序不定，偶发崩溃/挂死。断言通过、标记打印后
+# 立即 flush + os._exit(0) 绕开支路阶段；os._exit 不冲刷缓冲，必须先 flush。
+_QT_EXIT_GUARD = '''
+import os, sys
+sys.stdout.flush()
+os._exit(0)
+'''
+
+
 def _run_real_qt(script, timeout=180):
     """真实 Qt 子进程执行。
 
@@ -251,7 +260,7 @@ def _run_real_qt(script, timeout=180):
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT),
                         "PYTHONIOENCODING": "utf-8"}
     try:
-        r = subprocess.run([sys.executable, "-c", script], cwd=ROOT, env=env,
+        r = subprocess.run([sys.executable, "-c", script + _QT_EXIT_GUARD], cwd=ROOT, env=env,
                            text=True, capture_output=True, timeout=timeout,
                            encoding="utf-8", errors="replace")
     except subprocess.TimeoutExpired as e:

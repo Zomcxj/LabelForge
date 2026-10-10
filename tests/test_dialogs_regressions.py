@@ -100,6 +100,12 @@ editor.canvas_items_dict = {0: [(None, None, "zebra")]}
 
 assert editor.get_label_color("zebra") == "#222222"
 assert editor.get_label_color("apple") == "#111111"
+
+# Qt 子进程退出阶段析构顺序不定，偶发崩溃/挂死；断言通过后 flush + os._exit(0)
+# 绕开析构（os._exit 不冲刷缓冲，必须先 flush）。
+import os, sys
+sys.stdout.flush()
+os._exit(0)
 '''
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(root)}
 

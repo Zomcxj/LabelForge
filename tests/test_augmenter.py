@@ -25,6 +25,15 @@ from pastelabel.engine.augmenter.translate import RandomTranslate
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Qt 子进程在解释器退出阶段析构顺序不定，偶发崩溃/挂死（exit code 0xC0000409 /
+# 0xC0000005，或无限超时）。断言全部通过、标记打印之后立即 flush + os._exit(0)，
+# 绕开不可控的析构阶段。os._exit 不冲刷缓冲，必须先 flush，否则标记会丢。
+_QT_EXIT_GUARD = '''
+import os, sys
+sys.stdout.flush()
+os._exit(0)
+'''
+
 
 def _run_real_qt(script):
     """在真实 Qt（offscreen）子进程里跑断言，返回 stdout。"""
@@ -33,7 +42,7 @@ def _run_real_qt(script):
         "PYTHONPATH": str(ROOT),
     }
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
         cwd=ROOT, env=env, text=True, capture_output=True,
     )
     assert result.returncode == 0, result.stderr

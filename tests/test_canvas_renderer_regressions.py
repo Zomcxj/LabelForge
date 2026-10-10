@@ -11,6 +11,14 @@ from pastelabel.engine.paste_engine import PasteEngineMixin
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Qt 子进程在解释器退出阶段析构顺序不定，偶发崩溃/挂死。断言通过后立即
+# flush + os._exit(0) 绕开析构；os._exit 不冲刷缓冲，必须先 flush。
+_QT_EXIT_GUARD = '''
+import os, sys
+sys.stdout.flush()
+os._exit(0)
+'''
+
 
 def test_magnifier_shows_in_side_mode_regardless_of_selection():
     source = (ROOT / "pastelabel" / "canvas" / "canvas_renderer.py").read_text(encoding="utf-8")
@@ -117,7 +125,7 @@ expected = (round((0x1E * 60 + 255 * 195) / 255),
 assert px.getRgb()[:3] == expected, (px.getRgb()[:3], expected)
 '''
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
         cwd=ROOT,
         env=os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)},
         text=True,
@@ -172,7 +180,7 @@ px = image.pixelColor(30, 30)
 assert (px.red(), px.green(), px.blue()) != (255, 255, 255), px.getRgb()
 '''
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
         cwd=ROOT,
         env=os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)},
         text=True,
@@ -229,7 +237,7 @@ selected = render(True)
 assert idle != selected, (idle, selected)
 '''
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
         cwd=ROOT,
         env=os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)},
         text=True,
@@ -294,7 +302,7 @@ assert wp != (255, 255, 255), wp
 assert op == (255, 255, 255), op
 '''
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
         cwd=ROOT,
         env=os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)},
         text=True,
@@ -353,7 +361,7 @@ px = image.pixelColor(30, 30)
 assert px.green() > px.blue(), px.getRgb()
 '''
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
         cwd=ROOT,
         env=os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)},
         text=True,
@@ -420,7 +428,7 @@ for draw in (
     assert actual == expected(155), (actual.getRgb(), expected(155).getRgb())
 '''
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
         cwd=ROOT,
         env=os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)},
         text=True,

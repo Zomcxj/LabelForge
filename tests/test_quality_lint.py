@@ -1557,6 +1557,12 @@ dialog._save_shortcuts()
 rules = config_manager.load_all().get("lint_ignored_rules")
 assert rules == {}, rules
 print("OK")
+
+# Qt 子进程退出阶段析构顺序不定，偶发崩溃/挂死；断言通过后 flush + os._exit(0)
+# 绕开析构（os._exit 不冲刷缓冲，必须先 flush，否则标记丢失会误报失败）。
+import os, sys
+sys.stdout.flush()
+os._exit(0)
 '''
     env = os.environ | {
         "QT_QPA_PLATFORM": "offscreen",

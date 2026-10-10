@@ -11,6 +11,15 @@ from pastelabel.ui.theme import ThemeManager, ThemeMode
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Qt 子进程在解释器退出阶段析构顺序不定，偶发崩溃/挂死。断言通过后立即
+# flush + os._exit(0) 绕开析构；os._exit 不冲刷缓冲，必须先 flush。
+_QT_EXIT_GUARD = '''
+import os, sys
+sys.stdout.flush()
+os._exit(0)
+'''
+
+
 def _rule(style, selector):
     return style.split(f"{selector} {{", 1)[1].split("}", 1)[0]
 
@@ -43,7 +52,7 @@ for widget, role in widgets:
 '''
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)}
     result = subprocess.run(
-        [sys.executable, "-c", script], cwd=ROOT, env=env, text=True, capture_output=True
+        [sys.executable, "-c", script + _QT_EXIT_GUARD], cwd=ROOT, env=env, text=True, capture_output=True
     )
     assert result.returncode == 0, result.stderr
 

@@ -82,6 +82,13 @@ def render_once(canvas):
 
 
 def _run(script):
+    # Qt 子进程在解释器退出阶段析构顺序不定，偶发崩溃/挂死。断言通过、标记打印后
+    # 立即 flush + os._exit(0) 绕开析构；os._exit 不冲刷缓冲，必须先 flush。
+    script = script + '''
+import os, sys
+sys.stdout.flush()
+os._exit(0)
+'''
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)}
     result = subprocess.run(
         [sys.executable, "-c", script],
