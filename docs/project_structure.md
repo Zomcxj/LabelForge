@@ -23,6 +23,7 @@ PasteLabel/
 │   ├── __init__.py
 │   ├── main.py                # 程序入口
 │   ├── PasteLabel.spec        # PyInstaller spec
+│   ├── build_support.py       # 打包辅助：统一 MSVC 运行库版本（Windows 专用，Linux 上为空操作）
 │   ├── sip.py                 # PyInstaller 的 PyQt5 SIP 兼容模块
 │   ├── canvas/                # 画布绘制与交互
 │   │   ├── __init__.py
@@ -83,9 +84,11 @@ PasteLabel/
 │   │   ├── dwm.py
 │   │   ├── i18n.py
 │   │   ├── icons.py           # SVG 图标常量与渲染辅助函数
-│   │   ├── inference_dialog.py # 模型推理窗口（模型配置/单张批量/进度）
+│   │   ├── inference_progress.py # 推理进度小窗（非模态、可取消、跟随主题）
+│   │   ├── inference_workers.py  # 模型加载/批量推理后台线程与类别名输入
 │   │   ├── main_window.py     # ImageEditor 协调器
 │   │   ├── memory_dialog.py
+│   │   ├── model_row.py       # 画布上方的模型参数行（加载按钮/阈值/尺寸/覆盖模式/关闭）
 │   │   ├── processing_panel.py # ProcessingPanel 执行与日志逻辑
 │   │   ├── quality_lint_dialog.py # 标注质检结果窗口
 │   │   ├── segmented_control.py
