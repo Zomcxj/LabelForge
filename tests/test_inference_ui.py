@@ -6,6 +6,9 @@
 """
 import ast
 import inspect
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -935,3 +938,152 @@ def test_conf_stays_enabled_for_end2end_model():
     from pastelabel.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.set_model)
     assert "self.conf_spin.setEnabled(True)" in src, src
+
+
+_QT_EXIT_GUARD = """
+import os, sys
+sys.stdout.flush()
+os._exit(0)
+"""
+
+
+def _run_real_qt(script):
+    """在真实 Qt（offscreen）子进程里跑断言，返回 stdout。"""
+    env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)}
+    result = subprocess.run(
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
+        cwd=ROOT, env=env, text=True, capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def test_real_row_shows_defaults_before_any_model_is_loaded():
+    """真实控件：还没加载模型时，参数行显示默认值而不是 spinbox 下限。
+
+    这条是 0.01 / 0.05 / 32x32 那个 bug 的回归护栏——只读源码挡不住，
+    必须看真实控件的数值。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+from pastelabel.engine.onnx_inference import DEFAULT_CONF, DEFAULT_IOU, DEFAULT_INPUT_SIZE
+
+app = QApplication([])
+row = ModelRow()
+print(row.conf_spin.value(), row.iou_spin.value(),
+      row.size_spin_w.value(), row.size_spin_h.value())
+print(DEFAULT_CONF, DEFAULT_IOU, DEFAULT_INPUT_SIZE[0], DEFAULT_INPUT_SIZE[1])
+""")
+    lines = [ln.strip() for ln in out.strip().splitlines() if ln.strip()]
+    shown = lines[0].split()
+    expected = lines[1].split()
+    assert shown == expected, f"参数行显示 {shown}，应为 {expected}"
+    assert shown == ["0.25", "0.45", "640", "640"], shown
+
+
+def test_real_row_populates_values_after_set_model():
+    """真实控件：加载模型后填入的是传进来的值，不是占位数字。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.set_model('m.onnx', 0.31, 0.62, (512, 512), ['CPUExecutionProvider'], dynamic=False)
+print(row.conf_spin.value(), row.iou_spin.value(),
+      row.size_spin_w.value(), row.size_spin_h.value())
+""")
+    shown = out.strip().splitlines()[0].split()
+    assert shown == ["0.31", "0.62", "512", "512"], shown
+
+
+def test_real_row_clear_model_restores_defaults():
+    """真实控件：清掉模型后回到默认值，不会残留上一个模型的值。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.set_model('m.onnx', 0.77, 0.88, (320, 320), ['CPUExecutionProvider'], dynamic=False)
+row.clear_model()
+print(row.conf_spin.value(), row.iou_spin.value(),
+      row.size_spin_w.value(), row.size_spin_h.value())
+print(row.conf_spin.isEnabled(), row.filter_btn.isEnabled())
+""")
+    lines = [ln.strip() for ln in out.strip().splitlines() if ln.strip()]
+    assert lines[0].split() == ["0.25", "0.45", "640", "640"], lines[0]
+    assert lines[1].split() == ["False", "False"], lines[1]
+
+
+def test_single_inference_icon_is_a_play_triangle():
+    """单图推理用播放三角，与批量的闪电区分开。"""
+    from pastelabel.ui import icons
+    svg = icons.SVG_MODEL_SINGLE
+    assert "<rect" not in svg, "旧图标是矩形相框，应已换成三角"
+    assert "M7 4.5v15l12.5-7.5z" in svg, svg
+    src = inspect.getsource(ToolbarMixin._create_toolbar)
+    assert "SVG_MODEL_SINGLE, self._run_inference_current" in src
+
+
+def test_single_and_batch_icons_are_distinct():
+    """两个推理图标不能长得一样，否则分不清哪个是哪个。"""
+    from pastelabel.ui import icons
+    assert icons.SVG_MODEL_SINGLE != icons.SVG_MODEL_ALL
+    assert "M13 2L4.5 13.5" in icons.SVG_MODEL_ALL, "批量应是闪电"
+
+
+def test_toolbar_icons_are_all_different():
+    """四个图标两两不同：滑杆 / 三角 / 闪电 / 漏斗。"""
+    from pastelabel.ui import icons
+    four = [icons.SVG_MODEL_SLIDERS, icons.SVG_MODEL_SINGLE,
+            icons.SVG_MODEL_ALL, icons.SVG_MODEL_FILTER]
+    assert len(set(four)) == 4
+
+
+# ---------- 未加载模型时参数行的初值 ----------
+
+def test_clear_model_fills_defaults_not_spinbox_minimums():
+    """没模型时参数行要显示默认值。
+
+    不显式填值的话 QDoubleSpinBox 会停在 setRange 的下限，
+    显示成 0.01 / 0.05 / 32x32，看着像参数坏了。
+    """
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow.clear_model)
+    assert "DEFAULT_CONF" in src and "DEFAULT_IOU" in src, src
+    assert "DEFAULT_INPUT_SIZE" in src, src
+    for field in ("self.conf_spin", "self.iou_spin",
+                  "self.size_spin_w", "self.size_spin_h"):
+        assert f"({field}, " in src, f"{field} 未在 clear_model 里填值"
+
+
+def test_clear_model_does_not_emit_change_signals():
+    """填初值时不能触发阈值变更回调（那时还没有 detector）。"""
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow.clear_model)
+    # 阈值一组、尺寸一组，每组各封一次信号
+    assert src.count("blockSignals(True)") >= 2, src
+    assert src.count("blockSignals(False)") >= 2, src
+    assert src.count("blockSignals(True)") == src.count("blockSignals(False)")
+
+
+def test_clear_model_resets_end2end_and_tooltip():
+    """换回无模型状态后，端到端模型的 NMS 提示文案要清掉。"""
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow.clear_model)
+    assert "self._end2end = False" in src, src
+    assert "NMS 去重阈值" in src, src
+
+
+def test_clear_model_resets_filter_button_text():
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow.clear_model)
+    assert "self.set_filter_summary(set(), 0)" in src, src
+
+
+def test_row_constructor_starts_in_the_no_model_state():
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow.__init__)
+    assert "self.clear_model()" in src, src

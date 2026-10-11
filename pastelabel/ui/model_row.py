@@ -169,15 +169,35 @@ class ModelRow(QWidget):
         self.filter_btn.setEnabled(True)
 
     def clear_model(self):
-        """没有模型时的样子：只留加载按钮与关闭按钮。"""
+        """没有模型时的样子：显示引擎默认值，只留加载按钮可点。
+
+        必须显式填默认值：QDoubleSpinBox 初值是 setRange 的下限，
+        不填就会显示成 0.01 / 0.05 / 32x32 这些占位数字，看着像参数被改坏了。
+        """
+        from ..engine.onnx_inference import (
+            DEFAULT_CONF, DEFAULT_INPUT_SIZE, DEFAULT_IOU,
+        )
+
         self._model_name = ""
+        self._end2end = False
         self.name_label.setText(tr("尚未加载模型"))
         self.name_label.setToolTip("")
-        for widget in (self.conf_spin, self.iou_spin,
-                       self.size_spin_w, self.size_spin_h):
+        for widget, value in ((self.conf_spin, DEFAULT_CONF),
+                              (self.iou_spin, DEFAULT_IOU)):
+            widget.blockSignals(True)
+            widget.setValue(value)
             widget.setEnabled(False)
+            widget.blockSignals(False)
+        for widget, value in ((self.size_spin_w, DEFAULT_INPUT_SIZE[0]),
+                              (self.size_spin_h, DEFAULT_INPUT_SIZE[1])):
+            widget.blockSignals(True)
+            widget.setValue(value)
+            widget.setEnabled(False)
+            widget.blockSignals(False)
         self.replace_btn.setEnabled(False)
         self.filter_btn.setEnabled(False)
+        self.iou_spin.setToolTip(tr("NMS 去重阈值，越小保留的框越少"))
+        self.set_filter_summary(set(), 0)
         self._refresh_replace_text()
 
     def set_filter_summary(self, selected, total):
