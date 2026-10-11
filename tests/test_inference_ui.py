@@ -1474,6 +1474,40 @@ def test_apply_results_forwards_filter_to_disk_writer(monkeypatch):
 
 # ---------- 类别数提示 ----------
 
+def test_guess_class_count_uses_detection_head_not_first_output():
+    """带辅助输出的模型也要给出类别数：要挑出检测头再算，不能只认第 0 个输出。
+
+    断言必须看真实行为，不能 grep 源码——docstring 里就写着
+    pick_detection_output，字符串匹配在变异后会假通过。
+    """
+    from pastelabel.ui.inference_workers import ModelLoadWorker
+
+    class Out:
+        def __init__(self, shape):
+            self.shape = shape
+
+    class FakeSession:
+        """辅助头排在最前，检测头在第二个：只用 outputs[0] 会算出错的数。"""
+
+        def get_outputs(self):
+            return [Out([1, 3, 80, 80, 9]), Out([1, 25200, 9])]
+
+    got = ModelLoadWorker._guess_class_count(FakeSession())
+    assert got == 4, got          # [1, 25200, 9] -> 9-5 = 4
+
+    class NoHead:
+        def get_outputs(self):
+            return [Out([1, 3, 80, 80, 9])]
+
+    assert ModelLoadWorker._guess_class_count(NoHead()) is None
+
+    class Broken:
+        def get_outputs(self):
+            raise RuntimeError("boom")
+
+    assert ModelLoadWorker._guess_class_count(Broken()) is None
+
+
 def test_guess_class_count_lives_on_model_load_worker():
     """算类别数要在加载 worker 上；放错类会让 need_class_names 直接抛异常。"""
     from pastelabel.ui.inference_workers import InferenceWorker, ModelLoadWorker
@@ -1599,3 +1633,27 @@ print("TIP", dlg3.count_label.text())
     assert "LINES ['car', 'person', 'bus']" in out, out
     assert "MISMATCH True" in out, out
     assert "MATCH_OK True" in out, out
+
+
+def test_real_replace_button_defaults_to_overwrite():
+    """真实控件：覆盖/补充默认是「覆盖」。
+
+    默认是补充的话，用户不点这个按钮跑第二遍就会把新旧框叠在一起。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+app = QApplication([])
+row = ModelRow()
+print("MODE", row.replace_mode())
+print("TEXT", row.replace_btn.text())
+print("CHECKED", row.replace_btn.isChecked())
+row.replace_btn.setChecked(False)
+print("AFTER_TOGGLE", row.replace_mode())
+print("AFTER_TEXT", row.replace_btn.text())
+""")
+    assert "MODE True" in out, out
+    assert "CHECKED True" in out, out
+    assert "AFTER_TOGGLE False" in out, out
+    # 未选中显示「补充」，切回来显示「覆盖」
+    assert "AFTER_TEXT" in out, out

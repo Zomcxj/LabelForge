@@ -202,17 +202,17 @@ def test_class_table_disambiguates_small_v5_output(tmp_path):
     assert [b["score"] for b in boxes] == pytest.approx([0.81, 0.63, 0.54], abs=1e-5)
 
 
-def test_unsupported_output_count_is_rejected(tmp_path):
-    """双输出（如内置 NMS 导出）必须明确拒绝。"""
+def test_ambiguous_multiple_detection_heads_are_rejected(tmp_path):
+    """两个都是 3 维输出时无法确定哪个是检测头，必须拒绝而不是瞎挑。"""
     const = numpy_helper.from_array(np.zeros((1, 3, 8), dtype=np.float32), "pred")
-    extra = numpy_helper.from_array(np.zeros((1, 1), dtype=np.float32), "extra")
+    other = numpy_helper.from_array(np.zeros((1, 25200, 9), dtype=np.float32), "pred2")
     graph = helper.make_graph(
         [helper.make_node("Constant", [], ["output"], value=const),
-         helper.make_node("Constant", [], ["extra"], value=extra)],
+         helper.make_node("Constant", [], ["output2"], value=other)],
         "two",
         [helper.make_tensor_value_info("images", TensorProto.FLOAT, [1, 3, SIZE, SIZE])],
         [helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, 3, 8]),
-         helper.make_tensor_value_info("extra", TensorProto.FLOAT, [1, 1])],
+         helper.make_tensor_value_info("output2", TensorProto.FLOAT, [1, 25200, 9])],
     )
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 12)])
     model.ir_version = 8
@@ -221,7 +221,27 @@ def test_unsupported_output_count_is_rejected(tmp_path):
     with pytest.raises(InferenceError) as exc:
         OnnxDetector(path, class_names=NAMES).detect(_blank(), _letterbox)
 
-    assert "单输出" in str(exc.value)
+    assert "无法确定哪个是检测头" in str(exc.value)
+
+
+def test_model_without_detection_head_is_rejected(tmp_path):
+    """一个 3 维输出都没有（如分割/姿态导出），拒绝并说明原因。"""
+    const = numpy_helper.from_array(np.zeros((1, 3, 8, 8), dtype=np.float32), "pred")
+    graph = helper.make_graph(
+        [helper.make_node("Constant", [], ["output"], value=const)],
+        "seg",
+        [helper.make_tensor_value_info("images", TensorProto.FLOAT, [1, 3, SIZE, SIZE])],
+        [helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, 3, 8, 8])],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 12)])
+    model.ir_version = 8
+    path = _save(model, tmp_path / "seg.onnx")
+
+    with pytest.raises(InferenceError) as exc:
+        OnnxDetector(path, class_names=NAMES).detect(_blank(), _letterbox)
+
+    assert "没有 3 维检测输出" in str(exc.value)
+
 
 
 def test_missing_model_file_raises_inference_error(tmp_path):
@@ -396,3 +416,97 @@ for b in boxes:
 print("REAL_OK", len(boxes), sorted({{b["label"] for b in boxes}})[:5])
 ''')
     assert "REAL_OK" in out
+
+
+def _v5_model_with_aux_heads(path, rows, num_classes=3):
+    """v5 主检测头 + 每 stride 的原始辅助头（第三方训练导出的常见形态）。
+
+    辅助头是 5 维 [1, 每格锚数, H, W, 5+C]，值还没解码，不参与推理。
+    """
+    flat = [list(row[:5]) + list(row[5]) for row in rows]
+    data = np.array([flat], dtype=np.float32)
+    aux = np.zeros((1, 3, 8, 8, 5 + num_classes), dtype=np.float32)
+    graph = helper.make_graph(
+        [helper.make_node("Constant", [], ["output"],
+                          value=numpy_helper.from_array(data, "pred")),
+         helper.make_node("Constant", [], ["346"],
+                          value=numpy_helper.from_array(aux, "aux"))],
+        "v5aux",
+        [helper.make_tensor_value_info("images", TensorProto.FLOAT, [1, 3, SIZE, SIZE])],
+        [helper.make_tensor_value_info("output", TensorProto.FLOAT,
+                                       [1, len(rows), 5 + num_classes]),
+         helper.make_tensor_value_info("346", TensorProto.FLOAT,
+                                       [1, 3, 8, 8, 5 + num_classes])],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 12)])
+    model.ir_version = 8
+    return _save(model, path)
+
+
+def test_auxiliary_training_heads_are_ignored(tmp_path):
+    """多挂训练辅助头的第三方模型要照常推理，不能被「仅支持单输出」拒掉。
+
+    这是 nonmotor.onnx 那个崩溃的回归护栏：主检测头是唯一的 3 维输出，
+    5 维的辅助头只是同一次导出的副产品。
+    """
+    path = _v5_model_with_aux_heads(tmp_path / "v5aux.onnx", [
+        (32.0, 32.0, 20.0, 10.0, 0.9, [0.9, 0.05, 0.05]),
+        (20.0, 20.0, 8.0, 8.0, 0.7, [0.05, 0.9, 0.05]),
+    ])
+    detector = OnnxDetector(path, class_names=NAMES, conf_threshold=0.25)
+
+    boxes = detector.detect(_blank(), _letterbox)
+
+    assert {b["label"] for b in boxes} == {"cat", "dog"}
+    assert [b["score"] for b in boxes] == pytest.approx([0.81, 0.63], abs=1e-5)
+
+
+def test_detection_head_index_is_not_zero_when_aux_comes_first(tmp_path):
+    """检测头在输出列表里排第二时也要挑对，不能死认下标 0。"""
+    # 行数要够多，否则 [1, N, 8] 太小、格式本身判不出来（那是对的）
+    rows = [list((32.0, 32.0, 20.0, 10.0, 0.9)) + [0.9, 0.05, 0.05]]
+    rows += [list((0.0, 0.0, 1.0, 1.0, 0.0)) + [0.0, 0.0, 0.0]] * 255
+    data = np.array([rows], dtype=np.float32)
+    aux = np.zeros((1, 3, 8, 8, 8), dtype=np.float32)
+    graph = helper.make_graph(
+        [helper.make_node("Constant", [], ["346"],
+                          value=numpy_helper.from_array(aux, "aux")),
+         helper.make_node("Constant", [], ["output"],
+                          value=numpy_helper.from_array(data, "pred"))],
+        "auxfirst",
+        [helper.make_tensor_value_info("images", TensorProto.FLOAT, [1, 3, SIZE, SIZE])],
+        [helper.make_tensor_value_info("346", TensorProto.FLOAT, [1, 3, 8, 8, 8]),
+         helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, 256, 8])],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 12)])
+    model.ir_version = 8
+    path = _save(model, tmp_path / "auxfirst.onnx")
+
+    detector = OnnxDetector(path, class_names=NAMES, conf_threshold=0.25)
+    boxes = detector.detect(_blank(), _letterbox)
+
+    assert [b["label"] for b in boxes] == ["cat"]
+    assert detector._output_index == 1
+
+
+def test_pick_detection_output_reports_shapes_in_error():
+    """挑不出来时错误里要带上实际形状，方便用户自己看模型导出了什么。"""
+    from pastelabel.engine.onnx_inference import pick_detection_output
+
+    class Out:
+        def __init__(self, shape):
+            self.shape = shape
+
+    # 一个 3 维都没有
+    with pytest.raises(InferenceError) as exc:
+        pick_detection_output([Out([1, 3, 8, 8]), Out([1, 2, 3, 3])])
+    text = str(exc.value)
+    assert "没有 3 维检测输出" in text
+    assert "(1, 3, 8, 8)" in text
+
+    # 有两个 3 维，说不清哪个是检测头
+    with pytest.raises(InferenceError) as exc2:
+        pick_detection_output([Out([1, 300, 6]), Out([1, 25200, 9])])
+    text2 = str(exc2.value)
+    assert "2 个 3 维输出" in text2
+    assert "(1, 300, 6)" in text2 and "(1, 25200, 9)" in text2

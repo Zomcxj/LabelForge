@@ -265,6 +265,37 @@ def detect_output_format(shape, num_classes=None):
     return None
 
 
+def pick_detection_output(outputs):
+    """从模型输出里挑出唯一的检测头，返回 (下标, shape)。
+
+    YOLOv5 训练导出的第三方模型常带一堆辅助输出：主检测头是 3 维的
+    [1, 锚点数, 5+C]，另外还挂出每个 stride 的原始头（5 维
+    [1, 每格锚数, H, W, 5+C]，值还没解码）。这些辅助输出不参与推理，
+    但只要多挂了一个，模型就变成"多输出"，直接报"仅支持单输出"会把
+    这类型号一律拒之门外。
+
+    判别只看形状，不靠输出名（名字在不同导出脚本里毫无规律）：
+      3 维的只有一个 -> 就是它；
+      3 维的一个都没有，或有多个 -> 说不清是谁，报错让用户显式指定，
+      绝不瞎猜（挑错会静默产出错误标注）。
+    """
+    candidates = [
+        (i, tuple(int(d) for d in o.shape))
+        for i, o in enumerate(outputs)
+        if len(o.shape) == 3
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    shapes = [tuple(o.shape) for o in outputs]
+    if not candidates:
+        raise InferenceError(
+            f"模型没有 3 维检测输出，实际输出形状 {shapes}；"
+            "分割 / 姿态 / OBB 导出需各自的适配")
+    raise InferenceError(
+        f"模型有 {len(candidates)} 个 3 维输出，无法确定哪个是检测头，"
+        f"实际输出形状 {shapes}")
+
+
 def decode_predictions(raw, output_format, conf_threshold, num_classes=None,
                        max_det=DEFAULT_MAX_DET):
     """按指定格式解码；未知格式明确拒绝，不静默回退成普通检测。"""
@@ -413,6 +444,8 @@ class OnnxDetector:
         self._session = None
         self._input_name = None
         self._resolved_format = None
+        # 检测头在输出列表里的下标；带辅助输出的模型不是 0
+        self._output_index = 0
 
     def set_thresholds(self, conf_threshold=None, iou_threshold=None):
         """改阈值；只影响后续 detect，不重建会话。"""
@@ -499,19 +532,17 @@ class OnnxDetector:
             return self._resolved_format
         self._ensure_session()
         outputs = self.session.get_outputs()
-        if len(outputs) != 1:
-            raise InferenceError(
-                f"模型输出个数为 {len(outputs)}，仅支持单输出检测模型；"
-                "内置 NMS / 分割 / 姿态 / OBB 导出需各自的适配")
+        index, shape = pick_detection_output(outputs)
         # 模型自带的类别表也算已知类别数：ultralytics 导出的 v5/v8 都写了 names，
         # 有它就能把 5+C 与 4+C 区分开，不必强求用户再选一次格式。
         num_classes = len(self.class_names) or len(metadata_class_names(self.session))
-        fmt = detect_output_format(outputs[0].shape, num_classes or None)
+        fmt = detect_output_format(shape, num_classes or None)
         if fmt is None:
             raise InferenceError(
-                f"无法从输出 shape {outputs[0].shape} 判断模型格式，"
+                f"无法从输出 shape {shape} 判断模型格式，"
                 "请显式选择 YOLOv5 / YOLOv8 / YOLO26")
         self._resolved_format = fmt
+        self._output_index = index
         return fmt
 
     def detect(self, rgb, resize_fn, conf_threshold=None, iou_threshold=None):
@@ -537,7 +568,7 @@ class OnnxDetector:
         outputs = self._ensure_session().run(None, {self._input_name: tensor})
         fmt = self.resolve_format()
         decoded = decode_predictions(
-            outputs[0], fmt, conf,
+            outputs[self._output_index], fmt, conf,
             len(self.class_names) or None)
 
         boxes, keep = unletterbox_boxes(decoded["boxes"], geometry, src_w, src_h)

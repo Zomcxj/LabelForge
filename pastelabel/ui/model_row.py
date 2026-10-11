@@ -87,6 +87,9 @@ class ModelRow(QWidget):
         self.replace_btn = QPushButton()
         self.replace_btn.setObjectName("optionsBtn")
         self.replace_btn.setCheckable(True)
+        # 默认覆盖：推理结果直接替换上一轮，不叠加。这个选择不写配置，
+        # 每次启动都回到覆盖，避免上次改过补充的用户拿到叠出来的结果。
+        self.replace_btn.setChecked(True)
         self.replace_btn.setFixedHeight(24)
         self.replace_btn.setToolTip(tr("覆盖：替换上一轮推理框；补充：保留并追加"))
         self.replace_btn.clicked.connect(self._on_replace_toggled)

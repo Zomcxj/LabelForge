@@ -73,19 +73,17 @@ class ModelLoadWorker(QThread):
 
     @staticmethod
     def _guess_class_count(session):
-        """从输出 shape 推类别数，供手输框提示该填几个；推不出返回 None。
+        """从检测头的 shape 推类别数，供手输框提示该填几个；推不出返回 None。
 
-        多输出模型（带辅助训练头）的类别数不在第一个输出的形状里，
-        这种情况直接不给数，让用户自己按训练时的类别表填。
+        带辅助输出的训练导出（多输出）也要能给出数：先挑出唯一的检测头，
+        再交给 guess_class_count，与真正推理时用的是同一个头。
         """
-        from ..engine.onnx_inference import guess_class_count
+        from ..engine.onnx_inference import guess_class_count, pick_detection_output
         try:
-            outputs = session.get_outputs()
+            _, shape = pick_detection_output(session.get_outputs())
         except Exception:
             return None
-        if len(outputs) != 1:
-            return None
-        return guess_class_count(outputs[0].shape)
+        return guess_class_count(shape)
 
 
 class InferenceWorker(QThread):
