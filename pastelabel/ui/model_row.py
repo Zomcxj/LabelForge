@@ -1,0 +1,212 @@
+"""画布上方的模型行：加载按钮、模型名、阈值、输入尺寸、覆盖/补充与关闭。
+
+工具栏第一个图标负责显示/隐藏这一行；关闭后两个推理图标会禁用，重新点开即恢复。
+阈值与尺寸改动即时写回 detector，不重建会话，所以调参不用重新加载模型。
+"""
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtWidgets import (
+    QWidget, QHBoxLayout, QLabel, QPushButton, QDoubleSpinBox, QSpinBox,
+    QToolButton,
+)
+
+from .i18n import t as tr
+from .theme import ThemeManager
+
+
+class ModelRow(QWidget):
+    """模型信息行；控件改动通过信号交给主窗口写回 detector。"""
+
+    thresholds_changed = pyqtSignal(float, float)
+    input_size_changed = pyqtSignal(int, int)
+    replace_mode_changed = pyqtSignal(bool)
+    load_requested = pyqtSignal()
+    closed = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("modelRow")
+        self._build_ui()
+        self._apply_style()
+        self.clear_model()
+
+    def _build_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 3, 8, 3)
+        layout.setSpacing(6)
+
+        self.name_label = QLabel("")
+        self.name_label.setObjectName("modelRowName")
+        self._model_name = ""
+        layout.addWidget(self.name_label)
+
+        self.load_btn = QPushButton(tr("加载模型"))
+        self.load_btn.setObjectName("optionsBtn")
+        self.load_btn.setFixedHeight(24)
+        self.load_btn.setToolTip(tr("加载 ONNX 模型"))
+        self.load_btn.clicked.connect(self.load_requested.emit)
+        layout.addWidget(self.load_btn)
+
+        self.conf_lbl = QLabel(tr("置信度"))
+        layout.addWidget(self.conf_lbl)
+        self.conf_spin = QDoubleSpinBox()
+        self.conf_spin.setRange(0.01, 1.0)
+        self.conf_spin.setSingleStep(0.05)
+        self.conf_spin.setDecimals(2)
+        self.conf_spin.setFixedWidth(72)
+        self.conf_spin.valueChanged.connect(self._emit_thresholds)
+        layout.addWidget(self.conf_spin)
+
+        self.iou_lbl = QLabel(tr("NMS"))
+        layout.addWidget(self.iou_lbl)
+        self.iou_spin = QDoubleSpinBox()
+        self.iou_spin.setRange(0.05, 0.95)
+        self.iou_spin.setSingleStep(0.05)
+        self.iou_spin.setDecimals(2)
+        self.iou_spin.setFixedWidth(72)
+        self.iou_spin.valueChanged.connect(self._emit_thresholds)
+        layout.addWidget(self.iou_spin)
+
+        self.size_lbl = QLabel(tr("输入尺寸"))
+        layout.addWidget(self.size_lbl)
+        self.size_spin_w = QSpinBox()
+        self.size_spin_w.setRange(32, 8192)
+        self.size_spin_w.setFixedWidth(72)
+        self.size_spin_w.setToolTip(tr("动态轴模型需要指定；静态轴模型按模型自身尺寸推理"))
+        self.size_spin_w.valueChanged.connect(self._emit_size)
+        layout.addWidget(self.size_spin_w)
+        layout.addWidget(QLabel("x"))
+        self.size_spin_h = QSpinBox()
+        self.size_spin_h.setRange(32, 8192)
+        self.size_spin_h.setFixedWidth(72)
+        self.size_spin_h.valueChanged.connect(self._emit_size)
+        layout.addWidget(self.size_spin_h)
+
+        # 与其他工具栏按钮同一套样式（optionsBtn），选中态由主题的 :checked 规则给出
+        self.replace_btn = QPushButton()
+        self.replace_btn.setObjectName("optionsBtn")
+        self.replace_btn.setCheckable(True)
+        self.replace_btn.setFixedHeight(24)
+        self.replace_btn.setToolTip(tr("覆盖：替换上一轮推理框；补充：保留并追加"))
+        self.replace_btn.clicked.connect(self._on_replace_toggled)
+        layout.addWidget(self.replace_btn)
+
+        layout.addStretch()
+
+        self.close_btn = QToolButton()
+        self.close_btn.setText("×")
+        self.close_btn.setObjectName("modelRowClose")
+        self.close_btn.setToolTip(tr("关闭参数行（关闭后不能推理）"))
+        self.close_btn.clicked.connect(self._on_close)
+        layout.addWidget(self.close_btn)
+
+        self._refresh_replace_text()
+
+    def _apply_style(self):
+        theme = ThemeManager.get_theme()
+        self.setStyleSheet(f"""
+            #modelRow {{
+                background-color: {theme['panel_bg']};
+                border-bottom: 1px solid {theme['border_color']};
+            }}
+            #modelRow QLabel {{ color: {theme['text_secondary']}; }}
+            #modelRowName {{ color: {theme['text_primary']}; font-weight: bold; }}
+            #modelRow QDoubleSpinBox, #modelRow QSpinBox {{
+                background-color: {theme['widget_bg']}; color: {theme['text_primary']};
+                border: 1px solid {theme['border_color']}; border-radius: 4px;
+                padding: 1px 4px;
+            }}
+            #modelRowClose {{
+                background: transparent; border: none;
+                color: {theme['text_secondary']}; font-size: 16px;
+            }}
+            #modelRowClose:hover {{ color: {theme['text_primary']}; }}
+        """)
+
+    # ---------- 对外接口 ----------
+
+    def refresh_theme(self):
+        """主窗口切换主题后重新上色（自带样式表不会随全局样式刷新）。"""
+        self._apply_style()
+
+    def set_model(self, name, conf, iou, size, active_providers=None, dynamic=False):
+        """加载完成后填入模型信息。
+
+        静态轴模型的尺寸由模型自身决定，输入框只作展示（禁用），避免用户改了
+        却没有任何效果；动态轴模型必须靠它指定，保持可编辑。
+        """
+        self.name_label.setText(name)
+        self._model_name = name
+        self.name_label.setToolTip(self._tooltip(name, size, active_providers))
+        for widget, value in ((self.conf_spin, conf), (self.iou_spin, iou)):
+            widget.blockSignals(True)
+            widget.setValue(value)
+            widget.setEnabled(True)
+            widget.blockSignals(False)
+        for widget, value in ((self.size_spin_w, size[0]), (self.size_spin_h, size[1])):
+            widget.blockSignals(True)
+            widget.setValue(value)
+            widget.setEnabled(dynamic)
+            widget.blockSignals(False)
+        self.replace_btn.setEnabled(True)
+
+    def clear_model(self):
+        """没有模型时的样子：只留加载按钮与关闭按钮。"""
+        self._model_name = ""
+        self.name_label.setText(tr("尚未加载模型"))
+        self.name_label.setToolTip("")
+        for widget in (self.conf_spin, self.iou_spin,
+                       self.size_spin_w, self.size_spin_h):
+            widget.setEnabled(False)
+        self.replace_btn.setEnabled(False)
+        self._refresh_replace_text()
+
+    def retranslate(self):
+        """切语言后刷新行内文字。"""
+        self.load_btn.setText(tr("加载模型"))
+        self.load_btn.setToolTip(tr("加载 ONNX 模型"))
+        self.close_btn.setToolTip(tr("关闭参数行（关闭后不能推理）"))
+        self.replace_btn.setToolTip(tr("覆盖：替换上一轮推理框；补充：保留并追加"))
+        self.size_spin_w.setToolTip(tr("动态轴模型需要指定；静态轴模型按模型自身尺寸推理"))
+        self.conf_lbl.setText(tr("置信度"))
+        self.iou_lbl.setText(tr("NMS"))
+        self.size_lbl.setText(tr("输入尺寸"))
+        self.name_label.setText(self._model_name or tr("尚未加载模型"))
+        self._refresh_replace_text()
+
+    def _tooltip(self, name, size, providers):
+        parts = [name, f"{tr('输入尺寸')}: {size[0]}x{size[1]}"]
+        if providers:
+            parts.append(f"{tr('设备')}: {', '.join(providers)}")
+        else:
+            parts.append(f"{tr('设备')}: {tr('尚未加载模型')}")
+        return "\n".join(parts)
+
+    def thresholds(self):
+        return self.conf_spin.value(), self.iou_spin.value()
+
+    def input_size(self):
+        return self.size_spin_w.value(), self.size_spin_h.value()
+
+    def replace_mode(self):
+        return self.replace_btn.isChecked()
+
+    # ---------- 内部 ----------
+
+    def _emit_thresholds(self, _value=None):
+        conf, iou = self.thresholds()
+        self.thresholds_changed.emit(conf, iou)
+
+    def _emit_size(self, _value=None):
+        width, height = self.input_size()
+        self.input_size_changed.emit(width, height)
+
+    def _on_replace_toggled(self):
+        self._refresh_replace_text()
+        self.replace_mode_changed.emit(self.replace_btn.isChecked())
+
+    def _refresh_replace_text(self):
+        self.replace_btn.setText(tr("覆盖") if self.replace_btn.isChecked() else tr("补充"))
+
+    def _on_close(self):
+        self.hide()
+        self.closed.emit()

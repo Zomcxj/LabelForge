@@ -39,8 +39,8 @@ class _FakeDetector:
 def test_normalize_settings_fills_defaults():
     s = normalize_settings({})
     assert s["output_format"] == "auto"
-    assert s["conf_threshold"] == 0.25
-    assert s["iou_threshold"] == 0.45
+    assert s["conf_threshold"] == 0.5
+    assert s["iou_threshold"] == 0.50
     assert s["input_size"] is None
     assert s["class_filter"] == []
 

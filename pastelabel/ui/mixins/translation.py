@@ -70,9 +70,17 @@ class TranslationMixin:
         if hasattr(self, 'format_btn'):
             self.format_btn.setText(tr("格式"))
             self.format_btn.setToolTip(tr("格式转换"))
-        if hasattr(self, 'inference_btn'):
-            self.inference_btn.setText(tr("推理"))
-            self.inference_btn.setToolTip(tr("模型推理"))
+        if hasattr(self, 'model_lbl'):
+            self.model_lbl.setText(tr("模型推理:"))
+        for name, tip in (('model_row_btn', "显示模型参数行"),
+                          ('model_single_btn', "推理当前图片"),
+                          ('model_all_btn', "从当前图片推理到末尾")):
+            button = getattr(self, name, None)
+            if button is not None:
+                button.setToolTip(tr(tip))
+        row = getattr(self, 'model_row', None)
+        if row is not None and hasattr(row, 'retranslate'):
+            row.retranslate()
         for header_name in ('bg_list_header', 'label_group_header', 'paste_group_header'):
             header = getattr(self, header_name, None)
             if header is None:

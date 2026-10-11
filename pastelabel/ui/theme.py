@@ -477,6 +477,14 @@ class ThemeManager:
                 border: 1px solid {t['interaction_active']};
                 color: {t['interaction_active_text']};
             }}
+            QPushButton#optionsBtn:checked {{
+                background-color: {t['interaction_active']};
+                border: 1px solid {t['interaction_active']};
+                color: {t['interaction_active_text']};
+            }}
+            QPushButton#optionsBtn:checked:hover {{
+                border: 1px solid {t['interaction_active']};
+            }}
             QPushButton#optionsBtn::menu-indicator {{
                 width: 0px;
                 height: 0px;

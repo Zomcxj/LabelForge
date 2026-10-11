@@ -10,82 +10,102 @@ from pathlib import Path
 
 import pytest
 
-from pastelabel.ui import inference_dialog as dialog_mod
 from pastelabel.ui import i18n
-from pastelabel.ui.inference_dialog import InferenceDialog
 from pastelabel.ui.main_window import ImageEditor
 from pastelabel.ui.mixins.inference import InferenceMixin
 from pastelabel.ui.mixins.options_popup import OptionsPopupMixin
+from pastelabel.ui.mixins.toolbar import ToolbarMixin
 from pastelabel.ui.mixins.translation import TranslationMixin
 
 ROOT = Path(__file__).resolve().parents[1]
 
 INFERENCE_KEYS = (
-    "推理", "模型推理", "模型", "加载模型", "尚未加载模型", "模型加载失败",
-    "输入尺寸", "输出格式:", "类别数", "置信度:", "设备:",
-    "当前图片", "全部图片", "开始推理", "推理中", "推理完成", "推理失败",
-    "替换上次推理结果", "人工标注始终保留", "类别筛选（不勾选表示全部）:",
-    "未安装 onnxruntime，无法执行推理", "数据集已切换，推理结果已丢弃",
-    "张图", "个框", "张已写入", "张写入失败", "浏览...", "设备", "输出格式",
+    "推理", "模型推理", "模型推理:", "显示模型参数行", "加载模型",
+    "尚未加载模型", "加载 ONNX 模型", "推理当前图片",
+    "从当前图片推理到末尾", "选择 ONNX 模型", "置信度", "NMS", "输入尺寸",
+    "覆盖", "补充", "覆盖：替换上一轮推理框；补充：保留并追加",
+    "动态轴模型需要指定；静态轴模型按模型自身尺寸推理",
+    "关闭参数行（关闭后不能推理）", "模型参数行已关闭，无法推理",
+    "模型缺少类别信息",
+    "一行一个类别名；将保存到模型同级的同名 txt",
+    "未提供类别信息，无法推理", "请先加载模型", "正在取消...",
+    "正在加载模型...", "模型加载失败", "模型加载完成", "推理中",
+    "推理完成", "推理失败", "未安装 onnxruntime，无法执行推理",
+    "数据集已切换，推理结果已丢弃", "张图", "个框", "张已写入", "张写入失败",
 )
-def _options_popup_src():
-    return inspect.getsource(OptionsPopupMixin._create_options_menu)
 
 
-# ---------- 入口按钮 ----------
+# ---------- 工具栏入口 ----------
 
-def test_inference_btn_created_between_lint_and_format():
-    """推理按钮放在「质检」与「格式」之间，同款 optionsBtn 样式。"""
-    src = _options_popup_src()
-    lint_idx = src.index("self.lint_btn = QPushButton")
-    inf_idx = src.index("self.inference_btn = QPushButton")
-    fmt_idx = src.index("self.format_btn = QPushButton")
-    assert lint_idx < inf_idx < fmt_idx
-    assert 'self.inference_btn = QPushButton(tr("推理"))' in src
-    assert "self.inference_btn.clicked.connect(self._open_inference)" in src
+def test_model_icons_sit_right_of_label_import_buttons():
+    """三个模型图标在「标签:」两个导入图标右边。"""
+    src = inspect.getsource(ToolbarMixin._create_toolbar)
+    label_idx = src.index("self.label_lbl = QLabel")
+    paste_label_idx = src.index("self.upload_paste_label_btn = self._create_svg_button")
+    model_lbl_idx = src.index("self.model_lbl = QLabel")
+    assert label_idx < paste_label_idx < model_lbl_idx
 
 
-def test_inference_btn_text_refreshed_on_language_switch():
+def test_three_model_icons_exist_and_are_wired():
+    src = inspect.getsource(ToolbarMixin._create_toolbar)
+    for name, slot in (("model_row_btn", "_toggle_model_row"),
+                       ("model_single_btn", "_run_inference_current"),
+                       ("model_all_btn", "_run_inference_from_here")):
+        assert f"self.{name} = self._create_svg_button(" in src, name
+        assert f"self.{name}" in src and slot in src, name
+
+
+def test_old_inference_button_is_gone_from_options_row():
+    """「质检」右边那个推理按钮已删除，位置留给「格式」。"""
+    src = inspect.getsource(OptionsPopupMixin._create_options_menu)
+    assert "inference_btn" not in src
+    assert src.index("self.lint_btn = QPushButton") < src.index("self.format_btn = QPushButton")
+
+
+def test_toolbar_texts_refreshed_on_language_switch():
     src = inspect.getsource(TranslationMixin._refresh_ui_texts)
-    assert "inference_btn" in src
-    assert 'tr("推理")' in src
+    assert "model_lbl" in src
+    for name in ("model_row_btn", "model_single_btn", "model_all_btn"):
+        assert name in src, name
 
 
 # ---------- mixin 注册 ----------
 
 def test_inference_mixin_registered_on_image_editor():
     assert InferenceMixin in ImageEditor.__mro__
-    assert callable(getattr(ImageEditor, "_open_inference"))
-    assert callable(getattr(ImageEditor, "_apply_inference_results"))
+    assert callable(getattr(ImageEditor, "_load_inference_model"))
+    assert callable(getattr(ImageEditor, "_run_inference_current"))
 
 
 def test_inference_mixin_contract():
-    for name in ("_open_inference", "_apply_inference_results",
-                 "_apply_inference_to_current", "_close_inference_dialog",
-                 "_inference_dataset_changed"):
+    for name in ("_load_inference_model", "_run_inference_current",
+                 "_run_inference_from_here", "_start_inference",
+                 "_apply_inference_results", "_apply_inference_to_current",
+                 "_on_model_thresholds_changed", "_on_model_size_changed",
+                 "_inference_dataset_changed", "_ensure_model_row"):
         assert hasattr(InferenceMixin, name), name
 
 
-def test_dialog_exposes_expected_api():
-    for name in ("set_images", "settings", "selected_classes",
-                 "apply_requested", "showEvent", "closeEvent"):
-        assert hasattr(InferenceDialog, name), name
+def test_dialog_module_is_deleted():
+    """弹窗已被图标 + 模型行取代。"""
+    assert not (ROOT / "pastelabel" / "ui" / "inference_dialog.py").exists()
 
 
-def test_dialog_uses_background_threads_not_blocking_calls():
+def test_inference_runs_in_background_threads():
     """模型加载与推理都必须走线程，否则大模型会冻住界面。"""
-    src = (ROOT / "pastelabel" / "ui" / "inference_dialog.py").read_text(encoding="utf-8")
+    src = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
     assert "QThread" in src
-    assert "worker.start()" in src
-    assert "detector.detect(" not in src, "推理只能在 worker 里执行"
+    assert src.count("def run(self)") >= 2, "加载与推理各一个 worker"
+    mixin = (ROOT / "pastelabel" / "ui" / "mixins" / "inference.py").read_text(encoding="utf-8")
+    assert "worker.start()" in mixin
+    assert "detector.detect(" not in mixin, "推理只能在 worker 里执行"
 
 
-def test_dialog_does_not_write_annotations_itself():
-    """弹窗只发信号；标注写入由主窗口一次性完成。"""
-    src = (ROOT / "pastelabel" / "ui" / "inference_dialog.py").read_text(encoding="utf-8")
-    assert "apply_requested.emit" in src
-    for forbidden in ("_create_detection_box", "save_json(", "update_label_list("):
-        assert forbidden not in src, forbidden
+def test_mixin_does_not_write_annotations_per_box():
+    """结果应用不能逐框调 _create_detection_box，否则整批会产生上千次保存。"""
+    src = inspect.getsource(InferenceMixin._apply_inference_to_current)
+    assert "_create_detection_box" not in src
+    assert "save_undo_state()" in src
 
 
 # ---------- i18n ----------
@@ -96,7 +116,13 @@ def test_i18n_inference_terms():
         assert key in i18n._strings["en"], key
 
 
-def test_every_tr_key_in_inference_code_is_translated():
+@pytest.mark.parametrize("rel", [
+    "pastelabel/ui/inference_workers.py",
+    "pastelabel/ui/inference_progress.py",
+    "pastelabel/ui/model_row.py",
+    "pastelabel/ui/mixins/inference.py",
+])
+def test_every_tr_key_in_inference_code_is_translated(rel):
     """推理相关代码里用到的每个 tr() 键都必须在两个语言表里有定义。
 
     tr() 取不到键时回退成键本身，所以漏译不会报错，只会在英文界面漏出中文；
@@ -104,12 +130,11 @@ def test_every_tr_key_in_inference_code_is_translated():
     """
     import re
     missing = []
-    for rel in ("pastelabel/ui/inference_dialog.py", "pastelabel/ui/mixins/inference.py"):
-        src = (ROOT / rel).read_text(encoding="utf-8")
-        for key in sorted(set(re.findall(r"tr\(['\"]([^'\"]+)['\"]\)", src))):
-            for lang in ("zh", "en"):
-                if key not in i18n._strings[lang]:
-                    missing.append((rel, lang, key))
+    src = (ROOT / rel).read_text(encoding="utf-8")
+    for key in sorted(set(re.findall(r"tr\(['\"]([^'\"]+)['\"]\)", src))):
+        for lang in ("zh", "en"):
+            if key not in i18n._strings[lang]:
+                missing.append((rel, lang, key))
     assert not missing, missing
 
 
@@ -120,7 +145,8 @@ def test_inference_keys_do_not_shadow_existing_translations():
     重名的前一份定义在内存里根本看不到。
     """
     import collections
-    tree = ast.parse((ROOT / "pastelabel/ui/i18n.py").read_text(encoding="utf-8"))
+    text = (ROOT / "pastelabel/ui/i18n.py").read_text(encoding="utf-8")
+    tree = ast.parse(text)
     dicts = [n for n in ast.walk(tree)
              if isinstance(n, ast.Dict) and len(n.keys) > 100]
     assert len(dicts) == 2, "i18n 里应有 zh / en 两个语言表"
@@ -129,6 +155,114 @@ def test_inference_keys_do_not_shadow_existing_translations():
         dupes = {k for k, c in collections.Counter(keys).items() if c > 1}
         shadowed = sorted(dupes & set(INFERENCE_KEYS))
         assert not shadowed, shadowed
+
+
+# ---------- 阈值与尺寸不烘焙 ----------
+
+def test_thresholds_are_passed_per_call_not_baked_in():
+    """detect 必须接受阈值参数，否则调参就得重建会话。"""
+    from pastelabel.engine.onnx_inference import OnnxDetector
+    sig = inspect.signature(OnnxDetector.detect)
+    assert "conf_threshold" in sig.parameters
+    assert "iou_threshold" in sig.parameters
+
+
+def test_detector_exposes_live_setters():
+    from pastelabel.engine.onnx_inference import OnnxDetector
+    for name in ("set_thresholds", "set_input_size"):
+        assert callable(getattr(OnnxDetector, name)), name
+
+
+def test_changing_thresholds_does_not_reload_model():
+    """模型行改阈值只写回 detector，不能再走一遍加载流程。"""
+    src = inspect.getsource(InferenceMixin._on_model_thresholds_changed)
+    assert "set_thresholds" in src
+    assert "_load_inference_model" not in src
+    assert "_load_model_with_names" not in src
+
+
+def test_changing_input_size_does_not_reload_model():
+    src = inspect.getsource(InferenceMixin._on_model_size_changed)
+    assert "set_input_size" in src
+    assert "_load_model_with_names" not in src
+
+
+# ---------- 类别名解析 ----------
+
+def test_class_names_prefer_sidecar_txt(tmp_path):
+    from pastelabel.engine import inference_task
+
+    model = tmp_path / "m.onnx"
+    model.write_bytes(b"x")
+    (tmp_path / "m.txt").write_text("cat\ndog\n", encoding="utf-8")
+
+    names, source = inference_task.resolve_class_names(str(model), None)
+    assert (names, source) == (["cat", "dog"], "file")
+
+
+def test_class_names_fall_back_to_metadata(tmp_path):
+    from pastelabel.engine import inference_task
+
+    class _Meta:
+        custom_metadata_map = {"names": "{0: 'person', 1: 'car'}"}
+
+    class _Session:
+        def get_modelmeta(self):
+            return _Meta()
+
+    model = tmp_path / "m.onnx"
+    model.write_bytes(b"x")
+
+    names, source = inference_task.resolve_class_names(str(model), _Session())
+    assert names == ["person", "car"]
+    assert source == "metadata"
+
+
+def test_class_names_missing_reports_missing(tmp_path):
+    """两处都没有时报 missing，不能编造 0 1 2 3 之类的假类名。"""
+    from pastelabel.engine import inference_task
+
+    class _Session:
+        def get_modelmeta(self):
+            return type("M", (), {"custom_metadata_map": {}})()
+
+    model = tmp_path / "m.onnx"
+    model.write_bytes(b"x")
+
+    names, source = inference_task.resolve_class_names(str(model), _Session())
+    assert (names, source) == ([], "missing")
+
+
+def test_sidecar_class_names_path_is_same_stem(tmp_path):
+    from pastelabel.engine import inference_task
+    assert inference_task.sidecar_class_names_path(
+        str(tmp_path / "yolov8n.onnx")) == str(tmp_path / "yolov8n.txt")
+
+
+def test_write_class_names_creates_file(tmp_path):
+    from pastelabel.engine import inference_task
+    target = tmp_path / "sub" / "m.txt"
+
+    assert inference_task.write_class_names(str(target), ["cat", "dog"]) is True
+    assert target.read_text(encoding="utf-8").splitlines() == ["cat", "dog"]
+
+
+def test_cancelling_class_prompt_disables_inference():
+    """取消类别输入 = 不支持推理：不加载模型，图标保持禁用。"""
+    src = inspect.getsource(InferenceMixin._on_class_names_needed)
+    assert "class_names_prompt" in src
+    assert "self._detector = None" in src
+    assert "未提供类别信息，无法推理" in src
+    assert "_update_inference_buttons" in src
+
+
+def test_cancelling_prompt_does_not_fall_back_to_numbers(monkeypatch):
+    """取消后不能退化成 0 1 2 3... 之类的占位类名。"""
+    from pastelabel.ui import inference_workers
+
+    monkeypatch.setattr(
+        "pastelabel.ui.dialog_helpers.get_text", lambda *a, **k: ("", False))
+    assert inference_workers.class_names_prompt(None, "m.onnx", "m.txt") is None
 
 
 # ---------- 结果应用 ----------
@@ -222,8 +356,7 @@ def test_apply_results_marks_inference_source():
 
 def test_apply_results_clears_canvas_selection():
     editor = _FakeEditor()
-    editor._apply_inference_results(
-        {0: _result(0, "a.png", [])}, False)
+    editor._apply_inference_results({0: _result(0, "a.png", [])}, False)
     assert editor.canvas.selected_box is None
     assert editor.canvas.selected_boxes == []
     assert editor.canvas.updates >= 1
@@ -239,6 +372,19 @@ def test_apply_results_replaces_previous_inference_only():
 
     labels = [b["label"] for b in editor.detection_boxes]
     assert labels == ["manual", "new"]
+
+
+def test_apply_results_appends_when_not_replacing():
+    """补充模式：新结果追加在旧推理框之后，不删旧的。"""
+    editor = _FakeEditor()
+    editor._apply_inference_results({0: _result(0, "a.png", [
+        {"label": "old", "x": 1, "y": 1, "width": 2, "height": 2}])}, False)
+
+    editor._apply_inference_results({0: _result(0, "a.png", [
+        {"label": "new", "x": 3, "y": 3, "width": 2, "height": 2}])}, False)
+
+    labels = [b["label"] for b in editor.detection_boxes]
+    assert labels == ["manual", "old", "new"]
 
 
 def test_apply_results_discards_when_dataset_changed():
@@ -265,7 +411,7 @@ def test_apply_results_ignores_delete_view():
     assert editor.saved == []
 
 
-def test_apply_results_writes_other_images_to_disk(tmp_path, monkeypatch):
+def test_apply_results_writes_other_images_to_disk(monkeypatch):
     """非当前图直接写 sidecar，不依赖主窗口索引。"""
     from pastelabel.engine import inference_task
 
@@ -304,90 +450,176 @@ def test_apply_results_does_not_touch_current_on_error():
     assert editor.saved == []
 
 
-# ---------- 派发 ----------
+# ---------- 单图 / 一键推理入口 ----------
+
+def test_single_inference_targets_only_current_image():
+    src = inspect.getsource(InferenceMixin._run_inference_current)
+    assert "current_background_index" in src
+    assert "current_only=True" in src
 
 
-def test_open_inference_dispatches_dialog(monkeypatch):
-    calls = {}
-
-    class _Signal:
-        def __init__(self):
-            self.slots = []
-
-        def connect(self, fn):
-            self.slots.append(fn)
-
-        def disconnect(self):
-            self.slots.clear()
-
-    class FakeDialog:
-        def __init__(self, parent=None, settings=None):
-            calls["parent"] = parent
-            calls["settings"] = settings
-            self.apply_requested = _Signal()
-            self.rejected = _Signal()
-
-        def set_images(self, entries, current_index=-1):
-            calls["entries"] = entries
-            calls["current_index"] = current_index
-
-        def show(self):
-            calls["shown"] = True
-
-        def close(self):
-            calls["closed"] = True
-
-    monkeypatch.setattr(dialog_mod, "InferenceDialog", FakeDialog)
-
-    class Owner(InferenceMixin):
-        _busy = False
-
-        def __init__(self):
-            self.background_images = ["a.png", "b.png"]
-            self.current_background_index = 1
-            self.status_label = type("L", (), {
-                "setText": lambda self, t: setattr(self, "text", t), "text": ""})()
-            self._inference_dialog = None
-            self._inference_dataset = None
-
-    owner = Owner()
-    owner._open_inference()
-
-    assert calls["shown"] is True
-    assert calls["entries"] == [(0, "a.png"), (1, "b.png")]
-    assert calls["current_index"] == 1
-    assert owner._inference_dataset == ("a.png", "b.png")
+def test_batch_inference_runs_from_current_to_end():
+    """一键推理：当前位置 → 列表末尾。"""
+    src = inspect.getsource(InferenceMixin._run_inference_from_here)
+    assert "range(start, len(images))" in src
+    assert "current_only=False" in src
 
 
-def test_open_inference_requires_dataset():
-    class Owner(InferenceMixin):
-        _busy = False
-
-        def __init__(self):
-            self.background_images = []
-            self.status_label = type("L", (), {
-                "setText": lambda self, t: setattr(self, "text", t), "text": ""})()
-
-    owner = Owner()
-    owner._open_inference()
-
-    assert "请先加载数据集" in owner.status_label.text
+def test_batch_inference_shows_non_modal_progress_dialog():
+    src = inspect.getsource(InferenceMixin._start_inference)
+    assert "_ensure_progress_dialog" in src
+    assert "progress.show()" in src
+    assert "progress.cancelled.connect(worker.cancel)" in src
 
 
-def test_open_inference_refuses_while_busy():
-    class Owner(InferenceMixin):
-        _busy = True
+def test_progress_dialog_syncs_titlebar_on_show():
+    """小窗导航栏要跟主题一致：显示时同步一次系统标题栏。"""
+    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    src = inspect.getsource(InferenceProgressDialog.showEvent)
+    assert "sync_titlebar(self)" in src, src
 
-        def __init__(self):
-            self.background_images = ["a.png"]
-            self.status_label = type("L", (), {
-                "setText": lambda self, t: setattr(self, "text", t), "text": ""})()
 
-    owner = Owner()
-    owner._open_inference()
+def test_progress_dialog_refresh_theme_repaints_and_syncs_titlebar():
+    """切主题后重新上色 + 再同步标题栏，否则标题栏会留在旧主题。"""
+    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    assert hasattr(InferenceProgressDialog, "refresh_theme")
+    src = inspect.getsource(InferenceProgressDialog.refresh_theme)
+    assert "_apply_style()" in src, src
+    assert "sync_titlebar(self)" in src, src
 
-    assert getattr(owner, "_inference_dialog", None) is None
-    assert owner.status_label.text == ""
+
+def test_progress_dialog_style_uses_theme_colors():
+    """样式表必须取自当前主题，不能写死颜色。"""
+    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    src = inspect.getsource(InferenceProgressDialog._apply_style)
+    assert "ThemeManager.get_theme()" in src, src
+
+
+def test_theme_switch_refreshes_inference_widgets():
+    """参数行与小窗自带样式表，全局样式刷不到它们，必须显式刷新。"""
+    from pastelabel.ui.mixins.theme import ThemeMixin
+    src = inspect.getsource(ThemeMixin._apply_theme)
+    assert "model_row" in src, src
+    assert "_progress_dialog" in src, src
+    assert "refresh_theme()" in src, src
+
+
+def test_model_row_has_refresh_theme():
+    from pastelabel.ui.model_row import ModelRow
+    assert hasattr(ModelRow, "refresh_theme")
+    src = inspect.getsource(ModelRow.refresh_theme)
+    assert "_apply_style()" in src, src
+
+
+def test_progress_dialog_is_cancellable_and_non_modal():
+    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    assert hasattr(InferenceProgressDialog, "cancelled")
+    src = (ROOT / "pastelabel" / "ui" / "inference_progress.py").read_text(encoding="utf-8")
+    # 非模态：用 show() 而不是 exec_()
+    assert "exec_()" not in src
+
+
+def test_inference_requires_loaded_model():
+    src = inspect.getsource(InferenceMixin._start_inference)
+    assert "请先加载模型" in src
+    assert "detector is None" in src
+
+
+def test_buttons_disabled_until_model_loaded():
+    src = inspect.getsource(InferenceMixin._update_inference_buttons)
+    assert "detector is not None" in src
+    assert "model_single_btn" in src and "model_all_btn" in src
+
+
+def test_first_icon_toggles_the_settings_row():
+    """第一个图标只负责显示/隐藏参数行，加载模型在行内进行。"""
+    src = inspect.getsource(InferenceMixin._toggle_model_row)
+    assert "_ensure_model_row" in src
+    assert "row.show()" in src and "row.hide()" in src
+    toolbar = inspect.getsource(ToolbarMixin._create_toolbar)
+    assert "self.model_row_btn = self._create_svg_button(" in toolbar
+    assert "_toggle_model_row" in toolbar
+
+
+def test_model_row_has_its_own_load_button():
+    """加载按钮搬进参数行，并通过信号请求主窗口加载。"""
+    from pastelabel.ui.model_row import ModelRow
+    src = (ROOT / "pastelabel" / "ui" / "model_row.py").read_text(encoding="utf-8")
+    assert "self.load_btn = QPushButton(" in src
+    assert "load_requested" in src
+    mixin = inspect.getsource(InferenceMixin._ensure_model_row)
+    assert "load_requested.connect(self._load_inference_model)" in mixin
+
+
+def test_replace_button_uses_shared_button_style():
+    """覆盖/补充按钮与工具栏其它按钮同一套样式，选中态交给主题的 :checked。"""
+    from pastelabel.ui.model_row import ModelRow
+    src = (ROOT / "pastelabel" / "ui" / "model_row.py").read_text(encoding="utf-8")
+    assert 'self.replace_btn = QPushButton()' in src
+    assert 'self.replace_btn.setObjectName("optionsBtn")' in src
+    assert "QPushButton#optionsBtn:checked" in (
+        ROOT / "pastelabel" / "ui" / "theme.py").read_text(encoding="utf-8")
+
+
+# ---------- 模型行 ----------
+
+def test_model_row_close_hides_and_signals():
+    """关闭隐藏那一行并通知主窗口；由主窗口负责停用推理图标。"""
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow._on_close)
+    assert "hide()" in src
+    assert "closed.emit()" in src
+
+
+def test_closing_row_disables_inference():
+    """× 关闭后不能推理：按钮可用性必须把「参数行是否可见」算进去。"""
+    src = inspect.getsource(InferenceMixin._update_inference_buttons)
+    assert "isVisible()" in src, src
+    assert "row_open" in src, src
+    assert "not busy and row_open" in src, src
+
+
+def test_closed_row_blocks_inference_even_when_called_directly():
+    """按钮禁用只挡鼠标；直接调用也要挡住，否则快捷键或代码路径能绕过。"""
+    src = inspect.getsource(InferenceMixin._start_inference)
+    assert "row.isVisible()" in src, src
+    assert "模型参数行已关闭，无法推理" in src, src
+
+
+def test_closing_row_keeps_detector_for_reopen():
+    """关掉参数行只是停用推理，模型本身留着，重新点开即可继续用。"""
+    src = inspect.getsource(InferenceMixin._update_inference_buttons)
+    assert "detector is None" not in src
+    assert "_detector = None" not in src
+
+
+def test_model_row_exposes_required_controls():
+    from pastelabel.ui.model_row import ModelRow
+    src = (ROOT / "pastelabel" / "ui" / "model_row.py").read_text(encoding="utf-8")
+    for name in ("name_label", "conf_spin", "iou_spin", "size_spin_w",
+                 "size_spin_h", "replace_btn", "close_btn"):
+        assert f"self.{name} =" in src, name
+    for signal in ("thresholds_changed", "input_size_changed",
+                   "replace_mode_changed", "closed"):
+        assert signal in src, signal
+    assert hasattr(ModelRow, "set_model")
+
+
+def test_model_row_inserted_above_canvas():
+    src = inspect.getsource(InferenceMixin._ensure_model_row)
+    assert "insertWidget(0" in src
+
+
+def test_default_thresholds_are_conf_050_nms_045():
+    """用户指定的默认值：置信度 0.50、NMS 0.50。"""
+    from pastelabel.engine.inference_task import DEFAULT_CONF, DEFAULT_IOU
+    assert DEFAULT_CONF == 0.50
+    assert DEFAULT_IOU == 0.50
+
+
+def test_default_input_size_is_640():
+    from pastelabel.engine.onnx_inference import DEFAULT_INPUT_SIZE
+    assert DEFAULT_INPUT_SIZE == (640, 640)
 
 
 # ---------- 配置持久化 ----------
@@ -417,33 +649,12 @@ def test_inference_settings_tolerates_garbage(tmp_path, monkeypatch):
     loaded = config_manager.load_all()["inference_settings"]
 
     assert loaded["model_path"] == ""
-    assert loaded["conf_threshold"] == 0.25
-
-
-def test_dialog_settings_returns_normalizable_dict():
-    """settings() 的输出必须能直接被持久化与规整，不依赖窗口实例。"""
-    tree = ast.parse(
-        (ROOT / "pastelabel" / "ui" / "inference_dialog.py").read_text(encoding="utf-8"))
-    cls = next(n for n in tree.body
-               if isinstance(n, ast.ClassDef) and n.name == "InferenceDialog")
-    fn = next(n for n in cls.body
-              if isinstance(n, ast.FunctionDef) and n.name == "settings")
-    src = ast.get_source_segment(
-        (ROOT / "pastelabel" / "ui" / "inference_dialog.py").read_text(encoding="utf-8"), fn)
-    for key in ("model_path", "class_names_path", "output_format",
-                "conf_threshold", "iou_threshold", "input_size", "providers"):
-        assert f'"{key}"' in src, key
-
-
-def test_run_batch_keys_follow_dataset_index():
-    """推理 worker 必须把数据集索引传给 run_batch，否则结果会写错图。"""
-    src = inspect.getsource(dialog_mod._InferenceWorker.run)
-    assert "keys=self._keys" in src
+    assert loaded["conf_threshold"] == 0.5
 
 
 # ---------- 当前图：无检出不写盘 ----------
 
-def test_current_image_without_detection_skips_save(monkeypatch, tmp_path):
+def test_current_image_without_detection_skips_save(tmp_path):
     """当前图无检出且无贴图时不写盘，并顺手删掉空 json。"""
     editor = _FakeEditor(images=(str(tmp_path / "a.png"),))
     editor.detection_boxes = []
@@ -460,7 +671,7 @@ def test_current_image_without_detection_skips_save(monkeypatch, tmp_path):
     assert editor.undo_snapshots, "仍要留下撤销点，便于回退"
 
 
-def test_current_image_without_detection_keeps_manual_boxes(monkeypatch, tmp_path):
+def test_current_image_without_detection_keeps_manual_boxes(tmp_path):
     """当前图有人工标注时照常保存，不能因为没检出就不写。"""
     editor = _FakeEditor(images=(str(tmp_path / "a.png"),))
 
@@ -470,7 +681,7 @@ def test_current_image_without_detection_keeps_manual_boxes(monkeypatch, tmp_pat
     assert editor.detection_boxes[0]["label"] == "manual"
 
 
-def test_current_image_without_detection_saves_when_paste_shapes_exist(monkeypatch, tmp_path):
+def test_current_image_without_detection_saves_when_paste_shapes_exist(tmp_path):
     """画布上有贴图时仍要写盘，否则贴图状态会丢。"""
     editor = _FakeEditor(images=(str(tmp_path / "a.png"),))
     editor.detection_boxes = []
@@ -480,3 +691,64 @@ def test_current_image_without_detection_saves_when_paste_shapes_exist(monkeypat
     editor._apply_inference_to_current(_result(0, editor.background_images[0], []), False)
 
     assert len(editor.saved) == 1
+
+
+# ---------- 设置持久化与动态轴 ----------
+
+def test_saved_thresholds_are_restored_on_reload():
+    """重新加载模型要沿用上次的阈值与尺寸，不能每次都回到默认。"""
+    src = inspect.getsource(InferenceMixin._saved_inference_settings)
+    assert "conf_threshold" in src
+    assert "iou_threshold" in src
+    assert "input_size" in src
+    load = inspect.getsource(InferenceMixin._load_inference_model)
+    assert "_saved_inference_settings" in load
+
+
+def test_worker_passes_saved_thresholds_to_detector():
+    src = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
+    for key in ("conf_threshold", "iou_threshold", "input_size"):
+        assert f"self._{key}" in src or key in src, key
+    assert "conf_threshold=self._conf" in src
+    assert "iou_threshold=self._iou" in src
+
+
+def test_engine_defaults_are_single_source():
+    """默认值只在引擎里定义一份，任务模块与界面都引用它。"""
+    from pastelabel.engine import inference_task, onnx_inference
+    assert inference_task.DEFAULT_CONF == onnx_inference.DEFAULT_CONF == 0.50
+    assert inference_task.DEFAULT_IOU == onnx_inference.DEFAULT_IOU == 0.50
+
+
+def test_detector_defaults_come_from_constants():
+    """不传阈值时 detector 用引擎默认值，而不是各自写死一个数。"""
+    from pastelabel.engine.onnx_inference import (
+        DEFAULT_CONF, DEFAULT_IOU, OnnxDetector,
+    )
+    detector = OnnxDetector("m.onnx")
+    assert detector.conf_threshold == DEFAULT_CONF
+    assert detector.iou_threshold == DEFAULT_IOU
+
+
+def test_static_model_size_field_is_read_only():
+    """静态轴模型的尺寸由模型决定，输入框禁用，避免改了没效果。"""
+    src = inspect.getsource(InferenceMixin._on_model_loaded)
+    assert "dynamic=" in src
+    from pastelabel.ui.model_row import ModelRow
+    row_src = inspect.getsource(ModelRow.set_model)
+    assert "setEnabled(dynamic)" in row_src
+
+
+def test_class_prompt_writes_txt_next_to_model(tmp_path):
+    """用户输入后要真的在模型同级写出同名 txt。"""
+    from pastelabel.engine import inference_task
+    from pastelabel.ui import inference_workers
+
+    model = tmp_path / "yolov8n.onnx"
+    model.write_bytes(b"x")
+    suggested = inference_task.sidecar_class_names_path(str(model))
+
+    written = inference_task.write_class_names(suggested, ["cat", "dog"])
+    assert written is True
+    assert (tmp_path / "yolov8n.txt").read_text(encoding="utf-8").splitlines() == ["cat", "dog"]
+    assert inference_workers.read_saved_class_names(suggested) == ["cat", "dog"]

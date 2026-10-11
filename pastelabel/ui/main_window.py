@@ -157,6 +157,15 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
             self._magnifier_enabled = False
         self.drag_offset = QPoint(0, 0)
         self._busy = False
+        # 推理状态：模型只加载一次，阈值改动即时写回 detector
+        self._detector = None
+        self._model_size = None
+        self._model_format = None
+        self._model_worker = None
+        self._run_worker = None
+        self._progress_dialog = None
+        self.model_row = None
+        self._inference_dataset = None
 
         self.detection_boxes_dict = {}
         self.detection_boxes = []

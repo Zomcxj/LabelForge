@@ -150,16 +150,6 @@ class OptionsPopupMixin:
 
         layout.addSpacing(4)
 
-        self.inference_btn = QPushButton(tr("推理"))
-        self.inference_btn.setObjectName("optionsBtn")
-        self.inference_btn.setFixedHeight(24)
-        self.inference_btn.setFixedWidth(70)
-        self.inference_btn.setToolTip(tr("模型推理"))
-        self.inference_btn.clicked.connect(self._open_inference)
-        layout.addWidget(self.inference_btn)
-
-        layout.addSpacing(4)
-
         self.format_btn = QPushButton(tr("格式"))
         self.format_btn.setObjectName("optionsBtn")
         self.format_btn.setFixedWidth(70)

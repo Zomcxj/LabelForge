@@ -175,3 +175,17 @@ def test_hidden_imports_point_to_existing_modules(rel):
         if not path.exists() and not package.exists():
             missing.append(name)
     assert not missing, f"{rel} 里这些模块已不存在: {missing}"
+
+
+@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+def test_hidden_imports_cover_inference_modules(rel):
+    """推理相关的懒加载模块必须显式声明，否则打包后会缺模块。"""
+    names = set(_hidden_imports(rel))
+    for name in ("pastelabel.engine.onnx_inference",
+                 "pastelabel.engine.inference_image",
+                 "pastelabel.engine.inference_task",
+                 "pastelabel.ui.mixins.inference",
+                 "pastelabel.ui.model_row",
+                 "pastelabel.ui.inference_workers",
+                 "pastelabel.ui.inference_progress"):
+        assert name in names, f"{rel} 缺少 {name}"

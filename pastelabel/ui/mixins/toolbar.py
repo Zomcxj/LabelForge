@@ -3,7 +3,10 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButt
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
 from ...core.config import WINDOW_CONFIG, PASTE_PARAMS, THUMBNAIL_CONFIG, DEFAULT_PREFIX
-from ..icons import _load_svg_icon, SVG_FILE, SVG_FOLDER, SVG_IMPORT, SVG_PASTE_LABEL, SUN_SVG
+from ..icons import (
+    _load_svg_icon, SVG_FILE, SVG_FOLDER, SVG_IMPORT, SVG_PASTE_LABEL, SUN_SVG,
+    SVG_MODEL_LOAD, SVG_MODEL_SINGLE, SVG_MODEL_ALL,
+)
 from ..i18n import t as tr
 from ..segmented_control import AnimatedSegmentedControl
 
@@ -91,6 +94,29 @@ class ToolbarMixin:
             SVG_PASTE_LABEL, self.upload_paste_labels, tr("导入贴图标签文件"), label_color, "labelBtn"
         )
         upload_layout.addWidget(self.upload_paste_label_btn)
+
+        upload_layout.addSpacing(2)
+        self.model_lbl = QLabel(tr("模型推理:"))
+        upload_layout.addWidget(self.model_lbl)
+        # 第一个图标只负责显示/隐藏参数行，加载模型在参数行里做
+        self.model_row_btn = self._create_svg_button(
+            SVG_MODEL_LOAD, self._toggle_model_row,
+            tr("显示模型参数行"), label_color, "labelBtn"
+        )
+        upload_layout.addWidget(self.model_row_btn)
+        self.model_single_btn = self._create_svg_button(
+            SVG_MODEL_SINGLE, self._run_inference_current,
+            tr("推理当前图片"), label_color, "labelBtn"
+        )
+        # 未加载模型或参数行关闭时不能推理，由 _update_inference_buttons 打开
+        self.model_single_btn.setEnabled(False)
+        upload_layout.addWidget(self.model_single_btn)
+        self.model_all_btn = self._create_svg_button(
+            SVG_MODEL_ALL, self._run_inference_from_here,
+            tr("从当前图片推理到末尾"), label_color, "labelBtn"
+        )
+        self.model_all_btn.setEnabled(False)
+        upload_layout.addWidget(self.model_all_btn)
 
         upload_layout.addSpacing(8)
         self._add_separator(upload_layout)

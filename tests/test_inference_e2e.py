@@ -278,8 +278,8 @@ def test_box_fully_inside_padding_is_dropped(tmp_path):
     assert boxes == [], boxes
 
 
-def test_dynamic_input_size_requires_user_specification(tmp_path):
-    """动态轴模型必须要求用户给尺寸，不能擅自假设一个。"""
+def test_dynamic_input_size_defaults_and_is_overridable(tmp_path):
+    """动态轴模型给默认 640×640，并允许调用方覆盖（模型行里可改）。"""
     const = numpy_helper.from_array(np.zeros((1, 3, 8), dtype=np.float32), "pred")
     graph = helper.make_graph(
         [helper.make_node("Constant", [], ["output"], value=const)],
@@ -291,13 +291,34 @@ def test_dynamic_input_size_requires_user_specification(tmp_path):
     model.ir_version = 8
     path = _save(model, tmp_path / "dyn.onnx")
 
-    with pytest.raises(InferenceError) as exc:
-        OnnxDetector(path, class_names=NAMES, output_format="v5").model_input_size()
-    assert "动态轴" in str(exc.value)
+    default = OnnxDetector(path, class_names=NAMES, output_format="v5")
+    assert default.is_dynamic_input() is True
+    assert default.model_input_size() == (640, 640)
 
-    detector = OnnxDetector(path, class_names=NAMES, output_format="v5",
-                            input_size=(128, 96))
-    assert detector.model_input_size() == (128, 96)
+    overridden = OnnxDetector(path, class_names=NAMES, output_format="v5",
+                              input_size=(128, 96))
+    assert overridden.model_input_size() == (128, 96)
+    # 改尺寸不必重建会话，直接写回即可
+    overridden.set_input_size((320, 320))
+    assert overridden.model_input_size() == (320, 320)
+
+
+def test_static_input_size_is_not_dynamic(tmp_path):
+    const = numpy_helper.from_array(np.zeros((1, 3, 8), dtype=np.float32), "pred")
+    graph = helper.make_graph(
+        [helper.make_node("Constant", [], ["output"], value=const)],
+        "static",
+        [helper.make_tensor_value_info("images", TensorProto.FLOAT, [1, 3, 64, 48])],
+        [helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, 3, 8])],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 12)])
+    model.ir_version = 8
+    path = _save(model, tmp_path / "static.onnx")
+
+    detector = OnnxDetector(path, class_names=NAMES, output_format="v5")
+    assert detector.is_dynamic_input() is False
+    # 静态轴以模型自身为准，用户填的尺寸不生效
+    assert detector.model_input_size() == (48, 64)
 
 
 # ---------- 真实模型（可选，仅在 model/ 存在时运行）----------

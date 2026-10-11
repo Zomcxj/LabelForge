@@ -7,12 +7,11 @@ import os
 from typing import Dict, List, NamedTuple, Optional
 
 from pastelabel.engine.onnx_inference import (
+    DEFAULT_CONF, DEFAULT_IOU, DEFAULT_INPUT_SIZE,
     MAX_IOU, MAX_SCORE, MIN_IOU, MIN_SCORE,
     InferenceError, OnnxDetector, SUPPORTED_FORMATS,
 )
 
-DEFAULT_CONF = 0.25
-DEFAULT_IOU = 0.45
 SOURCE_KEY = "inference"
 
 
@@ -92,6 +91,44 @@ def model_class_names(session):
     """从 ONNX 元数据里取类别表，取不到返回空表。"""
     from pastelabel.engine.onnx_inference import metadata_class_names
     return metadata_class_names(session)
+
+
+def sidecar_class_names_path(model_path):
+    """模型同级目录的同名类别表：模型.onnx → 模型.txt。"""
+    return f"{os.path.splitext(model_path)[0]}.txt"
+
+
+def resolve_class_names(model_path, session, read_names=None):
+    """解析类别名，返回 (names, source)。
+
+    source 为 "file"（同级同名 txt）、"metadata"（模型自带 names）或 "missing"。
+    找不到就报 missing，由调用方决定是否让用户手输；这里不编造 0 1 2 3，
+    否则标注里会写进一堆无意义的类名。
+    """
+    from pastelabel.engine.onnx_inference import metadata_class_names, read_class_names
+
+    path = sidecar_class_names_path(model_path)
+    if os.path.isfile(path):
+        names = (read_names or read_class_names)(path)
+        if names:
+            return names, "file"
+    names = metadata_class_names(session)
+    if names:
+        return names, "metadata"
+    return [], "missing"
+
+
+def write_class_names(path, names):
+    """把类别名写成一行一个的 txt；失败返回 False。"""
+    try:
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(str(name) for name in names) + "\n")
+    except OSError:
+        return False
+    return True
 
 
 def build_detector(settings, read_names=None):

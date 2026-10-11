@@ -18,6 +18,13 @@ MAX_SCORE = 1.0
 MIN_IOU = 0.05
 MAX_IOU = 0.95
 
+#: 动态轴模型的默认输入尺寸；模型行里可以随时改
+DEFAULT_INPUT_SIZE = (640, 640)
+
+#: 默认阈值。只在这里定义一份，界面与批量任务都引用它，避免多处写死后对不上
+DEFAULT_CONF = 0.50
+DEFAULT_IOU = 0.50
+
 # 无类别数时认定「末轴是候选轴」所需的最少候选数。真实检测导出在 320px 以上
 # 输入至少有 2100 个候选，100 是很保守的下限；小于它的形状（如 3x8）两种解释
 # 都成立，必须让用户显式指定格式。
@@ -201,7 +208,7 @@ def box_iou_matrix(boxes, box):
         return np.where(union > 0, inter / union, 0.0).astype(np.float32)
 
 
-def nms_per_class(boxes, scores, class_ids, iou_threshold=0.45):
+def nms_per_class(boxes, scores, class_ids, iou_threshold=DEFAULT_IOU):
     """按类别分别做贪心 NMS，返回保留下标（按置信度降序）。
 
     类别参与去重：不同类别的框即使高度重合也都保留，不能按纯几何去重。
@@ -304,20 +311,34 @@ class OnnxDetector:
     """单个检测模型的会话封装，Session 延迟创建（构造时不加载模型）。"""
 
     def __init__(self, model_path, class_names=None, output_format="auto",
-                 conf_threshold=0.25, iou_threshold=0.45,
+                 conf_threshold=None, iou_threshold=None,
                  input_size=None, providers=None):
         if output_format not in ("auto",) + SUPPORTED_FORMATS:
             raise InferenceError(f"不支持的输出格式: {output_format!r}")
         self.model_path = model_path
         self.class_names = list(class_names or [])
         self.output_format = output_format
-        self.conf_threshold = float(conf_threshold)
-        self.iou_threshold = float(iou_threshold)
+        # 阈值默认值只在这里定义一份，界面与批量任务都从这里取
+        self.conf_threshold = float(
+            DEFAULT_CONF if conf_threshold is None else conf_threshold)
+        self.iou_threshold = float(
+            DEFAULT_IOU if iou_threshold is None else iou_threshold)
         self.input_size = input_size
         self.providers = list(providers) if providers else None
         self._session = None
         self._input_name = None
         self._resolved_format = None
+
+    def set_thresholds(self, conf_threshold=None, iou_threshold=None):
+        """改阈值；只影响后续 detect，不重建会话。"""
+        if conf_threshold is not None:
+            self.conf_threshold = float(conf_threshold)
+        if iou_threshold is not None:
+            self.iou_threshold = float(iou_threshold)
+
+    def set_input_size(self, input_size):
+        """改动态轴模型的输入尺寸；只影响后续 detect，不重建会话。"""
+        self.input_size = input_size
 
     def _ensure_session(self):
         if self._session is not None:
@@ -362,8 +383,8 @@ class OnnxDetector:
     def model_input_size(self):
         """模型输入 (width, height)。
 
-        静态轴直接取 shape；动态轴用用户指定的尺寸，都没有则报错，
-        不擅自假设一个尺寸。
+        静态轴直接取 shape；动态轴用用户指定的尺寸，没有就用 640×640 默认值，
+        该值在模型行里可以随时改。
         """
         self._ensure_session()
         shape = self.session.get_inputs()[0].shape
@@ -374,7 +395,16 @@ class OnnxDetector:
             return int(w), int(h)
         if self.input_size:
             return int(self.input_size[0]), int(self.input_size[1])
-        raise InferenceError(f"模型输入尺寸为动态轴 {shape}，请指定输入宽高")
+        return DEFAULT_INPUT_SIZE
+
+    def is_dynamic_input(self):
+        """输入宽高是否为动态轴；动态轴模型才需要用户指定尺寸。"""
+        self._ensure_session()
+        shape = self.session.get_inputs()[0].shape
+        if len(shape) != 4:
+            return False
+        h, w = shape[2], shape[3]
+        return not all(isinstance(v, int) and v > 0 for v in (h, w))
 
     def resolve_format(self):
         """输出格式：用户指定优先，auto 时按输出 shape 推断，推断不出报错。"""
@@ -399,15 +429,19 @@ class OnnxDetector:
         self._resolved_format = fmt
         return fmt
 
-    def detect(self, rgb, resize_fn):
+    def detect(self, rgb, resize_fn, conf_threshold=None, iou_threshold=None):
         """对单张 RGB 图（H, W, 3 uint8）推理，返回原图坐标下的内部框列表。
 
         resize_fn(src_rgb, geometry, fill) 由调用方注入，返回 (dst_h, dst_w, 3)
         的 letterbox 画布；这样本模块不绑定具体图像库。
+
+        阈值按调用传入，不烘焙进会话：界面改完阈值可以直接重跑，不必重建模型。
         """
         if rgb is None or getattr(rgb, "ndim", None) != 3 or rgb.shape[2] != 3:
             shape = None if rgb is None else getattr(rgb, "shape", None)
             raise InferenceError(f"输入必须是 (H, W, 3) 的 RGB 图，收到 {shape}")
+        conf = self.conf_threshold if conf_threshold is None else float(conf_threshold)
+        iou = self.iou_threshold if iou_threshold is None else float(iou_threshold)
         src_h, src_w = int(rgb.shape[0]), int(rgb.shape[1])
         dst_w, dst_h = self.model_input_size()
         geometry = letterbox_geometry(src_w, src_h, dst_w, dst_h)
@@ -417,13 +451,13 @@ class OnnxDetector:
 
         outputs = self._ensure_session().run(None, {self._input_name: tensor})
         decoded = decode_predictions(
-            outputs[0], self.resolve_format(), self.conf_threshold,
+            outputs[0], self.resolve_format(), conf,
             len(self.class_names) or None)
 
         boxes, keep = unletterbox_boxes(decoded["boxes"], geometry, src_w, src_h)
         scores, class_ids = decoded["scores"][keep], decoded["class_ids"][keep]
 
-        kept = nms_per_class(boxes, scores, class_ids, self.iou_threshold)
+        kept = nms_per_class(boxes, scores, class_ids, iou)
         if not kept:
             return []
         return boxes_to_internal(boxes[kept], scores[kept], class_ids[kept], self.class_names)

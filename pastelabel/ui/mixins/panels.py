@@ -18,6 +18,8 @@ class PanelsMixin:
         canvas_widget = QWidget()
         canvas_layout = QVBoxLayout(canvas_widget)
         canvas_layout.setContentsMargins(0, 0, 0, 0)
+        # 模型行插在这上面（索引 0），所以先把布局记下来
+        self._canvas_layout = canvas_layout
         self.canvas = Canvas(self)
         canvas_scroll = QScrollArea()
         canvas_scroll.setObjectName("canvasScroll")
