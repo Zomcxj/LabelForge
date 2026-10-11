@@ -4,6 +4,9 @@ import sys
 
 _root = os.getcwd()
 
+sys.path.insert(0, SPECPATH)
+from build_support import unify_msvc_runtime
+
 _ffi_dll = os.path.join(sys.prefix, 'Library', 'bin', 'ffi.dll')
 _binaries = []
 if os.path.exists(_ffi_dll):
@@ -45,6 +48,9 @@ a = Analysis(
     noarchive=False,
     optimize=2,
 )
+# Qt 与 onnxruntime 各带一份 MSVC 运行时，版本不一致会让后加载的库绑到旧版上，
+# 导入即 0xC0000005；这里统一成一套，避免点「推理」闪退。
+a.binaries = unify_msvc_runtime(a.binaries)
 pyz = PYZ(a.pure)
 
 exe = EXE(
