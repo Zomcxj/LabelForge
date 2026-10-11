@@ -71,16 +71,17 @@ class ModelLoadWorker(QThread):
 
 
 class InferenceWorker(QThread):
-    """后台顺序推理。progress: (done, total, 文件名)。"""
-    progress = pyqtSignal(int, int, object)
+    """后台顺序推理。progress: (done, total, 文件名, 框数, 耗时毫秒)。"""
+    progress = pyqtSignal(int, int, object, int, int)
     finished_ok = pyqtSignal(object)
     failed = pyqtSignal(str)
 
-    def __init__(self, paths, keys, detector, parent=None):
+    def __init__(self, paths, keys, detector, class_filter=None, parent=None):
         super().__init__(parent)
         self._paths = list(paths)
         self._keys = list(keys)
         self._detector = detector
+        self._class_filter = class_filter
         self._interrupted = False
 
     def run(self):
@@ -90,6 +91,7 @@ class InferenceWorker(QThread):
                 keys=self._keys,
                 progress_fn=self.progress.emit,
                 is_interrupted=lambda: self._interrupted,
+                class_filter=self._class_filter,
             )
             self.finished_ok.emit(results)
         except Exception as exc:

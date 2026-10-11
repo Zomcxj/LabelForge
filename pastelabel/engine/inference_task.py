@@ -4,6 +4,7 @@
 这样批量逻辑可以用假模型和假图像直接测。
 """
 import os
+import time
 from typing import Dict, List, NamedTuple, Optional
 
 from pastelabel.engine.onnx_inference import (
@@ -154,7 +155,11 @@ def build_detector(settings, read_names=None):
 
 
 def filter_by_class(boxes, class_filter):
-    """按类别名白名单过滤；白名单为空表示不过滤。"""
+    """按类别名白名单过滤；白名单为空表示不过滤。
+
+    注意空集合等于不过滤，所以界面「一个类别都没勾」不能传空集合，
+    要在调用前就拦下来，否则会变成全部保留。
+    """
     allowed = {str(c) for c in (class_filter or []) if str(c).strip()}
     if not allowed:
         return list(boxes)
@@ -206,6 +211,13 @@ def run_batch(paths, detector, loader, resize_fn, keys=None,
     key 默认是 paths 的下标；批量任务要按数据集索引写回内存与磁盘，
     所以调用方可以传入 dataset 索引作为 key（单张推理传当前索引）。
 
+    class_filter 是允许保留的类别名集合；None 表示不过滤，空集合表示全不选
+    （结果一定为空，界面据此提示）。它只作用于本次检出的框，不动已有标注。
+
+    progress_fn 每张完成后调用一次，参数为
+    (position, total, 文件名, 框数, 耗时毫秒)。框数与耗时都是这一张自己的，
+    调用方不用再回查结果；失败时框数为 0，耗时仍然上报。
+
     单张失败只记录该图的 error，不中断整批；取消时保留已完成的结果。
     """
     results: Dict[int, ImageResult] = {}
@@ -215,18 +227,22 @@ def run_batch(paths, detector, loader, resize_fn, keys=None,
         if is_interrupted and is_interrupted():
             break
         key = keys[position]
+        started = time.perf_counter()
         try:
             rgb = loader(path)
             if rgb is None:
                 raise InferenceError("无法读取图像")
             height, width = int(rgb.shape[0]), int(rgb.shape[1])
             boxes = detector.detect(rgb, resize_fn)
-            results[key] = ImageResult(
-                key, path, filter_by_class(boxes, class_filter), None, width, height)
+            kept = filter_by_class(boxes, class_filter)
+            results[key] = ImageResult(key, path, kept, None, width, height)
         except Exception as exc:
+            kept = []
             results[key] = ImageResult(key, path, [], str(exc))
+        elapsed_ms = int(round((time.perf_counter() - started) * 1000))
         if progress_fn:
-            progress_fn(position + 1, total, os.path.basename(path))
+            progress_fn(position + 1, total, os.path.basename(path),
+                        len(kept), elapsed_ms)
     return results
 
 
@@ -237,6 +253,17 @@ def failure_summary(results):
         return ""
     first = failed[0]
     return f"{len(failed)} 张失败，例如 {os.path.basename(first.path)}: {first.error}"
+
+
+def beijing_timestamp(now=None):
+    """北京时间戳，精确到毫秒。
+
+    界面统一按 UTC+8 显示，不跟随本机时区——本机时区变了日志时间也不该变。
+    """
+    from datetime import datetime, timedelta, timezone
+    tz = timezone(timedelta(hours=8))
+    moment = now.astimezone(tz) if now is not None else datetime.now(tz)
+    return moment.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
 
 def read_sidecar_boxes(image_path):

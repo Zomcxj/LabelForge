@@ -81,6 +81,9 @@ class TranslationMixin:
         row = getattr(self, 'model_row', None)
         if row is not None and hasattr(row, 'retranslate'):
             row.retranslate()
+        panel = getattr(self, '_class_filter_panel', None)
+        if panel is not None and hasattr(panel, 'retranslate'):
+            panel.retranslate()
         for header_name in ('bg_list_header', 'label_group_header', 'paste_group_header'):
             header = getattr(self, header_name, None)
             if header is None:

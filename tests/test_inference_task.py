@@ -2,15 +2,21 @@
 
 用假 detector / 假 loader，不依赖 onnxruntime 与 Qt。
 """
+import os
+import pathlib
+
 import numpy as np
 import pytest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 from pastelabel.engine.inference_task import (
     ImageResult, build_detector, failure_summary, filter_by_class,
     is_auto_box, mark_auto_boxes, merge_boxes, model_class_names,
     normalize_settings, run_batch, validate_settings,
 )
-from pastelabel.engine.onnx_inference import InferenceError
+from pastelabel.engine.onnx_inference import (
+    DEFAULT_CONF, DEFAULT_IOU, InferenceError)
 
 
 class _FakeSession:
@@ -39,10 +45,26 @@ class _FakeDetector:
 def test_normalize_settings_fills_defaults():
     s = normalize_settings({})
     assert s["output_format"] == "auto"
-    assert s["conf_threshold"] == 0.5
-    assert s["iou_threshold"] == 0.50
+    assert s["conf_threshold"] == DEFAULT_CONF == 0.25
+    assert s["iou_threshold"] == DEFAULT_IOU == 0.45
     assert s["input_size"] is None
     assert s["class_filter"] == []
+
+
+def test_defaults_are_not_duplicated_elsewhere():
+    """阈值只在 onnx_inference 定义一份，别处一律引用，避免界面与执行对不上。"""
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    offenders = []
+    for py in (root / "pastelabel").rglob("*.py"):
+        if py.name == "onnx_inference.py":
+            continue
+        for lineno, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"(conf_threshold|iou_threshold)\s*=\s*0\.(25|45)", line):
+                offenders.append(f"{py.relative_to(root)}:{lineno}: {line.strip()}")
+    assert not offenders, "阈值被写死在别处:" + "; ".join(offenders)
 
 
 def test_normalize_settings_clamps_thresholds():
@@ -258,8 +280,91 @@ def test_run_batch_reports_progress_for_every_image():
     paths = ["a.png", "b.png"]
     seen = []
     run_batch(paths, _FakeDetector(), _loader({"a.png": (4, 4, 3), "b.png": (4, 4, 3)}),
-              lambda *a: None, progress_fn=lambda done, total, name: seen.append((done, total, name)))
-    assert seen == [(1, 2, "a.png"), (2, 2, "b.png")]
+              lambda *a: None,
+              progress_fn=lambda done, total, name, boxes, ms: seen.append(
+                  (done, total, name, boxes, ms)))
+    assert [(d, t, n) for d, t, n, _b, _m in seen] == [
+        (1, 2, "a.png"), (2, 2, "b.png")]
+
+
+def test_run_batch_reports_box_count_and_duration_per_image():
+    """进度回调要带上这一张自己的框数与耗时，界面不用回查结果。"""
+    detector = _FakeDetector({4: [
+        {"label": "cat", "x": 1, "y": 1, "width": 2, "height": 2},
+        {"label": "dog", "x": 1, "y": 1, "width": 2, "height": 2},
+    ]})
+    seen = []
+    run_batch(["a.png"], detector, _loader({"a.png": (4, 4, 3)}), lambda *a: None,
+              progress_fn=lambda done, total, name, boxes, ms: seen.append((boxes, ms)))
+    (boxes, ms), = seen
+    assert boxes == 2, "应上报这一张的框数"
+    assert isinstance(ms, int) and ms >= 0, ms
+
+
+def test_run_batch_reports_zero_boxes_for_failed_image():
+    """失败图框数为 0，但耗时仍然上报，否则日志会缺一行。"""
+    seen = []
+    run_batch(["missing.png"], _FakeDetector(), _loader({}), lambda *a: None,
+              progress_fn=lambda done, total, name, boxes, ms: seen.append((boxes, ms)))
+    (boxes, ms), = seen
+    assert boxes == 0
+    assert isinstance(ms, int)
+
+
+def test_run_batch_class_filter_counts_filtered_boxes():
+    """上报的框数必须是筛选后的，不是检出总数。"""
+    detector = _FakeDetector({4: [
+        {"label": "cat", "x": 1, "y": 1, "width": 2, "height": 2},
+        {"label": "dog", "x": 1, "y": 1, "width": 2, "height": 2},
+    ]})
+    seen = []
+    run_batch(["a.png"], detector, _loader({"a.png": (4, 4, 3)}), lambda *a: None,
+              progress_fn=lambda done, total, name, boxes, ms: seen.append(boxes),
+              class_filter=["dog"])
+    assert seen == [1]
+
+
+def test_beijing_timestamp_is_utc_plus_8_with_milliseconds():
+    """北京时间固定 UTC+8，不跟本机时区；精确到毫秒（3 位小数）。"""
+    from datetime import datetime, timezone
+    from pastelabel.engine.inference_task import beijing_timestamp
+
+    # 2024-01-01 00:00:00 UTC -> 北京时间 08:00:00.123
+    moment = datetime(2024, 1, 1, 0, 0, 0, 123456, tzinfo=timezone.utc)
+    assert beijing_timestamp(moment) == "2024-01-01 08:00:00.123"
+
+
+def test_beijing_timestamp_ignores_the_local_timezone():
+    """本机时区改成别的，时间戳也必须还是 UTC+8。"""
+    import subprocess
+    import sys
+
+    script = (
+        "import os, sys;"
+        "os.environ['TZ'] = 'America/New_York';"
+        "import time; time.tzset() if hasattr(time, 'tzset') else None;"
+        "from pastelabel.engine.inference_task import beijing_timestamp;"
+        "print(beijing_timestamp())"
+    )
+    env = dict(os.environ, TZ="America/New_York", PYTHONPATH=str(ROOT))
+    out = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                         text=True, env=env, timeout=60)
+    assert out.returncode == 0, out.stderr
+    # 与当场算出的 UTC+8 时刻只差几秒，说明用的是固定偏移而不是本机时区
+    from pastelabel.engine.inference_task import beijing_timestamp
+
+    expected = beijing_timestamp()
+    got = out.stdout.strip()
+    assert got[:16] == expected[:16], (got, expected)
+
+
+def test_beijing_timestamp_truncates_not_rounds():
+    """毫秒是截断，避免 .9996 进位到下一秒。"""
+    from datetime import datetime, timezone
+    from pastelabel.engine.inference_task import beijing_timestamp
+
+    moment = datetime(2024, 1, 1, 0, 0, 0, 999999, tzinfo=timezone.utc)
+    assert beijing_timestamp(moment).endswith(".999")
 
 
 def test_run_batch_applies_class_filter_to_detections():

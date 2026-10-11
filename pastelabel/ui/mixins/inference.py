@@ -97,6 +97,8 @@ class InferenceMixin:
         worker.deleteLater()
 
     def _on_model_loaded(self, detector, size, source):
+        from ...engine.onnx_inference import FORMAT_V26
+
         self._detector = detector
         self._model_size = size
         self._model_format = detector.resolve_format()
@@ -105,8 +107,12 @@ class InferenceMixin:
         row.set_model(
             os.path.basename(detector.model_path), detector.conf_threshold,
             detector.iou_threshold, size, detector.active_providers,
-            dynamic=detector.is_dynamic_input())
+            dynamic=detector.is_dynamic_input(),
+            end2end=self._model_format == FORMAT_V26)
         row.show()
+        # 换模型后类别表可能完全不同，之前的勾选作废
+        self._class_filter = set()
+        self._refresh_filter_button()
         self._update_inference_buttons()
         self.status_label.setText(
             f"{tr('模型加载完成')}: {os.path.basename(detector.model_path)}")
@@ -128,12 +134,54 @@ class InferenceMixin:
         row.thresholds_changed.connect(self._on_model_thresholds_changed)
         row.input_size_changed.connect(self._on_model_size_changed)
         row.load_requested.connect(self._load_inference_model)
+        row.filter_requested.connect(self._open_class_filter)
         row.closed.connect(self._update_inference_buttons)
         self.model_row = row
         layout = getattr(self, '_canvas_layout', None)
         if layout is not None:
             layout.insertWidget(0, row)
         return row
+
+    # ---------- 类别筛选 ----------
+
+    def _open_class_filter(self):
+        """打开类别勾选面板；确定后更新筛选集合。"""
+        detector = getattr(self, '_detector', None)
+        if detector is None:
+            self.status_label.setText(tr("请先加载模型"))
+            return
+        from ..class_filter_panel import ClassFilterPanel
+
+        panel = getattr(self, '_class_filter_panel', None)
+        if panel is None:
+            panel = ClassFilterPanel(self)
+            panel.selection_changed.connect(self._on_class_filter_changed)
+            self._class_filter_panel = panel
+        panel.retranslate()
+        panel.set_class_names(detector.class_names)
+        panel.set_selection(getattr(self, '_class_filter', None) or set())
+        panel.exec_()
+
+    def _on_class_filter_changed(self, selected):
+        self._class_filter = {str(name) for name in (selected or [])}
+        self._refresh_filter_button()
+        self._save_inference_settings()
+
+    def _refresh_filter_button(self):
+        row = getattr(self, 'model_row', None)
+        if row is None:
+            return
+        detector = getattr(self, '_detector', None)
+        total = len(getattr(detector, 'class_names', None) or [])
+        row.set_filter_summary(getattr(self, '_class_filter', None) or set(), total)
+
+    def _filter_for_run(self):
+        """传给引擎的筛选集合；空集表示不过滤。
+
+        面板里「全不选」等于不过滤（引擎的约定），与面板提示保持一致。
+        """
+        selected = getattr(self, '_class_filter', None) or set()
+        return selected or None
 
     def _on_model_thresholds_changed(self, conf, iou):
         """阈值即时生效：写回 detector 即可，不必重新加载模型。"""
@@ -190,7 +238,8 @@ class InferenceMixin:
         from ..inference_workers import InferenceWorker
 
         self._save_inference_settings()
-        worker = InferenceWorker(paths, indices, detector, self)
+        worker = InferenceWorker(
+            paths, indices, detector, self._filter_for_run(), self)
         self._run_worker = worker
         self._update_inference_buttons()
         if current_only:

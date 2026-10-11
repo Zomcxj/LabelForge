@@ -165,6 +165,8 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self._run_worker = None
         self._progress_dialog = None
         self.model_row = None
+        self._class_filter = set()
+        self._class_filter_panel = None
         self._inference_dataset = None
 
         self.detection_boxes_dict = {}

@@ -90,7 +90,7 @@ class ThemeMixin:
         if hasattr(self, 'canvas_adjustment'):
             self.canvas_adjustment.refresh_theme()
         # 推理参数行与进度小窗自带样式表，不会随全局样式刷新
-        for name in ('model_row', '_progress_dialog'):
+        for name in ('model_row', '_progress_dialog', '_class_filter_panel'):
             widget = getattr(self, name, None)
             if widget is not None and hasattr(widget, 'refresh_theme'):
                 widget.refresh_theme()

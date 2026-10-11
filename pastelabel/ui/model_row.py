@@ -20,11 +20,13 @@ class ModelRow(QWidget):
     input_size_changed = pyqtSignal(int, int)
     replace_mode_changed = pyqtSignal(bool)
     load_requested = pyqtSignal()
+    filter_requested = pyqtSignal()
     closed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("modelRow")
+        self._end2end = False
         self._build_ui()
         self._apply_style()
         self.clear_model()
@@ -90,6 +92,13 @@ class ModelRow(QWidget):
         self.replace_btn.clicked.connect(self._on_replace_toggled)
         layout.addWidget(self.replace_btn)
 
+        self.filter_btn = QPushButton(tr("类别筛选"))
+        self.filter_btn.setObjectName("optionsBtn")
+        self.filter_btn.setFixedHeight(24)
+        self.filter_btn.setEnabled(False)
+        self.filter_btn.clicked.connect(self.filter_requested.emit)
+        layout.addWidget(self.filter_btn)
+
         layout.addStretch()
 
         self.close_btn = QToolButton()
@@ -128,26 +137,36 @@ class ModelRow(QWidget):
         """主窗口切换主题后重新上色（自带样式表不会随全局样式刷新）。"""
         self._apply_style()
 
-    def set_model(self, name, conf, iou, size, active_providers=None, dynamic=False):
+    def set_model(self, name, conf, iou, size, active_providers=None, dynamic=False,
+                  end2end=False):
         """加载完成后填入模型信息。
 
         静态轴模型的尺寸由模型自身决定，输入框只作展示（禁用），避免用户改了
         却没有任何效果；动态轴模型必须靠它指定，保持可编辑。
+
+        端到端模型（v26）导出时已内置 NMS，界面上的 NMS 值改了不起作用，
+        因此禁用并标注，免得用户以为调了没反应。
         """
         self.name_label.setText(name)
         self._model_name = name
+        self._end2end = bool(end2end)
         self.name_label.setToolTip(self._tooltip(name, size, active_providers))
         for widget, value in ((self.conf_spin, conf), (self.iou_spin, iou)):
             widget.blockSignals(True)
             widget.setValue(value)
-            widget.setEnabled(True)
             widget.blockSignals(False)
+        self.conf_spin.setEnabled(True)
+        self.iou_spin.setEnabled(not self._end2end)
+        self.iou_spin.setToolTip(
+            tr("该模型已内置 NMS，此项不生效") if self._end2end
+            else tr("NMS 去重阈值，越小保留的框越少"))
         for widget, value in ((self.size_spin_w, size[0]), (self.size_spin_h, size[1])):
             widget.blockSignals(True)
             widget.setValue(value)
             widget.setEnabled(dynamic)
             widget.blockSignals(False)
         self.replace_btn.setEnabled(True)
+        self.filter_btn.setEnabled(True)
 
     def clear_model(self):
         """没有模型时的样子：只留加载按钮与关闭按钮。"""
@@ -158,7 +177,15 @@ class ModelRow(QWidget):
                        self.size_spin_w, self.size_spin_h):
             widget.setEnabled(False)
         self.replace_btn.setEnabled(False)
+        self.filter_btn.setEnabled(False)
         self._refresh_replace_text()
+
+    def set_filter_summary(self, selected, total):
+        """在按钮上显示当前筛了几类，便于不打开面板也知道状态。"""
+        if selected:
+            self.filter_btn.setText(f"{tr('类别筛选')}({len(selected)}/{total})")
+        else:
+            self.filter_btn.setText(tr("类别筛选"))
 
     def retranslate(self):
         """切语言后刷新行内文字。"""
@@ -172,6 +199,8 @@ class ModelRow(QWidget):
         self.size_lbl.setText(tr("输入尺寸"))
         self.name_label.setText(self._model_name or tr("尚未加载模型"))
         self._refresh_replace_text()
+        # 筛选按钮的计数文案由主窗口按当前选择重设
+        self.filter_btn.setToolTip(tr("只保留勾选的类别；不勾选表示不过滤"))
 
     def _tooltip(self, name, size, providers):
         parts = [name, f"{tr('输入尺寸')}: {size[0]}x{size[1]}"]
