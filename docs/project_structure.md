@@ -84,11 +84,12 @@ PasteLabel/
 │   │   ├── dwm.py
 │   │   ├── i18n.py
 │   │   ├── icons.py           # SVG 图标常量与渲染辅助函数
-│   │   ├── inference_progress.py # 推理进度小窗（非模态、可取消、跟随主题）
+│   │   ├── class_filter_panel.py # 类别筛选面板（可滚动勾选列表、全选/全不选）
+│   │   ├── inference_progress.py # 推理进度小窗（非模态、可取消、跟随时区/主题、5 行日志）
 │   │   ├── inference_workers.py  # 模型加载/批量推理后台线程与类别名输入
 │   │   ├── main_window.py     # ImageEditor 协调器
 │   │   ├── memory_dialog.py
-│   │   ├── model_row.py       # 画布上方的模型参数行（加载按钮/阈值/尺寸/覆盖模式/关闭）
+│   │   ├── model_row.py       # 画布上方的模型参数行（加载/阈值/尺寸/覆盖模式/类别筛选/关闭）
 │   │   ├── processing_panel.py # ProcessingPanel 执行与日志逻辑
 │   │   ├── quality_lint_dialog.py # 标注质检结果窗口
 │   │   ├── segmented_control.py

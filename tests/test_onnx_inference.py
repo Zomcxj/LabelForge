@@ -8,7 +8,8 @@ import numpy as np
 import pytest
 
 from pastelabel.engine.onnx_inference import (
-    FORMAT_V5, FORMAT_V8, InferenceError, boxes_to_internal, decode_predictions,
+    DEFAULT_MAX_DET, FORMAT_V5, FORMAT_V8, FORMAT_V26, InferenceError,
+    boxes_to_internal, decode_end2end, decode_predictions,
     decode_yolov5, decode_yolov8, detect_output_format, letterbox_geometry,
     nms_per_class, unletterbox_boxes,
 )
@@ -483,3 +484,210 @@ def test_full_content_area_box_maps_to_whole_image():
     assert boxes[0]["x"] == pytest.approx(0.0, abs=1e-3)
     assert boxes[0]["width"] == pytest.approx(float(w), abs=1e-3)
     assert boxes[0]["height"] == pytest.approx(float(h), abs=1e-3)
+
+
+# ---------- YOLO26 端到端输出 [x1,y1,x2,y2,score,cls] ----------
+
+def _end2end(rows, pad=0):
+    """构造 (1, N, 6) 输出；pad 行用全 0 补齐，模拟 300 定长输出。"""
+    arr = np.zeros((1, len(rows) + pad, 6), dtype=np.float32)
+    arr[0, :len(rows)] = np.array(rows, dtype=np.float32)
+    return arr
+
+
+def test_detect_format_recognizes_end2end_output():
+    """[1, 300, 6] 是 YOLO26 的端到端导出，不是 v5/v8。"""
+    assert detect_output_format((1, 300, 6)) == FORMAT_V26
+
+
+def test_detect_format_treats_six_columns_as_v8_when_class_count_fits():
+    """6 列也可能是 C=2 的 v8（4+2），类别数吻合时不能抢成端到端。"""
+    assert detect_output_format((1, 6, 8400), num_classes=2) == FORMAT_V8
+    assert detect_output_format((1, 8400, 6), num_classes=2) == FORMAT_V8
+
+
+def test_detect_format_treats_six_columns_as_v5_when_class_count_fits():
+    """6 列还可能是 C=1 的 v5（5+1）。"""
+    assert detect_output_format((1, 300, 6), num_classes=1) == FORMAT_V5
+
+
+def test_decode_end2end_reads_boxes_score_and_class():
+    raw = _end2end([
+        [10.0, 20.0, 30.0, 40.0, 0.9, 2.0],
+        [1.0, 2.0, 3.0, 4.0, 0.3, 0.0],
+    ])
+    out = decode_end2end(raw, 0.25)
+    assert out["boxes"].shape == (2, 4)
+    assert list(out["boxes"][0]) == [10.0, 20.0, 30.0, 40.0]
+    assert list(out["scores"]) == pytest.approx([0.9, 0.3])
+    assert list(out["class_ids"]) == [2, 0]
+    assert out["class_ids"].dtype == np.int64
+
+
+def test_decode_end2end_keeps_xyxy_unchanged():
+    """端到端输出已是 xyxy，不能再当中心宽高换算。"""
+    raw = _end2end([[100.0, 200.0, 140.0, 260.0, 0.8, 1.0]])
+    box = decode_end2end(raw, 0.1)["boxes"][0]
+    assert list(box) == [100.0, 200.0, 140.0, 260.0]
+
+
+def test_decode_end2end_filters_by_confidence():
+    raw = _end2end([
+        [0.0, 0.0, 1.0, 1.0, 0.80, 0.0],
+        [0.0, 0.0, 1.0, 1.0, 0.20, 0.0],
+    ])
+    out = decode_end2end(raw, 0.25)
+    assert len(out["scores"]) == 1 and out["scores"][0] == pytest.approx(0.80)
+
+
+def test_decode_end2end_threshold_is_inclusive():
+    raw = _end2end([[0.0, 0.0, 1.0, 1.0, 0.25, 0.0]])
+    assert len(decode_end2end(raw, 0.25)["scores"]) == 1
+
+
+def test_decode_end2end_drops_zero_padding_rows():
+    """定长输出尾部常是全 0 的占位行，不能被当成 (0,0,0,0) 的框。"""
+    raw = _end2end([[10.0, 10.0, 20.0, 20.0, 0.9, 1.0]], pad=5)
+    out = decode_end2end(raw, 0.25)
+    assert len(out["scores"]) == 1
+    assert out["scores"][0] == pytest.approx(0.9)
+
+
+def test_decode_end2end_rounds_fractional_class_ids():
+    """类别 id 偶尔以浮点写出，直接 int() 会截断错位。"""
+    raw = _end2end([[0.0, 0.0, 1.0, 1.0, 0.9, 2.9999]])
+    assert list(decode_end2end(raw, 0.1)["class_ids"]) == [3]
+
+
+def test_decode_end2end_rejects_wrong_last_dim():
+    """末维不是 6 说明不是端到端导出，必须报错而不是硬解。"""
+    for bad in (5, 7):
+        with pytest.raises(InferenceError):
+            decode_end2end(np.zeros((1, 10, bad), dtype=np.float32), 0.25)
+
+
+def test_decode_end2end_rejects_out_of_range_class_id():
+    """类别 id 越界说明模型与类别表对不上，早点报错好过产出空标签。"""
+    raw = _end2end([[0.0, 0.0, 1.0, 1.0, 0.9, 7.0]])
+    with pytest.raises(InferenceError):
+        decode_end2end(raw, 0.25, num_classes=3)
+
+
+def test_decode_end2end_accepts_two_dimensional_input():
+    raw = np.array([[10.0, 10.0, 20.0, 20.0, 0.9, 1.0]], dtype=np.float32)
+    assert len(decode_end2end(raw, 0.25)["scores"]) == 1
+
+
+def test_decode_end2end_truncates_to_max_det_by_score():
+    """超出 max_det 时按分数保留最高的那些，不是按原始顺序。"""
+    rows = [[0.0, 0.0, 1.0, 1.0, s / 100.0, 0.0] for s in range(1, 11)]
+    out = decode_end2end(_end2end(rows), 0.0, max_det=3)
+    assert len(out["scores"]) == 3
+    assert list(out["scores"]) == pytest.approx([0.10, 0.09, 0.08])
+
+
+def test_decode_end2end_keeps_all_when_under_max_det():
+    rows = [[0.0, 0.0, 1.0, 1.0, 0.5, 0.0]] * 4
+    assert len(decode_end2end(_end2end(rows), 0.1, max_det=10)["scores"]) == 4
+
+
+def test_decode_end2end_default_max_det_matches_export():
+    assert DEFAULT_MAX_DET == 300
+
+
+def test_decode_predictions_dispatches_end2end():
+    raw = _end2end([[5.0, 6.0, 7.0, 8.0, 0.9, 1.0]])
+    out = decode_predictions(raw, FORMAT_V26, 0.25)
+    assert list(out["boxes"][0]) == [5.0, 6.0, 7.0, 8.0]
+
+
+def test_decode_predictions_rejects_v26_when_classes_out_of_range():
+    """走 decode_predictions 也要带上类别数校验。"""
+    raw = _end2end([[0.0, 0.0, 1.0, 1.0, 0.9, 9.0]])
+    with pytest.raises(InferenceError):
+        decode_predictions(raw, FORMAT_V26, 0.25, num_classes=2)
+
+
+def test_decode_predictions_error_message_lists_all_formats():
+    with pytest.raises(InferenceError) as e:
+        decode_predictions(np.zeros((1, 4, 4), dtype=np.float32), "nope", 0.25)
+    msg = str(e.value)
+    assert FORMAT_V5 in msg and FORMAT_V8 in msg and FORMAT_V26 in msg
+
+
+def test_supported_formats_includes_v26():
+    from pastelabel.engine.onnx_inference import SUPPORTED_FORMATS
+    assert FORMAT_V26 in SUPPORTED_FORMATS
+
+
+def _end2end_raw(rows, num_cols=6):
+    """(1, N, 6) 端到端输出。"""
+    arr = np.zeros((1, len(rows), num_cols), dtype=np.float32)
+    for i, row in enumerate(rows):
+        arr[0, i, :len(row)] = row
+    return arr
+
+
+def _detector_v26(raw, num_classes=80):
+    from pastelabel.engine.onnx_inference import OnnxDetector
+    det = OnnxDetector("injected.onnx", class_names=[f"c{i}" for i in range(num_classes)],
+                       output_format=FORMAT_V26, conf_threshold=0.25, iou_threshold=0.45)
+    det._session = _FakeSession(raw)
+    return det
+
+
+def test_resolve_detect_keeps_all_end2end_boxes_without_nms():
+    """端到端模型不再跑 NMS：同类重叠框要原样保留，与官方一致。
+
+    若这里偷偷补一次 NMS，重叠框会被吞掉，结果与官方导出对不上。
+    """
+    # 三个同类框，后两个几乎完全重合（IoU > 1e-3）；不做 NMS 就该全部保留
+    raw = _end2end_raw([
+        [10.0, 10.0, 60.0, 60.0, 0.90, 1.0],
+        [100.0, 100.0, 150.0, 150.0, 0.80, 1.0],
+        [100.2, 100.1, 150.3, 150.2, 0.70, 1.0],
+    ])
+    det = _detector_v26(raw)
+    assert det.resolve_format() == FORMAT_V26
+    boxes = _run(det, 640, 640)
+    assert len(boxes) == 3, f"端到端输出不该被 NMS 去重，实际剩 {len(boxes)}"
+
+
+def test_resolve_detect_still_applies_conf_threshold_for_end2end():
+    raw = _end2end_raw([
+        [10.0, 10.0, 60.0, 60.0, 0.90, 1.0],
+        [20.0, 20.0, 70.0, 70.0, 0.05, 1.0],
+    ])
+    assert len(_run(_detector_v26(raw), 640, 640)) == 1
+
+
+def test_resolve_detect_uses_v8_nms_for_v8_models():
+    """对照组：v8 走 NMS，同类重叠框应被去重，证明上一条不是普遍行为。"""
+    from pastelabel.engine.onnx_inference import OnnxDetector
+    # [1, 4+C, N]，C=1 -> 末维 5
+    raw = np.zeros((1, 5, 3), dtype=np.float32)
+    for i, (cx, cy, s) in enumerate([(35.0, 35.0, 0.9), (35.2, 35.1, 0.8)]):
+        raw[0, :4, i] = (cx, cy, 50.0, 50.0)
+        raw[0, 4, i] = s
+    det = OnnxDetector("injected.onnx", class_names=["cat"], output_format=FORMAT_V8,
+                       conf_threshold=0.25, iou_threshold=0.45)
+    det._session = _FakeSession(raw)
+    assert len(_run(det, 640, 640)) == 1, "v8 的同类重叠框应被 NMS 去重"
+
+
+def test_detect_format_requires_many_rows_for_end2end():
+    """端到端的行数是 max_det（≤300），而 v8 布局的候选轴很大且排在前。
+
+    形状同时能用两种方式解释时（6 行 vs 6 列）不能猜成端到端：
+    v26 的框数是模型导出时定死的上限，行数不会只有个位数。
+    """
+    assert detect_output_format((1, 6, 6)) is None
+    assert detect_output_format((1, 4, 6)) is None
+    # 端到端的行数是导出时定死的 max_det，行数过大只可能是别的布局
+    assert detect_output_format((1, 8400, 6)) is None
+    # 有类别表时 6 列正好是 C=2 的 v8
+    assert detect_output_format((1, 6, 8400), num_classes=2) == FORMAT_V8
+    # 真正的端到端：6 列、行数在 max_det 以内
+    assert detect_output_format((1, 300, 6)) == FORMAT_V26
+    assert detect_output_format((1, 100, 6)) == FORMAT_V26
+    assert detect_output_format((1, DEFAULT_MAX_DET, 6)) == FORMAT_V26

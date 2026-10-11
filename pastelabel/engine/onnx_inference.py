@@ -11,7 +11,15 @@ LETTERBOX_FILL = 114
 
 FORMAT_V5 = "v5"
 FORMAT_V8 = "v8"
-SUPPORTED_FORMATS = (FORMAT_V5, FORMAT_V8)
+#: 端到端导出（YOLO26），输出已含 NMS 结果，无需再去重
+FORMAT_V26 = "v26"
+SUPPORTED_FORMATS = (FORMAT_V5, FORMAT_V8, FORMAT_V26)
+
+#: 端到端输出每行 [x1, y1, x2, y2, score, class_id]
+END2END_ROW = 6
+
+#: 端到端模型的默认最大检出数（导出时写死在输出维度里）
+DEFAULT_MAX_DET = 300
 
 MIN_SCORE = 0.01
 MAX_SCORE = 1.0
@@ -22,8 +30,8 @@ MAX_IOU = 0.95
 DEFAULT_INPUT_SIZE = (640, 640)
 
 #: 默认阈值。只在这里定义一份，界面与批量任务都引用它，避免多处写死后对不上
-DEFAULT_CONF = 0.50
-DEFAULT_IOU = 0.50
+DEFAULT_CONF = 0.25
+DEFAULT_IOU = 0.45
 
 # 无类别数时认定「末轴是候选轴」所需的最少候选数。真实检测导出在 320px 以上
 # 输入至少有 2100 个候选，100 是很保守的下限；小于它的形状（如 3x8）两种解释
@@ -162,6 +170,42 @@ def decode_yolov8(raw, conf_threshold, num_classes=None):
     return _pack(arr[:, :4], scores, best_cls, conf_threshold)
 
 
+def decode_end2end(raw, conf_threshold, max_det=DEFAULT_MAX_DET, num_classes=None):
+    """解码端到端导出 [1, N, 6]，行内 x1, y1, x2, y2, score, class_id。
+
+    这类模型（YOLO26）导出时已内置 NMS，官方后处理也只做分数过滤、类别过滤
+    与 max_det 截断，因此这里不再做一次 NMS —— 再做会与官方结果不一致。
+
+    已知现象：实测 yolo26s 的输出里仍有同类高 IoU 重叠框（conf>=0.25 时最大
+    约 0.96）。这是模型自身 NMS 阈值偏松，不是解码问题，别在这里补救。
+    """
+    arr = _as_2d(raw, "端到端")
+    if arr.shape[1] != END2END_ROW:
+        raise InferenceError(
+            f"端到端输出末维应为 {END2END_ROW}（x1y1x2y2+score+cls），"
+            f"实际 {arr.shape[1]}")
+    cls_ids = np.rint(arr[:, 5]).astype(np.int64)
+    if num_classes is not None and num_classes > 0:
+        # 越界说明模型与类别表对不上，早点报错好过产出空标签
+        bad = cls_ids[(cls_ids < 0) | (cls_ids >= num_classes)]
+        if bad.size:
+            raise InferenceError(
+                f"端到端输出出现越界类别 id {int(bad.min())}~{int(bad.max())}，"
+                f"类别表只有 {num_classes} 项")
+
+    scores = arr[:, 4].astype(np.float32, copy=True)
+    keep = scores >= float(conf_threshold)
+    box = arr[keep, :4].astype(np.float32, copy=True)
+    scores = scores[keep]
+    cls_ids = cls_ids[keep]
+
+    if int(max_det) > 0 and box.shape[0] > int(max_det):
+        # 模型输出未保证有序，按分数取前 max_det
+        top = np.argsort(-scores, kind="stable")[:int(max_det)]
+        box, scores, cls_ids = box[top], scores[top], cls_ids[top]
+    return {"boxes": box, "scores": scores, "class_ids": cls_ids}
+
+
 def detect_output_format(shape, num_classes=None):
     """按输出 shape 推断格式，推断不出返回 None（调用方须让用户显式指定）。
 
@@ -169,11 +213,21 @@ def detect_output_format(shape, num_classes=None):
     只有这种明显情形才认。小 N 的形状两种解释都成立（v5 的 [1, N, 5+C]
     与 v8 的 [1, 4+C, N] 可能同形），此时必须返回 None —— 猜错会把 v5 的
     objectness 当成类别分数、把列当行读，静默产出错误标注。
+
+    末维恰为 6、行数在 max_det 以内且远多于 6 时按端到端解释。但 6 也可能
+    正好是 v5 的 5+C（C=1）或 v8 的 4+C（C=2），类别数已知且与之吻合时不认
+    v26，继续按 v5/v8 判断，避免把类别数很少的普通检测导出误判成端到端。
     """
     dims = [int(d) for d in shape if int(d) != 1]
     if len(dims) != 2:
         return None
-    if num_classes is not None and num_classes > 0:
+    known = num_classes is not None and num_classes > 0
+    if not (known and dims[1] in (5 + num_classes, 4 + num_classes)):
+        # 端到端导出的行数是 max_det（固定上限），列数只有 6；
+        # 行数过大的只可能是别的布局（如转置的 v8），不能认成端到端。
+        if (dims[1] == END2END_ROW and dims[1] < dims[0] <= DEFAULT_MAX_DET):
+            return FORMAT_V26
+    if known:
         if dims[1] == 5 + num_classes:
             return FORMAT_V5
         if dims[1] == 4 + num_classes or dims[0] == 4 + num_classes:
@@ -184,14 +238,18 @@ def detect_output_format(shape, num_classes=None):
     return None
 
 
-def decode_predictions(raw, output_format, conf_threshold, num_classes=None):
+def decode_predictions(raw, output_format, conf_threshold, num_classes=None,
+                       max_det=DEFAULT_MAX_DET):
     """按指定格式解码；未知格式明确拒绝，不静默回退成普通检测。"""
     if output_format == FORMAT_V5:
         return decode_yolov5(raw, conf_threshold, num_classes)
     if output_format == FORMAT_V8:
         return decode_yolov8(raw, conf_threshold, num_classes)
+    if output_format == FORMAT_V26:
+        return decode_end2end(raw, conf_threshold, max_det, num_classes)
     raise InferenceError(
-        f"不支持的输出格式: {output_format!r}，当前仅支持 {FORMAT_V5} / {FORMAT_V8}")
+        "不支持的输出格式: "
+        f"{output_format!r}，当前仅支持 {' / '.join(SUPPORTED_FORMATS)}")
 
 
 def box_iou_matrix(boxes, box):
@@ -425,7 +483,7 @@ class OnnxDetector:
         if fmt is None:
             raise InferenceError(
                 f"无法从输出 shape {outputs[0].shape} 判断模型格式，"
-                "请显式选择 YOLOv5 或 YOLOv8")
+                "请显式选择 YOLOv5 / YOLOv8 / YOLO26")
         self._resolved_format = fmt
         return fmt
 
@@ -450,14 +508,17 @@ class OnnxDetector:
         tensor = np.transpose(canvas.astype(np.float32) / 255.0, (2, 0, 1))[None, ...]
 
         outputs = self._ensure_session().run(None, {self._input_name: tensor})
+        fmt = self.resolve_format()
         decoded = decode_predictions(
-            outputs[0], self.resolve_format(), conf,
+            outputs[0], fmt, conf,
             len(self.class_names) or None)
 
         boxes, keep = unletterbox_boxes(decoded["boxes"], geometry, src_w, src_h)
         scores, class_ids = decoded["scores"][keep], decoded["class_ids"][keep]
 
-        kept = nms_per_class(boxes, scores, class_ids, iou)
+        # 端到端模型（v26）自带 NMS，再跑一遍会与官方结果不一致
+        kept = list(range(len(boxes))) if fmt == FORMAT_V26 else \
+            nms_per_class(boxes, scores, class_ids, iou)
         if not kept:
             return []
         return boxes_to_internal(boxes[kept], scores[kept], class_ids[kept], self.class_names)

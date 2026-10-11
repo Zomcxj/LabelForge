@@ -5,7 +5,7 @@ from PyQt5.QtCore import Qt
 from ...core.config import WINDOW_CONFIG, PASTE_PARAMS, THUMBNAIL_CONFIG, DEFAULT_PREFIX
 from ..icons import (
     _load_svg_icon, SVG_FILE, SVG_FOLDER, SVG_IMPORT, SVG_PASTE_LABEL, SUN_SVG,
-    SVG_MODEL_LOAD, SVG_MODEL_SINGLE, SVG_MODEL_ALL,
+    SVG_MODEL_SLIDERS, SVG_MODEL_SINGLE, SVG_MODEL_ALL,
 )
 from ..i18n import t as tr
 from ..segmented_control import AnimatedSegmentedControl
@@ -100,7 +100,7 @@ class ToolbarMixin:
         upload_layout.addWidget(self.model_lbl)
         # 第一个图标只负责显示/隐藏参数行，加载模型在参数行里做
         self.model_row_btn = self._create_svg_button(
-            SVG_MODEL_LOAD, self._toggle_model_row,
+            SVG_MODEL_SLIDERS, self._toggle_model_row,
             tr("显示模型参数行"), label_color, "labelBtn"
         )
         upload_layout.addWidget(self.model_row_btn)

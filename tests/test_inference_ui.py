@@ -610,11 +610,11 @@ def test_model_row_inserted_above_canvas():
     assert "insertWidget(0" in src
 
 
-def test_default_thresholds_are_conf_050_nms_045():
-    """用户指定的默认值：置信度 0.50、NMS 0.50。"""
+def test_default_thresholds_are_conf_025_nms_045():
+    """用户指定的默认值：置信度 0.25、NMS 0.45。"""
     from pastelabel.engine.inference_task import DEFAULT_CONF, DEFAULT_IOU
-    assert DEFAULT_CONF == 0.50
-    assert DEFAULT_IOU == 0.50
+    assert DEFAULT_CONF == 0.25
+    assert DEFAULT_IOU == 0.45
 
 
 def test_default_input_size_is_640():
@@ -649,7 +649,7 @@ def test_inference_settings_tolerates_garbage(tmp_path, monkeypatch):
     loaded = config_manager.load_all()["inference_settings"]
 
     assert loaded["model_path"] == ""
-    assert loaded["conf_threshold"] == 0.5
+    assert loaded["conf_threshold"] == 0.25
 
 
 # ---------- 当前图：无检出不写盘 ----------
@@ -716,8 +716,8 @@ def test_worker_passes_saved_thresholds_to_detector():
 def test_engine_defaults_are_single_source():
     """默认值只在引擎里定义一份，任务模块与界面都引用它。"""
     from pastelabel.engine import inference_task, onnx_inference
-    assert inference_task.DEFAULT_CONF == onnx_inference.DEFAULT_CONF == 0.50
-    assert inference_task.DEFAULT_IOU == onnx_inference.DEFAULT_IOU == 0.50
+    assert inference_task.DEFAULT_CONF == onnx_inference.DEFAULT_CONF == 0.25
+    assert inference_task.DEFAULT_IOU == onnx_inference.DEFAULT_IOU == 0.45
 
 
 def test_detector_defaults_come_from_constants():
@@ -752,3 +752,186 @@ def test_class_prompt_writes_txt_next_to_model(tmp_path):
     assert written is True
     assert (tmp_path / "yolov8n.txt").read_text(encoding="utf-8").splitlines() == ["cat", "dog"]
     assert inference_workers.read_saved_class_names(suggested) == ["cat", "dog"]
+
+
+# ---------- 类别筛选 ----------
+
+def test_first_icon_uses_sliders_glyph():
+    """第一个图标是「参数行开关」，用滑杆比芯片更贴语义。"""
+    from pastelabel.ui import icons
+    src = inspect.getsource(ToolbarMixin._create_toolbar)
+    assert "SVG_MODEL_SLIDERS, self._toggle_model_row" in src
+    assert hasattr(icons, "SVG_MODEL_SLIDERS")
+    assert "line" in icons.SVG_MODEL_SLIDERS, "滑杆图标应含横线"
+
+
+def test_cross_mark_label_import_icons_unchanged():
+    """另外两个图标（单图/批量）不动。"""
+    src = inspect.getsource(ToolbarMixin._create_toolbar)
+    assert "SVG_MODEL_SINGLE, self._run_inference_current" in src
+    assert "SVG_MODEL_ALL, self._run_inference_from_here" in src
+
+
+def test_model_row_has_class_filter_button():
+    from pastelabel.ui.model_row import ModelRow
+    src = (ROOT / "pastelabel" / "ui" / "model_row.py").read_text(encoding="utf-8")
+    assert "self.filter_btn = QPushButton(" in src
+    assert "filter_requested" in src
+    assert 'self.filter_btn.setObjectName("optionsBtn")' in src
+
+
+def test_filter_button_disabled_until_model_loaded():
+    """没模型就没有类别可选，按钮要是灰的。"""
+    from pastelabel.ui.model_row import ModelRow
+    assert "self.filter_btn.setEnabled(False)" in inspect.getsource(ModelRow.clear_model)
+    assert "self.filter_btn.setEnabled(True)" in inspect.getsource(ModelRow.set_model)
+
+
+def test_filter_button_shows_selected_count():
+    """不打开面板也能看出当前筛了几类。"""
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow.set_filter_summary)
+    assert "len(selected)" in src and "total" in src
+
+
+def test_mixin_opens_filter_panel_with_model_classes():
+    src = inspect.getsource(InferenceMixin._open_class_filter)
+    assert "ClassFilterPanel" in src
+    assert "detector.class_names" in src, "应列出当前模型的全部类别"
+    assert "请先加载模型" in src, "没模型要拦住"
+
+
+def test_filter_survives_as_empty_means_no_filter():
+    """面板「全不选」= 不过滤：空集合要变成 None 传给引擎。"""
+    src = inspect.getsource(InferenceMixin._filter_for_run)
+    assert "or None" in src, src
+
+
+def test_class_filter_passed_into_worker():
+    src = inspect.getsource(InferenceMixin._start_inference)
+    assert "_filter_for_run()" in src, src
+    worker_src = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(
+        encoding="utf-8")
+    assert "class_filter=self._class_filter" in worker_src
+
+
+def test_changing_model_resets_class_filter():
+    """换模型后类别表可能完全不同，旧勾选必须作废。"""
+    src = inspect.getsource(InferenceMixin._on_model_loaded)
+    assert "_class_filter = set()" in src, src
+
+
+def test_filter_panel_has_select_all_and_clear():
+    from pastelabel.ui.class_filter_panel import ClassFilterPanel
+    src = (ROOT / "pastelabel" / "ui" / "class_filter_panel.py").read_text(
+        encoding="utf-8")
+    assert "全选" in src and "全不选" in src
+    assert hasattr(ClassFilterPanel, "set_class_names")
+    assert hasattr(ClassFilterPanel, "current_selection")
+    assert hasattr(ClassFilterPanel, "set_selection")
+    assert hasattr(ClassFilterPanel, "retranslate")
+
+
+def test_filter_panel_is_scrollable():
+    """COCO 80 类会很长，必须能滚。"""
+    src = (ROOT / "pastelabel" / "ui" / "class_filter_panel.py").read_text(
+        encoding="utf-8")
+    assert "QScrollArea" in src
+
+
+def test_filter_panel_rebuilds_keep_previous_selection():
+    """重建列表（比如换模型后重开）要保留还存在的勾选。"""
+    from pastelabel.ui.class_filter_panel import ClassFilterPanel
+    src = inspect.getsource(ClassFilterPanel.set_class_names)
+    assert "keep" in src, src
+
+
+# ---------- 进度小窗日志 ----------
+
+def test_progress_log_keeps_only_five_lines():
+    from pastelabel.ui.inference_progress import LOG_LINES, InferenceProgressDialog
+    assert LOG_LINES == 5
+    src = inspect.getsource(InferenceProgressDialog._build_ui)
+    assert "setMaximumBlockCount(LOG_LINES)" in src, src
+
+
+def test_progress_log_line_has_time_boxes_and_duration():
+    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    src = inspect.getsource(InferenceProgressDialog.set_progress)
+    assert "beijing_timestamp()" in src, src
+    assert "个框" in src, src
+    assert "ms" in src, src
+
+
+def test_progress_accumulates_total_box_count():
+    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    src = inspect.getsource(InferenceProgressDialog.set_progress)
+    assert "self._total_boxes += int(boxes)" in src, src
+
+
+def test_progress_does_not_yank_scroll_when_user_scrolled_up():
+    """用户往上翻历史时新结果不能把他拽回底部。"""
+    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    src = inspect.getsource(InferenceProgressDialog._append_log)
+    assert "at_bottom" in src, src
+    assert "if at_bottom" in src, src
+
+
+def test_progress_uses_utc_plus_8_not_local_time():
+    from pastelabel.ui import inference_progress
+    src = (ROOT / "pastelabel" / "ui" / "inference_progress.py").read_text(
+        encoding="utf-8")
+    assert "beijing_timestamp" in src
+    assert "datetime.now()" not in src, "不能用本机时间"
+
+
+def test_progress_tolerates_three_arg_progress_calls():
+    """单图路径也可能走这条连接，缺框数时不应报错。"""
+    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    src = inspect.getsource(InferenceProgressDialog.set_progress)
+    assert "if boxes is None" in src, src
+
+
+def test_progress_reset_clears_log_and_counter():
+    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    src = inspect.getsource(InferenceProgressDialog.reset)
+    assert "log_area.clear()" in src
+    assert "_total_boxes = 0" in src
+
+
+# ---------- 端到端模型（v26）在界面上的表现 ----------
+
+def test_model_row_disables_nms_for_end2end_model():
+    """v26 已内置 NMS，界面上的 NMS 输入框必须禁用，否则用户改了没反应。"""
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow.set_model)
+    assert "self.iou_spin.setEnabled(not self._end2end)" in src, src
+
+
+def test_model_row_explains_why_nms_is_disabled():
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow.set_model)
+    assert "该模型已内置 NMS，此项不生效" in src, src
+
+
+def test_model_row_tracks_end2end_flag():
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow.set_model)
+    assert "self._end2end = bool(end2end)" in src
+    # __init__ 里要有默认值，否则未加载模型时访问会 AttributeError
+    init_src = inspect.getsource(ModelRow.__init__)
+    assert "self._end2end = False" in init_src, init_src
+
+
+def test_end2end_flag_passed_from_detector_format():
+    """界面禁用与否取决于模型真实格式，不是靠用户勾选。"""
+    src = inspect.getsource(InferenceMixin._on_model_loaded)
+    assert "FORMAT_V26" in src, src
+    assert "end2end=self._model_format == FORMAT_V26" in src, src
+
+
+def test_conf_stays_enabled_for_end2end_model():
+    """端到端模型仍要按置信度过滤，置信度框不能一起禁用。"""
+    from pastelabel.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow.set_model)
+    assert "self.conf_spin.setEnabled(True)" in src, src
