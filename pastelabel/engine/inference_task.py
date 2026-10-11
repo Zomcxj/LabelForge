@@ -172,15 +172,23 @@ def is_auto_box(box):
     return isinstance(flags, dict) and bool(flags.get(SOURCE_KEY))
 
 
-def merge_boxes(existing, detected, replace_auto=False):
+def merge_boxes(existing, detected, replace_auto=False, class_filter=None):
     """把推理结果并入现有标注。
 
     默认保留人工标注；replace_auto=True 时先移除上一轮推理结果再并入，
     人工标注在任何情况下都不被删除。
+
+    class_filter 非空时做严格筛选：上一轮推理留下的、类别不在白名单里的框
+    也要一并丢掉。否则筛选只能「加」不能「减」——上一次不过滤跑出的类别会
+    一直留在画布上，看起来就像筛选没生效。人工标注不受影响。
     """
+    allowed = {str(c) for c in (class_filter or []) if str(c).strip()}
     kept = []
     for box in existing or []:
         if replace_auto and is_auto_box(box):
+            continue
+        # 严格筛选：只清推理框，人工框无论类别都保留
+        if allowed and is_auto_box(box) and box.get("label") not in allowed:
             continue
         kept.append(box)
     for box in detected or []:
@@ -372,7 +380,8 @@ def write_sidecar_boxes(image_path, boxes, image_width=0, image_height=0):
     return True
 
 
-def write_results(results, memory_boxes=None, replace_auto=False, skip_index=None):
+def write_results(results, memory_boxes=None, replace_auto=False, skip_index=None,
+                  class_filter=None):
     """批量把结果写进各自 sidecar，返回 (写入数, 失败路径列表)。
 
     memory_boxes 里已有的图以内存为准：内存可能比磁盘新，直接读盘会把
@@ -382,6 +391,8 @@ def write_results(results, memory_boxes=None, replace_auto=False, skip_index=Non
     没检出且合并后仍无任何标注的图不写盘：否则数据集里会多出一堆
     shapes 为 [] 的空 json。已有标注（人工/贴图/多边形）的图照常写回，
     因为 replace_auto 可能刚好删掉了上一轮的推理框。
+
+    class_filter 会传给 merge_boxes，把上一轮不在白名单里的推理框也清掉。
     """
     memory_boxes = memory_boxes or {}
     written = 0
@@ -394,7 +405,8 @@ def write_results(results, memory_boxes=None, replace_auto=False, skip_index=Non
             existing = read_sidecar_boxes(result.path)
             if existing is None:
                 existing = []
-        merged = merge_boxes(existing, result.boxes, replace_auto=replace_auto)
+        merged = merge_boxes(existing, result.boxes, replace_auto=replace_auto,
+                             class_filter=class_filter)
         if merged:
             if write_sidecar_boxes(result.path, merged, result.width, result.height):
                 written += 1

@@ -799,3 +799,96 @@ def test_remove_empty_sidecar_ignores_missing_and_broken(tmp_path):
     (tmp_path / "broken.json").write_text("{not json", encoding="utf-8")
     assert remove_empty_sidecar(str(broken)) is False
     assert (tmp_path / "broken.json").exists()
+
+
+# ---------- 严格筛选：勾选之外不留推理框 ----------
+
+def _auto(label, x=0):
+    return {"label": label, "x": x, "y": 0, "width": 10, "height": 10,
+            "flags": {"inference": True}}
+
+
+def test_merge_prunes_prior_auto_boxes_outside_filter():
+    """勾了 car 之后，上一轮推理留下的 person 不能继续留在画布上。
+
+    否则筛选只能「加」不能「减」，用户看到勾选外的类别还在，
+    就会认为筛选没生效（这正是最初的 bug 报告）。
+    """
+    existing = [_auto("person"), _auto("car", 1), _auto("bus", 2)]
+    out = merge_boxes(existing, [_auto("car", 9)], replace_auto=False,
+                      class_filter={"car"})
+    assert sorted(b["label"] for b in out) == ["car", "car"], out
+
+
+def test_merge_keeps_manual_boxes_of_any_class():
+    """严格筛选只针对推理框；人工标注无论类别都必须留下。"""
+    existing = [
+        {"label": "person", "x": 0, "y": 0, "width": 10, "height": 10},
+        _auto("bus", 1),
+    ]
+    out = merge_boxes(existing, [_auto("car", 9)], replace_auto=False,
+                      class_filter={"car"})
+    labels = sorted(b["label"] for b in out)
+    assert labels == ["car", "person"], labels
+
+
+def test_merge_keeps_paste_items_outside_filter():
+    """贴图不是推理结果，不能被类别筛选清掉。"""
+    existing = [{"label": "logo", "x": 3, "y": 3, "width": 10, "height": 10,
+                 "is_paste": True}]
+    out = merge_boxes(existing, [_auto("car")], replace_auto=False,
+                      class_filter={"car"})
+    assert sorted(b["label"] for b in out) == ["car", "logo"], out
+
+
+def test_merge_without_filter_keeps_prior_auto_boxes():
+    """没有筛选时不能顺手清理上一轮结果，否则默认行为被悄悄改掉。"""
+    existing = [_auto("person"), _auto("bus", 1)]
+    out = merge_boxes(existing, [_auto("car", 9)], replace_auto=False,
+                      class_filter=None)
+    assert len(out) == 3, out
+
+
+def test_merge_empty_filter_means_no_filtering():
+    """空集合按「不筛选」处理，不能清空所有推理框。"""
+    existing = [_auto("person"), _auto("bus", 1)]
+    for empty in (set(), [], ()):
+        out = merge_boxes(existing, [_auto("car", 9)], replace_auto=False,
+                          class_filter=empty)
+        assert len(out) == 3, (empty, out)
+
+
+def test_merge_blank_strings_in_filter_ignored():
+    """白名单里只有空白项等于没筛选，不能因此清空。"""
+    existing = [_auto("person")]
+    out = merge_boxes(existing, [_auto("car", 9)], replace_auto=False,
+                      class_filter={"", "   "})
+    assert len(out) == 2, out
+
+
+def test_merge_replace_auto_still_works_with_filter():
+    """replace_auto 与严格筛选同时给出时，语义叠加：先清掉全部旧推理框，
+    再并入本轮结果，人工框照常保留。"""
+    existing = [_auto("person"), _auto("car", 1),
+                {"label": "hand", "x": 5, "y": 5, "width": 4, "height": 4}]
+    out = merge_boxes(existing, [_auto("car", 9)], replace_auto=True,
+                      class_filter={"car"})
+    labels = sorted(b["label"] for b in out)
+    assert labels == ["car", "hand"], labels
+
+
+def test_write_results_passes_filter_through(tmp_path):
+    """批量写盘那条路径也必须带上筛选，否则当前图对了、其它图还是脏的。"""
+    import numpy as np
+    from pastelabel.engine.inference_task import ImageResult, write_results
+
+    img = tmp_path / "a.png"
+    img.write_bytes(b"x")
+    results = {0: ImageResult(0, str(img), [_auto("car")], None, 10, 10)}
+    memory = {0: [_auto("person"), _auto("bus", 1)]}
+    written, failed = write_results(results, memory_boxes=memory,
+                                    class_filter={"car"})
+    assert failed == []
+    from pastelabel.engine.inference_task import read_sidecar_boxes
+    boxes = read_sidecar_boxes(str(img)) or []
+    assert sorted(b["label"] for b in boxes) == ["car"], boxes

@@ -332,7 +332,7 @@ class InferenceMixin:
         }
         written, failed = inference_task.write_results(
             results, memory_boxes=memory, replace_auto=replace_auto,
-            skip_index=current)
+            skip_index=current, class_filter=self._filter_for_run())
 
         current_result = results.get(current)
         if current_result is not None and not current_result.error:
@@ -351,7 +351,9 @@ class InferenceMixin:
         from ...engine.inference_task import merge_boxes, remove_empty_sidecar
 
         index = self.current_background_index
-        merged = merge_boxes(self.detection_boxes, result.boxes, replace_auto=replace_auto)
+        merged = merge_boxes(self.detection_boxes, result.boxes,
+                             replace_auto=replace_auto,
+                             class_filter=self._filter_for_run())
         self.save_undo_state()
         self.detection_boxes = merged
         if index >= 0:

@@ -68,52 +68,65 @@ class OptionsPopupMixin:
         self.options_menu.setMinimumWidth(200)
 
         items = [
-            (tr("显示BOX"), "toggle_labels", self.show_labels_checkbox),
-            (tr("显示Label"), "toggle_label_names", self.show_label_names_checkbox),
-            (tr("显示置信度"), "toggle_scores", self.show_scores_checkbox),
-            (tr("显示贴图名"), "toggle_paste_names", self.show_paste_names_checkbox),
-            (tr("自动保存B"), "auto_save_b", self.auto_save_b_checkbox),
-            (tr("自动保存P"), "auto_save_p", self.auto_save_p_checkbox),
-            (tr("显示网格线"), "toggle_grid", self.show_grid_checkbox),
+            (tr("显示BOX"), "toggle_labels", self.show_labels_checkbox,
+             "显示BOX"),
+            (tr("显示Label"), "toggle_label_names", self.show_label_names_checkbox,
+             "显示Label"),
+            (tr("显示置信度"), "toggle_scores", self.show_scores_checkbox,
+             "显示置信度"),
+            (tr("显示贴图名"), "toggle_paste_names", self.show_paste_names_checkbox,
+             "显示贴图名"),
+            (tr("自动保存B"), "auto_save_b", self.auto_save_b_checkbox,
+             "自动保存B"),
+            (tr("自动保存P"), "auto_save_p", self.auto_save_p_checkbox,
+             "自动保存P"),
+            (tr("显示网格线"), "toggle_grid", self.show_grid_checkbox,
+             "显示网格线"),
         ]
 
+        # 每项记住自己的 i18n 键，翻译时按 key 重新取词。之前翻译模块用一份
+        # 并列的硬编码列表按下标回填，加菜单项就整体错位（显示置信度会让后面
+        # 所有项串到上一项的文字和快捷键）。
         self._menu_actions = []
-        for text, shortcut_action, checkbox in items:
-            sc = self._get_shortcut(shortcut_action) if shortcut_action else ''
-            label = f"{text}\t{sc}" if sc else text
-            action = self.options_menu.addAction(label)
+        for _text, shortcut_action, checkbox, text_key in items:
+            action = self.options_menu.addAction("")
             action.setCheckable(True)
             action.setChecked(checkbox.isChecked())
             action.triggered.connect(lambda checked, cb=checkbox: cb.setChecked(checked))
             checkbox.stateChanged.connect(lambda state, a=action: a.setChecked(state == Qt.Checked))
-            self._menu_actions.append((action, checkbox, shortcut_action))
+            self._menu_actions.append((action, checkbox, shortcut_action, text_key))
+        self._refresh_options_menu_texts()
 
         self.options_menu.addSeparator()
 
-        prefix_action = self.options_menu.addAction(tr("添加文件名前缀"))
+        prefix_action = self.options_menu.addAction("")
         prefix_action.setCheckable(True)
         prefix_action.setChecked(self.prefix_checkbox.isChecked())
         prefix_action.triggered.connect(lambda checked, cb=self.prefix_checkbox: cb.setChecked(checked))
         self.prefix_checkbox.stateChanged.connect(lambda state, a=prefix_action: a.setChecked(state == Qt.Checked))
-        self._menu_actions.append((prefix_action, self.prefix_checkbox, None))
+        self._menu_actions.append((prefix_action, self.prefix_checkbox, None,
+                                   "添加文件名前缀"))
 
-        self.canvas_copy_action = self.options_menu.addAction(tr("画布图片复制"))
+        self.canvas_copy_action = self.options_menu.addAction("")
         self.canvas_copy_action.setCheckable(True)
         self.canvas_copy_action.setChecked(getattr(self, '_canvas_image_copy_enabled', False))
         self.canvas_copy_action.triggered.connect(self._on_canvas_copy_menu_changed)
-        self._menu_actions.append((self.canvas_copy_action, None, None))
+        self._menu_actions.append((self.canvas_copy_action, None, None,
+                                   "画布图片复制"))
 
-        self.magnifier_action = self.options_menu.addAction(tr("窗口放大器"))
+        self.magnifier_action = self.options_menu.addAction("")
         self.magnifier_action.setCheckable(True)
         self.magnifier_action.setChecked(getattr(self, '_magnifier_enabled', False))
         self.magnifier_action.triggered.connect(self._on_magnifier_menu_changed)
-        self._menu_actions.append((self.magnifier_action, None, None))
+        self._menu_actions.append((self.magnifier_action, None, None,
+                                   "窗口放大器"))
 
-        self.relative_path_action = self.options_menu.addAction(tr("相对路径显示"))
+        self.relative_path_action = self.options_menu.addAction("")
         self.relative_path_action.setCheckable(True)
         self.relative_path_action.setChecked(getattr(self, '_relative_path_display', False))
         self.relative_path_action.triggered.connect(self._on_relative_path_menu_changed)
-        self._menu_actions.append((self.relative_path_action, None, None))
+        self._menu_actions.append((self.relative_path_action, None, None,
+                                   "相对路径显示"))
 
         self.options_btn.setMenu(self.options_menu)
         layout.addWidget(self.options_btn)
@@ -207,6 +220,19 @@ class OptionsPopupMixin:
 
         self.options_menu = popup
         self._refresh_options_popup_texts()
+
+    def _refresh_options_menu_texts(self):
+        """按每项自己记的 i18n 键重刷文字与快捷键。
+
+        文字来源只有这一处，翻译模块直接调它，不再各自维护并列的硬编码列表，
+        否则两边一旦不同步就会整体错位。
+        """
+        from .. import i18n
+        for action, _checkbox, shortcut_action, text_key in getattr(
+                self, '_menu_actions', []):
+            text = i18n.t(text_key) if text_key else ''
+            sc = self._get_shortcut(shortcut_action) if shortcut_action else ''
+            action.setText(f"{text}\t{sc}" if sc else text)
 
     def _refresh_options_popup_texts(self):
         for button, text, shortcut_action, getter in getattr(self, '_option_popup_rows', []):

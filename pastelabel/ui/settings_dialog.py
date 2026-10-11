@@ -123,6 +123,7 @@ class SettingsDialog(QDialog):
             'toggle_grid': tr("显示网格线"),
             'toggle_labels': tr("显示BOX"),
             'toggle_label_names': tr("显示标签名"),
+            'toggle_scores': tr("显示置信度"),
             'toggle_paste_names': tr("显示贴图名"),
             'auto_save_b': tr("自动保存B"),
             'auto_save_p': tr("自动保存P"),

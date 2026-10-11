@@ -146,7 +146,7 @@ SHORTCUT_CONFIG = {
     'toggle_grid': 'Ctrl+G',
     'toggle_labels': 'R',
     'toggle_label_names': 'T',
-    'toggle_scores': 'Ctrl+Shift+L',
+    'toggle_scores': 'Y',
     'auto_save_b': 'G',
     'auto_save_p': 'H',
     'toggle_paste_names': 'F',

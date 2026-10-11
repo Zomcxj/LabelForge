@@ -106,13 +106,17 @@ def test_reset_all_returns_relative_path_to_default(temp_config):
 
 def test_options_menu_has_the_relative_path_toggle_at_the_bottom():
     source = OPTIONS_SRC.read_text(encoding="utf-8")
-    assert "self.relative_path_action = self.options_menu.addAction(tr(\"相对路径显示\"))" in source
+    # 文字现在由 _refresh_options_menu_texts 按登记的 key 回填，创建时留空
+    assert "self.relative_path_action = self.options_menu.addAction(\"\")" in source
     assert "self.relative_path_action.triggered.connect(self._on_relative_path_menu_changed)" in source
     # 必须排在「窗口放大器」之后（选项最下面）
     magnifier = source.index("self.magnifier_action = self.options_menu.addAction")
     relative = source.index("self.relative_path_action = self.options_menu.addAction")
     assert magnifier < relative
     assert source.index("self.options_btn.setMenu(self.options_menu)", relative) > relative
+    # 登记的 i18n 键要跟别人一样紧跟在这个 append 里
+    tail = source[relative:source.index("self.options_btn.setMenu", relative)]
+    assert '"相对路径显示"' in tail, tail[:300]
 
 
 def test_relative_path_toggle_is_checkable_and_synced():
@@ -142,8 +146,18 @@ def test_menu_text_is_translated_in_both_languages():
 
 def test_translation_refreshes_the_new_menu_item():
     source = TRANSLATION_SRC.read_text(encoding="utf-8")
-    # _refresh_ui_texts 与 _refresh_menu_shortcuts 都要带上新项
-    assert source.count('tr("相对路径显示")]') == 2
+    # 菜单文字统一由 _refresh_options_menu_texts 刷新；两处刷新都要调它，
+    # 且翻译模块不再自己维护菜单文字表（曾因按下标回填导致整体错位）。
+    assert source.count('_refresh_options_menu_texts()') == 2
+    assert '_menu_actions' not in source
+
+
+def test_relative_path_menu_item_carries_its_i18n_key():
+    """新项必须把自己的 i18n 键登记进 _menu_actions，否则刷新时会没文字。"""
+    source = OPTIONS_SRC.read_text(encoding="utf-8")
+    assert '"相对路径显示")' in source
+    tail = source.split('self.relative_path_action =')[1][:500]
+    assert '"相对路径显示"' in tail, tail[:200]
 
 
 # ---------- 列表项文本统一走 helper ----------

@@ -128,15 +128,8 @@ class TranslationMixin:
             self.process_btn.setToolTip(tr("数据处理"))
         if hasattr(self, '_rebuild_label_cache_menu'):
             self._rebuild_label_cache_menu()
-        if hasattr(self, '_menu_actions'):
-            menu_texts = [tr("显示BOX"), tr("显示Label"), tr("显示贴图名"), tr("自动保存B"), tr("自动保存P"), tr("显示网格线"), tr("添加文件名前缀"), tr("画布图片复制"), tr("窗口放大器"), tr("相对路径显示")]
-            for i, item in enumerate(self._menu_actions):
-                action = item[0]
-                shortcut_action = item[2] if len(item) > 2 else None
-                if i < len(menu_texts):
-                    text = menu_texts[i]
-                    sc = self._get_shortcut(shortcut_action) if shortcut_action else ''
-                    action.setText(f"{text}\t{sc}" if sc else text)
+        if hasattr(self, '_refresh_options_menu_texts'):
+            self._refresh_options_menu_texts()
         if hasattr(self, 'upload_a_btn'):
             self.upload_a_btn.setToolTip(tr("选择背景图片"))
         if hasattr(self, 'load_folder_btn'):
@@ -168,15 +161,8 @@ class TranslationMixin:
         """刷新选项菜单中的快捷键显示"""
         from .. import i18n
         tr = i18n.t
-        if hasattr(self, '_menu_actions'):
-            menu_texts = [tr("显示BOX"), tr("显示Label"), tr("显示贴图名"), tr("自动保存B"), tr("自动保存P"), tr("显示网格线"), tr("添加文件名前缀"), tr("画布图片复制"), tr("窗口放大器"), tr("相对路径显示")]
-            for i, item in enumerate(self._menu_actions):
-                action = item[0]
-                shortcut_action = item[2] if len(item) > 2 else None
-                if i < len(menu_texts):
-                    text = menu_texts[i]
-                    sc = self._get_shortcut(shortcut_action) if shortcut_action else ''
-                    action.setText(f"{text}\t{sc}" if sc else text)
+        if hasattr(self, '_refresh_options_menu_texts'):
+            self._refresh_options_menu_texts()
         if hasattr(self, 'draw_box_btn'):
             sc = self._get_shortcut('draw_box')
             self.draw_box_btn.setText(f"{tr('绘制BOX')}({sc})")

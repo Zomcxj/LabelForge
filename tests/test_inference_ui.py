@@ -421,7 +421,8 @@ def test_apply_results_writes_other_images_to_disk(monkeypatch):
     calls = {}
     monkeypatch.setattr(
         inference_task, "write_results",
-        lambda results, memory_boxes=None, replace_auto=False, skip_index=None:
+        lambda results, memory_boxes=None, replace_auto=False, skip_index=None,
+        class_filter=None:
         calls.update(results=set(results), skip_index=skip_index) or (1, []))
 
     editor = _FakeEditor(images=("a.png", "b.png"))
@@ -1103,14 +1104,14 @@ def test_toolbar_has_show_scores_checkbox():
 
 def test_show_scores_has_shortcut():
     from pastelabel.core.config import SHORTCUT_CONFIG
-    assert SHORTCUT_CONFIG.get('toggle_scores') == 'Ctrl+Shift+L'
+    assert SHORTCUT_CONFIG.get('toggle_scores') == 'Y'
 
 
 def test_shortcut_does_not_collide_with_existing():
     """新快捷键不能和已有的撞车，否则会有一个不生效。"""
     from pastelabel.core.config import SHORTCUT_CONFIG
     values = [v for k, v in SHORTCUT_CONFIG.items() if k != 'toggle_scores']
-    assert 'Ctrl+Shift+L' not in values
+    assert 'Y' not in values
 
 
 def test_toggle_scores_handler_is_wired():
@@ -1244,3 +1245,149 @@ def test_paint_event_swallows_errors_so_tests_must_cover_draw_helpers():
         encoding='utf-8')
     head = src.split('def paintEvent')[1][:900]
     assert 'except' in head, 'paintEvent 依赖兜底异常处理'
+
+
+# ---------- 选项菜单文字/快捷键不能错位 ----------
+
+def test_menu_actions_store_i18n_key_not_translation():
+    """每项要记住自己的 i18n 键；存翻译后的文字会在切语言时二次翻译。"""
+    src = (ROOT / 'pastelabel' / 'ui' / 'mixins' / 'options_popup.py').read_text(
+        encoding='utf-8')
+    body = src.split('def _rebuild_options_popup')[1][:6000]
+    assert 'text_key' in body
+    # 第一段列表每条应是 4 元组：(显示文字, 动作键, 复选框, i18n键)
+    assert '"显示置信度"' in body
+    assert '显示置信度' in src
+
+
+def test_translation_no_longer_hardcodes_menu_labels():
+    """翻译模块曾按下标回填一份并列的硬编码菜单文字表，加项就整体错位。
+
+    约定：菜单文字只能由 _refresh_options_menu_texts 一处产生。
+    """
+    src = (ROOT / 'pastelabel' / 'ui' / 'mixins' / 'translation.py').read_text(
+        encoding='utf-8')
+    assert '_menu_actions' not in src, \
+        'translation 不应再直接操作 _menu_actions，应由共享方法统一刷新'
+    assert src.count('_refresh_options_menu_texts()') == 2, \
+        '两处刷新（retranslate / _refresh_menu_shortcuts）都要走共享方法'
+
+
+def test_refresh_options_menu_texts_uses_stored_key():
+    from pastelabel.ui.mixins.options_popup import OptionsPopupMixin
+    src = inspect.getsource(OptionsPopupMixin._refresh_options_menu_texts)
+    assert 'i18n.t(text_key)' in src
+    assert '_get_shortcut' in src
+
+
+def test_menu_actions_are_four_tuples_with_keys():
+    """结构调整后所有追加点都要保持一致，混用长度会让解包炸掉。"""
+    src = (ROOT / 'pastelabel' / 'ui' / 'mixins' / 'options_popup.py').read_text(
+        encoding='utf-8')
+    import ast
+    tree = ast.parse(src)
+    appends = []
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == 'append'
+                and isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == '_menu_actions'):
+            appends.append(node)
+    assert appends, '没找到 _menu_actions.append'
+    for call in appends:
+        tup = call.args[0]
+        assert isinstance(tup, ast.Tuple), call.lineno
+        assert len(tup.elts) == 4, (call.lineno, len(tup.elts))
+
+
+def test_shortcut_Y_does_not_collide():
+    from pastelabel.core.config import SHORTCUT_CONFIG
+    assert SHORTCUT_CONFIG['toggle_scores'] == 'Y'
+    values = [v for k, v in SHORTCUT_CONFIG.items() if k != 'toggle_scores']
+    assert 'Y' not in values
+
+
+def test_settings_dialog_lists_toggle_scores():
+    """设置对话框漏了这一行，用户就没法改或查看这个快捷键。"""
+    src = (ROOT / 'pastelabel' / 'ui' / 'settings_dialog.py').read_text(
+        encoding='utf-8')
+    body = src.split('shortcut_names = {')[1].split('}')[0]
+    assert "'toggle_scores'" in body
+    assert '显示置信度' in body
+
+
+def test_settings_dialog_keeps_display_label_adjacent():
+    """插在显示标签名与显示贴图名之间，与选项菜单顺序一致。"""
+    src = (ROOT / 'pastelabel' / 'ui' / 'settings_dialog.py').read_text(
+        encoding='utf-8')
+    body = src.split('shortcut_names = {')[1].split('}')[0]
+    i_name = body.index("'toggle_label_names'")
+    i_scores = body.index("'toggle_scores'")
+    i_paste = body.index("'toggle_paste_names'")
+    assert i_name < i_scores < i_paste
+
+
+# ---------- 当前图这条路径必须真的把筛选传下去 ----------
+
+def test_current_image_merge_receives_class_filter():
+    """只勾 car 时，上一轮推理留下的 truck 必须从当前图上消失。
+
+    这是用户实际走的那条路（当前图推理），只测引擎层不够。
+    """
+    editor = _FakeEditor()
+    editor._class_filter = {"car"}
+    editor.detection_boxes = [
+        {"label": "truck", "x": 0, "y": 0, "width": 5, "height": 5,
+         "flags": {"inference": True}},
+        {"label": "manual", "x": 1, "y": 1, "width": 5, "height": 5},
+    ]
+    editor.detection_boxes_dict = {0: list(editor.detection_boxes)}
+    editor._inference_dataset = tuple(editor.background_images)
+
+    editor._apply_inference_to_current(
+        _result(0, editor.background_images[0],
+                [{"label": "car", "x": 9, "y": 9, "width": 4, "height": 4}]),
+        False)
+
+    labels = sorted(b["label"] for b in editor.detection_boxes)
+    assert labels == ["car", "manual"], labels
+
+
+def test_current_image_merge_keeps_everything_without_filter():
+    """没勾任何类别时不能顺手清理，默认行为保持不变。"""
+    editor = _FakeEditor()
+    editor._class_filter = set()
+    editor.detection_boxes = [
+        {"label": "truck", "x": 0, "y": 0, "width": 5, "height": 5,
+         "flags": {"inference": True}},
+    ]
+    editor.detection_boxes_dict = {0: list(editor.detection_boxes)}
+
+    editor._apply_inference_to_current(
+        _result(0, editor.background_images[0],
+                [{"label": "car", "x": 9, "y": 9, "width": 4, "height": 4}]),
+        False)
+
+    labels = sorted(b["label"] for b in editor.detection_boxes)
+    assert labels == ["car", "truck"], labels
+
+
+def test_apply_results_forwards_filter_to_disk_writer(monkeypatch):
+    """批量写盘那条路也要带上筛选，否则其它图还是脏的。"""
+    from pastelabel.engine import inference_task
+
+    seen = {}
+
+    def fake_write(results, memory_boxes=None, replace_auto=False,
+                   skip_index=None, class_filter=None):
+        seen["class_filter"] = class_filter
+        return 1, []
+
+    monkeypatch.setattr(inference_task, "write_results", fake_write)
+
+    editor = _FakeEditor(images=("a.png", "b.png"))
+    editor._class_filter = {"car"}
+    editor._apply_inference_results(
+        {0: _result(0, "a.png", []), 1: _result(1, "b.png", [])}, False)
+
+    assert seen["class_filter"] == {"car"}, seen
