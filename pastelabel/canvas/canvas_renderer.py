@@ -445,7 +445,7 @@ class CanvasRendererMixin:
         self._draw_single_detection_box(
             painter, box_x, box_y, box_width, box_height,
             box.get("label", ""), is_selected, is_pressed_label,
-            group_id=box.get("group_id"),
+            group_id=box.get("group_id"), score=box.get("score"),
         )
 
     def _is_pressed_label(self, box):
@@ -455,7 +455,8 @@ class CanvasRendererMixin:
         return box.get('label') == self._editor.pressed_label
 
     def _draw_single_detection_box(self, painter, x, y, width, height, label,
-                                    is_selected, is_pressed_label, group_id=None):
+                                    is_selected, is_pressed_label, group_id=None,
+                                    score=None):
         """绘制单个检测框"""
         label_color_hex = self._editor.get_label_color(label)
         lr = int(label_color_hex[1:3], 16)
@@ -480,8 +481,10 @@ class CanvasRendererMixin:
         painter.fillRect(rx, ry, rw, rh, fill_color)
 
         if label and getattr(self._editor, 'show_label_names_checkbox', None) and self._editor.show_label_names_checkbox.isChecked():
-            from ..engine.shape_io import format_label_display
-            display = format_label_display(label, group_id)
+            from ..engine.shape_io import box_display_label
+            display = box_display_label(
+                {"label": label, "group_id": group_id, "score": score},
+                show_score=self._show_scores())
             label_bg = QColor(lr, lg, lb)
             self._draw_box_label(painter, x, y, display, label_bg)
 
@@ -489,6 +492,11 @@ class CanvasRendererMixin:
             handle_stroke = QColor(255, 255, 255)
             handle_fill = QColor(lr, lg, lb)
             self._draw_box_handles(painter, x, y, width, height, handle_stroke, handle_fill)
+
+    def _show_scores(self):
+        """「显示置信度」开关状态；没有该复选框时按不显示处理。"""
+        cb = getattr(self._editor, 'show_scores_checkbox', None)
+        return bool(cb is not None and cb.isChecked())
 
     def _draw_box_label(self, painter, x, y, label, bg_color):
         """绘制检测框标签"""
@@ -577,7 +585,7 @@ class CanvasRendererMixin:
         painter.restore()
         if label and getattr(self._editor, 'show_label_names_checkbox', None) and self._editor.show_label_names_checkbox.isChecked():
             from ..engine.shape_io import box_display_label
-            text = box_display_label(box)
+            text = box_display_label(box, show_score=self._show_scores())
             self._draw_box_label(painter, pts[0].x(), pts[0].y(), text, QColor(lr, lg, lb))
         if is_selected:
             size = DETECTION_BOX_CONFIG['resize_handle_size']
@@ -662,8 +670,8 @@ class CanvasRendererMixin:
         p = box["points"][0]
         cx = p[0] * self.background_scale + background_rect.left()
         cy = p[1] * self.background_scale + background_rect.top()
-        from ..engine.shape_io import format_label_display
-        text = format_label_display(label, box.get("group_id"))
+        from ..engine.shape_io import box_display_label
+        text = box_display_label(box, show_score=self._show_scores())
         self._draw_box_label(painter, cx, cy, text, QColor(lr, lg, lb))
 
     def _draw_temp_polygon(self, painter, background_rect):

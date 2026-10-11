@@ -316,6 +316,8 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         if hasattr(self, 'show_labels_checkbox'):
             self.show_labels_checkbox.setChecked(is_annotate)
         self.show_label_names_checkbox.setChecked(is_annotate)
+        if hasattr(self, 'show_scores_checkbox'):
+            self.show_scores_checkbox.setChecked(is_annotate)
         if hasattr(self, 'show_paste_names_checkbox'):
             self.show_paste_names_checkbox.setChecked(not is_annotate)
 

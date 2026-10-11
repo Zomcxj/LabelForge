@@ -188,6 +188,12 @@ class ToolbarMixin:
         self.show_label_names_checkbox.setChecked(True)
         self.show_label_names_checkbox.stateChanged.connect(self.on_labels_checkbox_changed)
 
+        self.show_scores_checkbox = QCheckBox(tr("显示置信度"))
+        self.show_scores_checkbox.setObjectName("showScoreCb")
+        self.show_scores_checkbox.setChecked(True)
+        self.show_scores_checkbox.setToolTip(tr("在类别名后显示推理置信度"))
+        self.show_scores_checkbox.stateChanged.connect(self.on_labels_checkbox_changed)
+
         self.auto_label_checkbox = QCheckBox(tr("贴图标签"))
         self.auto_label_checkbox.setObjectName("autoLabelCb")
         self.auto_label_checkbox.setChecked(True)

@@ -29,6 +29,9 @@ class TranslationMixin:
             self.auto_save_p_checkbox.setText(f"{tr('自动保存P')}({tr('贴图')})" if self.edit_mode == 'paste' else tr("自动保存P"))
         self.show_labels_checkbox.setText(tr("显示BOX"))
         self.show_label_names_checkbox.setText(tr("显示Label"))
+        if hasattr(self, 'show_scores_checkbox'):
+            self.show_scores_checkbox.setText(tr("显示置信度"))
+            self.show_scores_checkbox.setToolTip(tr("在类别名后显示推理置信度"))
         self.auto_label_checkbox.setText(tr("贴图标签"))
         self.prefix_checkbox.setText(tr("添加文件名前缀"))
         self.show_paste_names_checkbox.setText(tr("显示贴图名"))

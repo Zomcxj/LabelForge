@@ -74,6 +74,7 @@ class EventHandlerMixin:
             'next_image': lambda: self.switch_background(1),
             'toggle_labels': self._toggle_labels,
             'toggle_label_names': self._toggle_label_names,
+            'toggle_scores': self._toggle_scores,
             'toggle_grid': self.toggle_grid,
             'auto_save_b': self._toggle_auto_save_b,
             'auto_save_p': self._toggle_auto_save_p,
@@ -164,6 +165,10 @@ class EventHandlerMixin:
     def _toggle_label_names(self):
         if hasattr(self, 'show_label_names_checkbox'):
             self.show_label_names_checkbox.setChecked(not self.show_label_names_checkbox.isChecked())
+
+    def _toggle_scores(self):
+        if hasattr(self, 'show_scores_checkbox'):
+            self.show_scores_checkbox.setChecked(not self.show_scores_checkbox.isChecked())
 
     def _toggle_auto_save_b(self):
         self.auto_save_b_checkbox.setChecked(not self.auto_save_b_checkbox.isChecked())

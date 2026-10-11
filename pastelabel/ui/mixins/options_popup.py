@@ -70,6 +70,7 @@ class OptionsPopupMixin:
         items = [
             (tr("显示BOX"), "toggle_labels", self.show_labels_checkbox),
             (tr("显示Label"), "toggle_label_names", self.show_label_names_checkbox),
+            (tr("显示置信度"), "toggle_scores", self.show_scores_checkbox),
             (tr("显示贴图名"), "toggle_paste_names", self.show_paste_names_checkbox),
             (tr("自动保存B"), "auto_save_b", self.auto_save_b_checkbox),
             (tr("自动保存P"), "auto_save_p", self.auto_save_p_checkbox),
@@ -186,6 +187,7 @@ class OptionsPopupMixin:
         items = [
             (tr("显示BOX"), "toggle_labels", self.show_labels_checkbox, lambda cb=self.show_labels_checkbox: cb.setChecked(not cb.isChecked()), lambda cb=self.show_labels_checkbox: cb.isChecked()),
             (tr("显示Label"), "toggle_label_names", self.show_label_names_checkbox, lambda cb=self.show_label_names_checkbox: cb.setChecked(not cb.isChecked()), lambda cb=self.show_label_names_checkbox: cb.isChecked()),
+            (tr("显示置信度"), "toggle_scores", self.show_scores_checkbox, lambda cb=self.show_scores_checkbox: cb.setChecked(not cb.isChecked()), lambda cb=self.show_scores_checkbox: cb.isChecked()),
             (tr("显示贴图名"), "toggle_paste_names", self.show_paste_names_checkbox, lambda cb=self.show_paste_names_checkbox: cb.setChecked(not cb.isChecked()), lambda cb=self.show_paste_names_checkbox: cb.isChecked()),
             (tr("自动保存B"), "auto_save_b", self.auto_save_b_checkbox, lambda cb=self.auto_save_b_checkbox: cb.setChecked(not cb.isChecked()), lambda cb=self.auto_save_b_checkbox: cb.isChecked()),
             (tr("自动保存P"), "auto_save_p", self.auto_save_p_checkbox, lambda cb=self.auto_save_p_checkbox: cb.setChecked(not cb.isChecked()), lambda cb=self.auto_save_p_checkbox: cb.isChecked()),

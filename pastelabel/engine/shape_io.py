@@ -45,6 +45,10 @@ def box_from_labelme_shape(shape):
         box["points"] = [list(p) for p in points]
     if "visible" in shape:
         box["visible"] = shape["visible"]
+    # 置信度按 X-AnyLabeling 的约定存顶层 "score"。手工框没有这个键，
+    # 只有推理结果带；缺失即 None，界面据此决定要不要显示数字。
+    if isinstance(shape.get("score"), (int, float)) and not isinstance(shape["score"], bool):
+        box["score"] = float(shape["score"])
     # 自定义 flag（如质检豁免 tiny_keep）要跟着 box 走，否则载入即丢、
     # labelme_shape_from_box 再存回去时也就无从恢复。空 flags 不塞键，
     # 让绝大多数无 flag 的 JSON 载入结果与历史行为完全一致。
@@ -72,6 +76,16 @@ def labelme_shape_from_box(box):
         "shape_type": shape_type,
         "flags": flags,
     }
+    # 置信度写顶层 score，跟 X-AnyLabeling 保持一致；没有就写 null 占位，
+    # 让 JSON 里这个字段始终存在，外部工具读取时不用判键是否存在。
+    score = box.get("score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        score = None
+    shape["score"] = None if score is None else float(score)
+    # 键序按 labelme 习惯：score 跟在 label 后面更好读
+    ordered = {"label": shape.pop("label"), "score": shape.pop("score")}
+    ordered.update(shape)
+    shape = ordered
     if "visible" in box:
         shape["visible"] = box["visible"]
     return shape
@@ -81,6 +95,13 @@ def format_label_display(label, group_id=None):
     if group_id is not None:
         return f"{label} [{group_id}]"
     return label
+
+
+def format_score_display(score):
+    """置信度显示文本；没有分数返回空串。"""
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        return ""
+    return f"{float(score):.2f}"
 
 
 def rotation_angle_degrees(points):
@@ -95,8 +116,12 @@ def rotation_angle_degrees(points):
     return angle
 
 
-def box_display_label(box):
-    """标签显示文本：类别[分组] 角度（旋转框附带角度，0~360°）。"""
+def box_display_label(box, show_score=False):
+    """标签显示文本：类别[分组] 角度，选带置信度。
+
+    置信度跟着类别名一起显示（参考 X-AnyLabeling 的 show_scores），
+    由调用方按「显示置信度」开关传入 show_score。
+    """
     label = box.get("label", "") if isinstance(box, dict) else ""
     text = format_label_display(label, box.get("group_id") if isinstance(box, dict) else None)
     if isinstance(box, dict) and box.get("shape_type") == "rotation" and len(box.get("points") or []) == 4:
@@ -104,6 +129,10 @@ def box_display_label(box):
         if angle >= 359.5:
             angle = 0.0
         text = f"{text} {angle:.0f}°"
+    if show_score and isinstance(box, dict):
+        shown = format_score_display(box.get("score"))
+        if shown:
+            text = f"{text} {shown}"
     return text
 
 

@@ -1087,3 +1087,160 @@ def test_row_constructor_starts_in_the_no_model_state():
     from pastelabel.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.__init__)
     assert "self.clear_model()" in src, src
+
+
+# ---------- 显示置信度 ----------
+
+def test_toolbar_has_show_scores_checkbox():
+    src = (ROOT / 'pastelabel' / 'ui' / 'mixins' / 'toolbar.py').read_text(
+        encoding='utf-8')
+    assert 'self.show_scores_checkbox = QCheckBox(tr("显示置信度"))' in src
+    assert 'showScoreCb' in src, '要跟其它隐藏复选框一样给 objectName'
+    assert 'self.show_scores_checkbox.setChecked(True)' in src
+    assert ('self.show_scores_checkbox.stateChanged.connect('
+            'self.on_labels_checkbox_changed)') in src, '切换后必须重绘'
+
+
+def test_show_scores_has_shortcut():
+    from pastelabel.core.config import SHORTCUT_CONFIG
+    assert SHORTCUT_CONFIG.get('toggle_scores') == 'Ctrl+Shift+L'
+
+
+def test_shortcut_does_not_collide_with_existing():
+    """新快捷键不能和已有的撞车，否则会有一个不生效。"""
+    from pastelabel.core.config import SHORTCUT_CONFIG
+    values = [v for k, v in SHORTCUT_CONFIG.items() if k != 'toggle_scores']
+    assert 'Ctrl+Shift+L' not in values
+
+
+def test_toggle_scores_handler_is_wired():
+    from pastelabel.engine.event_handler import EventHandlerMixin
+    src = inspect.getsource(EventHandlerMixin.setup_shortcuts)
+    assert "'toggle_scores': self._toggle_scores" in src
+    handler = inspect.getsource(EventHandlerMixin._toggle_scores)
+    assert 'show_scores_checkbox' in handler
+    assert 'setChecked(not' in handler, '应当是切换而不是置位'
+
+
+def test_toggle_scores_tolerates_missing_checkbox():
+    """没有该复选框的宿主（测试替身/精简窗口）不能抛异常。"""
+    from pastelabel.engine.event_handler import EventHandlerMixin
+    handler = inspect.getsource(EventHandlerMixin._toggle_scores)
+    assert 'hasattr' in handler
+
+
+def test_options_menu_lists_show_scores():
+    from pastelabel.ui.mixins.options_popup import OptionsPopupMixin
+    src = (ROOT / 'pastelabel' / 'ui' / 'mixins' /
+           'options_popup.py').read_text(encoding='utf-8')
+    assert src.count('"toggle_scores"') == 2, '菜单与弹窗两处都要有'
+
+
+def test_renderer_reads_the_show_scores_checkbox():
+    from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+    src = inspect.getsource(CanvasRendererMixin._show_scores)
+    assert 'show_scores_checkbox' in src
+    assert 'isChecked' in src
+
+
+def test_renderer_passes_score_flag_at_all_three_sites():
+    """矩形、多边形、关键点三条渲染路径都要带上置信度开关。"""
+    from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+        encoding='utf-8')
+    assert src.count('show_score=self._show_scores()') == 3, \
+        '三处渲染都要传 show_score'
+
+
+def test_rect_renderer_uses_box_display_label_for_score():
+    """矩形路径原先用 format_label_display，拿不到 score，必须改走 box_display_label。"""
+    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+        encoding='utf-8')
+    rect_block = src.split('def _draw_single_detection_box')[1][:2500]
+    assert 'box_display_label' in rect_block
+    assert '"score": score' in rect_block, '矩形路径要把 score 传进去'
+
+
+def test_translation_refreshes_show_scores_label():
+    from pastelabel.ui.mixins.translation import TranslationMixin
+    src = inspect.getsource(TranslationMixin._refresh_ui_texts)
+    assert 'show_scores_checkbox' in src
+    assert '显示置信度' in src
+
+
+def test_i18n_has_show_scores_in_both_languages():
+    from pastelabel.ui import i18n
+    assert i18n._strings['zh']['显示置信度'] == '显示置信度'
+    assert i18n._strings['en']['显示置信度'] == 'Show Score'
+    assert i18n._strings['zh']['在类别名后显示推理置信度']
+    assert i18n._strings['en']['在类别名后显示推理置信度']
+
+
+def test_score_hidden_when_label_names_hidden():
+    """显示Label 关掉后置信度也要一起隐藏（分数挂在类别名后面）。"""
+    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+        encoding='utf-8')
+    assert src.count("show_label_names_checkbox.isChecked()") >= 3
+
+
+def test_rect_draw_helper_does_not_use_undefined_box():
+    """_draw_single_detection_box 收到的是散开的标量，作用域里没有 box 这个名字。
+
+    之前在这里写 box.get("score") 会抛 NameError；paintEvent 有兜底吞掉异常，
+    表现就是「画布空白且没有报错」，极难排查。这条测试专门守住这个坑。
+    """
+    import ast
+    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+        encoding='utf-8')
+    tree = ast.parse(src)
+    cls = [n for n in tree.body if isinstance(n, ast.ClassDef)][0]
+    fn = next(n for n in cls.body
+              if isinstance(n, ast.FunctionDef)
+              and n.name == '_draw_single_detection_box')
+    params = {a.arg for a in fn.args.args}
+    assert 'box' not in params
+    bound = set(params) | {'self'}
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Name) and node.id == 'box':
+            raise AssertionError(
+                f'第 {node.lineno} 行引用了未定义的 box（签名里只有标量参数）')
+
+
+def test_rect_draw_takes_score_as_parameter():
+    """score 必须作为参数传进来，而不是在函数里现找 box。"""
+    import ast
+    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+        encoding='utf-8')
+    tree = ast.parse(src)
+    cls = [n for n in tree.body if isinstance(n, ast.ClassDef)][0]
+    fn = next(n for n in cls.body
+              if isinstance(n, ast.FunctionDef)
+              and n.name == '_draw_single_detection_box')
+    params = {a.arg for a in fn.args.args}
+    assert 'score' in params, 'score 应作为参数传入'
+    assert fn.args.defaults, 'score 要有默认值，避免破坏既有调用'
+
+
+def test_rect_caller_passes_score():
+    """调用点必须把 box 的 score 传进绘制函数，否则框上永远不会显示置信度。"""
+    import ast
+    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+        encoding='utf-8')
+    tree = ast.parse(src)
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call)
+             and getattr(n.func, 'attr', None) == '_draw_single_detection_box']
+    assert len(calls) == 1
+    kw = {k.arg for k in calls[0].keywords}
+    assert 'score' in kw, f'调用点缺 score 关键字参数，实际有 {kw}'
+    val = next(k.value for k in calls[0].keywords if k.arg == 'score')
+    assert isinstance(val, ast.Call) and val.func.attr == 'get'
+    assert val.args[0].value == 'score'
+
+
+def test_paint_event_swallows_errors_so_tests_must_cover_draw_helpers():
+    """paintEvent 会吞掉绘制异常，说明绘制函数必须有直接测试兜底。"""
+    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+        encoding='utf-8')
+    head = src.split('def paintEvent')[1][:900]
+    assert 'except' in head, 'paintEvent 依赖兜底异常处理'
