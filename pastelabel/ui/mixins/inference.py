@@ -88,7 +88,7 @@ class InferenceMixin:
     def _apply_inference_to_current(self, result, replace_auto):
         """当前图的框一次性替换：单次撤销快照 + 单次列表刷新 + 单次保存。"""
         import os
-        from ...engine.inference_task import merge_boxes
+        from ...engine.inference_task import merge_boxes, remove_empty_sidecar
 
         index = self.current_background_index
         merged = merge_boxes(self.detection_boxes, result.boxes, replace_auto=replace_auto)
@@ -104,8 +104,13 @@ class InferenceMixin:
                 canvas.update_status_label()
             canvas.update()
         self.update_label_list()
-        if index >= 0:
-            path = self.background_images[index]
-            # 传入画布贴图，避免重写 sidecar 时把贴图 shape 丢掉
-            self.save_json(path, os.path.basename(path), "",
-                           canvas_items=self.canvas_items, current_index=index)
+        if index < 0:
+            return
+        path = self.background_images[index]
+        # 与批量一致：没框也没贴图就不写盘，避免留下 shapes 为 [] 的空 json
+        if not merged and not (getattr(self, 'canvas_items', None) or []):
+            remove_empty_sidecar(path)
+            return
+        # 传入画布贴图，避免重写 sidecar 时把贴图 shape 丢掉
+        self.save_json(path, os.path.basename(path), "",
+                       canvas_items=self.canvas_items, current_index=index)

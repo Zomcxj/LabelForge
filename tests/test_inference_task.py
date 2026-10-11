@@ -507,13 +507,15 @@ def test_write_results_skips_current_index_and_failures(tmp_path):
 
 
 def test_write_results_reports_failure_paths(tmp_path, monkeypatch):
+    """写盘失败要上报路径；用有检出的图，否则空结果根本不会尝试写盘。"""
     from pastelabel.engine import inference_task
     from pastelabel.engine.inference_task import ImageResult, write_results
     img = tmp_path / "fail.png"
     img.write_bytes(b"x")
     monkeypatch.setattr(inference_task, "write_sidecar_boxes",
                         lambda *a, **kw: False)
-    results = {0: ImageResult(0, str(img), [], None, 10, 10)}
+    results = {0: ImageResult(0, str(img), [
+        {"label": "car", "x": 1, "y": 1, "width": 5, "height": 5}], None, 10, 10)}
 
     written, failed = write_results(results)
 
@@ -555,3 +557,140 @@ def test_write_results_preserves_paste_shapes(tmp_path):
     shapes = json.loads((tmp_path / "paste.json").read_text(encoding="utf-8"))["shapes"]
     assert [s["label"] for s in shapes] == ["logo"]
     assert shapes[0]["flags"] == {"paste": True}
+
+
+# ---------- 无检出时不写盘 ----------
+
+def _labels_of(image_path):
+    """读 sidecar 里的标签列表。"""
+    import json
+    from pathlib import Path
+    json_path = Path(image_path).with_suffix(".json")
+    return [s["label"] for s in json.loads(json_path.read_text(encoding="utf-8"))["shapes"]]
+
+
+def test_no_detection_does_not_create_sidecar(tmp_path):
+    """无检出的图不新建 json：否则数据集里全是 shapes 为 [] 的空文件。"""
+    from pastelabel.engine.inference_task import ImageResult, write_results
+    img = tmp_path / "miss.png"
+    img.write_bytes(b"x")
+
+    written, failed = write_results(
+        {0: ImageResult(0, str(img), [], None, 100, 80)}, memory_boxes={})
+
+    assert (written, failed) == (0, [])
+    assert not (tmp_path / "miss.json").exists()
+
+
+def test_no_detection_removes_preexisting_empty_sidecar(tmp_path):
+    """原本就是空 shapes 的 json 顺手删掉，不留无意义文件。"""
+    from pastelabel.engine.inference_task import ImageResult, write_results
+    img = _write_sidecar(tmp_path, "empty", [])
+
+    written, _ = write_results(
+        {0: ImageResult(0, img, [], None, 100, 80)}, memory_boxes={})
+
+    assert written == 0
+    assert not (tmp_path / "empty.json").exists()
+
+
+def test_no_detection_keeps_manual_annotations(tmp_path):
+    """无检出但有人工标注：必须原样保留，不能因为没结果就清掉。"""
+    from pastelabel.engine.inference_task import ImageResult, write_results
+    img = _write_sidecar(tmp_path, "manual", [
+        {"label": "manual", "points": [[1, 1], [5, 1], [5, 5], [1, 5]],
+         "shape_type": "rectangle", "flags": {}},
+    ])
+
+    written, failed = write_results(
+        {0: ImageResult(0, img, [], None, 100, 80)}, memory_boxes={})
+
+    assert (written, failed) == (1, [])
+    assert _labels_of(img) == ["manual"]
+
+
+def test_replace_auto_clears_previous_inference_boxes_and_drops_file(tmp_path):
+    """勾选替换且无检出：上一轮推理框被清掉，清空后连 json 一起删。"""
+    from pastelabel.engine.inference_task import ImageResult, write_results
+    img = _write_sidecar(tmp_path, "old", [
+        {"label": "oldauto", "points": [[1, 1], [5, 1], [5, 5], [1, 5]],
+         "shape_type": "rectangle", "flags": {"inference": True}},
+    ])
+
+    written, failed = write_results(
+        {0: ImageResult(0, img, [], None, 100, 80)},
+        memory_boxes={}, replace_auto=True)
+
+    assert (written, failed) == (0, [])
+    assert not (tmp_path / "old.json").exists()
+
+
+def test_replace_auto_keeps_manual_and_drops_only_inference(tmp_path):
+    """勾选替换：只清上一轮推理框，人工标注留下，文件保留。"""
+    from pastelabel.engine.inference_task import ImageResult, write_results
+    img = _write_sidecar(tmp_path, "mix", [
+        {"label": "oldauto", "points": [[1, 1], [5, 1], [5, 5], [1, 5]],
+         "shape_type": "rectangle", "flags": {"inference": True}},
+        {"label": "manual", "points": [[10, 10], [20, 10], [20, 20], [10, 20]],
+         "shape_type": "rectangle", "flags": {}},
+    ])
+
+    written, failed = write_results(
+        {0: ImageResult(0, img, [], None, 100, 80)},
+        memory_boxes={}, replace_auto=True)
+
+    assert (written, failed) == (1, [])
+    assert _labels_of(img) == ["manual"]
+
+
+def test_paste_shapes_survive_inference_write(tmp_path):
+    """贴图与多边形必须原样保留：推理只追加检测框。"""
+    from pastelabel.engine.inference_task import ImageResult, write_results
+    img = _write_sidecar(tmp_path, "shapes", [
+        {"label": "poly", "points": [[10, 10], [20, 10], [15, 20]],
+         "shape_type": "polygon", "flags": {}},
+        {"label": "pasted", "points": [[30, 30], [40, 30], [40, 40], [30, 40]],
+         "shape_type": "rectangle", "flags": {"paste": True}},
+        {"label": "tiny_keep", "points": [[50, 50], [55, 50], [55, 55], [50, 55]],
+         "shape_type": "rectangle", "flags": {"tiny_keep": True}},
+    ])
+
+    write_results({0: ImageResult(0, img, [
+        {"label": "car", "x": 100, "y": 10, "width": 20, "height": 20}],
+        None, 100, 80)}, memory_boxes={})
+
+    import json
+    data = json.loads((tmp_path / "shapes.json").read_text(encoding="utf-8"))
+    by_label = {s["label"]: s for s in data["shapes"]}
+    assert set(by_label) == {"poly", "pasted", "tiny_keep", "car"}
+    assert by_label["poly"]["shape_type"] == "polygon"
+    assert by_label["pasted"]["flags"]["paste"] is True
+    assert by_label["tiny_keep"]["flags"]["tiny_keep"] is True
+    assert by_label["car"]["flags"]["inference"] is True
+    assert "paste" not in by_label["car"]["flags"]
+
+
+def test_remove_empty_sidecar_keeps_file_with_shapes(tmp_path):
+    """非空 json 绝不能被删。"""
+    from pastelabel.engine.inference_task import remove_empty_sidecar
+    img = _write_sidecar(tmp_path, "keep", [
+        {"label": "x", "points": [[1, 1], [5, 1], [5, 5], [1, 5]],
+         "shape_type": "rectangle", "flags": {}},
+    ])
+
+    assert remove_empty_sidecar(img) is False
+    assert (tmp_path / "keep.json").exists()
+
+
+def test_remove_empty_sidecar_ignores_missing_and_broken(tmp_path):
+    """文件不存在或内容损坏时不删、不抛错。"""
+    from pastelabel.engine.inference_task import remove_empty_sidecar
+    img = tmp_path / "none.png"
+    img.write_bytes(b"x")
+    assert remove_empty_sidecar(str(img)) is False
+
+    broken = tmp_path / "broken.png"
+    broken.write_bytes(b"x")
+    (tmp_path / "broken.json").write_text("{not json", encoding="utf-8")
+    assert remove_empty_sidecar(str(broken)) is False
+    assert (tmp_path / "broken.json").exists()

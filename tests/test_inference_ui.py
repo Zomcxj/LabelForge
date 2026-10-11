@@ -439,3 +439,44 @@ def test_run_batch_keys_follow_dataset_index():
     """推理 worker 必须把数据集索引传给 run_batch，否则结果会写错图。"""
     src = inspect.getsource(dialog_mod._InferenceWorker.run)
     assert "keys=self._keys" in src
+
+
+# ---------- 当前图：无检出不写盘 ----------
+
+def test_current_image_without_detection_skips_save(monkeypatch, tmp_path):
+    """当前图无检出且无贴图时不写盘，并顺手删掉空 json。"""
+    editor = _FakeEditor(images=(str(tmp_path / "a.png"),))
+    editor.detection_boxes = []
+    editor.detection_boxes_dict = {0: []}
+    (tmp_path / "a.json").write_text(
+        '{"version": "5.0.1", "flags": {}, "imageData": null,'
+        ' "imagePath": "a.png", "imageHeight": 80, "imageWidth": 100, "shapes": []}',
+        encoding="utf-8")
+
+    editor._apply_inference_to_current(_result(0, editor.background_images[0], []), False)
+
+    assert editor.saved == []
+    assert not (tmp_path / "a.json").exists()
+    assert editor.undo_snapshots, "仍要留下撤销点，便于回退"
+
+
+def test_current_image_without_detection_keeps_manual_boxes(monkeypatch, tmp_path):
+    """当前图有人工标注时照常保存，不能因为没检出就不写。"""
+    editor = _FakeEditor(images=(str(tmp_path / "a.png"),))
+
+    editor._apply_inference_to_current(_result(0, editor.background_images[0], []), False)
+
+    assert len(editor.saved) == 1
+    assert editor.detection_boxes[0]["label"] == "manual"
+
+
+def test_current_image_without_detection_saves_when_paste_shapes_exist(monkeypatch, tmp_path):
+    """画布上有贴图时仍要写盘，否则贴图状态会丢。"""
+    editor = _FakeEditor(images=(str(tmp_path / "a.png"),))
+    editor.detection_boxes = []
+    editor.detection_boxes_dict = {0: []}
+    editor.canvas_items = [(None, object(), "pasted")]
+
+    editor._apply_inference_to_current(_result(0, editor.background_images[0], []), False)
+
+    assert len(editor.saved) == 1

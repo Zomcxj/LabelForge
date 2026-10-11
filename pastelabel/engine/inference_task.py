@@ -225,6 +225,38 @@ def read_sidecar_boxes(image_path):
     return boxes
 
 
+def sidecar_path(image_path):
+    return f"{os.path.splitext(image_path)[0]}.json"
+
+
+def remove_empty_sidecar(image_path):
+    """json 里没有任何 shape 就删掉它，返回是否删除。
+
+    推理无检出时若留下 shapes 为 [] 的 json，数据集里会多出一堆空文件，
+    后续扫描与训练都要额外过滤；只有确实无标注时才删，损坏的文件不动。
+    """
+    import json
+
+    json_path = sidecar_path(image_path)
+    if not os.path.exists(json_path):
+        return False
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return False
+    if not isinstance(data, dict):
+        return False
+    shapes = data.get("shapes")
+    if not isinstance(shapes, list) or shapes:
+        return False
+    try:
+        os.remove(json_path)
+    except OSError:
+        return False
+    return True
+
+
 def write_sidecar_boxes(image_path, boxes, image_width=0, image_height=0):
     """把检测框写回 sidecar，保留 version/flags/imageData 等其它字段。
 
@@ -235,7 +267,7 @@ def write_sidecar_boxes(image_path, boxes, image_width=0, image_height=0):
     from pastelabel.core.config import LABELME_VERSION
     from pastelabel.engine.shape_io import labelme_shape_from_box
 
-    json_path = f"{os.path.splitext(image_path)[0]}.json"
+    json_path = sidecar_path(image_path)
     data = None
     if os.path.exists(json_path):
         try:
@@ -282,6 +314,10 @@ def write_results(results, memory_boxes=None, replace_auto=False, skip_index=Non
     memory_boxes 里已有的图以内存为准：内存可能比磁盘新，直接读盘会把
     用户刚做的编辑当成不存在，进而丢掉。skip_index 交给调用方用正常保存
     流程处理（当前显示图还涉及贴图与画布状态）。
+
+    没检出且合并后仍无任何标注的图不写盘：否则数据集里会多出一堆
+    shapes 为 [] 的空 json。已有标注（人工/贴图/多边形）的图照常写回，
+    因为 replace_auto 可能刚好删掉了上一轮的推理框。
     """
     memory_boxes = memory_boxes or {}
     written = 0
@@ -295,8 +331,19 @@ def write_results(results, memory_boxes=None, replace_auto=False, skip_index=Non
             if existing is None:
                 existing = []
         merged = merge_boxes(existing, result.boxes, replace_auto=replace_auto)
-        if write_sidecar_boxes(result.path, merged, result.width, result.height):
-            written += 1
+        if merged:
+            if write_sidecar_boxes(result.path, merged, result.width, result.height):
+                written += 1
+            else:
+                failed.append(result.path)
+            continue
+        # 合并后没有标注：replace_auto 可能刚把上一轮的推理框删光，
+        # 这时盘上还留着它们，必须先写出真实内容再按需删文件。
+        if not existing:
+            remove_empty_sidecar(result.path)
+            continue
+        if write_sidecar_boxes(result.path, [], result.width, result.height):
+            remove_empty_sidecar(result.path)
         else:
             failed.append(result.path)
     return written, failed
