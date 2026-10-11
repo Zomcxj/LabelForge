@@ -1,8 +1,8 @@
 """ONNX 推理纯计算测试：预处理几何、v5/v8 解码、按类 NMS、格式拒绝。
 
-不加载真实模型（项目里没有 ONNX 文件，当前环境也没有 onnxruntime），
-因此这里只覆盖「输出张量 → 内部框」这段可独立验证的计算，模型精度与
-推理速度必须用真实 YOLOv5/v8 模型对照，不能由这些用例代替。
+不加载真实模型：这里覆盖「输出张量 → 内部框」这段可独立验证的计算。
+真实模型精度必须用 model/ 下的 yolov5n/yolov8n 对照，不能由这些用例代替；
+端到端链路（真实 Session、元数据、模糊形状拒绝）见 test_inference_e2e.py。
 """
 import numpy as np
 import pytest
@@ -354,3 +354,132 @@ def test_boxes_to_internal_empty_input():
         np.zeros((0,), dtype=np.int64),
         ["cat"],
     ) == []
+
+
+# ---------- 逆变换精确性（注入已知模型输出，不依赖真实模型）----------
+
+class _FakeSession:
+    """替掉真实 Session，返回注入的常量输出。"""
+
+    def __init__(self, raw):
+        self._raw = raw
+
+    def run(self, _outputs, _feeds):
+        return [self._raw]
+
+    def get_inputs(self):
+        class _In:
+            name = "images"
+            shape = [1, 3, 640, 640]
+            type = "tensor(float)"
+        return [_In()]
+
+
+def _detector_with_output(raw, num_classes=80):
+    from pastelabel.engine.onnx_inference import OnnxDetector
+    det = OnnxDetector("injected.onnx", class_names=[f"c{i}" for i in range(num_classes)],
+                       output_format=FORMAT_V5, conf_threshold=0.25, iou_threshold=0.45)
+    det._session = _FakeSession(raw)
+    return det
+
+
+def _v5_raw(model_box, obj=0.9, cls_id=2, cls_score=0.9, num_classes=80):
+    """模型空间的框 (x1, y1, x2, y2) → [1, 1, 5+C] 输出张量。"""
+    x1, y1, x2, y2 = model_box
+    raw = np.zeros((1, 1, 5 + num_classes), dtype=np.float32)
+    raw[0, 0, 0:5] = ((x1 + x2) / 2, (y1 + y2) / 2, x2 - x1, y2 - y1, obj)
+    raw[0, 0, 5 + cls_id] = cls_score
+    return raw
+
+
+def _run(det, w, h):
+    blank = np.zeros((h, w, 3), dtype=np.uint8)
+    return det.detect(blank, lambda src, geom, fill: np.zeros(
+        (geom.dst_h, geom.dst_w, 3), dtype=np.uint8))
+
+
+def _expected(w, h, model_box):
+    """按 geometry 解析地逆变换，独立于生产代码的算法。"""
+    g = letterbox_geometry(w, h, 640, 640)
+    x1, y1 = (model_box[0] - g.pad_x) / g.scale, (model_box[1] - g.pad_y) / g.scale
+    x2, y2 = (model_box[2] - g.pad_x) / g.scale, (model_box[3] - g.pad_y) / g.scale
+    x1, x2 = sorted((max(0.0, min(float(w), x1)), max(0.0, min(float(w), x2))))
+    y1, y2 = sorted((max(0.0, min(float(h), y1)), max(0.0, min(float(h), y2))))
+    return x1, y1, x2, y2
+
+
+@pytest.mark.parametrize("w,h", [(2048, 1080), (1920, 1080), (640, 640), (320, 240), (1080, 2048)])
+def test_inverse_transform_is_exact_for_real_image_sizes(w, h):
+    """注入已知模型框，逆变换结果必须与解析解逐位一致。
+
+    真实图片尺寸（2048x1080 等）下 scale/pad 都非整数，任何取整错误
+    都会在这里放大成可见偏差；用真实模型跑则会被模型自身方差掩盖。
+    """
+    g = letterbox_geometry(w, h, 640, 640)
+    model_box = (g.pad_x + 20, g.pad_y + 30, g.pad_x + 60, g.pad_y + 90)
+    det = _detector_with_output(_v5_raw(model_box))
+
+    boxes = _run(det, w, h)
+
+    assert len(boxes) == 1, boxes
+    exp = _expected(w, h, model_box)
+    got = boxes[0]
+    assert got["x"] == pytest.approx(exp[0], abs=1e-3)
+    assert got["y"] == pytest.approx(exp[1], abs=1e-3)
+    assert got["width"] == pytest.approx(exp[2] - exp[0], abs=1e-3)
+    assert got["height"] == pytest.approx(exp[3] - exp[1], abs=1e-3)
+
+
+def test_box_crossing_top_padding_is_clamped_not_shifted():
+    """跨越上补边的框：超出部分应被钳掉，剩下的位置不能被平移。"""
+    w, h = 2048, 1080
+    g = letterbox_geometry(w, h, 640, 640)
+    assert g.pad_y > 40, g
+    model_box = (100, g.pad_y - 40, 200, g.pad_y + 40)
+    det = _detector_with_output(_v5_raw(model_box))
+
+    boxes = _run(det, w, h)
+
+    exp = _expected(w, h, model_box)
+    assert exp[1] == 0.0
+    assert boxes[0]["y"] == pytest.approx(0.0, abs=1e-3)
+    assert boxes[0]["height"] == pytest.approx(exp[3], abs=1e-3)
+
+
+def test_box_entirely_inside_padding_is_dropped_not_clamped():
+    """全在补边内的框必须丢弃：钳位后会变成贴边的假框。"""
+    w, h = 2048, 1080
+    g = letterbox_geometry(w, h, 640, 640)
+    det = _detector_with_output(_v5_raw((100, 10, 200, g.pad_y - 10)))
+
+    assert _run(det, w, h) == []
+
+
+def test_v5_score_is_objectness_times_class_score():
+    """v5 置信度是 obj × cls；误用 obj 会高估，误用 cls 会漏检。"""
+    det = _detector_with_output(_v5_raw((300, 300, 340, 340), obj=0.9, cls_score=0.9))
+
+    boxes = _run(det, 640, 640)
+
+    assert boxes[0]["score"] == pytest.approx(0.81, abs=1e-6)
+    assert boxes[0]["label"] == "c2"
+
+
+def test_low_objectness_suppresses_high_class_score():
+    """obj 很低时即使类别分数很高也不该报出。"""
+    det = _detector_with_output(_v5_raw((300, 300, 340, 340), obj=0.05, cls_score=1.0))
+
+    assert _run(det, 640, 640) == []
+
+
+def test_full_content_area_box_maps_to_whole_image():
+    """占满内容区的框应映射成整张图，这是 letterbox 边界的上界检查。"""
+    w, h = 2048, 1080
+    g = letterbox_geometry(w, h, 640, 640)
+    det = _detector_with_output(_v5_raw((0, g.pad_y, 640, g.pad_y + g.new_h)))
+
+    boxes = _run(det, w, h)
+
+    assert boxes[0]["x"] == pytest.approx(0.0, abs=1e-3)
+    assert boxes[0]["width"] == pytest.approx(float(w), abs=1e-3)
+    assert boxes[0]["height"] == pytest.approx(float(h), abs=1e-3)

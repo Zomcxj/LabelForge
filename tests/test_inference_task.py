@@ -333,18 +333,36 @@ def test_build_detector_reads_names_from_file(tmp_path):
 
 
 def test_build_detector_falls_back_to_model_metadata(monkeypatch):
+    """不给类别文件时，类别表应由 OnnxDetector 从模型元数据里取。
+
+    Session 是懒加载的，所以要显式取一次 session 才会回落读元数据。
+    """
     import pastelabel.engine.inference_task as task
     from pastelabel.engine.onnx_inference import OnnxDetector
 
     class FakeDetector(OnnxDetector):
         def _ensure_session(self):
             self._input_name = "images"
-            return _FakeSession({"names": "{0: 'cat', 1: 'dog'}"})
+            session = _FakeSession({"names": "{0: 'cat', 1: 'dog'}"})
+            if not self.class_names:
+                from pastelabel.engine.onnx_inference import metadata_class_names
+                self.class_names = metadata_class_names(session)
+            return session
     monkeypatch.setattr(task, "OnnxDetector", FakeDetector)
 
     detector = task.build_detector({"model_path": "m.onnx"})
+    detector.session      # 触发懒加载
 
     assert detector.class_names == ["cat", "dog"]
+
+
+def test_build_detector_prefers_explicit_class_file_over_metadata():
+    """给了类别文件就用文件，不被模型元数据覆盖。"""
+    import pastelabel.engine.inference_task as task
+
+    detector = task.build_detector(
+        {"model_path": "model/yolov5n.onnx", "class_names_path": ""})
+    assert detector.class_names == []      # 未加载 session 前为空，不预读元数据
 
 
 # ---------- sidecar 读写与批量写入 ----------

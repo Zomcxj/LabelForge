@@ -3,12 +3,11 @@
 本模块不导入 Qt：图像读取与 letterbox 由调用方注入（loader / resize_fn），
 这样批量逻辑可以用假模型和假图像直接测。
 """
-import ast
 import os
 from typing import Dict, List, NamedTuple, Optional
 
 from pastelabel.engine.onnx_inference import (
-    FORMAT_V5, FORMAT_V8, MAX_IOU, MAX_SCORE, MIN_IOU, MIN_SCORE,
+    MAX_IOU, MAX_SCORE, MIN_IOU, MIN_SCORE,
     InferenceError, OnnxDetector, SUPPORTED_FORMATS,
 )
 
@@ -90,41 +89,23 @@ def validate_settings(settings):
 
 
 def model_class_names(session):
-    """从 ONNX 元数据里取类别表，取不到返回空表。
-
-    YOLOv5/v8 导出会把 names 写成 "{0: 'person', ...}" 这类字典字面量，
-    能解析就按 key 排序还原 id 顺序；格式不认识时返回空表交给调用方兜底。
-    """
-    try:
-        meta = session.get_modelmeta().custom_metadata_map or {}
-    except Exception:
-        return []
-    raw = meta.get("names")
-    if not raw:
-        return []
-    try:
-        parsed = ast.literal_eval(raw) if isinstance(raw, str) else raw
-    except (ValueError, SyntaxError):
-        return []
-    if isinstance(parsed, dict):
-        try:
-            return [str(parsed[k]) for k in sorted(parsed, key=lambda x: int(x))]
-        except (TypeError, ValueError):
-            return []
-    if isinstance(parsed, (list, tuple)):
-        return [str(name) for name in parsed]
-    return []
+    """从 ONNX 元数据里取类别表，取不到返回空表。"""
+    from pastelabel.engine.onnx_inference import metadata_class_names
+    return metadata_class_names(session)
 
 
 def build_detector(settings, read_names=None):
-    """按配置装配 OnnxDetector；类别表优先用文件，其次用模型元数据。"""
+    """按配置装配 OnnxDetector；类别表优先用文件，其次用模型元数据。
+
+    不给类别表时由 OnnxDetector 自己回落到元数据，这里不重复读取。
+    """
     from pastelabel.engine.onnx_inference import read_class_names
 
     settings = normalize_settings(settings)
     names = []
     if settings["class_names_path"]:
         names = (read_names or read_class_names)(settings["class_names_path"])
-    detector = OnnxDetector(
+    return OnnxDetector(
         settings["model_path"],
         class_names=names,
         output_format=settings["output_format"],
@@ -133,9 +114,6 @@ def build_detector(settings, read_names=None):
         input_size=settings["input_size"],
         providers=settings["providers"],
     )
-    if not names:
-        detector.class_names = model_class_names(detector.session)
-    return detector
 
 
 def filter_by_class(boxes, class_filter):

@@ -6,6 +6,8 @@
 进程内跑（conftest 把 PyQt5 换成了 mock），所以注入 numpy 版 letterbox；
 生产用的 QImage 版绘制由 test_inference_image.py 在真实 Qt 子进程里验证。
 """
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -296,3 +298,80 @@ def test_dynamic_input_size_requires_user_specification(tmp_path):
     detector = OnnxDetector(path, class_names=NAMES, output_format="v5",
                             input_size=(128, 96))
     assert detector.model_input_size() == (128, 96)
+
+
+# ---------- 真实模型（可选，仅在 model/ 存在时运行）----------
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+REAL_MODELS = {
+    "v5": REPO_ROOT / "model" / "yolov5n.onnx",
+    "v8": REPO_ROOT / "model" / "yolov8n.onnx",
+}
+REAL_IMAGES = sorted((REPO_ROOT / "model").glob("*.jpg"))
+
+
+def _require_real_model(fmt):
+    path = REAL_MODELS[fmt]
+    if not path.exists():
+        pytest.skip(f"缺少真实模型 {path.relative_to(REPO_ROOT)}（不入库，需本地提供）")
+    return str(path)
+
+
+@pytest.mark.parametrize("fmt", ["v5", "v8"])
+def test_real_model_matches_expected_output_shape(fmt):
+    """真实权重必须是已知布局：v5 [1, N, 5+C]、v8 [1, 4+C, N]，且带 COCO 类别表。
+
+    这条测试的价值在于锁住「自动识别在这个模型上真的能判定」——
+    如果换了导出方式（例如内置 NMS 的双输出），这里会先失败。
+    """
+    detector = OnnxDetector(_require_real_model(fmt))
+    shape = list(detector.session.get_outputs()[0].shape)
+
+    if fmt == "v5":
+        assert len(shape) == 3 and shape[2] == 85, shape
+        assert shape[1] > 1000, shape
+    else:
+        assert len(shape) == 3 and shape[1] == 84, shape
+        assert shape[2] > 1000, shape
+
+    names = model_class_names(detector.session)
+    assert len(names) == 80, len(names)
+    assert names[0] == "person" and names[2] == "car"
+    assert detector.model_input_size() == (640, 640)
+    # 自动识别必须给出正确结论，而不是要求用户显式指定
+    assert detector.resolve_format() == fmt
+
+
+@pytest.mark.skipif(not REAL_IMAGES, reason="model/ 下没有测试图片")
+@pytest.mark.parametrize("fmt", ["v5", "v8"])
+def test_real_model_detects_on_real_image(fmt):
+    """真实图片跑通全链路：框在图内、非退化、分数与标签有效。
+
+    走真实 Qt 子进程：本文件进程内 PyQt5 是 mock，QImage 读不了图。
+    """
+    from tests.test_inference_image import _run_real_qt
+
+    out = _run_real_qt(f'''
+import sys
+sys.path.insert(0, r"{REPO_ROOT}")
+from PyQt5.QtGui import QImage
+from pastelabel.engine.inference_image import qimage_to_rgb_array, resize_for_model
+from pastelabel.engine.inference_task import build_detector
+
+# 走生产装配路径：类别表来自模型元数据，标签才不会是空串
+det = build_detector({{"model_path": r"{REAL_MODELS[fmt]}", "conf_threshold": 0.35}})
+img = QImage(r"{REAL_IMAGES[0]}")
+assert not img.isNull(), "测试图片读不出来"
+rgb = qimage_to_rgb_array(img)
+h, w = rgb.shape[:2]
+boxes = det.detect(rgb, resize_for_model)
+assert boxes, "真实图片上至少应检出若干目标"
+for b in boxes:
+    assert 0 <= b["x"] and b["x"] + b["width"] <= w, b
+    assert 0 <= b["y"] and b["y"] + b["height"] <= h, b
+    assert b["width"] > 0 and b["height"] > 0, b
+    assert 0.35 <= b["score"] <= 1.0, b
+    assert b["label"], b
+print("REAL_OK", len(boxes), sorted({{b["label"] for b in boxes}})[:5])
+''')
+    assert "REAL_OK" in out

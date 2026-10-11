@@ -2,6 +2,7 @@
 
 onnxruntime 延迟导入，缺少该依赖时本模块仍可导入，纯计算部分可独立测试。
 """
+import ast
 from typing import List, NamedTuple, Optional, Sequence, Tuple
 
 import numpy as np
@@ -271,6 +272,34 @@ def read_class_names(path):
     return names
 
 
+def metadata_class_names(session):
+    """从 ONNX 元数据取类别表，取不到返回空表。
+
+    ultralytics 导出会把 names 写成 "{0: 'person', ...}" 这类字典字面量；
+    能解析就按 key 排序还原 id 顺序，格式不认识时返回空表交给调用方兜底。
+    放在本模块是为了让格式识别能用上模型自带的类别数。
+    """
+    try:
+        meta = session.get_modelmeta().custom_metadata_map or {}
+    except Exception:
+        return []
+    raw = meta.get("names")
+    if not raw:
+        return []
+    try:
+        parsed = ast.literal_eval(raw) if isinstance(raw, str) else raw
+    except (ValueError, SyntaxError):
+        return []
+    if isinstance(parsed, dict):
+        try:
+            return [str(parsed[k]) for k in sorted(parsed, key=lambda x: int(x))]
+        except (TypeError, ValueError):
+            return []
+    if isinstance(parsed, (list, tuple)):
+        return [str(name) for name in parsed]
+    return []
+
+
 class OnnxDetector:
     """单个检测模型的会话封装，Session 延迟创建（构造时不加载模型）。"""
 
@@ -310,6 +339,10 @@ class OnnxDetector:
         if len(inputs) != 1:
             raise InferenceError(f"模型输入个数为 {len(inputs)}，仅支持单输入检测模型")
         self._input_name = inputs[0].name
+        # 没显式给类别表时用模型自带的：否则标签会静默变成空串，
+        # 保存出去的标注看不出是哪一类。
+        if not self.class_names:
+            self.class_names = metadata_class_names(self._session)
         return self._session
 
     @property
@@ -355,7 +388,10 @@ class OnnxDetector:
             raise InferenceError(
                 f"模型输出个数为 {len(outputs)}，仅支持单输出检测模型；"
                 "内置 NMS / 分割 / 姿态 / OBB 导出需各自的适配")
-        fmt = detect_output_format(outputs[0].shape, len(self.class_names) or None)
+        # 模型自带的类别表也算已知类别数：ultralytics 导出的 v5/v8 都写了 names，
+        # 有它就能把 5+C 与 4+C 区分开，不必强求用户再选一次格式。
+        num_classes = len(self.class_names) or len(metadata_class_names(self.session))
+        fmt = detect_output_format(outputs[0].shape, num_classes or None)
         if fmt is None:
             raise InferenceError(
                 f"无法从输出 shape {outputs[0].shape} 判断模型格式，"
