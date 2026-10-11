@@ -165,7 +165,8 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self._run_worker = None
         self._progress_dialog = None
         self.model_row = None
-        self._class_filter = set()
+        # None = 还没设过筛选，按全选处理；换成具体集合才是真的过滤
+        self._class_filter = None
         self._class_filter_panel = None
         self._inference_dataset = None
 

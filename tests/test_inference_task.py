@@ -155,10 +155,17 @@ def test_model_class_names_tolerates_broken_session():
 
 # ---------- 类别过滤 ----------
 
-def test_filter_by_class_empty_filter_passes_all():
+def test_filter_by_class_none_passes_all():
+    """None = 不过滤（界面默认全选走这条）。"""
     boxes = [{"label": "cat"}, {"label": "dog"}]
     assert filter_by_class(boxes, None) == boxes
-    assert filter_by_class(boxes, []) == boxes
+
+
+def test_filter_by_class_empty_set_discards_everything():
+    """空集合 = 全不选，结果一定为空；不能再当成「不过滤」。"""
+    boxes = [{"label": "cat"}, {"label": "dog"}]
+    assert filter_by_class(boxes, set()) == []
+    assert filter_by_class(boxes, []) == []
 
 
 def test_filter_by_class_keeps_only_allowed():
@@ -849,21 +856,30 @@ def test_merge_without_filter_keeps_prior_auto_boxes():
     assert len(out) == 3, out
 
 
-def test_merge_empty_filter_means_no_filtering():
-    """空集合按「不筛选」处理，不能清空所有推理框。"""
+def test_merge_empty_filter_clears_all_old_auto_boxes():
+    """空集合 = 全不选：旧推理框全清，只并入本轮。"""
     existing = [_auto("person"), _auto("bus", 1)]
     for empty in (set(), [], ()):
         out = merge_boxes(existing, [_auto("car", 9)], replace_auto=False,
                           class_filter=empty)
-        assert len(out) == 3, (empty, out)
+        assert sorted(b["label"] for b in out) == ["car"], (empty, out)
 
 
-def test_merge_blank_strings_in_filter_ignored():
-    """白名单里只有空白项等于没筛选，不能因此清空。"""
-    existing = [_auto("person")]
+def test_merge_none_filter_keeps_all_old_auto_boxes():
+    """None = 不过滤，旧推理框照常保留。"""
+    existing = [_auto("person"), _auto("bus", 1)]
     out = merge_boxes(existing, [_auto("car", 9)], replace_auto=False,
-                      class_filter={"", "   "})
-    assert len(out) == 2, out
+                      class_filter=None)
+    assert sorted(b["label"] for b in out) == ["bus", "car", "person"]
+
+
+def test_merge_empty_filter_still_keeps_manual_boxes():
+    """全不选也不能动人工标注。"""
+    existing = [{"label": "hand", "x": 0, "y": 0, "width": 4, "height": 4},
+                _auto("person")]
+    out = merge_boxes(existing, [_auto("car", 9)], replace_auto=False,
+                      class_filter=set())
+    assert sorted(b["label"] for b in out) == ["car", "hand"], out
 
 
 def test_merge_replace_auto_still_works_with_filter():

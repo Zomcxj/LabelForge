@@ -128,6 +128,102 @@ def get_text(parent, title, label, text="", anchor_pos=None):
     return dialog.textValue(), accepted
 
 
+class ThemedMultiLineDialog(QDialog):
+    """多行文本输入框。
+
+    QInputDialog 只有单行，一行一个类别名这种场景写不下第二个，所以单独做一个：
+    多行编辑区 + 实时行数提示。行数提示让用户能核对「我是不是漏填了」。
+    """
+
+    def __init__(self, parent=None, expected_lines=None):
+        super().__init__(parent)
+        self._expected_lines = expected_lines
+        self._build_ui()
+
+    def _build_ui(self):
+        from PyQt5.QtWidgets import (
+            QDialogButtonBox, QPlainTextEdit, QVBoxLayout,
+        )
+        self._theme = ThemeManager.get_theme()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+
+        self.label = QLabel("")
+        self.label.setWordWrap(True)
+        layout.addWidget(self.label)
+
+        self.edit = QPlainTextEdit()
+        self.edit.setObjectName("multiLineInput")
+        self.edit.setMinimumSize(420, 200)
+        self.edit.textChanged.connect(self._refresh_count)
+        layout.addWidget(self.edit, 1)
+
+        self.count_label = QLabel("")
+        self.count_label.setObjectName("multiLineCount")
+        layout.addWidget(self.count_label)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
+        self.ok_btn = buttons.button(QDialogButtonBox.Ok)
+        self.cancel_btn = buttons.button(QDialogButtonBox.Cancel)
+        self.ok_btn.setText(i18n.t("确定"))
+        self.cancel_btn.setText(i18n.t("取消"))
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self._apply_style()
+        self._refresh_count()
+
+    def _apply_style(self):
+        t = self._theme
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}
+            QLabel {{ color: {t['text_primary']}; }}
+            QLabel#multiLineCount {{ color: {t['text_secondary']}; }}
+            QPlainTextEdit {{ background-color: {t['panel_bg']}; color: {t['text_primary']};
+                border: 1px solid {t['border_color']}; border-radius: 4px; padding: 4px; }}
+            QPushButton {{ background-color: {t['panel_bg']}; color: {t['text_primary']};
+                border: 1px solid {t['border_color']}; border-radius: 4px; padding: 4px 10px; }}
+            QPushButton:hover {{ border-color: {t['accent']}; }}
+        """)
+
+    def set_label_text(self, text):
+        self.label.setText(text)
+
+    def set_text(self, text):
+        self.edit.setPlainText(text or "")
+
+    def lines(self):
+        """去掉空行与首尾空格后的有效行。"""
+        return [ln.strip() for ln in self.edit.toPlainText().splitlines()
+                if ln.strip()]
+
+    def _refresh_count(self):
+        n = len(self.lines())
+        tip = f"{i18n.t('已输入')} {n} {i18n.t('个类别')}"
+        if self._expected_lines:
+            tip += f" / {i18n.t('模型需要')} {self._expected_lines}"
+            if n != self._expected_lines:
+                tip += f"（{i18n.t('数量不一致，请核对')}）"
+        self.count_label.setText(tip)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        center_on_parent(self, self.parent())
+        sync_titlebar(self)
+
+
+def get_multiline_text(parent, title, label, text="", expected_lines=None):
+    """多行输入；返回 (输入内容, 是否确定)。"""
+    dialog = ThemedMultiLineDialog(parent, expected_lines=expected_lines)
+    dialog.setWindowTitle(i18n.t(title))
+    dialog.set_label_text(i18n.t(label))
+    dialog.set_text(text)
+    accepted = dialog.exec_() == QDialog.Accepted
+    return dialog.edit.toPlainText(), accepted
+
+
 def question(parent, title, text, buttons=QMessageBox.Yes | QMessageBox.No,
              default_button=QMessageBox.No):
     box = ThemedMessageBox(parent)

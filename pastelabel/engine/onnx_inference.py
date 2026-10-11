@@ -206,6 +206,33 @@ def decode_end2end(raw, conf_threshold, max_det=DEFAULT_MAX_DET, num_classes=Non
     return {"boxes": box, "scores": scores, "class_ids": cls_ids}
 
 
+def guess_class_count(shape):
+    """从检测输出 shape 猜类别数，猜不出返回 None。
+
+    只在能唯一解释时才给数：v5 的 [1, N, 5+C]、v8 的 [1, 4+C, N] 里的 C 是
+    唯一答案；端到端 [1, N, 6] 不含类别数（分数与类别 id 都在列里），返回 None。
+    这个值只用来提示用户「该填几个类别」，不参与解码，猜错也不会污染结果。
+    """
+    try:
+        dims = [int(d) for d in shape if int(d) != 1]
+    except (TypeError, ValueError):
+        return None
+    if len(dims) != 2:
+        return None
+    rows, cols = dims
+    # 端到端与「类别很少的 v5/v8」在 shape 上无法区分（[1, N, 6] 两种解释
+    # 都成立），这种小形状一律不给数，宁可让用户自己填。
+    if cols <= END2END_ROW and rows <= DEFAULT_MAX_DET:
+        return None
+    if cols > rows:
+        # v8 转置布局 [1, 4+C, N]：通道在 rows，4+C 就是它的长度
+        c = rows - 4
+    else:
+        # v5 [1, N, 5+C]：通道在 cols
+        c = cols - 5
+    return c if c > 0 else None
+
+
 def detect_output_format(shape, num_classes=None):
     """按输出 shape 推断格式，推断不出返回 None（调用方须让用户显式指定）。
 

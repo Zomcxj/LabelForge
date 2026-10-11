@@ -264,8 +264,52 @@ def test_cancelling_prompt_does_not_fall_back_to_numbers(monkeypatch):
     from pastelabel.ui import inference_workers
 
     monkeypatch.setattr(
-        "pastelabel.ui.dialog_helpers.get_text", lambda *a, **k: ("", False))
+        "pastelabel.ui.dialog_helpers.get_multiline_text",
+        lambda *a, **k: ("", False))
     assert inference_workers.class_names_prompt(None, "m.onnx", "m.txt") is None
+
+
+def test_prompt_uses_multiline_input():
+    """QInputDialog 只有单行，多个类别写不下——必须用多行输入。"""
+    from pastelabel.ui import inference_workers
+    src = inspect.getsource(inference_workers.class_names_prompt)
+    assert "get_multiline_text" in src
+    assert "get_text(" not in src
+
+
+def test_prompt_passes_expected_class_count(monkeypatch):
+    """能把「模型需要几个类别」传进输入框，用户才知道该填几行。"""
+    from pastelabel.ui import inference_workers
+
+    seen = {}
+
+    def fake(parent, title, label, text="", expected_lines=None):
+        seen["expected"] = expected_lines
+        return "a\nb", True
+
+    monkeypatch.setattr("pastelabel.ui.dialog_helpers.get_multiline_text", fake)
+    monkeypatch.setattr(inference_workers.inference_task, "write_class_names",
+                        lambda path, names: True)
+    out = inference_workers.class_names_prompt(None, "m.onnx", "m.txt",
+                                               expected_count=4)
+    assert seen["expected"] == 4
+    assert out == "m.txt"
+
+
+def test_prompt_writes_all_lines_not_just_first(monkeypatch):
+    """多行都要写进 txt；只写第一行等于丢类别（原始 bug）。"""
+    from pastelabel.ui import inference_workers
+
+    written = {}
+    monkeypatch.setattr(
+        "pastelabel.ui.dialog_helpers.get_multiline_text",
+        lambda *a, **k: ("car\nperson\nbus\ntruck", True))
+    monkeypatch.setattr(
+        inference_workers.inference_task, "write_class_names",
+        lambda path, names: written.update(names=list(names)) or True)
+
+    inference_workers.class_names_prompt(None, "m.onnx", "m.txt")
+    assert written["names"] == ["car", "person", "bus", "truck"], written
 
 
 # ---------- 结果应用 ----------
@@ -805,10 +849,42 @@ def test_mixin_opens_filter_panel_with_model_classes():
     assert "请先加载模型" in src, "没模型要拦住"
 
 
-def test_filter_survives_as_empty_means_no_filter():
-    """面板「全不选」= 不过滤：空集合要变成 None 传给引擎。"""
+def test_filter_none_when_all_classes_checked():
+    """默认全选等于没有限制，这时要回 None 让引擎走原路径。"""
     src = inspect.getsource(InferenceMixin._filter_for_run)
-    assert "or None" in src, src
+    assert "return None" in src, src
+    assert "selected >= set(names)" in src, src
+
+
+def test_filter_returns_concrete_set_when_some_unchecked():
+    """取消了某些类别才真的过滤，返回具体集合（空集也照传，表示全不选）。"""
+    src = inspect.getsource(InferenceMixin._filter_for_run)
+    assert "return selected" in src, src
+    assert "or None" not in src, src
+
+
+def test_checked_classes_defaults_to_all():
+    """没设过筛选视为全选，不是空集。"""
+    from pastelabel.ui.mixins.inference import InferenceMixin
+    src = inspect.getsource(InferenceMixin._checked_classes)
+    assert "is None" in src, src
+
+
+def test_filter_summary_shows_all_selected_after_model_load(monkeypatch):
+    """加载模型后按钮应显示 (总数/总数)，而不是 (0/总数)。"""
+    editor = _FakeEditor()
+    editor._detector = type("D", (), {"class_names": ["car", "person", "bus"]})()
+    editor._class_filter = None
+    row = type("R", (), {})()
+    shown = {}
+    row.set_filter_summary = lambda sel, total: shown.update(
+        selected=set(sel), total=total)
+    editor.model_row = row
+
+    editor._refresh_filter_button()
+
+    assert shown["total"] == 3, shown
+    assert shown["selected"] == {"car", "person", "bus"}, shown
 
 
 def test_class_filter_passed_into_worker():
@@ -820,9 +896,9 @@ def test_class_filter_passed_into_worker():
 
 
 def test_changing_model_resets_class_filter():
-    """换模型后类别表可能完全不同，旧勾选必须作废。"""
+    """换模型后类别表可能完全不同，旧勾选必须作废（回到默认全选）。"""
     src = inspect.getsource(InferenceMixin._on_model_loaded)
-    assert "_class_filter = set()" in src, src
+    assert "_class_filter = None" in src, src
 
 
 def test_filter_panel_has_select_all_and_clear():
@@ -1336,6 +1412,7 @@ def test_current_image_merge_receives_class_filter():
     """
     editor = _FakeEditor()
     editor._class_filter = {"car"}
+    editor._detector = type("D", (), {"class_names": ["car", "truck"]})()
     editor.detection_boxes = [
         {"label": "truck", "x": 0, "y": 0, "width": 5, "height": 5,
          "flags": {"inference": True}},
@@ -1354,9 +1431,10 @@ def test_current_image_merge_receives_class_filter():
 
 
 def test_current_image_merge_keeps_everything_without_filter():
-    """没勾任何类别时不能顺手清理，默认行为保持不变。"""
+    """未设筛选（None，即默认全选）时不能顺手清理。"""
     editor = _FakeEditor()
-    editor._class_filter = set()
+    editor._class_filter = None
+    editor._detector = type("D", (), {"class_names": ["car", "truck"]})()
     editor.detection_boxes = [
         {"label": "truck", "x": 0, "y": 0, "width": 5, "height": 5,
          "flags": {"inference": True}},
@@ -1387,7 +1465,137 @@ def test_apply_results_forwards_filter_to_disk_writer(monkeypatch):
 
     editor = _FakeEditor(images=("a.png", "b.png"))
     editor._class_filter = {"car"}
+    editor._detector = type("D", (), {"class_names": ["car", "truck"]})()
     editor._apply_inference_results(
         {0: _result(0, "a.png", []), 1: _result(1, "b.png", [])}, False)
 
     assert seen["class_filter"] == {"car"}, seen
+
+
+# ---------- 类别数提示 ----------
+
+def test_guess_class_count_lives_on_model_load_worker():
+    """算类别数要在加载 worker 上；放错类会让 need_class_names 直接抛异常。"""
+    from pastelabel.ui.inference_workers import InferenceWorker, ModelLoadWorker
+    assert hasattr(ModelLoadWorker, "_guess_class_count")
+    assert not hasattr(InferenceWorker, "_guess_class_count")
+
+
+def test_need_class_names_signal_carries_three_args():
+    from pastelabel.ui.inference_workers import ModelLoadWorker
+    src = inspect.getsource(ModelLoadWorker.run)
+    assert "self._guess_class_count(session)" in src
+    # 信号本身要是三元组，否则 emit 会丢参数
+    sig = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(
+        encoding="utf-8")
+    assert "need_class_names = pyqtSignal(str, str, object)" in sig
+
+
+def test_guess_class_count_from_shapes():
+    from pastelabel.engine.onnx_inference import guess_class_count
+    assert guess_class_count([1, 25200, 9]) == 4        # v5: 5+C
+    assert guess_class_count([1, 25200, 85]) == 80      # v5: 5+C
+    assert guess_class_count([1, 84, 8400]) == 80       # v8: 4+C（通道在 rows）
+    assert guess_class_count([1, 300, 6]) is None       # 端到端推不出
+    assert guess_class_count([1, 3, 80, 80, 9]) is None  # 辅助头
+
+
+def test_guess_class_count_refuses_ambiguous_small_shapes():
+    """小形状端到端与普通检测同形，猜不得。"""
+    from pastelabel.engine.onnx_inference import guess_class_count
+    for shape in ([1, 5, 6], [1, 100, 6], [1, 6, 6]):
+        assert guess_class_count(shape) is None, shape
+
+
+def test_guess_class_count_tolerates_garbage():
+    from pastelabel.engine.onnx_inference import guess_class_count
+    for bad in (None, [], [1], "abc", [1, "x", 5]):
+        assert guess_class_count(bad) is None, bad
+
+
+def test_on_model_loaded_accepts_expected_count():
+    """回调签名要能吃下第三个参数，不然信号一发就崩。"""
+    src = inspect.getsource(InferenceMixin._on_class_names_needed)
+    assert "expected_count" in src
+
+
+def test_filter_for_run_is_none_without_known_classes(tmp_save_target=None):
+    """类别表为空时必须回 None。
+
+    没有类别信息时「勾了什么」无从谈起；若当成空集合（全不选），
+    已有推理框会被整批清掉——这是会丢标注的静默数据损坏。
+    """
+    editor = _FakeEditor()
+    editor._class_filter = set()          # 曾被误当成「全不选」
+    assert editor._all_class_names() == []
+    assert editor._filter_for_run() is None
+
+    editor2 = _FakeEditor()
+    editor2._class_filter = {"car"}       # 面板选过，但模型没类别信息
+    assert editor2._filter_for_run() is None
+
+
+def test_default_all_selected_needs_a_detector():
+    """默认全选语义要靠真实类别表比对，不能只看 _class_filter 是不是 None。"""
+    from pastelabel.engine.inference_task import filter_by_class
+
+    names = ["car", "person", "bus"]
+    editor = _FakeEditor()
+    editor._detector = type("D", (), {"class_names": list(names)})()
+    editor._class_filter = None
+    assert editor._filter_for_run() is None
+    # 全选与不过滤的结论要一致
+    boxes = [{"label": n} for n in names + ["truck"]]
+    assert filter_by_class(boxes, editor._filter_for_run()) == boxes
+
+    editor._class_filter = set(names)     # 面板里全勾 == 没有限制
+    assert editor._filter_for_run() is None
+
+    editor._class_filter = {"car"}        # 取消了一部分才真过滤
+    assert editor._filter_for_run() == {"car"}
+
+
+def test_real_panel_defaults_to_everything_checked():
+    """真实面板：首次填入类别表时默认全勾（用户要求「默认全选」）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.class_filter_panel import ClassFilterPanel
+app = QApplication([])
+names = ["car", "person", "bus", "truck"]
+panel = ClassFilterPanel(None)
+panel.set_class_names(names)
+got = panel.current_selection()
+print("CHECKED", len(got), "OF", len(panel._boxes))
+print("ALL", got == set(names))
+# 再设一次（二次填表）不该把用户的选择重置掉
+panel.set_selection({"car"})
+panel.set_class_names(["car", "person", "bus"])
+print("AFTER_RESEED", panel.current_selection() == {"car"})
+""")
+    assert "CHECKED 4 OF 4" in out, out
+    assert "ALL True" in out, out
+    assert "AFTER_RESEED True" in out, out
+
+
+def test_real_multiline_dialog_drops_blank_lines():
+    """真实多行框：空行和首尾空格要被丢掉，不能变成空类名。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.dialog_helpers import ThemedMultiLineDialog
+app = QApplication([])
+blank = chr(10) + "   " + chr(10)
+dlg = ThemedMultiLineDialog(None)
+dlg.set_text("  car " + blank + " person" + chr(10) + blank + "bus  " + chr(10))
+print("LINES", dlg.lines())
+bad = chr(25968) + chr(37327) + chr(19981) + chr(19968) + chr(33268)
+dlg2 = ThemedMultiLineDialog(None, expected_lines=4)
+dlg2.set_text("a" + chr(10) + "b")
+print("MISMATCH", bad in dlg2.count_label.text())
+dlg3 = ThemedMultiLineDialog(None, expected_lines=2)
+dlg3.set_text("a" + chr(10) + "b")
+print("MATCH_OK", bad not in dlg3.count_label.text())
+print("TIP", dlg3.count_label.text())
+""")
+    assert "LINES ['car', 'person', 'bus']" in out, out
+    assert "MISMATCH True" in out, out
+    assert "MATCH_OK True" in out, out

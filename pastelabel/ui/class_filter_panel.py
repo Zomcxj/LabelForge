@@ -1,8 +1,8 @@
 """类别筛选面板：勾选要保留的类别，供批量推理过滤使用。
 
-不勾任何一项表示不过滤（= 全部保留），与引擎 filter_by_class 的约定一致：
-空集合等于「没有限制」，所以界面必须在这里给出明确含义，不能让用户以为
-「全不选」会推理出空结果。
+默认全选 = 全部保留；没勾选的会被过滤掉。「全不选」表示什么都不要。
+面板始终回传一个具体集合，是否真的过滤由调用方结合类别总数判断——
+全部勾选等于没有限制，不必走过滤逻辑。
 """
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -31,7 +31,7 @@ class ClassFilterPanel(QDialog):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        self.hint_label = QLabel(tr("不勾选任何类别 = 不过滤，全部保留"))
+        self.hint_label = QLabel(tr("保留勾选的类别；没勾选的会被过滤掉"))
         self.hint_label.setWordWrap(True)
         self.hint_label.setObjectName("classFilterHint")
         layout.addWidget(self.hint_label)
@@ -90,15 +90,16 @@ class ClassFilterPanel(QDialog):
         sync_titlebar(self)
 
     def set_class_names(self, names):
-        """重建勾选框列表，尽量保留当前选择。"""
+        """重建勾选框列表，尽量保留当前选择；首次加载默认全选（= 不过滤）。"""
         keep = {b.text() for b in self._boxes if b.isChecked()}
+        first_fill = not self._boxes
         for box in self._boxes:
             self._list_layout.removeWidget(box)
             box.deleteLater()
         self._boxes = []
         for name in names or []:
             box = QCheckBox(str(name))
-            box.setChecked(str(name) in keep)
+            box.setChecked(True if first_fill else str(name) in keep)
             self._boxes.append(box)
             self._list_layout.insertWidget(len(self._boxes) - 1, box)
 
@@ -113,7 +114,7 @@ class ClassFilterPanel(QDialog):
     def retranslate(self):
         """切语言后刷新面板文字（勾选项是类别名，不翻译）。"""
         self.setWindowTitle(tr("类别筛选"))
-        self.hint_label.setText(tr("不勾选任何类别 = 不过滤，全部保留"))
+        self.hint_label.setText(tr("保留勾选的类别；没勾选的会被过滤掉"))
         self.all_btn.setText(tr("全选"))
         self.none_btn.setText(tr("全不选"))
         self.ok_btn.setText(tr("确定"))

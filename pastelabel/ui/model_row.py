@@ -220,7 +220,7 @@ class ModelRow(QWidget):
         self.name_label.setText(self._model_name or tr("尚未加载模型"))
         self._refresh_replace_text()
         # 筛选按钮的计数文案由主窗口按当前选择重设
-        self.filter_btn.setToolTip(tr("只保留勾选的类别；不勾选表示不过滤"))
+        self.filter_btn.setToolTip(tr("保留勾选的类别；没勾选的会被过滤掉"))
 
     def _tooltip(self, name, size, providers):
         parts = [name, f"{tr('输入尺寸')}: {size[0]}x{size[1]}"]

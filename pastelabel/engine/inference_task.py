@@ -155,14 +155,15 @@ def build_detector(settings, read_names=None):
 
 
 def filter_by_class(boxes, class_filter):
-    """按类别名白名单过滤；白名单为空表示不过滤。
+    """按类别名白名单过滤。
 
-    注意空集合等于不过滤，所以界面「一个类别都没勾」不能传空集合，
-    要在调用前就拦下来，否则会变成全部保留。
+    None 表示不过滤（界面默认全选就走这条）；具体集合表示只保留这些类别，
+    空集合等于全不选（结果一定为空）。界面上「默认全选」由调用方翻译成 None，
+    这里不去猜「空集合是不是没勾」。
     """
-    allowed = {str(c) for c in (class_filter or []) if str(c).strip()}
-    if not allowed:
+    if class_filter is None:
         return list(boxes)
+    allowed = {str(c) for c in class_filter if str(c).strip()}
     return [b for b in boxes if b.get("label") in allowed]
 
 
@@ -178,17 +179,19 @@ def merge_boxes(existing, detected, replace_auto=False, class_filter=None):
     默认保留人工标注；replace_auto=True 时先移除上一轮推理结果再并入，
     人工标注在任何情况下都不被删除。
 
-    class_filter 非空时做严格筛选：上一轮推理留下的、类别不在白名单里的框
-    也要一并丢掉。否则筛选只能「加」不能「减」——上一次不过滤跑出的类别会
+    class_filter 给定时做严格筛选：上一轮推理留下的、类别不在白名单里的框
+    也要一并丢掉。否则筛选只能「加」不能「减」——上一次没筛跑出的类别会
     一直留在画布上，看起来就像筛选没生效。人工标注不受影响。
+
+    None 表示不过滤（界面默认全选），空集合表示全不选、清掉所有旧推理框。
     """
-    allowed = {str(c) for c in (class_filter or []) if str(c).strip()}
     kept = []
     for box in existing or []:
         if replace_auto and is_auto_box(box):
             continue
         # 严格筛选：只清推理框，人工框无论类别都保留
-        if allowed and is_auto_box(box) and box.get("label") not in allowed:
+        if (class_filter is not None and is_auto_box(box)
+                and box.get("label") not in class_filter):
             continue
         kept.append(box)
     for box in detected or []:

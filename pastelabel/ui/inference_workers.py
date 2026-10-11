@@ -29,7 +29,8 @@ class ModelLoadWorker(QThread):
     必须让用户提供；此时不加载模型，由界面收集后带着类别名重新发起。
     """
     loaded = pyqtSignal(object, object, object)     # detector, size, class_source
-    need_class_names = pyqtSignal(str, str)         # model_path, 建议的 txt 路径
+    # model_path, 建议的 txt 路径, 模型需要的类别数（推不出为 None）
+    need_class_names = pyqtSignal(str, str, object)
     failed = pyqtSignal(str)
 
     def __init__(self, model_path, class_names=None, settings=None, parent=None):
@@ -59,7 +60,8 @@ class ModelLoadWorker(QThread):
                 if source == "missing":
                     self.need_class_names.emit(
                         self._model_path,
-                        inference_task.sidecar_class_names_path(self._model_path))
+                        inference_task.sidecar_class_names_path(self._model_path),
+                        self._guess_class_count(session))
                     return
                 detector.class_names = names
             else:
@@ -68,6 +70,22 @@ class ModelLoadWorker(QThread):
             self.loaded.emit(detector, size, source)
         except Exception as exc:
             self.failed.emit(str(exc))
+
+    @staticmethod
+    def _guess_class_count(session):
+        """从输出 shape 推类别数，供手输框提示该填几个；推不出返回 None。
+
+        多输出模型（带辅助训练头）的类别数不在第一个输出的形状里，
+        这种情况直接不给数，让用户自己按训练时的类别表填。
+        """
+        from ..engine.onnx_inference import guess_class_count
+        try:
+            outputs = session.get_outputs()
+        except Exception:
+            return None
+        if len(outputs) != 1:
+            return None
+        return guess_class_count(outputs[0].shape)
 
 
 class InferenceWorker(QThread):
@@ -101,18 +119,20 @@ class InferenceWorker(QThread):
         self._interrupted = True
 
 
-def class_names_prompt(parent, model_path, suggested_path):
+def class_names_prompt(parent, model_path, suggested_path, expected_count=None):
     """类别缺失时收集类别名，并在模型同级目录写同名 txt。
 
+    expected_count 是模型输出能推出来的类别数（拿不到就 None）。有它就能
+    提示用户「需要几个」，填错数量时也能当场看到。
     返回写好的路径；用户取消则返回 None（调用方据此判定不可推理）。
     """
-    from .dialog_helpers import get_text
+    from .dialog_helpers import get_multiline_text
 
-    text, accepted = get_text(
+    text, accepted = get_multiline_text(
         parent, tr("模型缺少类别信息"),
         tr("一行一个类别名；将保存到模型同级的同名 txt"),
-        "")
-    if not accepted or not text.strip():
+        "", expected_lines=expected_count)
+    if not accepted:
         return None
     names = [line.strip() for line in text.splitlines() if line.strip()]
     if not names:

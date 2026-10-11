@@ -75,15 +75,18 @@ class InferenceMixin:
         self._model_worker = worker
         worker.start()
 
-    def _on_class_names_needed(self, model_path, suggested_path):
+    def _on_class_names_needed(self, model_path, suggested_path,
+                               expected_count=None):
         """同级没有 txt 且模型也没有类别表：让用户手输并写入同级同名 txt。
 
+        expected_count 是能从输出 shape 推出来的类别数，用来提示「该填几个」。
         取消即视为不支持推理：不加载模型、两个推理图标保持禁用。
         """
         from ..inference_workers import class_names_prompt
 
         self.status_label.setText(tr("模型缺少类别信息"))
-        written = class_names_prompt(self, model_path, suggested_path)
+        written = class_names_prompt(self, model_path, suggested_path,
+                                     expected_count=expected_count)
         if not written:
             self._detector = None
             self._update_inference_buttons()
@@ -110,8 +113,8 @@ class InferenceMixin:
             dynamic=detector.is_dynamic_input(),
             end2end=self._model_format == FORMAT_V26)
         row.show()
-        # 换模型后类别表可能完全不同，之前的勾选作废
-        self._class_filter = set()
+        # 换模型后类别表可能完全不同，之前的勾选作废，回到默认全选
+        self._class_filter = None
         self._refresh_filter_button()
         self._update_inference_buttons()
         self.status_label.setText(
@@ -144,6 +147,10 @@ class InferenceMixin:
 
     # ---------- 类别筛选 ----------
 
+    def _all_class_names(self):
+        detector = getattr(self, '_detector', None)
+        return [str(n) for n in (getattr(detector, 'class_names', None) or [])]
+
     def _open_class_filter(self):
         """打开类别勾选面板；确定后更新筛选集合。"""
         detector = getattr(self, '_detector', None)
@@ -159,7 +166,10 @@ class InferenceMixin:
             self._class_filter_panel = panel
         panel.retranslate()
         panel.set_class_names(detector.class_names)
-        panel.set_selection(getattr(self, '_class_filter', None) or set())
+        # 没设过筛选就按全选显示：默认全部保留
+        current = getattr(self, '_class_filter', None)
+        panel.set_selection(current if current is not None
+                            else detector.class_names)
         panel.exec_()
 
     def _on_class_filter_changed(self, selected):
@@ -171,17 +181,31 @@ class InferenceMixin:
         row = getattr(self, 'model_row', None)
         if row is None:
             return
-        detector = getattr(self, '_detector', None)
-        total = len(getattr(detector, 'class_names', None) or [])
-        row.set_filter_summary(getattr(self, '_class_filter', None) or set(), total)
+        row.set_filter_summary(self._checked_classes(), len(self._all_class_names()))
+
+    def _checked_classes(self):
+        """当前勾选的类别；没设过就视为全选。"""
+        current = getattr(self, '_class_filter', None)
+        if current is None:
+            return set(self._all_class_names())
+        return set(current)
 
     def _filter_for_run(self):
-        """传给引擎的筛选集合；空集表示不过滤。
+        """传给引擎的筛选集合；None 表示不过滤。
 
-        面板里「全不选」等于不过滤（引擎的约定），与面板提示保持一致。
+        默认全选等于没有限制，这时回 None 让引擎走原来的路径；只有真的
+        取消了某些类别才传具体集合去过滤。「全不选」传空集合 = 全部丢弃。
+
+        类别表为空（模型没加载好 / 没有类别信息）时同样回 None：这时「勾了
+        什么」无从谈起，若按空集合处理会把已有推理框全清掉。
         """
-        selected = getattr(self, '_class_filter', None) or set()
-        return selected or None
+        names = self._all_class_names()
+        if not names:
+            return None
+        selected = self._checked_classes()
+        if selected >= set(names):
+            return None
+        return selected
 
     def _on_model_thresholds_changed(self, conf, iou):
         """阈值即时生效：写回 detector 即可，不必重新加载模型。"""
