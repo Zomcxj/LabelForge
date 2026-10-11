@@ -229,7 +229,18 @@ def test_detect_format_without_class_table_rejects_ambiguous_small_shapes():
 
 def test_detect_format_without_class_table_needs_real_anchor_count():
     assert detect_output_format((1, 84, 8400)) == FORMAT_V8
-    assert detect_output_format((1, 25200, 85)) is None, "末轴是通道的 v5 不能猜成 v8"
+    # 末轴是通道的 v5 要认成 v5，不能猜成 v8。25200x85 是 yolov5n 的形状、
+    # 25200x9 是 4 类第三方导出的形状；没有类别表时也必须能判出来，否则这类
+    # 模型会被「请显式选择格式」直接挡住。
+    assert detect_output_format((1, 25200, 85)) == FORMAT_V5
+    assert detect_output_format((1, 25200, 9)) == FORMAT_V5
+    # 反向：候选数在末轴的 v8
+    assert detect_output_format((1, 9, 25200)) == FORMAT_V8
+    # 8400x84 只能读成 v5（C=79）：候选轴 8400 够大，而 84 当候选轴太小
+    assert detect_output_format((1, 8400, 84)) == FORMAT_V5
+    # 小形状两个方向都说不通，交回用户
+    assert detect_output_format((1, 3, 8)) is None
+    assert detect_output_format((1, 600, 700)) is None
 
 
 def test_decode_predictions_rejects_unknown_format():
@@ -691,3 +702,69 @@ def test_detect_format_requires_many_rows_for_end2end():
     assert detect_output_format((1, 300, 6)) == FORMAT_V26
     assert detect_output_format((1, 100, 6)) == FORMAT_V26
     assert detect_output_format((1, DEFAULT_MAX_DET, 6)) == FORMAT_V26
+
+
+# ---------- 无类别表时按轴序判布局 ----------
+
+def test_detect_format_v5_without_class_table():
+    """v5 布局 [1, 候选数, 5+C] 在没有类别表时也要能判出来。
+
+    这是 nonmotor.onnx 那个「无法从输出 shape (1, 25200, 9) 判断模型格式」的
+    回归护栏：第三方导出没有 metadata，以前一律被拒，模型根本加载不了。
+    """
+    assert detect_output_format((1, 25200, 9)) == FORMAT_V5    # C=4
+    assert detect_output_format((1, 25200, 85)) == FORMAT_V5   # C=80
+    assert detect_output_format((1, 8400, 84)) == FORMAT_V5    # 84 当不了候选轴
+
+
+def test_detect_format_v8_without_class_table():
+    """反向也要认：通道轴在前。"""
+    assert detect_output_format((1, 9, 25200)) == FORMAT_V8    # C=5
+    assert detect_output_format((1, 84, 8400)) == FORMAT_V8    # C=80
+
+
+def test_detect_format_refuses_when_no_reading_makes_sense():
+    """两种解释都推不出合理类别数时返回 None，交回用户显式指定。"""
+    # 600x700：无论哪轴当通道，解出的 C 都远超 80
+    assert detect_output_format((1, 600, 700)) is None
+    # 小形状：候选数太少，当不成检测头
+    assert detect_output_format((1, 3, 8)) is None
+    assert detect_output_format((1, 1, 6)) is None
+
+
+def test_detect_format_end2end_row_width_is_not_v5():
+    """末轴恰为端到端行宽时不认 v5，避免与 v26 在形状上撞车。"""
+    # 行数超过 max_det，不是 v26；但 6 是端到端行宽，也不该当成 C=1 的 v5
+    assert detect_output_format((1, 8400, 6)) is None
+    assert detect_output_format((1, 25200, 6)) is None
+    # 真正的端到端仍照旧
+    assert detect_output_format((1, 300, 6)) == FORMAT_V26
+    assert detect_output_format((1, 100, 6)) == FORMAT_V26
+
+
+def test_detect_format_uses_class_table_when_available():
+    """有类别表时以类别数为准，轴序判据不参与。"""
+    assert detect_output_format((1, 25200, 9), num_classes=4) == FORMAT_V5
+    assert detect_output_format((1, 9, 25200), num_classes=5) == FORMAT_V8
+    # 与类别数对不上就不认
+    assert detect_output_format((1, 25200, 9), num_classes=80) is None
+    # 类别数已知时不把 [1, 6, 8400] 当端到端（6 正好是 C=2 的 v8）
+    assert detect_output_format((1, 6, 8400), num_classes=2) == FORMAT_V8
+
+
+def test_detect_format_class_count_has_an_upper_bound():
+    """解出的 C 超过上限就不能认——否则候选数会被当成类别数。
+
+    上限是 80（COCO 量级）。有了它，(1, 25200, 200) 解出 C=195 直接不成立；
+    若把上限放到很大，rows-4=25196 也会满足「>=1」，v8 那条一并成立，于是
+    误判成「分不清」而拒绝加载。
+    """
+    assert detect_output_format((1, 25200, 9)) == FORMAT_V5     # C=4
+    assert detect_output_format((1, 25200, 85)) == FORMAT_V5    # C=80，正好到顶
+    # 超过 80 类：判不出来，交回用户显式指定
+    assert detect_output_format((1, 25200, 200)) is None        # C=195
+    assert detect_output_format((1, 25200, 605)) is None        # C=600
+    assert detect_output_format((1, 25200, 10006)) is None
+    # 通道轴在前时同理
+    assert detect_output_format((1, 84, 8400)) == FORMAT_V8     # C=80，正好到顶
+    assert detect_output_format((1, 604, 8400)) is None         # C=600

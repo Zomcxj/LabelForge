@@ -10,6 +10,8 @@ import numpy as np
 LETTERBOX_FILL = 114
 
 FORMAT_V5 = "v5"
+#: [1, 4+C, N]。YOLOv8 起的锚点无关检测头，YOLO11 沿用同一设计、导出后形状
+#: 与 v8 完全相同（都是 [1, 4+C, N]），所以共用这一种格式，不单独建 v11。
 FORMAT_V8 = "v8"
 #: 端到端导出（YOLO26），输出已含 NMS 结果，无需再去重
 FORMAT_V26 = "v26"
@@ -33,10 +35,15 @@ DEFAULT_INPUT_SIZE = (640, 640)
 DEFAULT_CONF = 0.25
 DEFAULT_IOU = 0.45
 
-# 无类别数时认定「末轴是候选轴」所需的最少候选数。真实检测导出在 320px 以上
-# 输入至少有 2100 个候选，100 是很保守的下限；小于它的形状（如 3x8）两种解释
-# 都成立，必须让用户显式指定格式。
-_MIN_ANCHORS_FOR_V8 = 100
+# 无类别数时自动判定布局用的范围。判定方法是两头都看：把某一轴当通道轴解出的
+# C 要合理（[_MIN_CLASSES, _MAX_PLAUSIBLE_CLASSES]），另一轴作为候选轴也不能
+# 太少（_MIN_ANCHORS_FOR_AUTO）。用来排除把候选数当通道解出的荒谬结果。
+_MIN_CLASSES = 1
+# 类别数上限取 80（COCO 的量级）。自己训练的模型基本不会超过这个数，超了说明
+# 多半是把候选数当成了通道轴。真有大类别数（如 OpenImages 600 类）的模型，
+# 判不出来会提示显式选择格式，用户选一次即可，不会静默用错。
+_MAX_PLAUSIBLE_CLASSES = 80
+_MIN_ANCHORS_FOR_AUTO = 100
 
 
 class InferenceError(RuntimeError):
@@ -148,22 +155,27 @@ def decode_yolov5(raw, conf_threshold, num_classes=None):
 def decode_yolov8(raw, conf_threshold, num_classes=None):
     """解码 [1, 4+C, N]（也接受转置导出），行内 cx, cy, w, h, cls...。
 
-    无 objectness，置信度直接取类别分数；两种布局无法区分时（N == 4+C）报错。
+    对应 YOLOv8 及之后沿用同一检测头的版本（YOLO11 输出结构与 v8 完全一致，
+    都走这里）。无 objectness，置信度直接取类别分数；两种布局无法区分时
+    （N == 4+C）报错。
     """
-    arr = _as_2d(raw, "YOLOv8")
+    arr = _as_2d(raw, "YOLOv8/YOLO11")
     expected = None if num_classes is None else 4 + num_classes
     a, b = arr.shape
     if expected is not None:
         if a == expected and b == expected:
-            raise InferenceError(f"YOLOv8 输出 {arr.shape} 两种布局无法区分，请显式指定格式")
+            raise InferenceError(
+                f"YOLOv8/YOLO11 输出 {arr.shape} 两种布局无法区分，请显式指定格式")
         if a == expected:
             arr = arr.T
         elif b != expected:
-            raise InferenceError(f"YOLOv8 输出 {arr.shape} 与类别表 {num_classes} 不匹配")
+            raise InferenceError(
+                f"YOLOv8/YOLO11 输出 {arr.shape} 与类别表 {num_classes} 不匹配")
     elif a > b:
         arr = arr.T
     if arr.shape[1] < 5:
-        raise InferenceError(f"YOLOv8 输出末维 {arr.shape[1]}，至少需 4+C（C>=1）")
+        raise InferenceError(
+            f"YOLOv8/YOLO11 输出末维 {arr.shape[1]}，至少需 4+C（C>=1）")
     cls_scores = arr[:, 4:]
     best_cls = cls_scores.argmax(axis=1)
     scores = cls_scores[np.arange(cls_scores.shape[0]), best_cls]
@@ -236,10 +248,18 @@ def guess_class_count(shape):
 def detect_output_format(shape, num_classes=None):
     """按输出 shape 推断格式，推断不出返回 None（调用方须让用户显式指定）。
 
-    没有类别数时只能靠轴序判断：v8 的候选数远大于通道数（如 8400 vs 84），
-    只有这种明显情形才认。小 N 的形状两种解释都成立（v5 的 [1, N, 5+C]
-    与 v8 的 [1, 4+C, N] 可能同形），此时必须返回 None —— 猜错会把 v5 的
-    objectness 当成类别分数、把列当行读，静默产出错误标注。
+    检测头的两个轴一个是候选（锚点）轴、一个是通道轴（5+C 或 4+C）。类别数
+    未知时只能靠轴序：
+
+      v5 是 [1, 候选数, 5+C] —— 候选在前、通道在后；
+      v8/v11 是 [1, 4+C, 候选数] —— 通道在前、候选在后。
+
+    两个方向都要认：只认 v8 那一侧会让没有类别表的 v5 第三方导出（如
+    [1, 25200, 9]）被判成「无法判断格式」而加载不了。
+
+    判据是「把某一轴当通道轴解出的 C 是否合理」，另一轴同时要够大像候选数。
+    两边都推不出结果时返回 None，交回用户显式指定——猜错会把 objectness 当
+    类别分数、把列当行读，静默产出错误标注。
 
     末维恰为 6、行数在 max_det 以内且远多于 6 时按端到端解释。但 6 也可能
     正好是 v5 的 5+C（C=1）或 v8 的 4+C（C=2），类别数已知且与之吻合时不认
@@ -260,7 +280,32 @@ def detect_output_format(shape, num_classes=None):
         if dims[1] == 4 + num_classes or dims[0] == 4 + num_classes:
             return FORMAT_V8
         return None
-    if dims[1] > dims[0] and dims[1] >= _MIN_ANCHORS_FOR_V8:
+    # 类别数未知：靠「哪一轴像通道轴」判。通道轴是 5+C（v5）或 4+C（v8），
+    # 判据两头都要看：把某轴当通道解出的 C 要落在 [_MIN_CLASSES,
+    # _MAX_PLAUSIBLE_CLASSES]，另一轴作为候选轴也不能太少。
+    #
+    #   [1, 25200, 9]  cols=9  -> C=4（合理），rows=25200 当通道 -> C=25196（超限）
+    #                  => v5
+    #   [1, 84, 8400]  rows=84 -> C=80（合理），cols 当通道 -> C=8395（超限）
+    #                  => v8
+    #   [1, 8400, 84]  cols=84 -> C=79（合理）=> v5；反向要 cols>=100 才成立，
+    #                  84 不够，所以不是 v8
+    #
+    # 末轴恰为 END2END_ROW 时不认 v5：那是端到端的行宽，读成 v5 会解出 C=1，
+    # 与端到端导出撞车，宁可让用户显式指定。
+    #
+    # 两边都成立（not as_v8 / not as_v5 那两处）在当前常量下不会发生——类别
+    # 数上限 80 让 v5 要求 cols<=85、v8 要求 cols>=100，天然互斥。守卫留着，
+    # 以后调常量时不必重新推一遍。
+    rows, cols = dims
+    as_v5 = (_MIN_CLASSES <= cols - 5 <= _MAX_PLAUSIBLE_CLASSES
+             and rows >= _MIN_ANCHORS_FOR_AUTO
+             and cols != END2END_ROW)
+    as_v8 = (_MIN_CLASSES <= rows - 4 <= _MAX_PLAUSIBLE_CLASSES
+             and cols >= _MIN_ANCHORS_FOR_AUTO)
+    if as_v5 and not as_v8:
+        return FORMAT_V5
+    if as_v8 and not as_v5:
         return FORMAT_V8
     return None
 
@@ -540,7 +585,7 @@ class OnnxDetector:
         if fmt is None:
             raise InferenceError(
                 f"无法从输出 shape {shape} 判断模型格式，"
-                "请显式选择 YOLOv5 / YOLOv8 / YOLO26")
+                "请显式选择 YOLOv5 / YOLOv8 / YOLO11 / YOLO26")
         self._resolved_format = fmt
         self._output_index = index
         return fmt
