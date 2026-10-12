@@ -29,6 +29,7 @@ from .mixins.translation import TranslationMixin
 from .mixins.dataset_classifier import DatasetClassifierMixin
 from .mixins.dataset_tools import DatasetToolsMixin
 from .mixins.inference import InferenceMixin
+from .mixins.video import VideoMixin
 from .mixins.toolbar import ToolbarMixin
 from .mixins.options_popup import OptionsPopupMixin
 from .mixins.cache_menu import CacheMenuMixin
@@ -38,7 +39,7 @@ from .mixins.panels import PanelsMixin
 
 class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin, QualityLintMixin, MemoryRecordMixin, LabelCacheSlotMixin,
                    ToolbarMixin, OptionsPopupMixin, CacheMenuMixin, ListsMixin, PanelsMixin, ImageLoaderMixin, PasteEngineMixin,
-                   DatasetClassifierMixin, DatasetToolsMixin, InferenceMixin, EventHandlerMixin, QMainWindow):
+                   DatasetClassifierMixin, DatasetToolsMixin, InferenceMixin, VideoMixin, EventHandlerMixin, QMainWindow):
     """贴图标注工具主窗口"""
 
     def __init__(self):
@@ -165,6 +166,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self._run_worker = None
         self._progress_dialog = None
         self.model_row = None
+        # 视频抽帧行与模型行各自独立：只点一个是 1 行，都点开是 2 行
         # None = 还没设过筛选，按全选处理；换成具体集合才是真的过滤
         self._class_filter = None
         self._class_filter_panel = None
@@ -534,6 +536,15 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
             return
         if hasattr(self, '_close_lint_dialog'):
             self._close_lint_dialog()
+        # 抽帧线程要停掉再放行：活线程会在窗口销毁后继续写状态栏
+        video_worker = getattr(self, '_video_worker', None)
+        if video_worker is not None and video_worker.isRunning():
+            video_worker.cancel()
+            video_worker.wait(3000)
+        compose_worker = getattr(self, '_compose_worker', None)
+        if compose_worker is not None and compose_worker.isRunning():
+            compose_worker.cancel()
+            compose_worker.wait(3000)
         if hasattr(self, '_close_health_worker'):
             self._close_health_worker()
         if hasattr(self, '_processing_panel') and self._processing_panel:

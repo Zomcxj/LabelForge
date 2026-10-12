@@ -344,17 +344,29 @@ def test_static_input_size_is_not_dynamic(tmp_path):
 # ---------- 真实模型（可选，仅在 model/ 存在时运行）----------
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+#: 每个格式给多个候选：n/s 只是权重规模不同，输出布局与类别表一致，
+#: 测试要的是「这一代导出能被自动识别并跑通」，不绑定具体某个权重文件。
 REAL_MODELS = {
-    "v5": REPO_ROOT / "model" / "yolov5n.onnx",
-    "v8": REPO_ROOT / "model" / "yolov8n.onnx",
+    "v5": ("yolov5n.onnx", "yolov5s.onnx"),
+    "v8": ("yolov8n.onnx", "yolov8s.onnx", "yolo11s.onnx"),
 }
 REAL_IMAGES = sorted((REPO_ROOT / "model").glob("*.jpg"))
 
 
+def _real_model_path(fmt):
+    """返回该格式实际可用的模型路径；一个都没有时返回 None。"""
+    for name in REAL_MODELS[fmt]:
+        path = REPO_ROOT / "model" / name
+        if path.exists():
+            return path
+    return None
+
+
 def _require_real_model(fmt):
-    path = REAL_MODELS[fmt]
-    if not path.exists():
-        pytest.skip(f"缺少真实模型 {path.relative_to(REPO_ROOT)}（不入库，需本地提供）")
+    path = _real_model_path(fmt)
+    if path is None:
+        candidates = " / ".join(f"model/{n}" for n in REAL_MODELS[fmt])
+        pytest.skip(f"缺少真实模型 {candidates}（不入库，需本地提供）")
     return str(path)
 
 
@@ -383,13 +395,18 @@ def test_real_model_matches_expected_output_shape(fmt):
     assert detector.resolve_format() == fmt
 
 
-@pytest.mark.skipif(not REAL_IMAGES, reason="model/ 下没有测试图片")
 @pytest.mark.parametrize("fmt", ["v5", "v8"])
 def test_real_model_detects_on_real_image(fmt):
     """真实图片跑通全链路：框在图内、非退化、分数与标签有效。
 
     走真实 Qt 子进程：本文件进程内 PyQt5 是 mock，QImage 读不了图。
+
+    模型与图片都在测试体内检查：两者都是本地可选素材，缺任意一个都该跳过，
+    只检查图片会让缺模型时变成失败（守卫与断言说的不是一回事）。
     """
+    model_path = _require_real_model(fmt)
+    if not REAL_IMAGES:
+        pytest.skip("model/ 下没有测试图片")
     from tests.test_inference_image import _run_real_qt
 
     out = _run_real_qt(f'''
@@ -400,7 +417,7 @@ from pastelabel.engine.inference_image import qimage_to_rgb_array, resize_for_mo
 from pastelabel.engine.inference_task import build_detector
 
 # 走生产装配路径：类别表来自模型元数据，标签才不会是空串
-det = build_detector({{"model_path": r"{REAL_MODELS[fmt]}", "conf_threshold": 0.35}})
+det = build_detector({{"model_path": r"{model_path}", "conf_threshold": 0.35}})
 img = QImage(r"{REAL_IMAGES[0]}")
 assert not img.isNull(), "测试图片读不出来"
 rgb = qimage_to_rgb_array(img)

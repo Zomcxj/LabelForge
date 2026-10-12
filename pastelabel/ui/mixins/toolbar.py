@@ -5,7 +5,7 @@ from PyQt5.QtCore import Qt
 from ...core.config import WINDOW_CONFIG, PASTE_PARAMS, THUMBNAIL_CONFIG, DEFAULT_PREFIX
 from ..icons import (
     _load_svg_icon, SVG_FILE, SVG_FOLDER, SVG_IMPORT, SVG_PASTE_LABEL, SUN_SVG,
-    SVG_MODEL_SLIDERS, SVG_MODEL_SINGLE, SVG_MODEL_ALL,
+    SVG_MODEL_SLIDERS, SVG_MODEL_SINGLE, SVG_MODEL_ALL, SVG_VIDEO,
 )
 from ..i18n import t as tr
 from ..segmented_control import AnimatedSegmentedControl
@@ -94,6 +94,22 @@ class ToolbarMixin:
             SVG_PASTE_LABEL, self.upload_paste_labels, tr("导入贴图标签文件"), label_color, "labelBtn"
         )
         upload_layout.addWidget(self.upload_paste_label_btn)
+
+        upload_layout.addSpacing(2)
+        # 视频抽帧：在「标签:」两个导入图标与「模型推理:」之间；点击打开配置弹窗
+        self.video_lbl = QLabel(tr("视频:"))
+        upload_layout.addWidget(self.video_lbl)
+        self.video_load_btn = self._create_svg_button(
+            SVG_VIDEO, self._open_video_extract,
+            tr("视频抽帧:"), label_color, "labelBtn"
+        )
+        # cv2 缺失时置灰并说明原因，不让用户点了才看到报错
+        try:
+            import cv2  # noqa: F401
+        except ImportError:
+            self.video_load_btn.setEnabled(False)
+            self.video_load_btn.setToolTip(tr("未安装 opencv（cv2），视频功能不可用"))
+        upload_layout.addWidget(self.video_load_btn)
 
         upload_layout.addSpacing(2)
         self.model_lbl = QLabel(tr("模型推理:"))

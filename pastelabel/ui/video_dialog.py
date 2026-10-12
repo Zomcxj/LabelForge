@@ -1,0 +1,608 @@
+"""视频弹窗：抽帧与合成两个标签页。
+
+- **抽帧页**：选视频 → 探测 → 按「每秒抽几帧」导出图片 + 清单。
+- **合成页**：选图片目录 → 自动判断有没有 `video_manifest.json`：
+  有就按清单的时长合成（不用填帧率），没有才用用户填的「每秒几帧」。
+
+两页各有自己的动作按钮与提示区，`action` 记录用户按的是哪一个，
+主窗口据此分发到对应的后台任务。
+"""
+import os
+
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (
+    QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
+    QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QPushButton, QTabWidget, QVBoxLayout, QWidget,
+)
+
+from .dialog_helpers import center_on_parent, sync_titlebar
+from .i18n import t as tr
+from .theme import ThemeManager
+
+VIDEO_FILTER = ("视频文件 (*.mp4 *.avi *.mov *.mkv *.flv *.wmv *.webm *.m4v);;"
+                "所有文件 (*)")
+
+ACTION_EXTRACT = "extract"
+ACTION_COMPOSE = "compose"
+
+
+class VideoDialog(QDialog):
+    """抽帧 / 合成配置弹窗。
+
+    `action` 是用户最后按下的动作（`extract` 或 `compose`）；
+    `settings()` 按当前动作返回对应参数。
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._video_path = ""
+        self._info = None
+        self._compose_dir = ""
+        self._compose_manifest = None      # 探测到的清单，None = 没有
+        self._compose_plan = None
+        self._compose_images = []          # 合成要用的图片（扫标注用）
+        self.action = ACTION_EXTRACT
+        self._build_ui()
+        self._apply_style()
+        self._sync_extract_enabled()
+        self._sync_compose_enabled()
+
+    # ---------- 界面 ----------
+
+    def _build_ui(self):
+        self.setWindowTitle(tr("选择视频抽帧或图片合成"))
+        self.setMinimumWidth(560)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_extract_tab(), tr("抽帧"))
+        self.tabs.addTab(self._build_compose_tab(), tr("合成"))
+        layout.addWidget(self.tabs)
+
+    def _build_extract_tab(self):
+        self.extract_tab = QWidget()
+        layout = QVBoxLayout(self.extract_tab)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        source = QHBoxLayout()
+        source.setSpacing(6)
+        self.pick_btn = QPushButton(tr("选择视频"))
+        self.pick_btn.setObjectName("optionsBtn")
+        self.pick_btn.setFixedHeight(24)
+        self.pick_btn.setToolTip(tr("选择视频文件"))
+        self.pick_btn.clicked.connect(self._pick_video)
+        source.addWidget(self.pick_btn)
+
+        self.path_edit = QLineEdit()
+        self.path_edit.setReadOnly(True)
+        self.path_edit.setPlaceholderText(tr("尚未选择视频"))
+        source.addWidget(self.path_edit, 1)
+        layout.addLayout(source)
+
+        self.info_label = QLabel("")
+        self.info_label.setObjectName("videoInfo")
+        self.info_label.setWordWrap(True)
+        layout.addWidget(self.info_label)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
+
+        self.fps_lbl = QLabel(tr("每秒抽几帧"))
+        grid.addWidget(self.fps_lbl, 0, 0)
+        self.fps_spin = QDoubleSpinBox()
+        self.fps_spin.setRange(0.01, 1000.0)
+        self.fps_spin.setDecimals(3)
+        self.fps_spin.setSingleStep(1.0)
+        self.fps_spin.setValue(1.0)
+        self.fps_spin.setToolTip(tr("超过源帧率时按源帧率上限"))
+        grid.addWidget(self.fps_spin, 0, 1)
+
+        self.format_lbl = QLabel(tr("图片格式"))
+        grid.addWidget(self.format_lbl, 0, 2)
+        self.format_combo = QComboBox()
+        self.format_combo.addItems(["jpg", "png"])
+        self.format_combo.currentTextChanged.connect(self._on_format_changed)
+        grid.addWidget(self.format_combo, 0, 3)
+
+        self.start_lbl = QLabel(tr("起始时间(秒)"))
+        grid.addWidget(self.start_lbl, 1, 0)
+        self.start_spin = QDoubleSpinBox()
+        self.start_spin.setRange(0.0, 100000.0)
+        self.start_spin.setDecimals(3)
+        grid.addWidget(self.start_spin, 1, 1)
+
+        self.end_lbl = QLabel(tr("结束时间(秒)"))
+        grid.addWidget(self.end_lbl, 1, 2)
+        self.end_spin = QDoubleSpinBox()
+        self.end_spin.setRange(0.0, 100000.0)
+        self.end_spin.setDecimals(3)
+        grid.addWidget(self.end_spin, 1, 3)
+
+        self.quality_lbl = QLabel(tr("jpg 质量"))
+        grid.addWidget(self.quality_lbl, 2, 0)
+        self.quality_spin = QDoubleSpinBox()
+        self.quality_spin.setRange(1, 100)
+        self.quality_spin.setDecimals(0)
+        self.quality_spin.setValue(95)
+        grid.addWidget(self.quality_spin, 2, 1)
+
+        self.out_lbl = QLabel(tr("输出目录"))
+        grid.addWidget(self.out_lbl, 3, 0)
+        # 只读：输出目录固定在视频同级、自动创建，用户不能另选位置
+        self.out_edit = QLineEdit()
+        self.out_edit.setReadOnly(True)
+        grid.addWidget(self.out_edit, 3, 1, 1, 3)
+
+        layout.addLayout(grid)
+
+        self.hint_label = QLabel("")
+        self.hint_label.setObjectName("videoHint")
+        self.hint_label.setWordWrap(True)
+        layout.addWidget(self.hint_label)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        self.cancel_btn = QPushButton(tr("取消"))
+        self.cancel_btn.setObjectName("optionsBtn")
+        self.cancel_btn.setFixedHeight(26)
+        self.cancel_btn.clicked.connect(self.reject)
+        buttons.addWidget(self.cancel_btn)
+
+        self.start_btn = QPushButton(tr("开始抽帧"))
+        self.start_btn.setObjectName("optionsBtn")
+        self.start_btn.setFixedHeight(26)
+        self.start_btn.setDefault(True)
+        self.start_btn.clicked.connect(self._on_start_extract)
+        buttons.addWidget(self.start_btn)
+        layout.addLayout(buttons)
+
+        self._on_format_changed(self.format_combo.currentText())
+        return self.extract_tab
+
+    def _build_compose_tab(self):
+        self.compose_tab = QWidget()
+        layout = QVBoxLayout(self.compose_tab)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        source = QHBoxLayout()
+        source.setSpacing(6)
+        self.compose_pick_btn = QPushButton(tr("选择图片目录"))
+        self.compose_pick_btn.setObjectName("optionsBtn")
+        self.compose_pick_btn.setFixedHeight(24)
+        self.compose_pick_btn.clicked.connect(self._pick_compose_dir)
+        source.addWidget(self.compose_pick_btn)
+
+        self.compose_dir_edit = QLineEdit()
+        self.compose_dir_edit.setReadOnly(True)
+        self.compose_dir_edit.setPlaceholderText(tr("请先选择图片目录"))
+        source.addWidget(self.compose_dir_edit, 1)
+        layout.addLayout(source)
+
+        self.compose_info_label = QLabel("")
+        self.compose_info_label.setObjectName("videoInfo")
+        self.compose_info_label.setWordWrap(True)
+        layout.addWidget(self.compose_info_label)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
+        grid.setColumnStretch(1, 1)
+
+        self.compose_fps_lbl = QLabel(tr("每秒几帧"))
+        grid.addWidget(self.compose_fps_lbl, 0, 0)
+        self.compose_fps_spin = QDoubleSpinBox()
+        self.compose_fps_spin.setRange(0.01, 1000.0)
+        self.compose_fps_spin.setDecimals(3)
+        self.compose_fps_spin.setValue(5.0)
+        self.compose_fps_spin.setToolTip(tr("无清单时按每秒几帧合成"))
+        grid.addWidget(self.compose_fps_spin, 0, 1)
+
+        self.compose_out_lbl = QLabel(tr("输出视频"))
+        grid.addWidget(self.compose_out_lbl, 1, 0)
+        # 只读：输出路径由来源推导，避免覆盖别人的文件
+        self.compose_out_edit = QLineEdit()
+        self.compose_out_edit.setReadOnly(True)
+        grid.addWidget(self.compose_out_edit, 1, 1)
+
+        layout.addLayout(grid)
+
+        layout.addWidget(self._build_overlay_group())
+
+        self.compose_hint_label = QLabel("")
+        self.compose_hint_label.setObjectName("videoHint")
+        self.compose_hint_label.setWordWrap(True)
+        layout.addWidget(self.compose_hint_label)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        self.compose_cancel_btn = QPushButton(tr("取消"))
+        self.compose_cancel_btn.setObjectName("optionsBtn")
+        self.compose_cancel_btn.setFixedHeight(26)
+        self.compose_cancel_btn.clicked.connect(self.reject)
+        buttons.addWidget(self.compose_cancel_btn)
+
+        self.compose_btn = QPushButton(tr("开始合成"))
+        self.compose_btn.setObjectName("optionsBtn")
+        self.compose_btn.setFixedHeight(26)
+        self.compose_btn.clicked.connect(self._on_start_compose)
+        buttons.addWidget(self.compose_btn)
+        layout.addLayout(buttons)
+
+        return self.compose_tab
+
+    def _build_overlay_group(self):
+        """「叠加标签框」一组控件：主开关 + 类别多选 + 类别名/置信度开关。
+
+        默认跟着画布走（显示类别名、显示置信度都开），免得编辑器里看到的
+        和导出的视频不一样。
+        """
+        box = QWidget()
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self.compose_overlay_check = QCheckBox(tr("叠加标签框"))
+        self.compose_overlay_check.setToolTip(tr("在画面里画出每张图的标注框"))
+        self.compose_overlay_check.stateChanged.connect(self._on_overlay_toggled)
+        layout.addWidget(self.compose_overlay_check)
+
+        self.compose_label_list = QListWidget()
+        self.compose_label_list.setObjectName("composeLabelList")
+        self.compose_label_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.compose_label_list.setFixedHeight(84)
+        layout.addWidget(self.compose_label_list)
+
+        tools = QHBoxLayout()
+        tools.setSpacing(6)
+        tools.addWidget(QLabel(tr("类别")))
+        self.compose_all_btn = QPushButton(tr("全选"))
+        self.compose_all_btn.setObjectName("optionsBtn")
+        self.compose_all_btn.setFixedHeight(22)
+        self.compose_all_btn.clicked.connect(lambda: self._check_all_labels(True))
+        tools.addWidget(self.compose_all_btn)
+        self.compose_none_btn = QPushButton(tr("全不选"))
+        self.compose_none_btn.setObjectName("optionsBtn")
+        self.compose_none_btn.setFixedHeight(22)
+        self.compose_none_btn.clicked.connect(lambda: self._check_all_labels(False))
+        tools.addWidget(self.compose_none_btn)
+        tools.addStretch()
+        layout.addLayout(tools)
+
+        texts = QHBoxLayout()
+        texts.setSpacing(12)
+        self.compose_show_label_check = QCheckBox(tr("类别名"))
+        self.compose_show_label_check.setChecked(True)
+        texts.addWidget(self.compose_show_label_check)
+        self.compose_show_score_check = QCheckBox(tr("置信度"))
+        self.compose_show_score_check.setChecked(True)
+        texts.addWidget(self.compose_show_score_check)
+        texts.addStretch()
+        layout.addLayout(texts)
+        return box
+
+    def _apply_style(self):
+        t = ThemeManager.get_theme()
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}
+            QTabWidget::pane {{ border: 1px solid {t['border_color']};
+                border-radius: 4px; top: -1px; }}
+            QTabBar::tab {{ background-color: {t['panel_bg']};
+                color: {t['text_secondary']}; padding: 5px 16px;
+                border: 1px solid {t['border_color']}; border-bottom: none;
+                border-top-left-radius: 4px; border-top-right-radius: 4px; }}
+            QTabBar::tab:selected {{ color: {t['text_primary']};
+                background-color: {t['widget_bg']}; }}
+            QLabel {{ color: {t['text_secondary']}; }}
+            QLabel#videoInfo {{ color: {t['text_primary']}; }}
+            QLabel#videoHint {{ color: {t['accent']}; }}
+            QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox {{
+                background-color: {t['panel_bg']}; color: {t['text_primary']};
+                border: 1px solid {t['border_color']}; border-radius: 4px;
+                padding: 2px 6px;
+            }}
+            QPushButton {{ background-color: {t['panel_bg']}; color: {t['text_primary']};
+                border: 1px solid {t['border_color']}; border-radius: 4px;
+                padding: 3px 12px; }}
+            QPushButton:hover {{ border-color: {t['accent']}; }}
+            QPushButton:disabled {{ color: {t['text_secondary']}; }}
+            QCheckBox {{ color: {t['text_secondary']}; padding: 2px; }}
+            QListWidget#composeLabelList {{
+                background-color: {t['panel_bg']}; color: {t['text_primary']};
+                border: 1px solid {t['border_color']}; border-radius: 4px;
+            }}
+            QListWidget#composeLabelList::item {{ padding: 2px 4px; }}
+        """)
+
+    # ---------- 对外接口 ----------
+
+    def video_path(self):
+        return self._video_path
+
+    def images_dir(self):
+        return self._compose_dir
+
+    def has_manifest(self):
+        return self._compose_manifest is not None
+
+    def settings(self):
+        """按 `action` 返回对应参数。
+
+        抽帧：起始为 0 且结束为全片时按「全片」传 None——全片抽帧要读至
+        EOF 核对实际帧数，传显式范围会丢掉这层检查。
+        合成：有清单时只传清单路径（时长以清单为准），没有才传帧率。
+        """
+        if self.action == ACTION_COMPOSE:
+            settings = {
+                "images_dir": self._compose_dir,
+                "output_path": self.compose_out_edit.text(),
+            }
+            if self._compose_manifest is None:
+                settings["output_fps"] = self.compose_fps_spin.value()
+            else:
+                settings["manifest_path"] = self._compose_manifest
+            render = self.render_settings()
+            if render is not None:
+                settings["render"] = render
+            return settings
+
+        start = self.start_spin.value()
+        end = self.end_spin.value()
+        full = start <= 1e-9 and self._info is not None and \
+            abs(end - self._info.duration) <= 1e-6
+        return {
+            "video_path": self._video_path,
+            "target_fps": self.fps_spin.value(),
+            "start": None if full else start,
+            "end": None if full else end,
+            "image_format": self.format_combo.currentText(),
+            "quality": int(self.quality_spin.value()),
+        }
+
+    def validate(self):
+        """按当前动作校验；返回错误文案，通过则返回 None。"""
+        if self.action == ACTION_COMPOSE:
+            if not self._compose_dir:
+                return tr("请先选择图片目录")
+            if self._compose_manifest is None and self.compose_fps_spin.value() <= 0:
+                return tr("每秒几帧必须为正数")
+            return None
+
+        if not self._video_path:
+            return tr("请先选择视频文件")
+        if self._info is None:
+            return self.hint_label.text() or tr("视频文件不存在")
+        if self.fps_spin.value() <= 0:
+            return tr("帧率必须为正数")
+        start, end = self.start_spin.value(), self.end_spin.value()
+        if not (0.0 <= start < end <= self._info.duration + 1e-9):
+            return tr("时间范围非法")
+        return None
+
+    # ---------- 抽帧页 ----------
+
+    def _pick_video(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("选择视频"), self._video_path or "", VIDEO_FILTER)
+        if not path:
+            return
+        self.set_video(path)
+
+    def set_video(self, path):
+        """选好视频后探测并填默认值；探测失败在提示区说明。"""
+        from ..engine import video_io
+
+        self._video_path = path
+        self.path_edit.setText(path)
+        self.path_edit.setToolTip(path)
+        try:
+            self._info = video_io.probe(path)
+        except video_io.VideoError as exc:
+            self._info = None
+            self.hint_label.setText(str(exc))
+            self.info_label.setText("")
+            self.out_edit.setText("")
+            self._sync_extract_enabled()
+            return
+
+        info = self._info
+        self.hint_label.setText("")
+        self.info_label.setText(
+            f"{info.width}×{info.height}  {info.fps:.3f} FPS  "
+            f"{info.frame_count} 帧  {info.duration:.3f} 秒")
+        # 抽帧不重复源帧：上限直接给源帧率，超出会被引擎钳制
+        self.fps_spin.setMaximum(max(0.01, info.fps))
+        self.fps_spin.setValue(min(max(1.0, 0.01), info.fps))
+        self.start_spin.setMaximum(info.duration)
+        self.end_spin.setMaximum(info.duration)
+        self.end_spin.setValue(info.duration)
+        self.out_edit.setText(video_io.output_dir_for(path))
+        self._sync_extract_enabled()
+
+    def _sync_extract_enabled(self):
+        ready = self._info is not None
+        for widget in (self.fps_spin, self.start_spin, self.end_spin,
+                       self.format_combo, self.quality_spin):
+            widget.setEnabled(ready)
+        self.start_btn.setEnabled(ready)
+        self._on_format_changed(self.format_combo.currentText())
+
+    def _on_format_changed(self, text):
+        # png 无损，质量参数只对 jpg 有意义
+        self.quality_spin.setEnabled(
+            self._info is not None and text.lower() in ("jpg", "jpeg"))
+
+    def _on_start_extract(self):
+        self.action = ACTION_EXTRACT
+        message = self.validate()
+        if message:
+            self.hint_label.setText(message)
+            return
+        self.accept()
+
+    # ---------- 合成页 ----------
+
+    def _pick_compose_dir(self):
+        from ..core.config import SUPPORTED_IMAGE_EXTENSIONS  # noqa: F401
+        path = QFileDialog.getExistingDirectory(
+            self, tr("选择图片目录"), self._compose_dir or "")
+        if not path:
+            return
+        self.set_compose_dir(path)
+
+    def set_compose_dir(self, path):
+        """选好目录后自动判断有没有清单，并推导输出路径。"""
+        from ..engine import video_io
+
+        self._compose_dir = path
+        self.compose_dir_edit.setText(path)
+        self.compose_dir_edit.setToolTip(path)
+        self.compose_hint_label.setText("")
+
+        manifest_path = os.path.join(path, video_io.MANIFEST_NAME)
+        self._compose_manifest = None
+        self._compose_plan = None
+
+        if os.path.isfile(manifest_path):
+            try:
+                manifest = video_io.read_manifest(manifest_path)
+            except video_io.VideoError as exc:
+                self.compose_hint_label.setText(str(exc))
+                self.compose_info_label.setText("")
+                self.compose_out_edit.setText("")
+                self._fill_compose_labels([])
+                self._sync_compose_enabled()
+                return
+            self._compose_manifest = manifest_path
+            count = len(manifest.frames)
+            duration = manifest.end_time - manifest.start_time
+            fps = count / duration if duration > 0 else 0.0
+            self.compose_info_label.setText(
+                f"{tr('有清单，按清单合成')}：{count} {tr('张图片')}  "
+                f"{duration:.3f} {tr('秒')}  {fps:.3f} FPS")
+            self._compose_images = [
+                os.path.join(os.path.dirname(os.path.abspath(manifest_path)), f.file)
+                for f in manifest.frames]
+        else:
+            try:
+                images = video_io.list_sequence_images(path)
+            except video_io.VideoError as exc:
+                self.compose_hint_label.setText(str(exc))
+                self.compose_info_label.setText("")
+                self.compose_out_edit.setText("")
+                self._fill_compose_labels([])
+                self._sync_compose_enabled()
+                return
+            self.compose_info_label.setText(
+                f"{tr('没有清单，按下面的帧率合成')}：{len(images)} {tr('张图片')}")
+            self._compose_images = list(images)
+
+        self._load_compose_labels()
+        self.compose_out_edit.setText(self._compose_output_for(path))
+        self._sync_compose_enabled()
+
+    def _load_compose_labels(self):
+        """扫 sidecar 列出可选类别；没有标注就禁用叠加，标注坏了只提示不拦合成。"""
+        from ..engine import video_io
+
+        try:
+            labels = video_io.scan_sidecar_labels(self._compose_images)
+        except video_io.VideoError as exc:
+            self._fill_compose_labels([])
+            self.compose_hint_label.setText(f"{tr('标注读不出来')}：{exc}")
+            return
+        self._fill_compose_labels(labels)
+
+    def _fill_compose_labels(self, labels):
+        """重建类别列表；有标注时主开关默认打开（用户就是要看框）。"""
+        self.compose_label_list.clear()
+        for label, count in (labels or {}).items():
+            item = QListWidgetItem(f"{label} ({count})")
+            item.setData(Qt.UserRole, label)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked)
+            self.compose_label_list.addItem(item)
+        self.compose_overlay_check.setChecked(bool(labels))
+
+    def _check_all_labels(self, checked):
+        state = Qt.Checked if checked else Qt.Unchecked
+        for index in range(self.compose_label_list.count()):
+            self.compose_label_list.item(index).setCheckState(state)
+
+    def _on_overlay_toggled(self, _state=None):
+        self._sync_compose_enabled()
+
+    def selected_labels(self):
+        """勾选的类别名列表（顺序跟列表一致）。"""
+        chosen = []
+        for index in range(self.compose_label_list.count()):
+            item = self.compose_label_list.item(index)
+            if item.checkState() == Qt.Checked:
+                chosen.append(item.data(Qt.UserRole))
+        return chosen
+
+    def _compose_output_for(self, images_dir):
+        """输出视频路径：图片目录同级，`<目录名>.mp4`；重名时加序号。"""
+        parent = os.path.dirname(os.path.abspath(images_dir))
+        stem = os.path.basename(os.path.abspath(images_dir)) or "compose"
+        candidate = os.path.join(parent, f"{stem}.mp4")
+        index = 2
+        while os.path.exists(candidate):
+            candidate = os.path.join(parent, f"{stem}_{index}.mp4")
+            index += 1
+        return candidate
+
+    def _sync_compose_enabled(self):
+        ready = bool(self._compose_dir) and (
+            self._compose_manifest is not None or bool(self.compose_info_label.text()))
+        # 有清单时不用填帧率：时长以清单为准，填了也不采用
+        self.compose_fps_spin.setEnabled(ready and self._compose_manifest is None)
+        self.compose_btn.setEnabled(ready)
+
+        # 叠加：没标注就没得画；关掉主开关时子选项一并禁用，避免误以为还在画
+        has_labels = self.compose_label_list.count() > 0
+        self.compose_overlay_check.setEnabled(ready and has_labels)
+        if not has_labels:
+            self.compose_overlay_check.setChecked(False)
+        overlay = ready and has_labels and self.compose_overlay_check.isChecked()
+        for widget in (self.compose_label_list, self.compose_all_btn,
+                       self.compose_none_btn, self.compose_show_label_check,
+                       self.compose_show_score_check):
+            widget.setEnabled(overlay)
+
+    def render_settings(self):
+        """叠加参数；不叠加（或没有类别可选）时返回 None。
+
+        `labels` 用列表而不是集合：空列表 = 一个都不画，与 None（全画）
+        区分开，引擎那边靠这个区分。
+        """
+        if not self.compose_overlay_check.isEnabled():
+            return None
+        if not self.compose_overlay_check.isChecked():
+            return None
+        return {
+            "labels": self.selected_labels(),
+            "show_labels": self.compose_show_label_check.isChecked(),
+            "show_scores": self.compose_show_score_check.isChecked(),
+        }
+
+    def _on_start_compose(self):
+        self.action = ACTION_COMPOSE
+        message = self.validate()
+        if message:
+            self.compose_hint_label.setText(message)
+            return
+        self.accept()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        center_on_parent(self, self.parent())
+        sync_titlebar(self)

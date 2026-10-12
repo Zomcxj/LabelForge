@@ -13,7 +13,7 @@ PasteLabel/
 ├── requirements-dev.txt       # 开发与测试依赖
 ├── requirements-build.txt     # PyInstaller 构建依赖
 ├── README.md                  # 项目说明
-├── LICENSE                    # MIT 许可证
+├── LICENSE                    # GNU GPL v3.0 许可证（GPL-3.0-only）
 ├── ico_image/                 # 图标、演示图和字体资源
 ├── .github/
 │   └── workflows/

@@ -355,7 +355,8 @@ def test_beijing_timestamp_ignores_the_local_timezone():
     )
     env = dict(os.environ, TZ="America/New_York", PYTHONPATH=str(ROOT))
     out = subprocess.run([sys.executable, "-c", script], capture_output=True,
-                         text=True, env=env, timeout=60)
+                         text=True, env=env, timeout=60,
+                         encoding="utf-8", errors="replace")
     assert out.returncode == 0, out.stderr
     # 与当场算出的 UTC+8 时刻只差几秒，说明用的是固定偏移而不是本机时区
     from pastelabel.engine.inference_task import beijing_timestamp

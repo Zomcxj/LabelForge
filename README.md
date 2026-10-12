@@ -87,6 +87,8 @@ pip install -r requirements.txt
 `requirements.txt` 含 `onnxruntime`（CPU）。需要 GPU 推理时用 `onnxruntime-gpu` 替换该行，
 并确保 CUDA/cuDNN 版本匹配；两个包都导入为 `onnxruntime`，不要同时安装。
 
+视频编解码依赖默认使用 `opencv-python-headless`。它与 `opencv-python`、contrib 版本共用 `cv2` 命名空间，同一环境只安装一种；已有可用官方 OpenCV 的环境可直接复用，安装依赖前应避免再装另一种发行包。
+
 Windows 深色标题栏依赖 `ffi.dll`。使用 `conda` 环境时，该文件通常在：
 
 ```text
@@ -136,7 +138,7 @@ pytest tests/ -v
 
 ## 许可证
 
-MIT License
+本项目采用 [GNU General Public License v3.0](./LICENSE)（`GPL-3.0-only`），与参考项目 X-AnyLabeling 的许可证版本一致。
 
 Copyright (c) 2026 Zomcxj
 

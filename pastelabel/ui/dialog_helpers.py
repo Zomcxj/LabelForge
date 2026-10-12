@@ -255,3 +255,16 @@ def warning(parent, title, text):
     if btn:
         btn.setText(i18n.t("确定"))
     return box.exec_()
+
+
+def information(parent, title, text):
+    """信息提示（与 warning 同一套主题与按钮文案）。"""
+    box = ThemedMessageBox(parent)
+    box.setIcon(QMessageBox.Information)
+    box.setWindowTitle(i18n.t(title))
+    box.setText(text)
+    box.setStandardButtons(QMessageBox.Ok)
+    btn = box.button(QMessageBox.Ok)
+    if btn:
+        btn.setText(i18n.t("确定"))
+    return box.exec_()

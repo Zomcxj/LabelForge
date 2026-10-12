@@ -36,17 +36,18 @@ class ModelRow(QWidget):
         layout.setContentsMargins(8, 3, 8, 3)
         layout.setSpacing(6)
 
-        self.name_label = QLabel("")
-        self.name_label.setObjectName("modelRowName")
-        self._model_name = ""
-        layout.addWidget(self.name_label)
-
+        # 顺序与视频抽帧行一致：先按钮、后名字
         self.load_btn = QPushButton(tr("加载模型"))
         self.load_btn.setObjectName("optionsBtn")
         self.load_btn.setFixedHeight(24)
         self.load_btn.setToolTip(tr("加载 ONNX 模型"))
         self.load_btn.clicked.connect(self.load_requested.emit)
         layout.addWidget(self.load_btn)
+
+        self.name_label = QLabel("")
+        self.name_label.setObjectName("modelRowName")
+        self._model_name = ""
+        layout.addWidget(self.name_label)
 
         self.conf_lbl = QLabel(tr("置信度"))
         layout.addWidget(self.conf_lbl)

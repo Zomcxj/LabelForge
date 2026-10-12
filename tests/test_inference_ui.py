@@ -1030,6 +1030,7 @@ def _run_real_qt(script):
     result = subprocess.run(
         [sys.executable, "-c", script + _QT_EXIT_GUARD],
         cwd=ROOT, env=env, text=True, capture_output=True,
+        encoding="utf-8", errors="replace",
     )
     assert result.returncode == 0, result.stderr
     return result.stdout

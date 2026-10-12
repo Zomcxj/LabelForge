@@ -152,14 +152,23 @@ def test_runtime_name_set_covers_both_conflicting_libraries():
 # ---------- hiddenimports 必须真的存在 ----------
 
 def _hidden_imports(rel):
-    """取出 spec/脚本里 hiddenimports 列表里的模块名（忽略注释与其它字符串）。"""
+    """取出 spec/脚本里所有 hiddenimports 列表里的模块名（忽略注释与其它字符串）。
+
+    spec 里有两个列表：`_extra_hiddenimports`（第 18 行）与主列表
+    `hiddenimports=_extra_hiddenimports + [...]`。只读第一个会把加在主列表
+    里的模块当成缺失，也会漏检主列表里的失效模块名（widgets 等只写在主列表）。
+    """
     source = (ROOT / rel).read_text(encoding="utf-8")
-    block = re.search(r"hiddenimports\s*=\s*\[(.*?)\]", source, re.S)
-    assert block, rel
+    # 逐个 hiddenimports 赋值点，各自吃它后面的第一个方括号块
     names = []
-    for line in block.group(1).splitlines():
-        # 一行里可能写多个模块名，全部取出来
-        names.extend(re.findall(r"""['"]([\w.]+)['"]""", line.split("#", 1)[0]))
+    for match in re.finditer(r"hiddenimports\s*=", source):
+        block = re.search(r"\[(.*?)\]", source[match.end():], re.S)
+        if not block:
+            continue
+        for line in block.group(1).splitlines():
+            # 一行里可能写多个模块名，全部取出来
+            names.extend(re.findall(r"""['"]([\w.]+)['"]""", line.split("#", 1)[0]))
+    assert names, rel
     return names
 
 
@@ -172,7 +181,9 @@ def test_hidden_imports_point_to_existing_modules(rel):
             continue
         path = ROOT / (name.replace(".", os.sep) + ".py")
         package = ROOT / name.replace(".", os.sep) / "__init__.py"
-        if not path.exists() and not package.exists():
+        # 命名空间包没有 __init__.py（pastelabel/widgets 就是），但目录存在即可导入
+        namespace = (ROOT / name.replace(".", os.sep)).is_dir()
+        if not path.exists() and not package.exists() and not namespace:
             missing.append(name)
     assert not missing, f"{rel} 里这些模块已不存在: {missing}"
 
@@ -189,3 +200,93 @@ def test_hidden_imports_cover_inference_modules(rel):
                  "pastelabel.ui.inference_workers",
                  "pastelabel.ui.inference_progress"):
         assert name in names, f"{rel} 缺少 {name}"
+
+
+@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+def test_hidden_imports_cover_video_modules(rel):
+    """视频抽帧的懒加载模块必须显式声明，否则打包后点「视频抽帧」才炸。
+
+    这三个模块都不在 main_window 的模块级导入链上（cv2 与对话框都是函数内
+    导入），漏了不会在启动时报错。
+    """
+    names = set(_hidden_imports(rel))
+    for name in ("pastelabel.engine.video_io",
+                 "pastelabel.engine.video_render",
+                 "pastelabel.ui.video_dialog",
+                 "pastelabel.ui.mixins.video"):
+        assert name in names, f"{rel} 缺少 {name}"
+
+
+# ---------- 视频依赖（cv2）接线 ----------
+
+def _excludes(rel):
+    """取出 spec/脚本里 excludes 列表里的模块名。"""
+    source = (ROOT / rel).read_text(encoding="utf-8")
+    block = re.search(r"excludes\s*=\s*\[(.*?)\]", source, re.S)
+    assert block, rel
+    return set(re.findall(r"""['"]([\w.]+)['"]""", block.group(1)))
+
+
+@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+def test_build_entries_collect_cv2(rel):
+    """cv2 是函数内延迟导入，两个构建入口都要显式收集且不能留在 excludes。
+
+    留在 excludes 时打包不报错，但 exe 里点视频功能才炸；只改一处则另一条
+    构建路径仍然缺模块。
+    """
+    assert "cv2" in set(_hidden_imports(rel)), f"{rel} 的 hiddenimports 缺 cv2"
+    assert "cv2" not in _excludes(rel), f"{rel} 的 excludes 仍在排除 cv2"
+
+
+@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+def test_build_entries_bundle_license_file(rel):
+    """GPL 要求随产物分发许可证正文，两个入口都要把 LICENSE 打进包。"""
+    source = (ROOT / rel).read_text(encoding="utf-8")
+    assert "'LICENSE'" in source, f"{rel} 没有把 LICENSE 加进 datas"
+
+
+def test_requirements_install_headless_opencv_only():
+    """requirements 只声明 headless 发行包：四种 OpenCV 共用 cv2，不能混装。
+
+    版本上限钉在 4.11 之前：本机开发用的是 opencv-python 4.10.0.84，只有钉到
+    4.10 这个次版本，CI 装的底层 OpenCV 才与本机完全相同（放开到 <5 会装到
+    4.14，本地验证过的用例在 CI 就没有同等含义了）。
+    """
+    source = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    lines = [line.strip() for line in source.splitlines()]
+    declared = [line for line in lines if line and not line.startswith("#")]
+    assert "opencv-python-headless>=4.10,<4.11" in declared
+    for line in declared:
+        assert not re.match(r"^opencv-python(?!-headless)", line), line
+        assert not re.match(r"^opencv-contrib", line), line
+
+
+def test_ci_pins_same_opencv_major_as_local():
+    """CI 装的 OpenCV 必须与本机同版本，否则本地绿、CI 红时无从判断是谁的问题。"""
+    test_yml = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
+    build_yml = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    assert "opencv-python-headless>=4.10,<4.11" in test_yml
+    assert "opencv-python-headless>=4.10,<4.11" in build_yml
+
+
+def test_ci_installs_video_dependency_and_caches_pip():
+    """CI 必须真装 cv2（不许靠 skip 拿绿），并配置依赖缓存。"""
+    test_yml = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
+    build_yml = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    assert "opencv-python-headless" in test_yml
+    assert "cache: pip" in test_yml
+    assert "opencv-python-headless" in build_yml
+    # Linux 构建在 Docker 里跑，缓存目录必须挂进容器才有效
+    assert "/root/.cache/pip" in build_yml
+
+
+def test_license_is_gpl3_and_docs_agree():
+    """许可证正文与文档口径一致，避免仓库里同时出现两种说法。"""
+    license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+    assert license_text.lstrip().startswith("GNU GENERAL PUBLIC LICENSE")
+    assert "Version 3, 29 June 2007" in license_text
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    structure = (ROOT / "docs/project_structure.md").read_text(encoding="utf-8")
+    assert "GPL-3.0-only" in readme
+    assert "MIT License" not in readme
+    assert "GPL" in structure and "MIT" not in structure

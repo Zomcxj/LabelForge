@@ -145,3 +145,79 @@ def read_saved_class_names(path):
     if not path or not os.path.isfile(path):
         return []
     return read_class_names(path)
+
+
+class VideoExtractWorker(QThread):
+    """后台抽帧。progress: (done, total)；完成后带回 ExtractionResult。"""
+    progress = pyqtSignal(int, int)
+    finished_ok = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+    def __init__(self, video_path, target_fps, start=None, end=None,
+                 image_format="jpg", quality=95, parent=None):
+        super().__init__(parent)
+        self._video_path = video_path
+        self._target_fps = target_fps
+        self._start = start
+        self._end = end
+        self._image_format = image_format
+        self._quality = quality
+        self._cancelled = False
+
+    def run(self):
+        from ..engine import video_io
+        try:
+            result = video_io.extract_frames(
+                self._video_path, self._target_fps,
+                start=self._start, end=self._end,
+                image_format=self._image_format, quality=self._quality,
+                cancel=lambda: self._cancelled,
+                progress=self.progress.emit,
+            )
+            self.finished_ok.emit(result)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+    def cancel(self):
+        self._cancelled = True
+
+
+class VideoComposeWorker(QThread):
+    """后台合成（④B）。progress: (done, total)；完成后带回 ComposeResult。
+
+    有清单时按清单时长合成（不用帧率），没有清单才用 `output_fps`。
+    `render` 给一个 `video_render.RenderSpec` 时在画面上叠加标签框；
+    类别色必须由主线程预先取好放进 spec，后台不能去读 editor 的取色。
+    """
+    progress = pyqtSignal(int, int)
+    finished_ok = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+    def __init__(self, output_path, manifest_path=None, images_dir=None,
+                 output_fps=None, render=None, parent=None):
+        super().__init__(parent)
+        self._output_path = output_path
+        self._manifest_path = manifest_path
+        self._images_dir = images_dir
+        self._output_fps = output_fps
+        self._render = render
+        self._cancelled = False
+
+    def run(self):
+        from ..engine import video_io
+        try:
+            result = video_io.compose_video(
+                manifest_path=self._manifest_path,
+                images_dir=self._images_dir,
+                output_path=self._output_path,
+                output_fps=self._output_fps,
+                render=self._render,
+                cancel=lambda: self._cancelled,
+                progress=self.progress.emit,
+            )
+            self.finished_ok.emit(result)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+    def cancel(self):
+        self._cancelled = True

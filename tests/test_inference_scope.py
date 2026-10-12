@@ -1,0 +1,373 @@
+"""滑窗 / 区域推理的范围枚举、ROI 过滤与结果合并（纯逻辑，不依赖 Qt 与 cv2）。
+
+坐标约定：`OnnxDetector.detect()` 接收裁剪后的 RGB，返回的框已在**该裁剪图**
+坐标下（它自己完成 letterbox 逆变换并钳到输入尺寸）。所以 scope 只负责
+「加原图像素偏移 + 按类别 NMS」，不能在除以 scale 前加偏移。
+"""
+import numpy as np
+import pytest
+
+from pastelabel.engine.augmenter.crop import MAX_WINDOW
+from pastelabel.engine.inference_scope import (
+    ScopeError, iter_regions, iter_windows, merge_scope_results,
+    normalize_scope, region_bbox, region_contains_box_center,
+)
+
+
+# ---------- 窗口枚举 ----------
+
+def test_iter_windows_baseline_4k_grid():
+    """3840×2160、640×640、重叠 200 → 9×5 = 45 窗（计划 §3.4 的验收数字）。"""
+    windows = iter_windows(3840, 2160, {"w": 640, "h": 640, "overlap": 200})
+
+    assert len(windows) == 45
+    xs = sorted({w[0] for w in windows})
+    ys = sorted({w[1] for w in windows})
+    assert len(xs) == 9 and len(ys) == 5
+    assert xs[0] == 0 and ys[0] == 0
+
+
+def test_iter_windows_stay_inside_image():
+    """末窗贴边、不越界：每个窗口都在图内。"""
+    windows = iter_windows(1000, 700, {"w": 300, "h": 300, "overlap": 100})
+
+    for x, y, w, h in windows:
+        assert x >= 0 and y >= 0
+        assert x + w <= 1000 and y + h <= 700
+
+
+def test_iter_windows_last_window_flush_to_edge():
+    """末窗贴边：最后一个窗口的右/下边正好落在图像边界。"""
+    windows = iter_windows(1000, 700, {"w": 300, "h": 300, "overlap": 100})
+
+    assert max(x + w for x, y, w, h in windows) == 1000
+    assert max(y + h for x, y, w, h in windows) == 700
+
+
+def test_iter_windows_window_larger_than_image_becomes_single_window():
+    """窗口 ≥ 图边时缩为整图，只有一个窗口。"""
+    windows = iter_windows(200, 150, {"w": 640, "h": 640, "overlap": 200})
+
+    assert windows == [(0, 0, 200, 150)]
+
+
+def test_iter_windows_zero_overlap():
+    """重叠 0 时按步长整除铺开，不重叠。"""
+    windows = iter_windows(900, 300, {"w": 300, "h": 300, "overlap": 0})
+
+    assert sorted(windows) == [(0, 0, 300, 300), (300, 0, 300, 300), (600, 0, 300, 300)]
+
+
+def test_iter_windows_uneven_remainder_is_distributed():
+    """不整除时余量均摊，间距不超过窗口尺寸（保证无空隙）。"""
+    windows = iter_windows(1000, 300, {"w": 300, "h": 300, "overlap": 0})
+
+    xs = sorted({x for x, y, w, h in windows})
+    assert xs == [0, 233, 467, 700]          # round(i*700/3)
+    assert all(b - a <= 300 for a, b in zip(xs, xs[1:]))
+
+
+def test_iter_windows_overlap_clamped_below_window_size():
+    """重叠被钳到 min(cw,ch)-1 以内，不能等于或超过窗口尺寸。"""
+    windows = iter_windows(1000, 1000, {"w": 300, "h": 300, "overlap": 999})
+
+    for x, y, w, h in windows:
+        assert w == 300 and h == 300
+    xs = sorted({x for x, y, w, h in windows})
+    assert len(xs) >= 2
+
+
+def test_iter_windows_rejects_non_positive_size():
+    """窗口尺寸必须为正整数。"""
+    for spec in ({"w": 0, "h": 640, "overlap": 0},
+                 {"w": 640, "h": 0, "overlap": 0},
+                 {"w": -10, "h": 640, "overlap": 0}):
+        with pytest.raises(ScopeError):
+            iter_windows(1000, 1000, spec)
+
+
+def test_iter_windows_rejects_size_above_max_window():
+    """窗口尺寸上限沿用 MAX_WINDOW。"""
+    with pytest.raises(ScopeError):
+        iter_windows(100000, 100000, {"w": MAX_WINDOW + 1, "h": 640, "overlap": 0})
+
+
+def test_iter_windows_rejects_negative_overlap():
+    """重叠不能为负。"""
+    with pytest.raises(ScopeError):
+        iter_windows(1000, 1000, {"w": 300, "h": 300, "overlap": -1})
+
+
+def test_iter_windows_rejects_non_positive_image():
+    """图像尺寸无效时报错，不返回空列表冒充成功。"""
+    for iw, ih in ((0, 100), (100, 0), (-5, 100)):
+        with pytest.raises(ScopeError):
+            iter_windows(iw, ih, {"w": 300, "h": 300, "overlap": 0})
+
+
+# ---------- ROI ----------
+
+def test_region_bbox_for_rectangle():
+    """矩形 ROI 的外接矩形就是它自己。"""
+    bbox = region_bbox({"shape_type": "rectangle", "x": 10, "y": 20,
+                        "width": 100, "height": 50})
+
+    assert bbox == (10.0, 20.0, 110.0, 70.0)
+
+
+def test_region_bbox_for_polygon_uses_points_not_stale_xy():
+    """多边形取 points 的外接矩形，不用可能过期的 x/y/width/height。"""
+    bbox = region_bbox({"shape_type": "polygon", "x": 0, "y": 0,
+                        "width": 1, "height": 1,
+                        "points": [[30, 40], [90, 45], [85, 120], [25, 110]]})
+
+    assert bbox == (25.0, 40.0, 90.0, 120.0)
+
+
+def test_region_bbox_rejects_degenerate_and_non_finite():
+    """退化（面积 0）与非有限坐标拒绝。"""
+    for region in (
+        {"shape_type": "rectangle", "x": 10, "y": 10, "width": 0, "height": 50},
+        {"shape_type": "rectangle", "x": 10, "y": 10, "width": 50, "height": 0},
+        {"shape_type": "polygon", "points": [[0, 0], [10, 10]]},          # 顶点不足
+        {"shape_type": "polygon", "points": [[0, 0], [0, 0], [0, 0]]},    # 零面积
+        {"shape_type": "rectangle", "x": float("nan"), "y": 0,
+         "width": 10, "height": 10},
+        {"shape_type": "polygon", "points": [[0, 0], [float("inf"), 1], [1, 1]]},
+    ):
+        with pytest.raises(ScopeError):
+            region_bbox(region)
+
+
+def test_iter_regions_clips_to_image_and_keeps_polygon():
+    """区域裁剪到图内；多边形保留顶点供掩膜与中心判定使用。"""
+    regions = iter_regions(
+        [{"shape_type": "rectangle", "x": -20, "y": -10, "width": 100, "height": 100}],
+        image_size=(64, 48))
+
+    assert len(regions) == 1
+    region = regions[0]
+    assert region.bbox == (0.0, 0.0, 64.0, 48.0)
+    assert region.points is None
+
+
+def test_iter_regions_rejects_empty_list():
+    """选 ROI 范围却没有 ROI 必须报错，不能返回空列表。"""
+    with pytest.raises(ScopeError):
+        iter_regions([], image_size=(64, 48))
+
+
+def test_iter_regions_rejects_no_intersection_with_image():
+    """ROI 与目标图没有有效交集时报错（不能返回空范围）。"""
+    with pytest.raises(ScopeError):
+        iter_regions(
+            [{"shape_type": "rectangle", "x": 500, "y": 500,
+              "width": 10, "height": 10}],
+            image_size=(64, 48))
+
+
+def test_iter_regions_multiple_regions_kept_in_order():
+    """多个 ROI 逐个保留，顺序与输入一致；超出图高的部分裁到图内。"""
+    regions = iter_regions([
+        {"shape_type": "rectangle", "x": 0, "y": 0, "width": 20, "height": 20},
+        {"shape_type": "rectangle", "x": 30, "y": 30, "width": 20, "height": 20},
+    ], image_size=(64, 48))
+
+    assert [r.bbox for r in regions] == [(0.0, 0.0, 20.0, 20.0),
+                                        (30.0, 30.0, 50.0, 48.0)]
+
+
+# ---------- ROI 中心过滤 ----------
+
+def test_region_contains_box_center_rectangle_includes_edges():
+    """矩形 ROI 含边界：中心正好落在边上算在内。"""
+    region = iter_regions(
+        [{"shape_type": "rectangle", "x": 10, "y": 10, "width": 40, "height": 40}],
+        image_size=(64, 48))[0]
+
+    assert region_contains_box_center(region, {"x": 10, "y": 10, "width": 10, "height": 10})
+    assert region_contains_box_center(region, {"x": 40, "y": 40, "width": 10, "height": 10})
+    assert not region_contains_box_center(region, {"x": 0, "y": 0, "width": 10, "height": 10})
+
+
+def test_region_contains_box_center_polygon_edges_and_vertices():
+    """多边形 ROI 含边界与顶点（ray-casting 不含边界，须单独判）。"""
+    region = iter_regions(
+        [{"shape_type": "polygon",
+          "points": [[0, 0], [60, 0], [60, 40], [0, 40]]}],
+        image_size=(64, 48))[0]
+
+    # 中心落在左边上、顶点上、上边中点上都算在内
+    assert region_contains_box_center(region, {"x": -5, "y": 18, "width": 10, "height": 10})
+    assert region_contains_box_center(region, {"x": -5, "y": -5, "width": 10, "height": 10})
+    assert region_contains_box_center(region, {"x": 25, "y": -5, "width": 10, "height": 10})
+    # 明确在外面的不算
+    assert not region_contains_box_center(region, {"x": 100, "y": 100, "width": 10, "height": 10})
+
+
+def test_region_contains_box_center_concave_polygon():
+    """凹多边形：凹口里的点不算在内。"""
+    region = iter_regions(
+        [{"shape_type": "polygon",
+          "points": [[0, 0], [60, 0], [60, 40], [30, 10], [0, 40]]}],
+        image_size=(64, 48))[0]
+
+    # 中心 (30, 30) 落在凹口内 → 不在 ROI
+    assert not region_contains_box_center(region, {"x": 25, "y": 25, "width": 10, "height": 10})
+    # 中心 (10, 10) 在实体部分 → 在内
+    assert region_contains_box_center(region, {"x": 5, "y": 5, "width": 10, "height": 10})
+
+
+# ---------- 范围归一化 ----------
+
+def test_normalize_scope_none_means_full_image():
+    """scope=None 表示全图，保持既有行为。"""
+    assert normalize_scope(None, image_size=(64, 48)) is None
+
+
+def test_normalize_scope_requires_regions_for_roi_modes():
+    """区域范围必须带 ROI；缺失/空表都报错。"""
+    for mode in ("roi", "roi_window"):
+        with pytest.raises(ScopeError):
+            normalize_scope({"mode": mode, "regions": []}, image_size=(64, 48))
+        with pytest.raises(ScopeError):
+            normalize_scope({"mode": mode}, image_size=(64, 48))
+
+
+def test_normalize_scope_window_mode_requires_window_spec():
+    """滑窗范围必须带窗口参数。"""
+    with pytest.raises(ScopeError):
+        normalize_scope({"mode": "window"}, image_size=(64, 48))
+
+
+def test_normalize_scope_rejects_unknown_mode():
+    """未知范围模式报错，不静默退回全图。"""
+    with pytest.raises(ScopeError):
+        normalize_scope({"mode": "随便"}, image_size=(64, 48))
+
+
+def test_normalize_scope_rejects_unknown_keys():
+    """多余字段报错，避免把拼错的字段静默忽略。"""
+    with pytest.raises(ScopeError):
+        normalize_scope({"mode": "window", "windows": {"w": 640, "h": 640,
+                                                       "overlap": 200},
+                         "widnow": 1}, image_size=(64, 48))
+
+
+def test_normalize_scope_deep_copies_regions():
+    """ROI 深拷贝：后台任务不能读到正在被编辑的列表。"""
+    source = [{"shape_type": "polygon",
+               "points": [[0, 0], [60, 0], [60, 40]], "x": 0, "y": 0,
+               "width": 60, "height": 40}]
+
+    scope = normalize_scope({"mode": "roi", "regions": source}, image_size=(64, 48))
+
+    source[0]["points"][0][0] = 999
+    assert scope["regions"][0]["points"][0][0] == 0
+
+
+# ---------- 合并与去重 ----------
+
+def _box(x, y, w, h, label="cat", score=0.9, class_id=0):
+    return {"x": float(x), "y": float(y), "width": float(w), "height": float(h),
+            "label": label, "score": score, "class_id": class_id}
+
+
+def test_merge_offsets_added_exactly_once():
+    """偏移只加一次：窗口 (100, 200) 内的框平移到原图坐标。"""
+    merged = merge_scope_results([(100, 200, [_box(10, 20, 30, 40)])])
+
+    assert len(merged) == 1
+    assert (merged[0]["x"], merged[0]["y"]) == (110.0, 220.0)
+    assert (merged[0]["width"], merged[0]["height"]) == (30.0, 40.0)
+
+
+def test_merge_offsets_are_not_scaled():
+    """偏移在缩放之后加：不能出现 (x*scale + offset) 这类二次变换。
+
+    窗口偏移 100、框坐标 50、scale 无关——结果必须是 150，不是 100+50*scale。
+    """
+    merged = merge_scope_results([(100, 0, [_box(50, 0, 10, 10)])])
+
+    assert merged[0]["x"] == 150.0
+
+
+def test_merge_roi_plus_window_offsets_accumulate():
+    """ROI+滑窗：ROI 偏移与窗口偏移都要加，各加一次。"""
+    merged = merge_scope_results([(300 + 100, 200 + 50, [_box(10, 10, 20, 20)])])
+
+    assert (merged[0]["x"], merged[0]["y"]) == (410.0, 260.0)
+
+
+def test_merge_drops_same_class_duplicates_across_windows():
+    """跨窗同类重复被按类 NMS 去掉。"""
+    merged = merge_scope_results([
+        (0, 0, [_box(100, 100, 50, 50)]),
+        (10, 0, [_box(90, 100, 50, 50)]),        # 偏移后与上一个几乎重合
+    ])
+
+    assert len(merged) == 1
+
+
+def test_merge_keeps_different_classes_even_when_overlapping():
+    """不同类的高重合框必须保留（类别参与去重）。"""
+    merged = merge_scope_results([
+        (0, 0, [_box(100, 100, 50, 50, label="cat", class_id=0)]),
+        (0, 0, [_box(100, 100, 50, 50, label="dog", class_id=1)]),
+    ])
+
+    assert len(merged) == 2
+    assert {b["label"] for b in merged} == {"cat", "dog"}
+
+
+def test_merge_keeps_separate_same_class_boxes():
+    """同类但不重合的框都保留。"""
+    merged = merge_scope_results([
+        (0, 0, [_box(0, 0, 20, 20)]),
+        (0, 0, [_box(500, 500, 20, 20)]),
+    ])
+
+    assert len(merged) == 2
+
+
+def test_merge_clips_to_image_bounds():
+    """合并后钳到原图：窗口内贴近边缘的框不能越出图像。"""
+    merged = merge_scope_results([(60, 40, [_box(0, 0, 20, 20)])],
+                                 image_size=(64, 48))
+
+    assert (merged[0]["x"], merged[0]["y"]) == (60.0, 40.0)
+    assert merged[0]["width"] == 4.0 and merged[0]["height"] == 8.0
+
+
+def test_merge_drops_boxes_entirely_outside_image():
+    """完全落在图外的框丢弃。"""
+    merged = merge_scope_results([(200, 200, [_box(0, 0, 20, 20)])],
+                                 image_size=(64, 48))
+
+    assert merged == []
+
+
+def test_merge_empty_input():
+    """空输入返回空列表。"""
+    assert merge_scope_results([]) == []
+    assert merge_scope_results([(0, 0, [])]) == []
+
+
+def test_merge_sorted_by_score_descending():
+    """结果按置信度降序，便于界面与写盘稳定。"""
+    merged = merge_scope_results([
+        (0, 0, [_box(0, 0, 10, 10, score=0.3)]),
+        (100, 0, [_box(0, 0, 10, 10, score=0.9)]),
+    ])
+
+    assert [b["score"] for b in merged] == [0.9, 0.3]
+
+
+def test_merge_respects_iou_threshold():
+    """IoU 阈值生效：阈值极高时不合并。"""
+    boxes = [
+        (0, 0, [_box(100, 100, 50, 50)]),
+        (0, 0, [_box(105, 100, 50, 50)]),
+    ]
+    assert len(merge_scope_results(boxes, iou_threshold=0.99)) == 2
+    assert len(merge_scope_results(boxes, iou_threshold=0.45)) == 1

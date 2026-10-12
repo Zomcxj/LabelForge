@@ -1,8 +1,4 @@
 """Main window layout regressions (canvas vs side panel)."""
-import os
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout
 
