@@ -252,6 +252,25 @@ def test_build_entries_collect_cv2(rel):
     assert "cv2" not in _excludes(rel), f"{rel} 的 excludes 仍在排除 cv2"
 
 
+def test_build_script_checks_runtime_dependencies_before_building():
+    """build.sh 必须在打包前自检依赖，缺 cv2 就直接失败。
+
+    踩过的坑：Windows 上脚本优先用 PATH 里的 `python`，本机那是没装 cv2 的
+    base conda。PyInstaller 遇到缺模块**不报错**，只是静默不收——打出的 exe
+    能启动、图片推理正常，点视频才报缺 cv2。产物大小也会明显偏小。
+    """
+    source = (ROOT / "build.sh").read_text(encoding="utf-8")
+
+    assert "check_python_deps" in source
+    # 四个运行时依赖都要查：cv2 漏收最隐蔽，其余缺了会当场炸但也一并挡掉
+    for name in ("cv2", "PyQt5", "numpy", "onnxruntime"):
+        assert name in source, name
+    # 自检必须在真正调用 PyInstaller 之前（第 350 行那处 echo "$PYINSTALLER_CMD"）
+    check_at = source.index("check_python_deps cv2")
+    build_at = source.index('echo "$PYINSTALLER_CMD')
+    assert check_at < build_at, "依赖自检必须在打包之前"
+
+
 @pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
 def test_build_entries_bundle_license_file(rel):
     """GPL 要求随产物分发许可证正文，两个入口都要把 LICENSE 打进包。"""

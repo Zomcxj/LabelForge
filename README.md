@@ -120,6 +120,12 @@ bash build.sh
 
 自动检测平台，调用 PyInstaller 打包为单文件 exe，输出 `dist/PasteLabel.exe`。Windows 下自动处理 ffi.dll 依赖。
 
+**用哪个 Python 构建很重要**：脚本默认取 PATH 里的 `python`，多环境机器上未必装了全部依赖。缺依赖时 PyInstaller 不报错、只是静默不收集，打出的 exe 照样能启动，点视频功能才报缺 `cv2`。脚本现在会在打包前自检 `cv2` / `PyQt5` / `numpy` / `onnxruntime`，缺哪个直接失败并打印当前解释器路径；用别的解释器构建请显式指定：
+
+```bash
+PYTHON=/path/to/python bash build.sh
+```
+
 Windows 上还会统一包内的 MSVC 运行库版本：PyQt5、JDK 与 conda 各自带着一份版本不同的 `msvcp140.dll` / `vcruntime140*.dll`，混装会让 ONNX Runtime 在初始化时直接崩溃。构建脚本按文件取版本最新的那一份替换（见 `pastelabel/build_support.py`），Linux 上该步骤为空操作。
 
 ### 使用 spec 文件（手动）

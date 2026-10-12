@@ -119,6 +119,29 @@ fi
 log_info "PyInstaller 命令: $PYINSTALLER_CMD"
 log_info "Python optimize:  $PYTHON_OPTIMIZE"
 
+# ==================== 依赖自检 ====================
+# 缺依赖时 PyInstaller 只会在分析阶段静默跳过该模块，打出的 exe 照样能启动，
+# 直到用户点「视频」才报缺 cv2。这里提前查，让构建直接失败。
+check_python_deps() {
+    local missing=""
+    local name
+    for name in "$@"; do
+        if ! "$PYTHON_CMD" -c "import $name" 2>/dev/null; then
+            missing="$missing $name"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        log_error "当前 Python 缺少依赖:$missing"
+        log_error "解释器: $("$PYTHON_CMD" -c 'import sys; print(sys.executable)')"
+        log_error "请用装好依赖的解释器构建，例如:"
+        log_error "  PYTHON=/path/to/python ./build.sh"
+        exit 1
+    fi
+    log_ok "依赖自检通过 (cv2/PyQt5/numpy/onnxruntime)"
+}
+
+check_python_deps cv2 PyQt5 numpy onnxruntime
+
 # ==================== 构建辅助函数 ====================
 ensure_output_not_locked() {
     # Windows 下如果 dist/PasteLabel.exe 正在运行，PyInstaller 在覆盖输出文件时会报：
