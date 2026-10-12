@@ -416,11 +416,44 @@ class InferenceMixin:
             progress.set_total(len(paths))
             progress.cancelled.connect(worker.cancel)
             worker.progress.connect(progress.set_progress)
+            # 逐张写盘：跑完一张就落地一张，json 一张张出来、圆点逐个变绿，
+            # 取消或崩溃时已完成的图不会白跑。
+            worker.result_ready.connect(self._on_result_ready)
             worker.finished_ok.connect(self._on_batch_finished)
             progress.show()
         worker.failed.connect(self._on_inference_failed)
         worker.finished.connect(lambda w=worker: self._cleanup_run_worker(w))
         worker.start()
+
+    def _on_result_ready(self, key, result):
+        """单张结果落地：写 sidecar + 刷新该行的状态圆点。
+
+        当前显示图不在这里写——它走 `_apply_inference_to_current`（要保贴图、
+        画布状态与撤销快照），留到整批结束时统一处理。范围配置与筛选规则
+        在启动时已经定稿，这里只负责落盘。
+        """
+        if self._inference_dataset_changed():
+            return
+        if getattr(self, '_is_delete_view', False):
+            return
+        if key == self.current_background_index:
+            return
+        from ...engine.inference_task import InferenceError, write_one_result
+
+        memory = getattr(self, 'detection_boxes_dict', None) or {}
+        try:
+            wrote = write_one_result(result, existing=memory.get(key),
+                                     replace_auto=self._replace_mode(),
+                                     class_filter=self._filter_for_run())
+        except InferenceError:
+            # 单张写失败不影响其他图；整批结束的汇总里会算进「写入失败」
+            self._batch_write_failed = set(
+                getattr(self, '_batch_write_failed', ())) | {key}
+        else:
+            if wrote:
+                self._batch_written_keys = set(
+                    getattr(self, '_batch_written_keys', ())) | {key}
+        self._refresh_background_item_status(key, result.path)
 
     def _note_scope_replace(self, scope):
         """区域范围 + 覆盖模式时在状态栏提醒：区域外的旧自动框也会被删掉。
@@ -453,7 +486,14 @@ class InferenceMixin:
 
     def _on_batch_finished(self, results):
         self._close_progress_dialog()
-        self._apply_inference_results(results, self._replace_mode())
+        # 逐张写过的键（当前显示图不在其中）：收尾时不能再写一遍
+        written_keys = set(getattr(self, '_batch_written_keys', ()))
+        failed_keys = set(getattr(self, '_batch_write_failed', ()))
+        self._batch_written_keys = set()
+        self._batch_write_failed = set()
+        self._apply_inference_results(results, self._replace_mode(),
+                                      skip_indices=written_keys,
+                                      failed_indices=failed_keys)
         self._update_inference_buttons()
 
     def _replace_mode(self):
@@ -494,36 +534,31 @@ class InferenceMixin:
         from ..dialog_helpers import warning
         warning(self, tr("错误"), message)
 
-    def _apply_inference_results(self, results, replace_auto):
-        """把一批推理结果写进内存与磁盘。
+    def _apply_inference_results(self, results, replace_auto, skip_indices=(),
+                                 failed_indices=()):
+        """整批结束后的收尾：处理当前显示图，汇总提示。
 
-        当前显示图走正常保存流程（保留贴图与画布状态），其余图直接写 sidecar。
+        其余图在 `_on_result_ready` 里已经逐张写过了（skip_indices 就是它们），
+        这里不能再写一遍——重复写会把用户在这期间做的新编辑覆盖掉。
         """
         if self._inference_dataset_changed():
             self.status_label.setText(tr("数据集已切换，推理结果已丢弃"))
             return
         if getattr(self, '_is_delete_view', False):
             return
-        from ...engine import inference_task
 
         current = self.current_background_index
-        memory = {
-            idx: list(boxes) for idx, boxes in
-            (getattr(self, 'detection_boxes_dict', None) or {}).items()
-        }
-        written, failed = inference_task.write_results(
-            results, memory_boxes=memory, replace_auto=replace_auto,
-            skip_index=current, class_filter=self._filter_for_run())
-
         current_result = results.get(current)
         if current_result is not None and not current_result.error:
             self._apply_inference_to_current(current_result, replace_auto)
 
+        written = len(set(skip_indices))
+        failed = len(set(failed_indices))
         total_boxes = sum(len(r.boxes) for r in results.values() if not r.error)
         text = (f"{tr('推理完成')}: {len(results)} {tr('张图')} · "
                 f"{total_boxes} {tr('个框')} · {written} {tr('张已写入')}")
         if failed:
-            text += f" · {len(failed)} {tr('张写入失败')}"
+            text += f" · {failed} {tr('张写入失败')}"
         self.status_label.setText(text)
         self._dataset_stats_dirty = True
 

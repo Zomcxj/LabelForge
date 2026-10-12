@@ -6,14 +6,19 @@
 
 两页各有自己的动作按钮与提示区，`action` 记录用户按的是哪一个，
 主窗口据此分发到对应的后台任务。
+
+按「开始」只发 `start_requested`，**不关窗**：任务在跑时弹窗留着显示底部
+进度条（参数锁住），跑完由主窗口 `accept()` 关掉。参数非法不发信号，
+在当前页的提示区说明原因。
 """
 import os
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
     QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QPushButton, QTabWidget, QVBoxLayout, QWidget,
+    QListWidgetItem, QProgressBar, QPushButton, QTabWidget, QVBoxLayout,
+    QWidget,
 )
 
 from .dialog_helpers import center_on_parent, sync_titlebar
@@ -34,6 +39,9 @@ class VideoDialog(QDialog):
     `settings()` 按当前动作返回对应参数。
     """
 
+    start_requested = pyqtSignal(str, dict)
+    cancel_requested = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._video_path = ""
@@ -42,6 +50,7 @@ class VideoDialog(QDialog):
         self._compose_manifest = None      # 探测到的清单，None = 没有
         self._compose_plan = None
         self._compose_images = []          # 合成要用的图片（扫标注用）
+        self._running = False              # 任务在跑：锁参数、亮进度条
         self.action = ACTION_EXTRACT
         self._build_ui()
         self._apply_style()
@@ -62,6 +71,65 @@ class VideoDialog(QDialog):
         self.tabs.addTab(self._build_extract_tab(), tr("抽帧"))
         self.tabs.addTab(self._build_compose_tab(), tr("合成"))
         layout.addWidget(self.tabs)
+
+        # 底部进度条：任务跑起来才显示，空闲时不占视觉
+        self.progress_label = QLabel("")
+        self.progress_label.setObjectName("videoHint")
+        self.progress_label.setVisible(False)
+        layout.addWidget(self.progress_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("videoProgress")
+        self.progress_bar.setFixedHeight(12)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setVisible(False)
+        layout.addWidget(self.progress_bar)
+
+    # ---------- 任务状态 ----------
+
+    def _verb(self):
+        return tr("合成中") if self.action == ACTION_COMPOSE else tr("抽帧中")
+
+    def set_running(self, running):
+        """锁/解锁参数与开始按钮；「取消」按钮的含义随之改变。"""
+        self._running = bool(running)
+        self._sync_extract_enabled()
+        self._sync_compose_enabled()
+
+    def begin_run(self):
+        """按下「开始」：先亮不确定态进度条，收到进度再变确定态。"""
+        self.set_running(True)
+        self.progress_bar.setVisible(True)
+        self.progress_label.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        self.progress_label.setText(self._verb())
+
+    def set_progress(self, done, total):
+        """进度回灌：`total` 为 0 时保持不确定态。"""
+        self.progress_bar.setVisible(True)
+        self.progress_label.setVisible(True)
+        if total > 0:
+            self.progress_bar.setRange(0, int(total))
+            self.progress_bar.setValue(int(done))
+            self.progress_label.setText(f"{self._verb()} {int(done)}/{int(total)}")
+        else:
+            self.progress_bar.setRange(0, 0)
+            self.progress_label.setText(self._verb())
+
+    def show_hint(self, message):
+        """在当前页的提示区说明原因（不关窗）。"""
+        if self.action == ACTION_COMPOSE:
+            self.compose_hint_label.setText(message)
+        else:
+            self.hint_label.setText(message)
+
+    def _on_cancel_clicked(self):
+        """跑任务时「取消」是取消任务（留着看进度），空闲时才是关窗。"""
+        if self._running:
+            self.progress_label.setText(tr("正在取消..."))
+            self.cancel_requested.emit()
+            return
+        self.reject()
 
     def _build_extract_tab(self):
         self.extract_tab = QWidget()
@@ -153,7 +221,7 @@ class VideoDialog(QDialog):
         self.cancel_btn = QPushButton(tr("取消"))
         self.cancel_btn.setObjectName("optionsBtn")
         self.cancel_btn.setFixedHeight(26)
-        self.cancel_btn.clicked.connect(self.reject)
+        self.cancel_btn.clicked.connect(self._on_cancel_clicked)
         buttons.addWidget(self.cancel_btn)
 
         self.start_btn = QPushButton(tr("开始抽帧"))
@@ -227,7 +295,7 @@ class VideoDialog(QDialog):
         self.compose_cancel_btn = QPushButton(tr("取消"))
         self.compose_cancel_btn.setObjectName("optionsBtn")
         self.compose_cancel_btn.setFixedHeight(26)
-        self.compose_cancel_btn.clicked.connect(self.reject)
+        self.compose_cancel_btn.clicked.connect(self._on_cancel_clicked)
         buttons.addWidget(self.compose_cancel_btn)
 
         self.compose_btn = QPushButton(tr("开始合成"))
@@ -428,17 +496,19 @@ class VideoDialog(QDialog):
         self._sync_extract_enabled()
 
     def _sync_extract_enabled(self):
-        ready = self._info is not None
+        ready = self._info is not None and not self._running
         for widget in (self.fps_spin, self.start_spin, self.end_spin,
                        self.format_combo, self.quality_spin):
             widget.setEnabled(ready)
+        self.pick_btn.setEnabled(not self._running)
         self.start_btn.setEnabled(ready)
         self._on_format_changed(self.format_combo.currentText())
 
     def _on_format_changed(self, text):
         # png 无损，质量参数只对 jpg 有意义
         self.quality_spin.setEnabled(
-            self._info is not None and text.lower() in ("jpg", "jpeg"))
+            self._info is not None and not self._running
+            and text.lower() in ("jpg", "jpeg"))
 
     def _on_start_extract(self):
         self.action = ACTION_EXTRACT
@@ -446,7 +516,7 @@ class VideoDialog(QDialog):
         if message:
             self.hint_label.setText(message)
             return
-        self.accept()
+        self.start_requested.emit(ACTION_EXTRACT, self.settings())
 
     # ---------- 合成页 ----------
 
@@ -488,6 +558,12 @@ class VideoDialog(QDialog):
             self.compose_info_label.setText(
                 f"{tr('有清单，按清单合成')}：{count} {tr('张图片')}  "
                 f"{duration:.3f} {tr('秒')}  {fps:.3f} FPS")
+            # 显示实际会用的帧率：禁用状态下残留的默认值会被当成「写死 5 帧」。
+            # 超出 spin 量程就只靠上面的说明文字，别让 setValue 悄悄夹到边界值。
+            if self.compose_fps_spin.minimum() <= fps <= self.compose_fps_spin.maximum():
+                self.compose_fps_spin.setValue(fps)
+            self.compose_fps_spin.setToolTip(
+                tr("有清单时按清单时长，实际帧率如上"))
             self._compose_images = [
                 os.path.join(os.path.dirname(os.path.abspath(manifest_path)), f.file)
                 for f in manifest.frames]
@@ -503,6 +579,7 @@ class VideoDialog(QDialog):
                 return
             self.compose_info_label.setText(
                 f"{tr('没有清单，按下面的帧率合成')}：{len(images)} {tr('张图片')}")
+            self.compose_fps_spin.setToolTip(tr("无清单时按每秒几帧合成"))
             self._compose_images = list(images)
 
         self._load_compose_labels()
@@ -563,16 +640,26 @@ class VideoDialog(QDialog):
     def _sync_compose_enabled(self):
         ready = bool(self._compose_dir) and (
             self._compose_manifest is not None or bool(self.compose_info_label.text()))
+        idle = not self._running
         # 有清单时不用填帧率：时长以清单为准，填了也不采用
-        self.compose_fps_spin.setEnabled(ready and self._compose_manifest is None)
-        self.compose_btn.setEnabled(ready)
+        self.compose_fps_spin.setEnabled(ready and self._compose_manifest is None
+                                        and idle)
+        self.compose_pick_btn.setEnabled(idle)
+        self.compose_btn.setEnabled(ready and idle)
+        # 有清单时 spin 里显示的是清单算出来的实际帧率，只是不能改
+        if self._compose_manifest is not None:
+            self.compose_fps_spin.setToolTip(
+                tr("有清单时按清单时长，实际帧率如上"))
+        else:
+            self.compose_fps_spin.setToolTip(tr("无清单时按每秒几帧合成"))
 
         # 叠加：没标注就没得画；关掉主开关时子选项一并禁用，避免误以为还在画
         has_labels = self.compose_label_list.count() > 0
-        self.compose_overlay_check.setEnabled(ready and has_labels)
+        self.compose_overlay_check.setEnabled(ready and has_labels and idle)
         if not has_labels:
             self.compose_overlay_check.setChecked(False)
-        overlay = ready and has_labels and self.compose_overlay_check.isChecked()
+        overlay = (ready and has_labels and idle
+                   and self.compose_overlay_check.isChecked())
         for widget in (self.compose_label_list, self.compose_all_btn,
                        self.compose_none_btn, self.compose_show_label_check,
                        self.compose_show_score_check):
@@ -583,8 +670,11 @@ class VideoDialog(QDialog):
 
         `labels` 用列表而不是集合：空列表 = 一个都不画，与 None（全画）
         区分开，引擎那边靠这个区分。
+
+        这里只看「有没有得画」和用户的勾选，**不看控件的 enabled 状态**：
+        任务在跑时控件是禁用的，而 `settings()` 恰好可能在那之后被调用。
         """
-        if not self.compose_overlay_check.isEnabled():
+        if self.compose_label_list.count() == 0:
             return None
         if not self.compose_overlay_check.isChecked():
             return None
@@ -600,7 +690,7 @@ class VideoDialog(QDialog):
         if message:
             self.compose_hint_label.setText(message)
             return
-        self.accept()
+        self.start_requested.emit(ACTION_COMPOSE, self.settings())
 
     def showEvent(self, event):
         super().showEvent(event)

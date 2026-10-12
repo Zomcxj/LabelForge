@@ -360,7 +360,7 @@ def _masked_crop(rgb, region, x1, y1, x2, y2):
 
 def run_batch(paths, detector, loader, resize_fn, keys=None,
               progress_fn=None, is_interrupted=None, class_filter=None,
-              scope=None):
+              scope=None, on_result=None):
     """顺序推理多张图，返回 {key: ImageResult}。
 
     key 默认是 paths 的下标；批量任务要按数据集索引写回内存与磁盘，
@@ -372,6 +372,10 @@ def run_batch(paths, detector, loader, resize_fn, keys=None,
     scope 是范围配置（全图/滑窗/ROI/ROI+滑窗）；None 表示全图，此时走原来的
     `detector.detect()` 单次调用，结果与不传 scope 完全一致。scope 由
     `inference_scope.normalize_scope()` 校验过，ROI 已是快照。
+
+    on_result 每张跑完立刻调用一次，参数 (key, ImageResult)。**必须在这里
+    落盘**，不能等整批结束：用户要看到 json 一张张出来、列表圆点逐个变绿，
+    中途取消或崩溃时已完成的图也不能白跑。
 
     progress_fn 每张完成后调用一次，参数为
     (position, total, 文件名, 框数, 耗时毫秒)。框数与耗时都是这一张自己的，
@@ -407,6 +411,8 @@ def run_batch(paths, detector, loader, resize_fn, keys=None,
         except Exception as exc:
             kept = []
             results[key] = ImageResult(key, path, [], str(exc))
+        if on_result:
+            on_result(key, results[key])
         elapsed_ms = int(round((time.perf_counter() - started) * 1000))
         if progress_fn:
             progress_fn(position + 1, total, os.path.basename(path),
@@ -540,17 +546,51 @@ def write_sidecar_boxes(image_path, boxes, image_width=0, image_height=0):
     return True
 
 
+def write_one_result(result, existing=None, replace_auto=False,
+                     class_filter=None):
+    """把单张结果合并后写进它的 sidecar；返回是否真的写了盘。
+
+    `existing` 给 None 表示从磁盘读（调用方有更新鲜的内存时应当传进来）。
+    没检出且合并后仍无任何标注的不写盘：否则数据集里会多出一堆 shapes 为 []
+    的空 json。已有标注（人工/贴图/多边形）的图照常写回，因为 replace_auto
+    可能刚好删掉了上一轮的推理框。
+
+    失败抛 `InferenceError`，让调用方按「这张写失败」处理，别把整批拖掉。
+    """
+    if result.error:
+        return False
+    if existing is None:
+        existing = read_sidecar_boxes(result.path)
+        if existing is None:
+            existing = []
+    merged = merge_boxes(existing, result.boxes, replace_auto=replace_auto,
+                         class_filter=class_filter)
+    if merged:
+        if not write_sidecar_boxes(result.path, merged, result.width,
+                                   result.height):
+            raise InferenceError(f"写入失败: {result.path}")
+        return True
+    # 合并后没有标注：replace_auto 可能刚把上一轮的推理框删光，
+    # 这时盘上还留着它们，必须先写出真实内容再按需删文件。
+    if not existing:
+        remove_empty_sidecar(result.path)
+        return False
+    if not write_sidecar_boxes(result.path, [], result.width, result.height):
+        raise InferenceError(f"写入失败: {result.path}")
+    remove_empty_sidecar(result.path)
+    return False
+
+
 def write_results(results, memory_boxes=None, replace_auto=False, skip_index=None,
                   class_filter=None):
     """批量把结果写进各自 sidecar，返回 (写入数, 失败路径列表)。
 
+    逐张调用 `write_one_result`。**逐张写盘**（而不是攒到最后一起写）是硬要求：
+    界面按每张完成就刷新列表圆点，用户也要能随时看到已写出的 json。
+
     memory_boxes 里已有的图以内存为准：内存可能比磁盘新，直接读盘会把
     用户刚做的编辑当成不存在，进而丢掉。skip_index 交给调用方用正常保存
     流程处理（当前显示图还涉及贴图与画布状态）。
-
-    没检出且合并后仍无任何标注的图不写盘：否则数据集里会多出一堆
-    shapes 为 [] 的空 json。已有标注（人工/贴图/多边形）的图照常写回，
-    因为 replace_auto 可能刚好删掉了上一轮的推理框。
 
     class_filter 会传给 merge_boxes，把上一轮不在白名单里的推理框也清掉。
     """
@@ -558,28 +598,13 @@ def write_results(results, memory_boxes=None, replace_auto=False, skip_index=Non
     written = 0
     failed = []
     for index, result in sorted(results.items()):
-        if index == skip_index or result.error:
+        if index == skip_index:
             continue
-        existing = memory_boxes.get(index)
-        if existing is None:
-            existing = read_sidecar_boxes(result.path)
-            if existing is None:
-                existing = []
-        merged = merge_boxes(existing, result.boxes, replace_auto=replace_auto,
-                             class_filter=class_filter)
-        if merged:
-            if write_sidecar_boxes(result.path, merged, result.width, result.height):
+        try:
+            if write_one_result(result, existing=memory_boxes.get(index),
+                                replace_auto=replace_auto,
+                                class_filter=class_filter):
                 written += 1
-            else:
-                failed.append(result.path)
-            continue
-        # 合并后没有标注：replace_auto 可能刚把上一轮的推理框删光，
-        # 这时盘上还留着它们，必须先写出真实内容再按需删文件。
-        if not existing:
-            remove_empty_sidecar(result.path)
-            continue
-        if write_sidecar_boxes(result.path, [], result.width, result.height):
-            remove_empty_sidecar(result.path)
-        else:
+        except InferenceError:
             failed.append(result.path)
     return written, failed

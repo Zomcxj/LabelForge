@@ -15,6 +15,7 @@ from pastelabel.ui import i18n
 from pastelabel.ui.main_window import ImageEditor
 from pastelabel.ui.mixins.inference import InferenceMixin
 from pastelabel.ui.mixins.translation import TranslationMixin
+from pastelabel.ui.mixins.video import VideoMixin
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -137,14 +138,18 @@ def test_video_dialog_output_dir_is_readonly():
     assert "output_dir_for" in src
 
 
-def test_video_dialog_validates_before_accept():
-    """开始前用 probe 校验；非法输入不 accept。"""
+def test_video_dialog_validates_before_signalling():
+    """开始前用 probe 校验；非法输入不发 start_requested，只在提示区说明。"""
     from pastelabel.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     assert "probe(" in src
     assert "VideoError" in src
-    assert "accept()" in src
+    assert "start_requested" in src
+    # 校验失败必须在 emit 之前返回
+    for handler in (VideoDialog._on_start_extract, VideoDialog._on_start_compose):
+        handler_src = inspect.getsource(handler)
+        assert handler_src.index("return") < handler_src.index("start_requested.emit")
 
 
 def test_video_dialog_uses_theme_and_centers():
@@ -328,8 +333,10 @@ vw.release()
 
 d = VideoDialog()
 before = d.start_btn.isEnabled()          # 未选视频：不能开始
+started = []
+d.start_requested.connect(lambda a, s: started.append((a, s)))
 d._on_start_extract()
-blocked = d.result() != d.Accepted
+blocked = not started and d.result() != d.Accepted
 hint = d.hint_label.text()
 
 d.set_video(video)
@@ -341,13 +348,17 @@ full = d.settings()
 
 d.start_spin.setValue(4.0); d.end_spin.setValue(1.0)   # 起 > 止
 d._on_start_extract()
-bad_blocked = d.result() != d.Accepted
+bad_blocked = not started
 bad_hint = d.hint_label.text()
 
 d.start_spin.setValue(1.0); d.end_spin.setValue(3.0)
 partial = d.settings()
+spin_fps = d.fps_spin.value()
 d._on_start_extract()
-accepted = d.result() == d.Accepted
+# 合法参数：发信号但不关窗（弹窗要留着显示进度条）
+signalled = len(started) == 1 and started[0][0] == "extract"
+not_closed = d.result() != d.Accepted
+run_action, run_settings = started[0] if started else (None, {})
 
 bad = VideoDialog()
 bad.set_video(os.path.join(tmp, "不存在.mp4"))
@@ -357,7 +368,9 @@ print("RESULT", repr((before, blocked, hint, info, readonly,
                       os.path.basename(outdir), fps_cap,
                       full["start"], full["end"], full["image_format"],
                       bad_blocked, bad_hint,
-                      partial["start"], partial["end"], accepted, bad_ok)))
+                      partial["start"], partial["end"],
+                      signalled, not_closed, run_action,
+                      run_settings.get("target_fps"), spin_fps, bad_ok)))
 ''' % str(ROOT)
 
     proc = subprocess.run([sys.executable, "-c", script], capture_output=True,
@@ -368,7 +381,8 @@ print("RESULT", repr((before, blocked, hint, info, readonly,
 
     (before, blocked, hint, info, readonly, outdir, fps_cap,
      start, end, fmt, bad_blocked, bad_hint, p_start, p_end,
-     accepted, bad_ok) = eval(line[0][len("RESULT"):].strip())
+     signalled, not_closed, run_action, run_fps, spin_fps, bad_ok) = \
+        eval(line[0][len("RESULT"):].strip())
 
     assert before is False, "未选视频时不能开始"
     assert blocked is True and "请先选择视频文件" in hint, hint
@@ -381,7 +395,12 @@ print("RESULT", repr((before, blocked, hint, info, readonly,
     assert fmt == "jpg", fmt
     assert bad_blocked is True and "时间范围非法" in bad_hint, bad_hint
     assert abs(p_start - 1.0) < 1e-6 and abs(p_end - 3.0) < 1e-6, (p_start, p_end)
-    assert accepted is True, "合法参数必须放行"
+    assert signalled is True, "合法参数必须发 start_requested"
+    assert not_closed is True, "按下开始不能关窗，进度条要在弹窗里显示"
+    assert run_action == "extract", run_action
+    # 信号带的是按下那一刻的参数，与弹窗上的值一致
+    assert abs(run_fps - spin_fps) < 1e-6, (run_fps, spin_fps)
+    assert run_fps > 0, run_fps
     assert bad_ok is True, "探测失败要提示并禁用开始"
 
 
@@ -578,13 +597,17 @@ def test_compose_worker_runs_in_background_thread():
 
 
 def test_mixin_dispatches_by_action():
-    """弹窗返回后按 action 分发到抽帧或合成。"""
+    """弹窗按 action 发信号，mixin 据此分发到抽帧或合成。"""
     from pastelabel.ui.mixins.video import VideoMixin
 
-    src = inspect.getsource(VideoMixin._open_video_extract)
+    src = inspect.getsource(VideoMixin._on_video_start_requested)
     assert "ACTION_COMPOSE" in src
     assert "_start_video_compose" in src
     assert "_start_video_extract" in src
+    # 弹窗不关窗：只发信号，由 mixin 起任务
+    dialog_src = inspect.getsource(
+        __import__('pastelabel.ui.video_dialog', fromlist=['VideoDialog']).VideoDialog)
+    assert "start_requested.emit" in dialog_src
 
 
 def test_mixin_has_compose_lifecycle():
@@ -698,13 +721,16 @@ def test_compose_checks_busy_flag_before_start():
     assert guard.startswith("return")
 
 
-def test_compose_fps_disabled_when_manifest_present(tmp_path):
-    """有清单时「每秒几帧」必须禁用（时长以清单为准，填了也不采用）。"""
+def test_compose_fps_disabled_and_shows_manifest_rate(tmp_path):
+    """有清单时「每秒几帧」禁用，且显示清单算出的实际帧率。
+
+    禁用却留着默认的 5.0 会让用户以为输出被写死成 5 帧。
+    """
     import subprocess
     import sys
 
     script = '''
-import os, sys, tempfile
+import os, re, sys, tempfile
 sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
@@ -731,8 +757,12 @@ for i in range(3):
 without = VideoDialog()
 without.set_compose_dir(seq)
 
+label = with_manifest.compose_info_label.text()
+shown = float(re.search(r"([0-9.]+) FPS", label).group(1))
 print("RESULT", repr((with_manifest.compose_fps_spin.isEnabled(),
-                      without.compose_fps_spin.isEnabled())))
+                      without.compose_fps_spin.isEnabled(),
+                      with_manifest.compose_fps_spin.value(), shown,
+                      without.compose_fps_spin.value())))
 ''' % str(ROOT)
 
     proc = subprocess.run([sys.executable, "-c", script], capture_output=True,
@@ -740,6 +770,316 @@ print("RESULT", repr((with_manifest.compose_fps_spin.isEnabled(),
     out = (proc.stdout or "") + (proc.stderr or "")
     line = [l for l in out.splitlines() if l.startswith("RESULT")]
     assert line, f"子进程没有输出：{out[-1500:]}"
-    with_manifest_enabled, without_enabled = eval(line[0][len("RESULT"):].strip())
+    (with_manifest_enabled, without_enabled, shown_value, label_fps,
+     plain_default) = eval(line[0][len("RESULT"):].strip())
     assert with_manifest_enabled is False, "有清单时帧率必须禁用"
     assert without_enabled is True, "无清单时帧率必须可填"
+    assert abs(shown_value - label_fps) < 0.001, \
+        f"禁用状态下应显示清单实际帧率 {label_fps}，实际显示 {shown_value}"
+    assert shown_value != 5.0, "不能留着默认 5.0 让人以为写死了"
+    assert plain_default == 5.0, "无清单时仍应给一个可编辑的默认值"
+
+
+# ---------- 任务期间的弹窗行为 ----------
+
+def _run_dialog_qt(script):
+    """子进程 + 真实 Qt 跑一段脚本（调用方已填好路径），取回 RESULT 的值。"""
+    import subprocess
+    import sys
+
+    proc = subprocess.run([sys.executable, "-c", script],
+                          capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=300)
+    out = (proc.stdout or "") + (proc.stderr or "")
+    line = [l for l in out.splitlines() if l.startswith("RESULT")]
+    assert line, f"子进程没有输出：{out[-1500:]}"
+    return eval(line[0][len("RESULT"):].strip())
+
+
+def test_dialog_progress_bar_hidden_until_run():
+    """空闲时不显示进度条；按下开始后亮起来，参数锁住。"""
+    script = '''
+import sys
+sys.path.insert(0, r"%s")
+from PyQt5.QtWidgets import QApplication
+app = QApplication([])
+from pastelabel.ui.video_dialog import VideoDialog
+
+d = VideoDialog()
+# 用 isHidden 而不是 isVisible：弹窗没 show() 过，isVisible 恒为 False
+idle = (not d.progress_bar.isHidden(), not d.progress_label.isHidden())
+
+d.begin_run()
+running = (not d.progress_bar.isHidden(), not d.progress_label.isHidden(),
+           d.progress_bar.minimum(), d.progress_bar.maximum(),
+           d.progress_label.text())
+
+d.set_progress(3, 10)
+mid = (d.progress_bar.maximum(), d.progress_bar.value(),
+       d.progress_label.text())
+
+d.set_running(False)
+done = (d.progress_bar.value(), d.progress_label.text())
+
+print("RESULT", repr((idle, running, mid, done)))
+''' % str(ROOT)
+    idle, running, mid, done = _run_dialog_qt(script)
+
+    assert idle == (False, False), "空闲时不该占视觉"
+    # 还没收到进度：不确定态（0,0）让用户看到「在跑」
+    assert running[0] is True and running[1] is True, running
+    assert (running[2], running[3]) == (0, 0), running
+    assert running[4] == "抽帧中", running[4]
+    assert mid[0] == 10 and mid[1] == 3, mid
+    assert mid[2] == "抽帧中 3/10", mid[2]
+
+
+def test_dialog_progress_uses_compose_verb_on_compose_tab():
+    """合成任务显示「合成中」，不能沿用抽帧的文案。"""
+    script = '''
+import sys
+sys.path.insert(0, r"%s")
+from PyQt5.QtWidgets import QApplication
+app = QApplication([])
+from pastelabel.ui.video_dialog import VideoDialog
+
+d = VideoDialog()
+d.action = "compose"
+d.set_progress(1, 4)
+print("RESULT", repr(d.progress_label.text()))
+''' % str(ROOT)
+
+    assert _run_dialog_qt(script) == "合成中 1/4"
+
+
+def test_dialog_locks_params_while_running():
+    """任务在跑时参数不能再改（改了也不生效，不如锁住避免误解）。"""
+    script = '''
+import sys, tempfile, os
+sys.path.insert(0, r"%s")
+from PyQt5.QtWidgets import QApplication
+app = QApplication([])
+import cv2, numpy as np
+from pastelabel.ui.video_dialog import VideoDialog
+
+tmp = tempfile.mkdtemp()
+video = os.path.join(tmp, "v.mp4")
+vw = cv2.VideoWriter(video, cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (64, 48))
+for i in range(20):
+    vw.write(np.zeros((48, 64, 3), np.uint8))
+vw.release()
+
+d = VideoDialog()
+d.set_video(video)
+before = (d.start_btn.isEnabled(), d.fps_spin.isEnabled(),
+          d.start_spin.isEnabled(), d.pick_btn.isEnabled())
+d.begin_run()
+during = (d.start_btn.isEnabled(), d.fps_spin.isEnabled(),
+          d.start_spin.isEnabled(), d.pick_btn.isEnabled())
+d.set_running(False)
+after = (d.start_btn.isEnabled(), d.fps_spin.isEnabled(),
+         d.start_spin.isEnabled(), d.pick_btn.isEnabled())
+
+print("RESULT", repr((before, during, after)))
+''' % str(ROOT)
+    before, during, after = _run_dialog_qt(script)
+
+    assert before == (True, True, True, True), before
+    assert during == (False, False, False, False), during
+    assert after == (True, True, True, True), after
+
+
+def test_dialog_cancel_button_cancels_while_running():
+    """跑任务时「取消」是取消任务并留着窗口，空闲时才是关窗。"""
+    script = '''
+import sys
+sys.path.insert(0, r"%s")
+from PyQt5.QtWidgets import QApplication
+app = QApplication([])
+from pastelabel.ui.video_dialog import VideoDialog
+
+d = VideoDialog()
+cancels = []
+d.cancel_requested.connect(lambda: cancels.append(1))
+d.begin_run()
+d._on_cancel_clicked()
+during = (len(cancels), d.result(), d.progress_label.text())
+
+d.set_running(False)
+d._on_cancel_clicked()
+idle = (len(cancels), d.result() != d.Accepted)
+
+print("RESULT", repr((during, idle)))
+''' % str(ROOT)
+    during, idle = _run_dialog_qt(script)
+
+    assert during[0] == 1, "跑任务时取消要发信号"
+    assert during[1] != 1, "跑任务时不能关窗（还要看进度）"
+    assert during[2] == "正在取消...", during[2]
+    assert idle[0] == 1, "空闲时点取消不该再发任务取消信号"
+    assert idle[1] is True, "空闲时点取消要关窗"
+
+
+class _DialogStub:
+    def __init__(self):
+        self.progress = []
+        self.hints = []
+        self.running = []
+        self.accepted = 0
+        self.text = ""
+
+    @property
+    def progress_label(self):
+        return self
+
+    def setText(self, text):
+        self.text = text
+
+
+    def set_progress(self, done, total):
+        self.progress.append((done, total))
+
+    def show_hint(self, message):
+        self.hints.append(message)
+
+    def set_running(self, running):
+        self.running.append(running)
+
+    def begin_run(self):
+        self.running.append(True)
+
+    def accept(self):
+        self.accepted += 1
+
+
+class _VideoStub(VideoMixin):
+    """只喂弹窗生命周期要用的东西，不建真实窗口。"""
+
+    def __init__(self):
+        self.status_label = _DialogStub()
+        self._busy = False
+        self._video_worker = None
+        self._compose_worker = None
+        self._video_dialog = None
+        self.started = []
+
+    def _start_video_extract(self, settings):
+        self.started.append(("extract", settings))
+        return True
+
+    def _start_video_compose(self, settings):
+        self.started.append(("compose", settings))
+        return True
+
+
+def test_start_requested_dispatches_and_shows_progress_bar():
+    """按下开始后：起任务 + 弹窗切到运行态（进度条亮起、参数锁住）。"""
+    stub = _VideoStub()
+    dialog = _DialogStub()
+    stub._video_dialog = dialog
+
+    stub._on_video_start_requested("extract", {"video_path": "a.mp4"})
+
+    assert stub.started == [("extract", {"video_path": "a.mp4"})], stub.started
+    assert dialog.running == [True], dialog.running
+
+
+def test_start_requested_refuses_when_busy_and_explains_in_dialog():
+    """已有任务时不能起第二个，并且要在弹窗里说明（弹窗还开着）。"""
+    stub = _VideoStub()
+    dialog = _DialogStub()
+    stub._video_dialog = dialog
+    stub._busy = True
+
+    stub._on_video_start_requested("extract", {})
+
+    assert stub.started == []
+    assert dialog.hints and "已有任务在运行" in dialog.hints[0], dialog.hints
+    assert dialog.running == [], "起不来就不该切成运行态"
+
+
+def test_start_requested_reports_failure_in_dialog():
+    """任务起不来（如线程没起来）也要在弹窗里说，别静默。"""
+    class Failing(_VideoStub):
+        def _start_video_compose(self, settings):
+            return False
+
+    stub = Failing()
+    dialog = _DialogStub()
+    stub._video_dialog = dialog
+
+    stub._on_video_start_requested("compose", {})
+
+    assert dialog.hints and "任务启动失败" in dialog.hints[0], dialog.hints
+    assert dialog.running == [], dialog.running
+
+
+def test_close_video_dialog_accepts_and_unlocks():
+    """收尾必须真的关窗并解锁，否则参数永远改不了。"""
+    stub = _VideoStub()
+    dialog = _DialogStub()
+    stub._video_dialog = dialog
+
+    stub._close_video_dialog("抽帧完成")
+
+    assert dialog.accepted == 1, "没关窗"
+    assert dialog.running == [False], dialog.running
+    assert dialog.text == "抽帧完成", dialog.text
+
+
+def test_close_video_dialog_survives_manual_close():
+    """用户自己先关掉弹窗时，收尾不能炸（此时 _video_dialog 已清空）。"""
+    stub = _VideoStub()
+    stub._video_dialog = None
+    stub._close_video_dialog("抽帧完成")
+
+
+def test_progress_updates_only_go_to_dialog():
+    """进度只回灌弹窗：主窗口状态栏不再显示「抽帧中 x/x」。"""
+    stub = _VideoStub()
+    dialog = _DialogStub()
+    stub._video_dialog = dialog
+    stub.status_label.text = "原来的文字"
+
+    stub._on_video_progress(3, 10)
+    stub._on_compose_progress(4, 20)
+
+    assert dialog.progress == [(3, 10), (4, 20)], dialog.progress
+    assert stub.status_label.text == "原来的文字", \
+        "状态栏那行是留给标签/类别信息的，别被进度覆盖"
+
+
+def test_progress_without_dialog_does_not_crash():
+    """弹窗已被关掉时进度还要能安全丢弃。"""
+    stub = _VideoStub()
+    stub._video_dialog = None
+    stub._on_video_progress(1, 2)
+    stub._on_compose_progress(1, 2)
+
+
+def test_cancel_from_dialog_cancels_the_running_worker():
+    """弹窗上点取消要真的取消任务，而不是只关窗。"""
+    class Worker:
+        def __init__(self):
+            self.cancelled = 0
+
+        def cancel(self):
+            self.cancelled += 1
+
+    stub = _VideoStub()
+    compose = Worker()
+    stub._compose_worker = compose
+
+    stub._cancel_video_task()
+
+    assert compose.cancelled == 1, "合成任务没被取消"
+
+    stub2 = _VideoStub()
+    extract = Worker()
+    stub2._video_worker = extract
+    stub2._cancel_video_task()
+    assert extract.cancelled == 1, "抽帧任务没被取消"
+
+
+def test_cancel_from_dialog_without_worker_is_safe():
+    _VideoStub()._cancel_video_task()

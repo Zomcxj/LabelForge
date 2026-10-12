@@ -163,7 +163,10 @@ def test_settings_omits_render_when_overlay_off():
     assert "render_settings" in src, "settings() 应通过 render_settings() 决定带不带 render"
     detail = inspect.getsource(VideoDialog.render_settings)
     assert "compose_overlay_check" in detail
-    assert "isChecked" in detail and "isEnabled" in detail
+    assert "isChecked" in detail
+    # 不能看控件的 enabled：任务在跑时控件是禁用的，那时取参数会凭空丢掉 render
+    assert "isEnabled" not in detail
+    assert "compose_label_list.count()" in detail
 
 
 # ---------- 子进程 + 真实 Qt ----------
@@ -507,6 +510,10 @@ class _ComposeStub:
         self._busy = True
         self.infos = []
         self.warns = []
+        self.dialog_texts = []
+
+    def _close_video_dialog(self, text=None):
+        self.dialog_texts.append(text)
 
     def _video_info(self, message):
         self.infos.append(message)
@@ -532,9 +539,20 @@ def test_compose_finished_reports_unlabeled_image_count():
     VideoMixin._on_compose_finished(
         stub, _compose_result(unlabeled_count=2, image_count=5))
     assert stub._busy is False, "跑完要清掉忙标志"
-    assert stub.warns, "没报无标注张数"
-    assert "2" in stub.warns[0], stub.warns
+    # 合并进完成提示里，不另开一个模态弹窗打断
+    assert stub.warns == [], stub.warns
+    assert stub.infos, "没报完成结果"
+    assert "2" in stub.infos[0], stub.infos
     assert "5" in stub.status_label.text, stub.status_label.text
+
+
+def test_compose_finished_closes_the_dialog():
+    """跑完要关掉弹窗（进度条留在弹窗里，不关就永远开着）。"""
+    from pastelabel.ui.mixins.video import VideoMixin
+
+    stub = _ComposeStub()
+    VideoMixin._on_compose_finished(stub, _compose_result())
+    assert stub.dialog_texts == ["合成完成"], stub.dialog_texts
 
 
 def test_compose_finished_quiet_when_every_frame_has_annotations():
@@ -544,14 +562,16 @@ def test_compose_finished_quiet_when_every_frame_has_annotations():
     stub = _ComposeStub()
     VideoMixin._on_compose_finished(stub, _compose_result(unlabeled_count=0))
     assert stub.warns == [], stub.warns
+    assert "没有标注" not in stub.infos[0], stub.infos
 
 
 def test_compose_finished_stops_early_when_cancelled():
-    """取消时不报张数、不当成正常完成。"""
+    """取消时不报张数、不当成正常完成，但弹窗要关掉。"""
     from pastelabel.ui.mixins.video import VideoMixin
 
     stub = _ComposeStub()
     VideoMixin._on_compose_finished(stub, _compose_result(cancelled=True, unlabeled_count=9))
     assert stub.warns == [], stub.warns
     assert stub.infos == [], stub.infos
+    assert stub.dialog_texts == ["已取消合成"], stub.dialog_texts
     assert stub._busy is False

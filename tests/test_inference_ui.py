@@ -346,6 +346,10 @@ class _FakeEditor(InferenceMixin):
         self.saved = []
         self.label_list_updates = 0
         self._inference_dataset = tuple(self.background_images)
+        self.status_refreshes = []
+
+    def _refresh_background_item_status(self, index, path):
+        self.status_refreshes.append((index, path))
 
     def save_undo_state(self):
         self.undo_snapshots.append(list(self.detection_boxes))
@@ -458,24 +462,102 @@ def test_apply_results_ignores_delete_view():
     assert editor.saved == []
 
 
-def test_apply_results_writes_other_images_to_disk(monkeypatch):
-    """非当前图直接写 sidecar，不依赖主窗口索引。"""
+def test_result_ready_writes_non_current_image_to_disk(monkeypatch):
+    """非当前图逐张写 sidecar，不依赖主窗口索引。"""
     from pastelabel.engine import inference_task
 
     calls = {}
-    monkeypatch.setattr(
-        inference_task, "write_results",
-        lambda results, memory_boxes=None, replace_auto=False, skip_index=None,
-        class_filter=None:
-        calls.update(results=set(results), skip_index=skip_index) or (1, []))
+
+    def fake_write(result, existing=None, replace_auto=False, class_filter=None):
+        calls.update(key=result.index, path=result.path, existing=existing)
+        return True
+
+    monkeypatch.setattr(inference_task, "write_one_result", fake_write)
 
     editor = _FakeEditor(images=("a.png", "b.png"))
-    results = {0: _result(0, "a.png", []), 1: _result(1, "b.png", [])}
+    editor.detection_boxes_dict = {1: [{"label": "manual", "x": 0, "y": 0,
+                                        "width": 5, "height": 5}]}
 
-    editor._apply_inference_results(results, False)
+    editor._on_result_ready(1, _result(1, "b.png", []))
 
-    assert calls["results"] == {0, 1}
-    assert calls["skip_index"] == 0
+    assert calls["key"] == 1
+    assert calls["path"] == "b.png"
+    # 内存里的框比磁盘新，必须传下去，否则会覆盖掉用户刚做的编辑
+    assert calls["existing"] == editor.detection_boxes_dict[1]
+
+
+def test_result_ready_skips_current_image(monkeypatch):
+    """当前显示图走 `_apply_inference_to_current`，逐张回调里不能再写一遍。"""
+    from pastelabel.engine import inference_task
+
+    calls = []
+    monkeypatch.setattr(inference_task, "write_one_result",
+                        lambda *a, **kw: calls.append(a) or True)
+
+    editor = _FakeEditor(images=("a.png", "b.png"), current=0)
+    editor._on_result_ready(0, _result(0, "a.png", []))
+
+    assert calls == []
+
+
+def test_result_ready_refreshes_the_row_status_dot(monkeypatch):
+    """写完盘要立刻刷新那一行的圆点，用户才看得到绿点一个个亮起来。"""
+    from pastelabel.engine import inference_task
+
+    monkeypatch.setattr(inference_task, "write_one_result",
+                        lambda *a, **kw: True)
+    refreshed = []
+    editor = _FakeEditor(images=("a.png", "b.png"))
+    editor._refresh_background_item_status = \
+        lambda index, path: refreshed.append((index, path))
+
+    editor._on_result_ready(1, _result(1, "b.png", []))
+
+    assert refreshed == [(1, "b.png")]
+
+
+def test_result_ready_discards_when_dataset_changed(monkeypatch):
+    """推理途中换了数据集，迟到的结果不能写进新数据集的磁盘。"""
+    from pastelabel.engine import inference_task
+
+    calls = []
+    monkeypatch.setattr(inference_task, "write_one_result",
+                        lambda *a, **kw: calls.append(a) or True)
+
+    editor = _FakeEditor(images=("a.png", "b.png"))
+    editor._inference_dataset = ("other.png",)
+
+    editor._on_result_ready(1, _result(1, "b.png", []))
+
+    assert calls == []
+
+
+def test_batch_finish_does_not_rewrite_already_written_images(monkeypatch):
+    """收尾时跳过逐张写过的图，否则会把用户中途的新编辑覆盖掉。
+
+    走完整流程：逐张回调记账 → 收尾消费，不能只在收尾时手工塞一个集合。
+    """
+    from pastelabel.engine import inference_task
+
+    calls = []
+    monkeypatch.setattr(inference_task, "write_one_result",
+                        lambda *a, **kw: calls.append(("one", a[0].index)) or True)
+    monkeypatch.setattr(inference_task, "write_results",
+                        lambda *a, **kw: calls.append(("batch",)) or (0, []))
+
+    editor = _FakeEditor(images=("a.png", "b.png"))
+    # 1 是「非当前图」，逐张回调会写它并记账
+    editor._on_result_ready(1, _result(1, "b.png", []))
+    assert editor._batch_written_keys == {1}, editor._batch_written_keys
+    calls.clear()
+
+    editor._on_batch_finished({0: _result(0, "a.png", []),
+                               1: _result(1, "b.png", [])})
+
+    # 收尾只处理当前图（走正常保存），不再有任何写盘调用
+    assert calls == [], calls
+    assert len(editor.saved) == 1
+    assert editor._batch_written_keys == set(), "记账没清空，下一批会误跳过"
 
 
 def test_apply_results_reports_failures_in_status():
@@ -1451,24 +1533,22 @@ def test_current_image_merge_keeps_everything_without_filter():
     assert labels == ["car", "truck"], labels
 
 
-def test_apply_results_forwards_filter_to_disk_writer(monkeypatch):
-    """批量写盘那条路也要带上筛选，否则其它图还是脏的。"""
+def test_result_ready_forwards_filter_to_disk_writer(monkeypatch):
+    """逐张写盘那条路也要带上筛选，否则其它图还是脏的。"""
     from pastelabel.engine import inference_task
 
     seen = {}
 
-    def fake_write(results, memory_boxes=None, replace_auto=False,
-                   skip_index=None, class_filter=None):
+    def fake_write(result, existing=None, replace_auto=False, class_filter=None):
         seen["class_filter"] = class_filter
-        return 1, []
+        return True
 
-    monkeypatch.setattr(inference_task, "write_results", fake_write)
+    monkeypatch.setattr(inference_task, "write_one_result", fake_write)
 
     editor = _FakeEditor(images=("a.png", "b.png"))
     editor._class_filter = {"car"}
     editor._detector = type("D", (), {"class_names": ["car", "truck"]})()
-    editor._apply_inference_results(
-        {0: _result(0, "a.png", []), 1: _result(1, "b.png", [])}, False)
+    editor._on_result_ready(1, _result(1, "b.png", []))
 
     assert seen["class_filter"] == {"car"}, seen
 
@@ -1658,3 +1738,266 @@ print("AFTER_TEXT", row.replace_btn.text())
     assert "AFTER_TOGGLE False" in out, out
     # 未选中显示「补充」，切回来显示「覆盖」
     assert "AFTER_TEXT" in out, out
+
+
+def test_summary_counts_only_images_actually_written(monkeypatch):
+    """汇总里的「张已写入」要数真的写了盘的，没框可写的不算。"""
+    from pastelabel.engine import inference_task
+
+    # 0 是当前图（走正常保存），1 写了，2 没框可写
+    monkeypatch.setattr(inference_task, "write_one_result",
+                        lambda *a, **kw: a[0].index == 1)
+
+    editor = _FakeEditor(images=("a.png", "b.png", "c.png"))
+    editor._on_result_ready(1, _result(1, "b.png", []))
+    editor._on_result_ready(2, _result(2, "c.png", []))
+    editor._on_batch_finished({0: _result(0, "a.png", []),
+                               1: _result(1, "b.png", []),
+                               2: _result(2, "c.png", [])})
+
+    assert "1 张已写入" in editor.status_label.text, editor.status_label.text
+
+
+def test_summary_reports_write_failures(monkeypatch):
+    """写盘失败要单独报出来，不能混进「已写入」。"""
+    from pastelabel.engine.inference_task import InferenceError
+    from pastelabel.engine import inference_task
+
+    def fake_write(result, **kwargs):
+        raise InferenceError("写不进去")
+
+    monkeypatch.setattr(inference_task, "write_one_result", fake_write)
+
+    editor = _FakeEditor(images=("a.png", "b.png"))
+    editor._on_result_ready(1, _result(1, "b.png", []))
+    editor._on_batch_finished({0: _result(0, "a.png", []),
+                               1: _result(1, "b.png", [])})
+
+    text = editor.status_label.text
+    assert "1 张写入失败" in text, text
+    assert "0 张已写入" in text, text
+
+
+def test_write_failure_does_not_stop_the_batch(monkeypatch):
+    """单张写失败不能影响后面的图（否则一批全废）。"""
+    from pastelabel.engine.inference_task import InferenceError
+    from pastelabel.engine import inference_task
+
+    seen = []
+
+    def fake_write(result, **kwargs):
+        seen.append(result.index)
+        if result.index == 1:
+            raise InferenceError("这张写不进去")
+        return True
+
+    monkeypatch.setattr(inference_task, "write_one_result", fake_write)
+
+    editor = _FakeEditor(images=("a.png", "b.png", "c.png"))
+    editor._on_result_ready(1, _result(1, "b.png", []))
+    editor._on_result_ready(2, _result(2, "c.png", []))
+
+    assert seen == [1, 2], "失败后必须继续写后面的图"
+    assert len(editor.status_refreshes) == 2, "失败那张也要刷新圆点"
+
+
+def test_result_ready_writes_real_json_and_turns_the_dot_green(tmp_path):
+    """真实文件走一遍：写完盘那一行的圆点状态必须从「未标注」变成「已标注」。
+
+    逐张写盘的全部意义就在这里：用户要看着 json 一张张出来、绿点一个个亮。
+    """
+    import json
+
+    from pastelabel.engine import inference_task
+    from pastelabel.engine.image_loader.status import (
+        STATUS_ANNOTATED, annotation_status_for_image)
+
+    path = tmp_path / "a.png"
+    path.write_bytes(b"")
+    assert annotation_status_for_image(str(path)) != STATUS_ANNOTATED
+
+    result = _result(0, str(path), [
+        {"label": "cat", "x": 1, "y": 1, "width": 2, "height": 2}])
+
+    wrote = inference_task.write_one_result(result, existing=[])
+    assert wrote is True
+
+    assert annotation_status_for_image(str(path)) == STATUS_ANNOTATED, \
+        "写完盘状态还是「未标注」，绿点不会亮"
+    data = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
+    assert [s["label"] for s in data["shapes"]] == ["cat"]
+
+
+def test_write_one_result_skips_empty_merge(tmp_path):
+    """没框且原本没标注：不写盘，免得数据集里多出一堆空 json。"""
+    from pastelabel.engine import inference_task
+
+    path = tmp_path / "b.png"
+    path.write_bytes(b"")
+    wrote = inference_task.write_one_result(_result(0, str(path), []), existing=[])
+    assert wrote is False
+    assert not path.with_suffix(".json").exists(), "空结果不该留下 json"
+
+
+def test_write_one_result_reads_disk_when_caller_has_no_memory_copy(tmp_path):
+    """existing=None 时要自己读盘，否则盘上的人工框会被当成不存在而丢掉。
+
+    只有当前显示图在内存里；其它图的底稿只能从 sidecar 拿。
+    """
+    import json
+
+    from pastelabel.engine import inference_task
+
+    path = tmp_path / "e.png"
+    path.write_bytes(b"")
+    # 先在盘上放一个人工框（模拟用户之前标注过、内存里没有）
+    inference_task.write_sidecar_boxes(
+        str(path),
+        [{"label": "manual", "x": 0, "y": 0, "width": 5, "height": 5,
+          "flags": {}}],
+        image_width=100, image_height=80)
+
+    wrote = inference_task.write_one_result(
+        _result(0, str(path), [{"label": "cat", "x": 1, "y": 1,
+                                "width": 2, "height": 2}]),
+        existing=None)
+
+    assert wrote is True
+    data = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
+    assert sorted(s["label"] for s in data["shapes"]) == ["cat", "manual"], \
+        "existing=None 时没读盘，人工框被冲掉了"
+
+
+def test_write_one_result_keeps_existing_manual_annotations(tmp_path):
+    """合并时要以内存里的标注为底，不能把人工框冲掉。"""
+    import json
+
+    from pastelabel.engine import inference_task
+
+    path = tmp_path / "c.png"
+    path.write_bytes(b"")
+    manual = [{"label": "manual", "x": 0, "y": 0, "width": 5, "height": 5,
+               "flags": {}}]
+    wrote = inference_task.write_one_result(
+        _result(0, str(path), [{"label": "cat", "x": 1, "y": 1,
+                                "width": 2, "height": 2}]),
+        existing=manual)
+
+    assert wrote is True
+    data = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
+    assert sorted(s["label"] for s in data["shapes"]) == ["cat", "manual"]
+
+
+def test_write_one_result_replaces_previous_inference_only(tmp_path):
+    """覆盖模式：旧推理框删掉、人工框留下。"""
+    import json
+
+    from pastelabel.engine import inference_task
+
+    path = tmp_path / "d.png"
+    path.write_bytes(b"")
+    existing = [
+        {"label": "old", "x": 0, "y": 0, "width": 5, "height": 5,
+         "flags": {"inference": True}},
+        {"label": "manual", "x": 0, "y": 0, "width": 5, "height": 5,
+         "flags": {}},
+    ]
+    inference_task.write_one_result(
+        _result(0, str(path), [{"label": "new", "x": 1, "y": 1,
+                                "width": 2, "height": 2}]),
+        existing=existing, replace_auto=True)
+
+    data = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
+    assert sorted(s["label"] for s in data["shapes"]) == ["manual", "new"]
+
+
+def test_write_one_result_raises_on_unwritable_path(tmp_path):
+    """写不进去必须抛 InferenceError，让调用方记成「这张失败」。"""
+    from pastelabel.engine.inference_task import InferenceError, write_one_result
+
+    # 父路径是文件而不是目录 → 建目录必失败
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")
+    result = _result(0, str(blocker / "sub" / "e.png"), [
+        {"label": "cat", "x": 1, "y": 1, "width": 2, "height": 2}])
+
+    with pytest.raises(InferenceError):
+        write_one_result(result, existing=[])
+
+
+def test_write_results_matches_write_one_result_per_image(tmp_path):
+    """批量入口就是逐张调单张入口：两条路的结果必须一致。"""
+    import json
+
+    from pastelabel.engine import inference_task
+
+    batch_dir = tmp_path / "batch"
+    single_dir = tmp_path / "single"
+    for folder in (batch_dir, single_dir):
+        folder.mkdir()
+        for name in ("a.png", "b.png"):
+            (folder / name).write_bytes(b"")
+
+    results = {
+        0: _result(0, str(batch_dir / "a.png"),
+                   [{"label": "cat", "x": 1, "y": 1, "width": 2, "height": 2}]),
+        1: _result(1, str(batch_dir / "b.png"), []),
+    }
+    written, failed = inference_task.write_results(results, memory_boxes={})
+    assert (written, failed) == (1, [])
+
+    for key, result in results.items():
+        inference_task.write_one_result(
+            _result(key, str(single_dir / os.path.basename(result.path)),
+                    result.boxes), existing=[])
+
+    for name in ("a.png", "b.png"):
+        batch_json = (batch_dir / name).with_suffix(".json")
+        single_json = (single_dir / name).with_suffix(".json")
+        assert batch_json.exists() == single_json.exists(), name
+        if batch_json.exists():
+            assert (json.loads(batch_json.read_text(encoding="utf-8"))
+                    == json.loads(single_json.read_text(encoding="utf-8"))), name
+
+
+def test_worker_emits_result_ready_per_image_before_finishing(tmp_path):
+    """真实线程：每张跑完就发 result_ready，且都在 finished_ok 之前。
+
+    逐张写盘全靠这个信号，顺序错了就会「先出汇总、再一张张写」。
+    """
+    out = _run_real_qt("""
+import sys, os, tempfile
+sys.path.insert(0, r"%s")
+from PyQt5.QtWidgets import QApplication
+app = QApplication([])
+import numpy as np
+from pastelabel.ui.inference_workers import InferenceWorker
+
+tmp = tempfile.mkdtemp()
+paths = []
+for name in ("a.png", "b.png", "c.png"):
+    p = os.path.join(tmp, name)
+    open(p, "wb").close()
+    paths.append(p)
+
+class Detector:
+    class_names = ["cat"]
+    def detect(self, rgb, resize_fn):
+        return [{"label": "cat", "x": 1, "y": 1, "width": 2, "height": 2}]
+
+import pastelabel.ui.inference_workers as workers
+workers.load_rgb = lambda path: np.zeros((10, 10, 3), dtype="uint8")
+workers.resize_for_model = lambda rgb: (rgb, None, None, 0, 0)
+
+worker = InferenceWorker(paths, [0, 1, 2], Detector())
+order = []
+worker.result_ready.connect(lambda key, res: order.append(("ready", key)))
+worker.finished_ok.connect(lambda res: order.append(("done", len(res))))
+worker.failed.connect(lambda msg: order.append(("failed", msg)))
+worker.run()          # 同步跑，省掉事件循环
+print("RESULT", repr(order))
+""" % str(ROOT))
+    line = [l for l in out.splitlines() if l.startswith("RESULT")][0]
+    order = eval(line[len("RESULT"):].strip())
+
+    assert order == [("ready", 0), ("ready", 1), ("ready", 2), ("done", 3)], order
