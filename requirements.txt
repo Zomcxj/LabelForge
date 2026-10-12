@@ -3,3 +3,8 @@ numpy>=1.26.0
 # ONNX 推理运行时。CPU 包与 GPU 包都导入为 onnxruntime，二选一安装：
 # 只要 GPU 就用 onnxruntime-gpu 替换本行（需要匹配的 CUDA/cuDNN）。
 onnxruntime>=1.16
+# 视频编解码默认使用无 GUI 发行包；与其他 OpenCV 发行包共用 cv2，不要混装。
+# 钉在 4.10 这个次版本：本机开发用的是 opencv-python 4.10.0.84，两边底层 OpenCV
+# 版本完全相同（都是 4.10.0），本地跑过的用例在 CI 才有同等含义。
+# 放开上限会装到 4.14/5.x，跨次版本或大版本，本地绿 CI 红时无从判断是谁的问题。
+opencv-python-headless>=4.10,<4.11

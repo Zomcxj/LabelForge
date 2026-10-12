@@ -31,7 +31,7 @@ x-anylabeling-matting/
 images_paste_output/
 *_paste_output/
 
-# 本地测试用模型与图片（yolov8n 元数据为 GPL-3.0，不能随 MIT 仓库分发）
+# 本地测试用模型与图片（测试素材单独管理，不随源码仓库分发）
 model/
 
 # Logs
