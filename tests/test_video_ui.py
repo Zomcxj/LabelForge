@@ -1083,3 +1083,56 @@ def test_cancel_from_dialog_cancels_the_running_worker():
 
 def test_cancel_from_dialog_without_worker_is_safe():
     _VideoStub()._cancel_video_task()
+
+
+# ---------- 进度条样式全项目一致 ----------
+
+def test_all_progress_bars_share_one_rounded_style():
+    """四个进度条（视频弹窗、推理进度窗、质检、QProgressDialog 工厂）同一套圆角。
+
+    回归：视频弹窗的进度条一开始压根没写样式，是直角 12px 高，跟别处不像
+    同一个控件；另外三处各抄了一份 8px 圆角 QSS，改一处就漂一处。
+    """
+    script = '''
+import sys
+sys.path.insert(0, r"%s")
+from PyQt5.QtWidgets import QApplication, QProgressBar
+app = QApplication([])
+from pastelabel.ui.theme import ThemeManager
+from pastelabel.ui import dialogs, inference_progress, quality_lint_dialog
+from pastelabel.ui.video_dialog import VideoDialog
+
+base = ThemeManager.get_progress_style()
+
+video = VideoDialog().styleSheet()
+infer = inference_progress.InferenceProgressDialog().styleSheet()
+lint = quality_lint_dialog._progress_qss()
+# 留住 dialog 引用：不然它被回收，bar 变悬空对象
+dlg = dialogs.ProgressDialogFactory.create_progress_dialog(None, "t", "l", 10)
+factory = dlg.findChild(QProgressBar).styleSheet()
+
+print("RESULT", repr((base.count("border-radius: 8px"),
+                      "border-radius: 8px" in video,
+                      "QProgressBar::chunk" in video,
+                      "border-radius: 8px" in infer,
+                      "border-radius: 8px" in lint,
+                      "border-radius: 8px" in factory,
+                      lint == base)))
+''' % str(ROOT)
+
+    out = _run_dialog_qt(script)
+    (radius_count, video_rounded, video_chunk, infer_rounded,
+     lint_rounded, factory_rounded, lint_is_base) = out
+
+    assert radius_count == 2, "统一样式要同时给外层与 chunk 圆角"
+    assert video_rounded and video_chunk, "视频弹窗进度条没走统一圆角样式"
+    assert infer_rounded, "推理进度窗没走统一圆角样式"
+    assert lint_rounded and lint_is_base, "质检进度条没用 ThemeManager 的统一实现"
+    assert factory_rounded, "QProgressDialog 工厂没走统一圆角样式"
+
+
+def test_video_progress_bar_matches_project_height():
+    """视频进度条高度跟其它三处一致（统一样式给的 16px），不再是 12px 直角。"""
+    src = (ROOT / "pastelabel" / "ui" / "video_dialog.py").read_text(encoding="utf-8")
+    assert "setFixedHeight(12)" not in src, "12px 直角是旧的、与别处不一致的高度"
+    assert "get_progress_style" in src, "要用 ThemeManager 的统一进度条样式"

@@ -793,3 +793,29 @@ class ThemeManager:
     def get_dialog_button_style(cls):
         """小窗按钮复用设置弹窗的普通按钮圆角。"""
         return cls.get_button_style()
+
+    @classmethod
+    def get_progress_style(cls, radius=8, height=16, text_visible=True):
+        """全项目进度条统一圆角样式。
+
+        圆角要同时写在 QProgressBar 与 ::chunk 上：只写外层会让填充块顶着
+        直角边角，看起来像没生效。`radius` 给 0 以外的值时记得 height 至少
+        是它的两倍，否则圆角被压扁。
+        """
+        t = cls._current_theme
+        text = (f"text-align: center; color: {t['text_primary']};"
+                if text_visible else "")
+        return f"""
+            QProgressBar {{
+                border: none;
+                border-radius: {radius}px;
+                background-color: {t['scrollbar_bg']};
+                {text}
+                min-height: {height}px;
+                max-height: {height}px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {t['accent']};
+                border-radius: {radius}px;
+            }}
+        """

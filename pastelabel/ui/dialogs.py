@@ -183,22 +183,10 @@ class ProgressDialogFactory:
 
         bar = progress_dialog.findChild(QProgressBar)
         if bar is not None:
+            # objectName 留着：只对这条进度条生效，不影响对话框里其它控件
             bar.setObjectName("progressBar")
-            bar.setStyleSheet(f"""
-                QProgressBar#progressBar {{
-                    border: none;
-                    border-radius: 8px;
-                    background-color: {t['scrollbar_bg']};
-                    text-align: center;
-                    color: {t['text_primary']};
-                    min-height: 16px;
-                    max-height: 16px;
-                }}
-                QProgressBar#progressBar::chunk {{
-                    background-color: {t['accent']};
-                    border-radius: 8px;
-                }}
-            """)
+            qss = ThemeManager.get_progress_style()
+            bar.setStyleSheet(qss.replace("QProgressBar", "QProgressBar#progressBar"))
 
         ProgressDialogFactory._center_dialog(progress_dialog)
         ProgressDialogFactory._sync_titlebar(progress_dialog)

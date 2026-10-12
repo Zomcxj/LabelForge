@@ -80,7 +80,7 @@ class VideoDialog(QDialog):
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName("videoProgress")
-        self.progress_bar.setFixedHeight(12)
+        # 与全项目进度条一致：16px 高 + 8px 圆角（原来 12px 直角，看着像另一种控件）
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
@@ -388,6 +388,7 @@ class VideoDialog(QDialog):
                 border: 1px solid {t['border_color']}; border-radius: 4px;
             }}
             QListWidget#composeLabelList::item {{ padding: 2px 4px; }}
+            {ThemeManager.get_progress_style(text_visible=False)}
         """)
 
     # ---------- 对外接口 ----------

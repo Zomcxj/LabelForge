@@ -1741,10 +1741,12 @@ print("AFTER_TEXT", row.replace_btn.text())
 
 
 def test_summary_counts_only_images_actually_written(monkeypatch):
-    """汇总里的「张已写入」要数真的写了盘的，没框可写的不算。"""
+    """汇总里的「张已写入」要数真的写了盘的，没框可写的不算。
+
+    0 是当前图（有手工框，走正常保存流程 → 写）、1 写了、2 没框可写。
+    """
     from pastelabel.engine import inference_task
 
-    # 0 是当前图（走正常保存），1 写了，2 没框可写
     monkeypatch.setattr(inference_task, "write_one_result",
                         lambda *a, **kw: a[0].index == 1)
 
@@ -1755,7 +1757,8 @@ def test_summary_counts_only_images_actually_written(monkeypatch):
                                1: _result(1, "b.png", []),
                                2: _result(2, "c.png", [])})
 
-    assert "1 张已写入" in editor.status_label.text, editor.status_label.text
+    # 0（手工框）与 1 写了；2 返回 False → 不能算进去
+    assert "2 张已写入" in editor.status_label.text, editor.status_label.text
 
 
 def test_summary_reports_write_failures(monkeypatch):
@@ -1774,8 +1777,31 @@ def test_summary_reports_write_failures(monkeypatch):
                                1: _result(1, "b.png", [])})
 
     text = editor.status_label.text
+    # 当前图（手工框）走正常保存成功；1 失败 → 两个数字必须分开
     assert "1 张写入失败" in text, text
+    assert "1 张已写入" in text, text
+
+
+def test_summary_does_not_count_failed_write_as_written(monkeypatch):
+    """失败的图不能同时被算成「已写入」。"""
+    from pastelabel.engine.inference_task import InferenceError
+    from pastelabel.engine import inference_task
+
+    monkeypatch.setattr(
+        inference_task, "write_one_result",
+        lambda *a, **kw: (_ for _ in ()).throw(InferenceError("x")))
+
+    # 当前图换成没有手工框的空编辑器 → 当前图也不写
+    editor = _FakeEditor(images=("a.png", "b.png"))
+    editor.detection_boxes = []
+    editor.detection_boxes_dict = {0: []}
+    editor._on_result_ready(1, _result(1, "b.png", []))
+    editor._on_batch_finished({0: _result(0, "a.png", []),
+                               1: _result(1, "b.png", [])})
+
+    text = editor.status_label.text
     assert "0 张已写入" in text, text
+    assert "1 张写入失败" in text, text
 
 
 def test_write_failure_does_not_stop_the_batch(monkeypatch):
@@ -2001,3 +2027,78 @@ print("RESULT", repr(order))
     order = eval(line[len("RESULT"):].strip())
 
     assert order == [("ready", 0), ("ready", 1), ("ready", 2), ("done", 3)], order
+
+
+def test_first_image_of_a_batch_turns_green_immediately(tmp_path):
+    """一键推理的第一张就是当前图，必须和其他图一样立刻变绿。
+
+    回归：曾经把当前图整个跳过，留到整批结束的收尾里处理，用户看到的是
+    「第一张一直不绿，跑到最后才绿」。
+    """
+    from pastelabel.engine import inference_task
+    from pastelabel.engine.image_loader.status import (
+        STATUS_ANNOTATED, annotation_status_for_image)
+
+    a = tmp_path / "a.png"
+    b = tmp_path / "b.png"
+    for p in (a, b):
+        p.write_bytes(b"")
+    assert annotation_status_for_image(str(a)) != STATUS_ANNOTATED
+
+    editor = _FakeEditor(images=(str(a), str(b)), current=0)
+    # 当前图走正常保存流程 → 这里直接调真实的 save_json 等价物
+    editor.save_json = lambda *args, **kw: inference_task.write_sidecar_boxes(
+        str(a), editor.detection_boxes, 100, 80)
+
+    editor._on_result_ready(0, _result(0, str(a), [
+        {"label": "cat", "x": 1, "y": 1, "width": 2, "height": 2}]))
+
+    assert annotation_status_for_image(str(a)) == STATUS_ANNOTATED, \
+        "第一张（当前图）没有立刻写盘，绿点不会亮"
+    assert 0 in editor._batch_written_keys, editor._batch_written_keys
+    # 走的是正常保存流程：内存框与画布也要同步，不能只写盘
+    assert [bx["label"] for bx in editor.detection_boxes] == ["manual", "cat"], \
+        editor.detection_boxes
+    assert editor.detection_boxes_dict[0] == editor.detection_boxes
+    assert len(editor.undo_snapshots) == 1, "当前图要留撤销点"
+    assert editor.canvas.updates >= 1, "画布没重绘"
+
+
+def test_current_image_write_goes_through_the_normal_save_path(monkeypatch):
+    """当前图必须走 `_apply_inference_to_current`，不能走非当前图的直接写盘。
+
+    两条路的差别不只是写盘：正常保存流程还会更新内存框、画布与撤销快照。
+    走错了就会出现「盘上有了、画布上还是旧框，切走再切回才更新」。
+    """
+    from pastelabel.engine import inference_task
+
+    direct = []
+    monkeypatch.setattr(inference_task, "write_one_result",
+                        lambda *a, **kw: direct.append(a[0].index) or True)
+
+    editor = _FakeEditor(images=("a.png", "b.png"), current=0)
+    editor._on_result_ready(0, _result(0, "a.png", [
+        {"label": "cat", "x": 1, "y": 1, "width": 2, "height": 2}]))
+
+    assert direct == [], "当前图不该走直接写盘那条路"
+    assert len(editor.undo_snapshots) == 1
+    assert len(editor.saved) == 1
+
+
+def test_current_image_is_not_applied_twice_at_batch_end(monkeypatch):
+    """收尾不能把当前图再处理一遍：补充模式会写重复框，覆盖模式会多压快照。"""
+    from pastelabel.engine import inference_task
+
+    editor = _FakeEditor(images=("a.png", "b.png"), current=0)
+    applied = []
+    monkeypatch.setattr(
+        _FakeEditor, "_apply_inference_to_current",
+        lambda self, result, replace_auto: applied.append(result.index) or True,
+        raising=False)
+
+    editor._on_result_ready(0, _result(0, "a.png", []))
+    assert applied == [0], applied
+
+    editor._on_batch_finished({0: _result(0, "a.png", []),
+                               1: _result(1, "b.png", [])})
+    assert applied == [0], f"收尾又处理了一次当前图: {applied}"

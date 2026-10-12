@@ -66,10 +66,7 @@ class InferenceProgressDialog(QDialog):
             QDialog {{ background-color: {theme['widget_bg']}; color: {theme['text_primary']}; }}
             QLabel {{ color: {theme['text_primary']}; }}
             QLabel#inferenceSummary {{ color: {theme['text_secondary']}; }}
-            QProgressBar {{ border: none; border-radius: 8px;
-                background-color: {theme['scrollbar_bg']}; text-align: center;
-                color: {theme['text_primary']}; height: 16px; }}
-            QProgressBar::chunk {{ background-color: {theme['accent']}; border-radius: 8px; }}
+            {ThemeManager.get_progress_style()}
             QPushButton {{ background-color: {theme['panel_bg']}; color: {theme['text_primary']};
                 border: 1px solid {theme['border_color']}; border-radius: 4px; padding: 4px 10px; }}
             QPushButton:hover {{ border-color: {theme['accent']}; }}

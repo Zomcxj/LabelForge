@@ -18,16 +18,12 @@ from .theme import ThemeManager
 from ..engine.quality_lint import KIND_LABELS, TINY_KINDS
 
 
-def _progress_qss(t):
-    """质检进度条样式：圆角与 QProgressDialog 一致（8px，chunk 同圆角）。
+def _progress_qss():
+    """质检进度条样式：与全项目进度条一致（走 ThemeManager 的统一实现）。
 
     单独成函数是因为 stylesheet 拼在 __init__ 的大 f-string 里没法直接测。
     """
-    return f"""QProgressBar {{ border: none; border-radius: 8px;
-                background-color: {t['scrollbar_bg']}; text-align: center;
-                color: {t['text_primary']}; height: 16px; }}
-            QProgressBar::chunk {{ background-color: {t['accent']};
-                border-radius: 8px; }}"""
+    return ThemeManager.get_progress_style()
 
 
 class QualityLintDialog(QDialog):
@@ -56,7 +52,7 @@ class QualityLintDialog(QDialog):
                 border: 1px solid {t['border_color']}; padding: 4px; font-weight: bold; }}
             QTableWidget QTableCornerButton::section {{ background-color: {t['panel_bg']};
                 border: 1px solid {t['border_color']}; }}
-            {_progress_qss(t)}
+            {_progress_qss()}
             QComboBox {{ background-color: {t['panel_bg']}; color: {t['text_primary']};
                 border: 1px solid {t['border_color']}; padding: 2px 6px; }}
         """)

@@ -426,21 +426,36 @@ class InferenceMixin:
         worker.start()
 
     def _on_result_ready(self, key, result):
-        """单张结果落地：写 sidecar + 刷新该行的状态圆点。
+        """单张结果落地：写盘 + 刷新该行的状态圆点。
 
-        当前显示图不在这里写——它走 `_apply_inference_to_current`（要保贴图、
-        画布状态与撤销快照），留到整批结束时统一处理。范围配置与筛选规则
-        在启动时已经定稿，这里只负责落盘。
+        逐张写盘是硬要求：json 一张张出来、圆点逐个变绿，用户随时能看到
+        进度，取消或崩溃时已完成的图也不会白跑。**包括当前显示图**——批量
+        推理的起点就是当前图，跳过它会出现「第一张一直不变绿、结束才绿」。
+
+        当前图走 `_apply_inference_to_current`（正常保存流程：内存、画布、
+        撤销快照、写盘、圆点一次到位），其余图直接写 sidecar。进度窗不是
+        模态的，用户跑批期间可能切图，所以判断的是「此刻显示的是不是这张」，
+        切到哪张就更新哪张。
         """
         if self._inference_dataset_changed():
             return
         if getattr(self, '_is_delete_view', False):
             return
+        if result.error:
+            return
         if key == self.current_background_index:
+            # 当前图走正常保存流程：内存、画布、撤销快照、写盘、圆点一次到位
+            self._batch_handled_keys = set(
+                getattr(self, '_batch_handled_keys', ())) | {key}
+            if self._apply_inference_to_current(result, self._replace_mode()):
+                self._batch_written_keys = set(
+                    getattr(self, '_batch_written_keys', ())) | {key}
             return
         from ...engine.inference_task import InferenceError, write_one_result
 
         memory = getattr(self, 'detection_boxes_dict', None) or {}
+        self._batch_handled_keys = set(
+            getattr(self, '_batch_handled_keys', ())) | {key}
         try:
             wrote = write_one_result(result, existing=memory.get(key),
                                      replace_auto=self._replace_mode(),
@@ -486,14 +501,17 @@ class InferenceMixin:
 
     def _on_batch_finished(self, results):
         self._close_progress_dialog()
-        # 逐张写过的键（当前显示图不在其中）：收尾时不能再写一遍
-        written_keys = set(getattr(self, '_batch_written_keys', ()))
-        failed_keys = set(getattr(self, '_batch_write_failed', ()))
+        # 逐张处理过的键：收尾时不能再处理一遍（补充模式会写重复框）
+        handled = set(getattr(self, '_batch_handled_keys', ()))
+        written = set(getattr(self, '_batch_written_keys', ()))
+        failed = set(getattr(self, '_batch_write_failed', ()))
+        self._batch_handled_keys = set()
         self._batch_written_keys = set()
         self._batch_write_failed = set()
         self._apply_inference_results(results, self._replace_mode(),
-                                      skip_indices=written_keys,
-                                      failed_indices=failed_keys)
+                                      skip_indices=handled,
+                                      written_indices=written,
+                                      failed_indices=failed)
         self._update_inference_buttons()
 
     def _replace_mode(self):
@@ -535,11 +553,15 @@ class InferenceMixin:
         warning(self, tr("错误"), message)
 
     def _apply_inference_results(self, results, replace_auto, skip_indices=(),
-                                 failed_indices=()):
-        """整批结束后的收尾：处理当前显示图，汇总提示。
+                                 written_indices=(), failed_indices=()):
+        """整批结束后的收尾：汇总提示。
 
-        其余图在 `_on_result_ready` 里已经逐张写过了（skip_indices 就是它们），
-        这里不能再写一遍——重复写会把用户在这期间做的新编辑覆盖掉。
+        绝大多数图在 `_on_result_ready` 里已经逐张处理过了（skip_indices
+        就是它们），**这里不能再处理一遍**：补充模式下重复合并会把同一批框
+        写两遍，覆盖模式下则会白白多压一层撤销快照。
+
+        单张推理（`current_only=True`）没接 `result_ready`，所以当前图在这里
+        处理，skip_indices 为空。
         """
         if self._inference_dataset_changed():
             self.status_label.setText(tr("数据集已切换，推理结果已丢弃"))
@@ -547,12 +569,16 @@ class InferenceMixin:
         if getattr(self, '_is_delete_view', False):
             return
 
+        skip = set(skip_indices)
         current = self.current_background_index
         current_result = results.get(current)
-        if current_result is not None and not current_result.error:
-            self._apply_inference_to_current(current_result, replace_auto)
+        wrote_current = False
+        if (current_result is not None and not current_result.error
+                and current not in skip):
+            wrote_current = self._apply_inference_to_current(
+                current_result, replace_auto)
 
-        written = len(set(skip_indices))
+        written = len(set(written_indices)) + (1 if wrote_current else 0)
         failed = len(set(failed_indices))
         total_boxes = sum(len(r.boxes) for r in results.values() if not r.error)
         text = (f"{tr('推理完成')}: {len(results)} {tr('张图')} · "
@@ -563,7 +589,11 @@ class InferenceMixin:
         self._dataset_stats_dirty = True
 
     def _apply_inference_to_current(self, result, replace_auto):
-        """当前图的框一次性替换：单次撤销快照 + 单次列表刷新 + 单次保存。"""
+        """当前图的框一次性替换：单次撤销快照 + 单次列表刷新 + 单次保存。
+
+        返回是否真的写了盘（没框也没贴图时不写，与批量路径口径一致）。
+        圆点由 `save_json` 负责刷新。
+        """
         from ...engine.inference_task import merge_boxes, remove_empty_sidecar
 
         index = self.current_background_index
@@ -583,15 +613,16 @@ class InferenceMixin:
             canvas.update()
         self.update_label_list()
         if index < 0:
-            return
+            return False
         path = self.background_images[index]
         # 与批量一致：没框也没贴图就不写盘，避免留下 shapes 为 [] 的空 json
         if not merged and not (getattr(self, 'canvas_items', None) or []):
             remove_empty_sidecar(path)
-            return
+            return False
         # 传入画布贴图，避免重写 sidecar 时把贴图 shape 丢掉
         self.save_json(path, os.path.basename(path), "",
                        canvas_items=self.canvas_items, current_index=index)
+        return True
 
     def _inference_dataset_changed(self):
         """数据集是否已换：换了就丢弃迟到结果，不写到别的图上。"""

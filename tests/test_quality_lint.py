@@ -2394,13 +2394,16 @@ def test_progress_bar_hidden_after_failed_result():
 
 
 def test_progress_bar_stylesheet_is_rounded():
-    """质检进度条圆角与 QProgressDialog 一致（8px，chunk 同圆角）。"""
+    """质检进度条走 ThemeManager 的统一实现（8px 圆角，chunk 同圆角）。"""
     from pastelabel.ui import quality_lint_dialog as mod
-    qss = mod._progress_qss({"scrollbar_bg": "#202020", "text_primary": "#f5f5f5",
-                             "accent": "#2950ff"})
+
+    qss = mod._progress_qss()
     assert qss.count("border-radius: 8px") == 2, qss
-    assert "#202020" in qss and "#2950ff" in qss
     assert "QProgressBar::chunk" in qss
+    # 与全项目其它进度条是同一份样式
+    from pastelabel.ui.theme import ThemeManager
+
+    assert qss == ThemeManager.get_progress_style()
 
 
 def test_context_menu_gives_keep_not_detail_ignore_for_tiny_kinds():
