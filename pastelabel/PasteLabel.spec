@@ -27,7 +27,10 @@ _extra_hiddenimports = [
     'pastelabel.ui.inference_workers',
     'pastelabel.ui.inference_progress',
     'pastelabel.ui.class_filter_panel',
+    'pastelabel.ui.scope_panel',
+    'pastelabel.ui.sliding_window_dialog',
     'pastelabel.ui.mixins.inference',
+    'pastelabel.engine.inference_scope',
     # onnxruntime 在函数内导入，显式声明避免打包时漏收原生库
     'onnxruntime',
     'cv2',

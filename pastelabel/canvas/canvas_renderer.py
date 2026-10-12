@@ -57,7 +57,7 @@ class CanvasRendererMixin:
 
             sp.setOpacity(self.shape_opacity)
 
-            if background_rect and self._is_paste_mode():
+            if background_rect and self._show_regions():
                 self._draw_regions(sp, background_rect)
 
             if background_rect:
@@ -162,6 +162,16 @@ class CanvasRendererMixin:
         """区域仅在贴图模式显示/编辑。"""
         return (getattr(self._editor, 'edit_mode', 'paste') == 'paste'
                 and not getattr(self._editor, '_is_delete_view', False))
+
+    def _show_regions(self):
+        """是否画区域轮廓：贴图模式，或推理范围选了区域。
+
+        推理用区域时要在标注模式也看得见范围，否则用户不知道框为什么只出现在
+        某块地方。编辑仍然只在贴图模式（`_is_paste_mode()` 不动，免得影响
+        贴图交互）。
+        """
+        return self._is_paste_mode() or bool(
+            getattr(self._editor, '_show_scope_regions', False))
 
     def _draw_regions(self, painter, background_rect):
         """绘制语义区域（在贴图下方），支持矩形与多边形。"""

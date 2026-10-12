@@ -11,6 +11,7 @@ import random
 import pytest
 
 from pastelabel.canvas.canvas_interaction import CanvasInteractionMixin
+from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
 from pastelabel.canvas.canvas_menu import CanvasMenuMixin
 from pastelabel.engine.shape_io import point_in_polygon
 from pastelabel.engine.paste_engine import PasteEngineMixin
@@ -587,6 +588,57 @@ def test_is_paste_mode():
     assert canvas._is_paste_mode() is False
     canvas._editor.edit_mode = 'paste'
     canvas._editor._is_delete_view = True
+    assert canvas._is_paste_mode() is False
+
+
+class RegionCanvas(CanvasInteractionMixin, CanvasRendererMixin):
+    """同时带交互与渲染 mixin：`_show_regions` 定义在渲染 mixin 上。"""
+
+    def __init__(self, regions=None, fixed=False):
+        Canvas.__init__(self, regions=regions, fixed=fixed)
+        self._editor.edit_mode = 'paste'
+        self._editor._is_delete_view = False
+
+
+def test_show_regions_follows_paste_mode_by_default():
+    """默认只在贴图模式画区域轮廓（不设范围时行为不变）。"""
+    canvas = RegionCanvas()
+    assert canvas._show_regions() is True
+    canvas._editor.edit_mode = 'annotate'
+    assert canvas._show_regions() is False
+
+
+def test_show_regions_in_annotate_mode_when_scope_uses_roi():
+    """推理范围选了区域时，标注模式也画区域轮廓。
+
+    否则用户看不到范围，不知道框为什么只出现在某块地方。编辑仍只在
+    贴图模式：`_is_paste_mode()` 保持 False，贴图交互不受影响。
+    """
+    canvas = RegionCanvas()
+    canvas._editor.edit_mode = 'annotate'
+    canvas._editor._show_scope_regions = True
+
+    assert canvas._show_regions() is True
+    assert canvas._is_paste_mode() is False, "编辑权限不能被放宽"
+
+
+def test_show_regions_stays_off_without_scope_flag():
+    """没设范围标志时不显示（默认属性缺失也不能崩）。"""
+    canvas = RegionCanvas()
+    canvas._editor.edit_mode = 'annotate'
+
+    assert canvas._show_regions() is False
+    assert getattr(canvas._editor, '_show_scope_regions', False) is False
+
+
+def test_show_regions_ignores_delete_view():
+    """删除视图下 `_is_paste_mode()` 为假，但范围显示按自己的判断走。"""
+    canvas = RegionCanvas()
+    canvas._editor.edit_mode = 'annotate'
+    canvas._editor._is_delete_view = True
+    canvas._editor._show_scope_regions = True
+
+    assert canvas._show_regions() is True
     assert canvas._is_paste_mode() is False
 
 # ==================== 多边形区域 ====================

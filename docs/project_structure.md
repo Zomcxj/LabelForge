@@ -56,7 +56,7 @@ PasteLabel/
 │   │   │   ├── scan.py
 │   │   │   └── status.py
 │   │   ├── label_manager.py
-│   │   ├── inference_scope.py # 滑窗/语义区域推理范围枚举与跨窗去重（纯逻辑，尚未接 UI）
+│   │   ├── inference_scope.py # 滑窗/语义区域推理范围枚举与跨窗去重（纯逻辑，无 Qt 依赖）
 │   │   ├── paste_engine.py
 │   │   ├── quality_lint.py     # 标注质检扫描（越界/超小/重复/重叠/近似名/分组，纯逻辑）
 │   │   ├── save_manager.py
@@ -89,14 +89,16 @@ PasteLabel/
 │   │   ├── icons.py           # SVG 图标常量与渲染辅助函数
 │   │   ├── class_filter_panel.py # 类别筛选面板（可滚动勾选列表、全选/全不选）
 │   │   ├── inference_progress.py # 推理进度小窗（非模态、可取消、跟随时区/主题、5 行日志）
-│   │   ├── inference_workers.py  # 模型加载/批量推理/抽帧/合成后台线程与类别名输入
+│   │   ├── inference_workers.py  # 模型加载/批量推理（含推理范围）/抽帧/合成后台线程与类别名输入
 │   │   ├── main_window.py     # ImageEditor 协调器
 │   │   ├── memory_dialog.py
-│   │   ├── model_row.py       # 画布上方的模型参数行（加载/阈值/尺寸/覆盖模式/类别筛选/关闭）
+│   │   ├── model_row.py       # 画布上方的模型参数行（加载/阈值/尺寸/覆盖模式/类别筛选/推理范围/关闭）
 │   │   ├── processing_panel.py # ProcessingPanel 执行与日志逻辑
 │   │   ├── quality_lint_dialog.py # 标注质检结果窗口
+│   │   ├── scope_panel.py    # 推理范围选择面板（全图/滑窗/区域/区域+滑窗）
 │   │   ├── segmented_control.py
 │   │   ├── settings_dialog.py
+│   │   ├── sliding_window_dialog.py # 滑窗参数窗口（窗口尺寸/重叠/实时预估窗口数）
 │   │   ├── theme.py
 │   │   ├── video_dialog.py   # 视频弹窗：抽帧 / 合成（含叠加标签框）两个标签页
 │   │   └── mixins/
@@ -158,6 +160,8 @@ PasteLabel/
 │   ├── test_video_render.py          # 叠加标签框离屏绘制（真实 Qt 子进程）
 │   ├── test_video_compose_ui.py      # 合成页控件与 render 接线（真实 Qt 全链路）
 │   ├── test_inference_scope.py       # 滑窗/语义区域范围枚举与跨窗去重
+│   ├── test_inference_scope_wiring.py # 推理范围接入任务层：四模式偏移/参考图尺寸/取消
+│   ├── test_inference_scope_ui.py    # 推理范围界面接线（真实 Qt 子进程）
 │   └── ...                     # 其他领域回归测试
 └── docs/
     ├── project_structure.md   # 本文档

@@ -60,6 +60,27 @@ def test_documentation_covers_semantic_region_and_quality_lint():
     assert "lint_ignored_rules" in settings
 
 
+def test_documentation_covers_inference_scope():
+    """滑窗/区域推理的用法与限制要写进文档，别只留在计划稿里。"""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs" / "user_guide.md").read_text(encoding="utf-8")
+    structure = (ROOT / "docs" / "project_structure.md").read_text(encoding="utf-8")
+
+    for source in (readme, guide):
+        assert "推理范围" in source
+        assert "滑窗" in source
+        assert "框中心" in source
+
+    # 用户最容易被坑的两点：范围不持久化、低 IoU 重复可能残留
+    assert "不持久化" in guide or "不记忆" in guide
+    assert "低 IoU 重复" in guide
+    assert "window_spec" in guide
+
+    for module in ("scope_panel.py", "sliding_window_dialog.py",
+                   "inference_scope.py"):
+        assert module in structure, module
+
+
 def test_documentation_covers_dataset_health():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     guide = (ROOT / "docs" / "user_guide.md").read_text(encoding="utf-8")

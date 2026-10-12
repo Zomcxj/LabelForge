@@ -92,12 +92,14 @@ class InferenceWorker(QThread):
     finished_ok = pyqtSignal(object)
     failed = pyqtSignal(str)
 
-    def __init__(self, paths, keys, detector, class_filter=None, parent=None):
+    def __init__(self, paths, keys, detector, class_filter=None, scope=None,
+                 parent=None):
         super().__init__(parent)
         self._paths = list(paths)
         self._keys = list(keys)
         self._detector = detector
         self._class_filter = class_filter
+        self._scope = scope
         self._interrupted = False
 
     def run(self):
@@ -108,6 +110,7 @@ class InferenceWorker(QThread):
                 progress_fn=self.progress.emit,
                 is_interrupted=lambda: self._interrupted,
                 class_filter=self._class_filter,
+                scope=self._scope,
             )
             self.finished_ok.emit(results)
         except Exception as exc:

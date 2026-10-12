@@ -21,6 +21,7 @@ class ModelRow(QWidget):
     replace_mode_changed = pyqtSignal(bool)
     load_requested = pyqtSignal()
     filter_requested = pyqtSignal()
+    scope_requested = pyqtSignal()
     closed = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -103,6 +104,14 @@ class ModelRow(QWidget):
         self.filter_btn.clicked.connect(self.filter_requested.emit)
         layout.addWidget(self.filter_btn)
 
+        self.scope_btn = QPushButton(tr("推理范围"))
+        self.scope_btn.setObjectName("optionsBtn")
+        self.scope_btn.setFixedHeight(24)
+        self.scope_btn.setEnabled(False)
+        self.scope_btn.setToolTip(tr("全图 / 滑窗 / 区域 / 区域+滑窗"))
+        self.scope_btn.clicked.connect(self.scope_requested.emit)
+        layout.addWidget(self.scope_btn)
+
         layout.addStretch()
 
         self.close_btn = QToolButton()
@@ -171,6 +180,7 @@ class ModelRow(QWidget):
             widget.blockSignals(False)
         self.replace_btn.setEnabled(True)
         self.filter_btn.setEnabled(True)
+        self.scope_btn.setEnabled(True)
 
     def clear_model(self):
         """没有模型时的样子：显示引擎默认值，只留加载按钮可点。
@@ -200,8 +210,10 @@ class ModelRow(QWidget):
             widget.blockSignals(False)
         self.replace_btn.setEnabled(False)
         self.filter_btn.setEnabled(False)
+        self.scope_btn.setEnabled(False)
         self.iou_spin.setToolTip(tr("NMS 去重阈值，越小保留的框越少"))
         self.set_filter_summary(set(), 0)
+        self.set_scope_summary(tr("全图"))
         self._refresh_replace_text()
 
     def set_filter_summary(self, selected, total):
@@ -210,6 +222,16 @@ class ModelRow(QWidget):
             self.filter_btn.setText(f"{tr('类别筛选')}({len(selected)}/{total})")
         else:
             self.filter_btn.setText(tr("类别筛选"))
+
+    def set_scope_summary(self, name, detail=""):
+        """在按钮上显示当前范围，非全图时带参数摘要。"""
+        if name and name != tr("全图"):
+            self.scope_btn.setText(f"{tr('推理范围')}: {name}{detail}")
+        else:
+            self.scope_btn.setText(tr("推理范围"))
+
+    def scope_summary_text(self):
+        return self.scope_btn.text()
 
     def retranslate(self):
         """切语言后刷新行内文字。"""
@@ -225,6 +247,7 @@ class ModelRow(QWidget):
         self._refresh_replace_text()
         # 筛选按钮的计数文案由主窗口按当前选择重设
         self.filter_btn.setToolTip(tr("保留勾选的类别；没勾选的会被过滤掉"))
+        self.scope_btn.setToolTip(tr("全图 / 滑窗 / 区域 / 区域+滑窗"))
 
     def _tooltip(self, name, size, providers):
         parts = [name, f"{tr('输入尺寸')}: {size[0]}x{size[1]}"]

@@ -22,9 +22,13 @@ MODE_ROI = "roi"
 MODE_ROI_WINDOW = "roi_window"
 MODES = (MODE_FULL, MODE_WINDOW, MODE_ROI, MODE_ROI_WINDOW)
 
-_SCOPE_KEYS = {"mode", "windows", "regions"}
+_SCOPE_KEYS = {"mode", "windows", "regions", "reference_size"}
 _WINDOW_KEYS = {"w", "h", "overlap"}
 _EDGE_EPS = 1e-6            # 顶点/边命中容差（原图像素坐标）
+# 窗口数上限。重叠逼近窗口尺寸时步长退化为 1，窗口数变成图面积量级：
+# 20000² 配 640 窗口会排出 3.7 亿个窗口，列表没建完就把内存吃光。
+# 这种配置没有实用价值（等于逐像素扫），宁可启动时报错也不让界面假死。
+MAX_WINDOWS = 20000
 
 
 class ScopeError(RuntimeError):
@@ -91,6 +95,11 @@ def iter_windows(iw, ih, spec):
                                             "overlap": overlap})
     xs = window_starts(iw, cw, ov)
     ys = window_starts(ih, ch, ov)
+    # 先乘后比，不建列表：这个检查的意义就是别把它建出来
+    if len(xs) * len(ys) > MAX_WINDOWS:
+        raise ScopeError(
+            f"窗口数 {len(xs)} × {len(ys)} = {len(xs) * len(ys)} 超过上限 "
+            f"{MAX_WINDOWS}，请加大窗口或减小重叠")
     return [(x, y, cw, ch) for y in ys for x in xs]
 
 
@@ -231,7 +240,35 @@ def normalize_scope(scope, image_size):
         # 深拷贝：ROI 是临时区域，任务运行期间用户还可能继续编辑
         iter_regions(copy.deepcopy(regions), image_size)
         out["regions"] = copy.deepcopy(regions)
+
+    reference = scope.get("reference_size")
+    if reference is not None:
+        try:
+            rw, rh = int(reference[0]), int(reference[1])
+        except (TypeError, ValueError, IndexError):
+            raise ScopeError(f"参考图尺寸无效：{reference!r}")
+        if rw <= 0 or rh <= 0:
+            raise ScopeError(f"参考图尺寸必须为正：{rw} x {rh}")
+        out["reference_size"] = (rw, rh)
     return out
+
+
+def check_reference_size(scope, image_size):
+    """ROI 是按参考图量的，尺寸不符的图不能跑——否则 ROI 会被裁到别的图上。
+
+    缩放 ROI 或返回「成功但 0 框」都不行：默认覆盖模式会因此删掉原有自动标注。
+    """
+    if scope is None or "reference_size" not in scope:
+        return
+    reference = scope["reference_size"]
+    try:
+        iw, ih = int(image_size[0]), int(image_size[1])
+    except (TypeError, ValueError, IndexError):
+        raise ScopeError(f"图像尺寸无效：{image_size!r}")
+    if (iw, ih) != tuple(reference):
+        raise ScopeError(
+            f"图像尺寸 {iw}x{ih} 与参考图 {reference[0]}x{reference[1]} 不一致，"
+            "区域坐标无法对应")
 
 
 def merge_scope_results(chunks, iou_threshold=DEFAULT_IOU, image_size=None):

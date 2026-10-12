@@ -217,6 +217,20 @@ def test_hidden_imports_cover_video_modules(rel):
         assert name in names, f"{rel} 缺少 {name}"
 
 
+@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+def test_hidden_imports_cover_scope_modules(rel):
+    """推理范围的懒加载模块必须显式声明，否则打包后点「推理范围」才炸。
+
+    `scope_panel`、`sliding_window_dialog` 与 `inference_scope` 都在函数内导入
+    （避免启动时就拉 Qt 对话框），漏了不会在启动时报错。
+    """
+    names = set(_hidden_imports(rel))
+    for name in ("pastelabel.engine.inference_scope",
+                 "pastelabel.ui.scope_panel",
+                 "pastelabel.ui.sliding_window_dialog"):
+        assert name in names, f"{rel} 缺少 {name}"
+
+
 # ---------- 视频依赖（cv2）接线 ----------
 
 def _excludes(rel):

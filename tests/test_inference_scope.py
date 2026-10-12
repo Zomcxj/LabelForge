@@ -68,13 +68,37 @@ def test_iter_windows_uneven_remainder_is_distributed():
 
 
 def test_iter_windows_overlap_clamped_below_window_size():
-    """重叠被钳到 min(cw,ch)-1 以内，不能等于或超过窗口尺寸。"""
-    windows = iter_windows(1000, 1000, {"w": 300, "h": 300, "overlap": 999})
+    """重叠被钳到 min(cw,ch)-1，不能等于或超过窗口尺寸。
+
+    用 400px 小图验证：重叠 999 钳到 299 后步长为 1，此时 101 个窗口仍在
+    上限内，可观测到「钳制后起点逐像素推进」这一效果。
+    """
+    windows = iter_windows(400, 400, {"w": 300, "h": 300, "overlap": 999})
 
     for x, y, w, h in windows:
         assert w == 300 and h == 300
     xs = sorted({x for x, y, w, h in windows})
-    assert len(xs) >= 2
+    assert xs[:3] == [0, 1, 2]
+
+
+def test_iter_windows_rejects_window_count_above_cap():
+    """窗口数超上限必须报错，不能把内存吃光。
+
+    重叠逼近窗口尺寸时步长退化为 1，窗口数变成图面积量级：20000² 配 640
+    窗口、重叠 639 → 3.7 亿窗；1000² 配 300 窗口、重叠 999 → 49 万窗。
+    这类配置等于逐像素扫，没有实用价值。
+    """
+    for iw, spec in ((20000, {"w": 640, "h": 640, "overlap": 639}),
+                     (1000, {"w": 300, "h": 300, "overlap": 999})):
+        with pytest.raises(ScopeError) as excinfo:
+            iter_windows(iw, iw, spec)
+        assert "上限" in str(excinfo.value)
+
+
+def test_iter_windows_allows_large_but_bounded_grids():
+    """上限之内的网格照常放行，不能把正常配置也挡掉。"""
+    windows = iter_windows(20000, 20000, {"w": 640, "h": 640, "overlap": 0})
+    assert len(windows) == 1024
 
 
 def test_iter_windows_rejects_non_positive_size():

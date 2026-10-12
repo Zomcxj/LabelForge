@@ -6,9 +6,11 @@
 逐框调用会让整批推理产生成百上千次保存。这里只保存一次撤销快照、
 刷新一次列表、写一次当前图 sidecar。
 """
+import copy
 import os
 
 from ..i18n import t as tr
+from ...engine.inference_scope import MODE_FULL
 
 INFERENCE_SOURCE = "inference"
 
@@ -116,6 +118,10 @@ class InferenceMixin:
         # 换模型后类别表可能完全不同，之前的勾选作废，回到默认全选
         self._class_filter = None
         self._refresh_filter_button()
+        # 范围回到全图：ROI 是画布上的临时区域，换模型后不该沿用上一个范围
+        self._scope_mode = MODE_FULL
+        self._window_spec = self._effective_window_spec()
+        self._refresh_scope_button()
         self._update_inference_buttons()
         self.status_label.setText(
             f"{tr('模型加载完成')}: {os.path.basename(detector.model_path)}")
@@ -138,6 +144,7 @@ class InferenceMixin:
         row.input_size_changed.connect(self._on_model_size_changed)
         row.load_requested.connect(self._load_inference_model)
         row.filter_requested.connect(self._open_class_filter)
+        row.scope_requested.connect(self._open_scope_panel)
         row.closed.connect(self._update_inference_buttons)
         self.model_row = row
         layout = getattr(self, '_canvas_layout', None)
@@ -216,11 +223,134 @@ class InferenceMixin:
         self._save_inference_settings()
 
     def _on_model_size_changed(self, width, height):
+        """输入尺寸即时生效；静态轴模型的尺寸由模型自身决定。"""
         detector = getattr(self, '_detector', None)
         if detector is None:
             return
         detector.set_input_size((width, height))
         self._save_inference_settings()
+
+    # ---------- 推理范围 ----------
+
+    def _open_scope_panel(self):
+        """打开范围面板；确定后更新范围与窗口参数。"""
+        if getattr(self, '_detector', None) is None:
+            self.status_label.setText(tr("请先加载模型"))
+            return
+        from ..scope_panel import ScopePanel
+
+        panel = getattr(self, '_scope_panel', None)
+        if panel is None:
+            panel = ScopePanel(self)
+            panel.edit_regions_requested.connect(self._edit_regions_for_scope)
+            self._scope_panel = panel
+        panel.set_windows(self._effective_window_spec())
+        panel.set_region_count(len(self._region_boxes()))
+        panel.set_reference(self._reference_image_size())
+        panel.retranslate()
+        panel.set_mode(getattr(self, '_scope_mode', MODE_FULL))
+        panel.exec_()
+        if panel.result() != panel.Accepted:
+            return
+        mode, windows = panel.selection()
+        self._scope_mode = mode
+        if windows:
+            self._window_spec = windows
+        self._save_inference_settings()
+        self._refresh_scope_button()
+
+    def _edit_regions_for_scope(self):
+        """跳到贴图模式编辑区域；区域只在贴图模式可编辑。"""
+        self.status_label.setText(tr("区域在贴图模式里绘制，切过去后不会丢失当前标注"))
+        switch = getattr(self, '_switch_to_paste_mode', None)
+        if callable(switch):
+            switch()
+
+    def _region_boxes(self):
+        """画布上的临时区域；没有则为空表。"""
+        boxes = getattr(self, 'region_boxes', None)
+        return list(boxes) if isinstance(boxes, list) else []
+
+    def _reference_image_size(self):
+        """ROI 是相对当前显示图量的；拿不到尺寸时返回 None。"""
+        image = getattr(self, 'current_background', None)
+        if image is None:
+            return None
+        try:
+            width, height = int(image.width()), int(image.height())
+        except (AttributeError, TypeError, ValueError):
+            return None
+        return (width, height) if width > 0 and height > 0 else None
+
+    def _scope_for_run(self):
+        """启动任务时的范围快照；全图返回 None。
+
+        区域在这里深拷贝：任务跑起来后用户还会继续编辑画布上的区域，后台不能
+        读到正在被改的列表。参考图尺寸一并记下，尺寸不符的图会单独报失败。
+        """
+        from ...engine.inference_scope import (
+            MODE_ROI, MODE_ROI_WINDOW, MODE_WINDOW, ScopeError, normalize_scope,
+        )
+
+        mode = getattr(self, '_scope_mode', MODE_FULL)
+        if mode == MODE_FULL:
+            return None
+        scope = {"mode": mode}
+        if mode in (MODE_WINDOW, MODE_ROI_WINDOW):
+            windows = self._effective_window_spec()
+            # 目前不可达：`_effective_window_spec()` 三条分支都回非空表。
+            # 保留是为了以后改默认值（比如允许「不设参数」）时有个兜底，
+            # 不然会带着空窗口表进后台。
+            if not windows:
+                raise ScopeError("滑窗范围缺少窗口参数")
+            scope["windows"] = dict(windows)
+        if mode in (MODE_ROI, MODE_ROI_WINDOW):
+            regions = self._region_boxes()
+            if not regions:
+                raise ScopeError(tr("没有可用区域，请先在贴图模式画好区域"))
+            # 这里深拷贝是为了语义明确（scope 必须是快照）；即使去掉，
+            # `normalize_scope()` 内部也会 deepcopy 两次，结果一样。
+            scope["regions"] = copy.deepcopy(regions)
+            reference = self._reference_image_size()
+            if reference:
+                scope["reference_size"] = reference
+        # 用参考图尺寸先验一次，非法参数在启动时就报错，不留到后台
+        return normalize_scope(scope, self._reference_image_size() or (1, 1))
+
+    def _refresh_scope_button(self):
+        row = getattr(self, 'model_row', None)
+        self._sync_scope_region_display()
+        if row is None:
+            return
+        from ...engine.inference_scope import (
+            MODE_ROI, MODE_ROI_WINDOW, MODE_WINDOW,
+        )
+
+        mode = getattr(self, '_scope_mode', MODE_FULL)
+        if mode == MODE_FULL:
+            row.set_scope_summary(tr("全图"))
+            return
+        names = {MODE_WINDOW: "滑窗", MODE_ROI: "区域", MODE_ROI_WINDOW: "区域+滑窗"}
+        detail = ""
+        if mode in (MODE_WINDOW, MODE_ROI_WINDOW):
+            spec = getattr(self, '_window_spec', None) or {}
+            if spec:
+                detail = f" {spec.get('w')}×{spec.get('h')}/{spec.get('overlap')}"
+        row.set_scope_summary(tr(names[mode]), detail)
+
+    def _sync_scope_region_display(self):
+        """范围含区域时让画布在标注模式也画区域轮廓。
+
+        只影响显示，不改 `edit_mode`：区域编辑仍然只在贴图模式，否则会
+        影响贴图交互。
+        """
+        from ...engine.inference_scope import MODE_ROI, MODE_ROI_WINDOW
+
+        mode = getattr(self, '_scope_mode', MODE_FULL)
+        self._show_scope_regions = mode in (MODE_ROI, MODE_ROI_WINDOW)
+        canvas = getattr(self, 'canvas', None)
+        if canvas is not None and hasattr(canvas, 'update'):
+            canvas.update()
 
     # ---------- 推理 ----------
 
@@ -259,11 +389,24 @@ class InferenceMixin:
         paths = [images[i] for i in indices if 0 <= i < len(images)]
         if not paths:
             return
+        from ...engine.inference_scope import MODE_ROI, MODE_ROI_WINDOW, ScopeError
         from ..inference_workers import InferenceWorker
+
+        # 范围在启动时定稿：非法配置（没画区域、窗口参数坏）在这里就拦下，
+        # 不让它进后台变成「成功但 0 框」，那样覆盖模式会删掉原有自动标注。
+        try:
+            scope = self._scope_for_run()
+        except ScopeError as exc:
+            self.status_label.setText(tr("推理范围无效"))
+            self._inference_warn(str(exc))
+            return
+        if scope is not None and scope.get("mode") in (MODE_ROI, MODE_ROI_WINDOW):
+            self._note_scope_replace(scope)
 
         self._save_inference_settings()
         worker = InferenceWorker(
-            paths, indices, detector, self._filter_for_run(), self)
+            paths, indices, detector, self._filter_for_run(), scope=scope,
+            parent=self)
         self._run_worker = worker
         self._update_inference_buttons()
         if current_only:
@@ -278,6 +421,20 @@ class InferenceMixin:
         worker.failed.connect(self._on_inference_failed)
         worker.finished.connect(lambda w=worker: self._cleanup_run_worker(w))
         worker.start()
+
+    def _note_scope_replace(self, scope):
+        """区域范围 + 覆盖模式时在状态栏提醒：区域外的旧自动框也会被删掉。
+
+        只提醒、不弹确认框：每次跑区域都弹一次没人会读。范围面板里也写了
+        同样的规则。
+        """
+        if not self._replace_mode():
+            return
+        from ...engine.inference_scope import MODE_ROI_WINDOW
+
+        mode = tr("区域+滑窗") if scope.get("mode") == MODE_ROI_WINDOW else tr("区域")
+        self.status_label.setText(
+            f"{mode}: {tr('覆盖会替换本图全部旧自动框，区域之外的也会被删除')}")
 
     def _cleanup_run_worker(self, worker):
         if worker is getattr(self, '_run_worker', None):
@@ -421,4 +578,33 @@ class InferenceMixin:
             "conf_threshold": conf,
             "iou_threshold": iou,
             "input_size": (width, height),
+            # 只存窗口参数；范围模式不存，每次启动都回到全图，避免恢复出一个
+            # 没有 ROI 的区域模式。
+            "window_spec": dict(getattr(self, '_window_spec', None) or {}),
         })
+
+    def _saved_window_spec(self):
+        """上次用过的窗口参数；没存过则返回空表。"""
+        from ...core import config_manager
+        settings = config_manager.load_all().get('inference_settings') or {}
+        spec = settings.get("window_spec")
+        return dict(spec) if isinstance(spec, dict) else {}
+
+    def _effective_window_spec(self):
+        """实际要用的窗口参数：本次会话设过的优先，其次配置里存的，最后默认值。
+
+        首次使用（没设过也没存过）不能回空表：面板会因此带着「没有窗口参数」
+        进滑窗模式，确定后启动任务才报错。
+        """
+        from ..sliding_window_dialog import (
+            DEFAULT_OVERLAP, DEFAULT_WINDOW,
+        )
+
+        current = getattr(self, '_window_spec', None)
+        if current:
+            return dict(current)
+        saved = self._saved_window_spec()
+        if saved:
+            return saved
+        return {"w": DEFAULT_WINDOW, "h": DEFAULT_WINDOW,
+                "overlap": DEFAULT_OVERLAP}

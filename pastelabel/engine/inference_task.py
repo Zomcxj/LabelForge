@@ -31,6 +31,28 @@ class ImageResult(NamedTuple):
     height: int = 0
 
 
+def _normalize_window_spec(raw):
+    """窗口参数：只留 w/h/overlap 三个整数，坏值整份丢弃。
+
+    保存的是「上次用过的参数」，不校验图尺寸——图尺寸随数据集变，
+    校验留给 `normalize_scope()` 在真正跑任务时做。
+    """
+    if not isinstance(raw, dict) or not raw:
+        return {}
+    out = {}
+    for key in ("w", "h", "overlap"):
+        if key not in raw:
+            return {}
+        try:
+            value = int(raw[key])
+        except (TypeError, ValueError):
+            return {}
+        if value < 0 or (key != "overlap" and value <= 0):
+            return {}
+        out[key] = value
+    return out
+
+
 def normalize_settings(settings):
     """把界面/配置里的原始值规整成可用的模型配置，越界值钳到合法范围。"""
     settings = dict(settings or {})
@@ -61,6 +83,7 @@ def normalize_settings(settings):
         "providers": providers,
         "class_filter": [str(c) for c in (settings.get("class_filter") or [])],
         "replace_auto": bool(settings.get("replace_auto", False)),
+        "window_spec": _normalize_window_spec(settings.get("window_spec")),
     }
 
 
@@ -215,8 +238,129 @@ def mark_auto_boxes(boxes):
     return out
 
 
+def detect_in_scope(rgb, detector, resize_fn, scope):
+    """按范围跑一张图：全图 / 滑窗 / ROI / ROI+滑窗，返回原图坐标的框。
+
+    每个窗口都是「裁剪副本 → detect → 加偏移」，detect 自己完成 letterbox
+    逆变换并钳到裁剪图，所以偏移在它返回之后加，且只加一次。
+
+    ROI 的多边形掩膜只在裁剪副本上生成，不改写原图。
+    """
+    from .inference_scope import (
+        MODE_ROI, MODE_ROI_WINDOW, MODE_WINDOW,
+        iter_regions, iter_windows, merge_scope_results, region_bbox,
+        region_contains_box_center,
+    )
+
+    height, width = int(rgb.shape[0]), int(rgb.shape[1])
+    mode = scope.get("mode")
+    windows = None
+    if mode in (MODE_WINDOW, MODE_ROI_WINDOW):
+        windows = iter_windows(width, height, scope.get("windows") or {})
+
+    if mode == MODE_ROI:
+        regions = iter_regions(scope.get("regions"), (width, height))
+        chunks = []
+        for region in regions:
+            x1, y1, x2, y2 = region.bbox
+            crop, ox, oy = _masked_crop(rgb, region, x1, y1, x2, y2)
+            boxes = detector.detect(crop, resize_fn)
+            chunks.append((ox, oy, boxes))
+        merged = merge_scope_results(chunks, _scope_iou(detector),
+                                    image_size=(width, height))
+        return [b for b in merged
+                if any(region_contains_box_center(r, b) for r in regions)]
+
+    if mode == MODE_ROI_WINDOW:
+        regions = iter_regions(scope.get("regions"), (width, height))
+        chunks = []
+        for region in regions:
+            x1, y1, x2, y2 = region.bbox
+            for wx, wy, ww, wh in iter_windows(int(x2 - x1), int(y2 - y1),
+                                               scope.get("windows") or {}):
+                crop, ox, oy = _masked_crop(rgb, region, x1 + wx, y1 + wy,
+                                            x1 + wx + ww, y1 + wy + wh)
+                boxes = detector.detect(crop, resize_fn)
+                chunks.append((ox, oy, boxes))
+        merged = merge_scope_results(chunks, _scope_iou(detector),
+                                    image_size=(width, height))
+        return [b for b in merged
+                if any(region_contains_box_center(r, b) for r in regions)]
+
+    if mode == MODE_WINDOW:
+        chunks = []
+        for wx, wy, ww, wh in windows:
+            crop = rgb[wy:wy + wh, wx:wx + ww]
+            boxes = detector.detect(crop, resize_fn)
+            chunks.append((wx, wy, boxes))
+        return merge_scope_results(chunks, _scope_iou(detector),
+                                   image_size=(width, height))
+
+    return detector.detect(rgb, resize_fn)
+
+
+def _scope_iou(detector):
+    """跨窗合并用的 IoU：取本次任务的阈值，界面改过就跟着变。"""
+    return float(getattr(detector, "iou_threshold", DEFAULT_IOU))
+
+
+def _masked_crop(rgb, region, x1, y1, x2, y2):
+    """裁出 [x1,y1,x2,y2)，返回 (裁剪图, 实际起点 x, 实际起点 y)。
+
+    起点取整后**返回给调用方当偏移**：ROI 坐标可能是小数，掩膜按整数像素
+    判定，两者若各算各的会差半个像素。
+    多边形 ROI 把界外像素涂成 letterbox 背景色，只在副本上操作，原图不动；
+    矩形 ROI 无需掩膜。掩膜用 numpy 向量化 ray-casting（逐像素调
+    `point_in_polygon` 在 640x640 窗口上要 41 万次调用，慢到不可用）。
+    """
+    import numpy as np
+    from .onnx_inference import LETTERBOX_FILL
+
+    height, width = int(rgb.shape[0]), int(rgb.shape[1])
+    cx1, cy1 = max(0, int(x1)), max(0, int(y1))
+    cx2, cy2 = min(width, int(x2)), min(height, int(y2))
+    crop = np.array(rgb[cy1:cy2, cx1:cx2], copy=True)
+    if not region.points or crop.size == 0:
+        return crop, cx1, cy1
+
+    points = [(float(p[0]), float(p[1])) for p in region.points]
+    rows, cols = crop.shape[0], crop.shape[1]
+    ys = np.arange(cy1, cy1 + rows, dtype=np.float64)[:, None]
+    xs = np.arange(cx1, cx1 + cols, dtype=np.float64)[None, :]
+
+    inside = np.zeros((rows, cols), dtype=bool)
+    j = len(points) - 1
+    for i, (xi, yi) in enumerate(points):
+        xj, yj = points[j]
+        if yi != yj:
+            lower, upper = (xi, yi), (xj, yj)
+            if yi > yj:
+                lower, upper = upper, lower
+            crossing = (xs < (upper[0] - lower[0]) * (ys - lower[1])
+                        / (upper[1] - lower[1]) + lower[0])
+            inside ^= crossing & (ys >= lower[1]) & (ys < upper[1])
+        j = i
+
+    # 边上的像素也算在内，与 region_contains_box_center 的边界口径一致
+    for i, start in enumerate(points):
+        end = points[(i + 1) % len(points)]
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        seg_len_sq = dx * dx + dy * dy
+        if seg_len_sq == 0:
+            distance = np.hypot(xs - start[0], ys - start[1])
+        else:
+            t = ((xs - start[0]) * dx + (ys - start[1]) * dy) / seg_len_sq
+            np.clip(t, 0.0, 1.0, out=t)
+            distance = np.hypot(xs - (start[0] + t * dx), ys - (start[1] + t * dy))
+        inside |= distance <= 1e-6
+
+    crop[~inside] = LETTERBOX_FILL
+    return crop, cx1, cy1
+
+
 def run_batch(paths, detector, loader, resize_fn, keys=None,
-              progress_fn=None, is_interrupted=None, class_filter=None):
+              progress_fn=None, is_interrupted=None, class_filter=None,
+              scope=None):
     """顺序推理多张图，返回 {key: ImageResult}。
 
     key 默认是 paths 的下标；批量任务要按数据集索引写回内存与磁盘，
@@ -225,15 +369,22 @@ def run_batch(paths, detector, loader, resize_fn, keys=None,
     class_filter 是允许保留的类别名集合；None 表示不过滤，空集合表示全不选
     （结果一定为空，界面据此提示）。它只作用于本次检出的框，不动已有标注。
 
+    scope 是范围配置（全图/滑窗/ROI/ROI+滑窗）；None 表示全图，此时走原来的
+    `detector.detect()` 单次调用，结果与不传 scope 完全一致。scope 由
+    `inference_scope.normalize_scope()` 校验过，ROI 已是快照。
+
     progress_fn 每张完成后调用一次，参数为
     (position, total, 文件名, 框数, 耗时毫秒)。框数与耗时都是这一张自己的，
     调用方不用再回查结果；失败时框数为 0，耗时仍然上报。
 
     单张失败只记录该图的 error，不中断整批；取消时保留已完成的结果。
     """
+    from .inference_scope import MODE_FULL, check_reference_size, normalize_scope
+
     results: Dict[int, ImageResult] = {}
     total = len(paths)
     keys = list(keys) if keys is not None else list(range(total))
+    scoped = scope is not None and scope.get("mode", MODE_FULL) != MODE_FULL
     for position, path in enumerate(paths):
         if is_interrupted and is_interrupted():
             break
@@ -244,7 +395,13 @@ def run_batch(paths, detector, loader, resize_fn, keys=None,
             if rgb is None:
                 raise InferenceError("无法读取图像")
             height, width = int(rgb.shape[0]), int(rgb.shape[1])
-            boxes = detector.detect(rgb, resize_fn)
+            if scoped:
+                # 逐图校验：ROI 是相对参考图量的，尺寸不符只让这张失败
+                check_reference_size(scope, (width, height))
+                active = normalize_scope(scope, (width, height))
+                boxes = detect_in_scope(rgb, detector, resize_fn, active)
+            else:
+                boxes = detector.detect(rgb, resize_fn)
             kept = filter_by_class(boxes, class_filter)
             results[key] = ImageResult(key, path, kept, None, width, height)
         except Exception as exc:

@@ -202,6 +202,17 @@ class _MockQCheckBox(_MockQWidget):
     stateChanged = type('Signal', (), {'connect': lambda self, f: None})()
 
 
+class _MockQRadioButton(_MockQWidget):
+    def __init__(self, *a, **kw):
+        super().__init__()
+        self._checked = False
+    def isChecked(self): return self._checked
+    def setChecked(self, checked):
+        self._checked = bool(checked)
+    def setStyleSheet(self, *a): pass
+    toggled = type('Signal', (), {'connect': lambda self, f: None})()
+
+
 class _MockQSpinBox(_MockQWidget):
     def __init__(self, *a, **kw):
         super().__init__()
@@ -477,6 +488,7 @@ qtwidgets.QHBoxLayout = type('QHBoxLayout', (_MockQBoxLayout,), {})
 qtwidgets.QLabel = _MockQLabel
 qtwidgets.QPushButton = _MockQPushButton
 qtwidgets.QCheckBox = _MockQCheckBox
+qtwidgets.QRadioButton = _MockQRadioButton
 qtwidgets.QSpinBox = _MockQSpinBox
 qtwidgets.QDoubleSpinBox = type('QDoubleSpinBox', (_MockQWidget,), {
     'minimum': lambda self: 0.0,
