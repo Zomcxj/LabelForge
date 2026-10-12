@@ -241,7 +241,7 @@ class InferenceMixin:
 
         panel = getattr(self, '_scope_panel', None)
         if panel is None:
-            panel = ScopePanel(self)
+            panel = ScopePanel(parent=self)
             panel.edit_regions_requested.connect(self._edit_regions_for_scope)
             self._scope_panel = panel
         panel.set_windows(self._effective_window_spec())
@@ -262,9 +262,9 @@ class InferenceMixin:
     def _edit_regions_for_scope(self):
         """跳到贴图模式编辑区域；区域只在贴图模式可编辑。"""
         self.status_label.setText(tr("区域在贴图模式里绘制，切过去后不会丢失当前标注"))
-        switch = getattr(self, '_switch_to_paste_mode', None)
+        switch = getattr(self, '_set_edit_mode', None)
         if callable(switch):
-            switch()
+            switch('paste', animated=True)
 
     def _region_boxes(self):
         """画布上的临时区域；没有则为空表。"""

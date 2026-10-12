@@ -550,6 +550,10 @@ class _Host(InferenceMixin, QWidget):
         self._is_delete_view = False
         self._canvas_layout = None
         self.current_background = None
+        self.switched_to = []
+
+    def _set_edit_mode(self, mode, animated=False):
+        self.switched_to.append((mode, animated))
 """
 
 
@@ -592,6 +596,61 @@ print(h.model_row.scope_btn.text(), h._scope_for_run())
     assert lines[5] == "推理范围: 区域", lines[5]
     assert "'reference_size': (400, 300)" in lines[6], lines[6]
     assert lines[7] == "推理范围 None", lines[7]
+
+
+def test_real_mixin_open_scope_panel_constructs_panel_with_loaded_model():
+    """真实控件：加载模型后点「推理范围」要能真的把面板建起来。
+
+    踩过的坑：`ScopePanel(self)` 把 editor 当成第一个位置参数 `windows`，
+    运行时报 `TypeError: 'ImageEditor' object is not iterable`。原用例在
+    **加载模型前**调 `_open_scope_panel()`，撞上「请先加载模型」的提前返回，
+    根本没走到构造那行，所以一直是绿的。这里必须先加载模型，再拦下 `exec_()`
+    不让它真的开窗口（否则测试会挂住）。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+h = _Host()
+h._on_model_loaded(_Detector(), (640, 640), "model")
+
+import pastelabel.ui.scope_panel as sp
+created = []
+orig_exec = sp.ScopePanel.exec_
+def fake_exec(self):
+    created.append(self)
+    return 0
+sp.ScopePanel.exec_ = fake_exec
+try:
+    h._open_scope_panel()
+finally:
+    sp.ScopePanel.exec_ = orig_exec
+
+print("面板已建:", len(created) == 1)
+panel = created[0]
+# 关键：parent 必须是宿主，windows 不能被塞成 editor
+print("parent 是宿主:", panel.parent() is h)
+print("windows 是字典:", isinstance(panel.windows(), dict), panel.windows())
+""")
+    lines = _lines(out)
+    assert lines[0] == "面板已建: True", lines
+    assert lines[1] == "parent 是宿主: True", lines
+    assert lines[2].startswith("windows 是字典: True"), lines
+
+
+def test_real_mixin_edit_regions_switches_to_paste_mode():
+    """「编辑区域」必须真的切到贴图模式，否则用户没法画区域。
+
+    踩过的坑：这里原来调 `_switch_to_paste_mode()`，**这个方法根本不存在**，
+    `getattr(..., None)` 兜住后静默什么都不做——按钮点了没反应，也没有报错。
+    真实入口是主窗口的 `_set_edit_mode('paste')`。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+h = _Host()
+h._edit_regions_for_scope()
+print(h.switched_to)
+print(h.status_label.text_)
+""")
+    lines = _lines(out)
+    assert lines[0] == "[('paste', True)]", lines[0]
+    assert "贴图模式" in lines[1], lines[1]
 
 
 def test_scope_modules_have_all_translations():
