@@ -628,3 +628,122 @@ def test_render_failed_reports_reason():
     assert stub._busy is False
     assert stub.dialog_texts == ["推理成片失败"], stub.dialog_texts
     assert stub.warns == ["编码器打不开"], stub.warns
+
+
+def test_full_chain_render_with_real_qt():
+    """真实 Qt 全链路：弹窗勾选 → mixin 组 spec（含颜色） → 引擎逐帧推理
+    → 回读成片确认每帧都有框、帧数与源一致。
+
+    这条把三个环节串起来跑真 Qt + 真引擎 + 真编码：只在进程内用假替身验接线
+    会漏掉「颜色取到了但没传到画面」「画了框但帧数不对」这类跨层问题。
+    """
+    result = _run_prelude('''
+import cv2
+from pastelabel.ui.mixins.video import VideoMixin
+from pastelabel.engine import video_io as vio
+from pastelabel.engine.inference_image import resize_for_model
+
+class Stub(VideoMixin):
+    def get_label_color(self, label):
+        return {"person": "#FF0000"}.get(label, "#00FF80")
+
+class Det:
+    """每帧都报一个 person 框（画面中央，够大以便抗住 mp4v 有损）。"""
+    class_names = ["person"]
+    model_path = "m.onnx"
+    def detect(self, rgb, resize_fn):
+        h, w = rgb.shape[:2]
+        return [{"label": "person", "x": w * 0.25, "y": h * 0.25,
+                 "width": w * 0.5, "height": h * 0.5, "score": 0.9,
+                 "class_id": 0}]
+
+d = VideoDialog()
+d.set_detector_info(["person"], "m.onnx")
+d.set_video(SRC)
+settings = render_settings(d)
+render = Stub()._compose_render_spec(settings["render"])
+out = os.path.join(TMP, "chain_render.mp4")
+res = vio.render_video(SRC, Det(), output_path=out,
+                       resize_fn=resize_for_model, render=render)
+
+cap = cv2.VideoCapture(out)
+frames = []
+while True:
+    ok, f = cap.read()
+    if not ok:
+        break
+    frames.append(f)
+cap.release()
+
+# 每帧都要有红色像素（框画上去了），且不能整帧变红（画坏了）
+hits = 0
+for f in frames:
+    red = np.abs(f[:, :, ::-1].astype(int) - np.array([255, 0, 0])).max(axis=2)
+    n = int((red <= 40).sum())
+    if 0 < n < f.shape[0] * f.shape[1]:
+        hits += 1
+
+src_frames = 20
+print("RESULT", repr((res.frame_count, res.detected_total, len(frames),
+                      hits, src_frames, sorted(render.labels),
+                      render.label_colors.get("person"),
+                      res.output_path == out)))
+''')
+    (frame_count, detected, decoded, hits, src_frames, labels, color,
+     is_final) = result
+    assert frame_count == src_frames, f"帧数应与源一致：{frame_count}"
+    assert decoded == src_frames, f"回读帧数不对：{decoded}"
+    assert detected == src_frames, f"每帧都该检出一个框：{detected}"
+    assert labels == ["person"], labels
+    assert color == "#FF0000", color
+    assert hits == src_frames, f"每帧都要画上框，实际只有 {hits}/{src_frames}"
+    assert is_final is True, "正常完成要发布到正式名"
+
+
+def test_full_chain_render_cancel_keeps_playable_partial_real_qt():
+    """真实 Qt 全链路取消：半成品能播、帧数对得上、正式名不占用。"""
+    result = _run_prelude('''
+import cv2
+from pastelabel.engine import video_io as vio
+from pastelabel.engine.inference_image import resize_for_model
+from pastelabel.engine.video_render import RenderSpec
+
+class Det:
+    class_names = ["person"]
+    def detect(self, rgb, resize_fn):
+        h, w = rgb.shape[:2]
+        return [{"label": "person", "x": 5.0, "y": 5.0,
+                 "width": w * 0.3, "height": h * 0.3, "score": 0.9,
+                 "class_id": 0}]
+
+seen = {"n": 0}
+out = os.path.join(TMP, "cancel_render.mp4")
+res = vio.render_video(SRC, Det(), output_path=out,
+                       resize_fn=resize_for_model,
+                       render=RenderSpec(labels={"person"},
+                                         show_labels=True,
+                                         label_colors={"person": "#FF0000"}),
+                       cancel=lambda: seen["n"] >= 5,
+                       on_frame=lambda i: seen.__setitem__("n", i))
+
+decoded = 0
+if res.partial_path:
+    cap = cv2.VideoCapture(res.partial_path)
+    while True:
+        ok, f = cap.read()
+        if not ok:
+            break
+        decoded += 1
+    cap.release()
+
+print("RESULT", repr((res.cancelled, res.frames_written, decoded,
+                      bool(res.partial_path), os.path.exists(out),
+                      "partial" in os.path.basename(res.partial_path or ""))))
+''')
+    cancelled, written, decoded, has_partial, final_exists, named_partial = result
+    assert cancelled is True
+    assert written == 5, written
+    assert has_partial is True, "取消要保留半成品"
+    assert named_partial is True, "半成品必须用 .partial 名，不能冒充正式产物"
+    assert final_exists is False, "取消不能生成正式文件"
+    assert decoded == written, f"半成品要能播且帧数对得上：{decoded} != {written}"

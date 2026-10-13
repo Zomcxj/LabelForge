@@ -1464,13 +1464,15 @@ try:
     docks["class"].setFloating(True)
     app.processEvents()
     QTest.qWait(150)
-    assert _dwm_calls, "floating dock titlebar not synced"
-    assert _dwm_calls[-1][0] == int(docks["class"].winId()), (
-        _dwm_calls[-1][0], int(docks["class"].winId()))
+    # 只看这个 dock 的调用：弹窗自己有 30ms 的 _sync 定时器也会调
+    # set_titlebar_dark(弹窗 hwnd)，负载高时它可能晚于 dock 浮动事件触发，
+    # 于是「最后一条」未必是 dock 的。断言该 dock 被同步过即可。
+    dock_hwnd = int(docks["class"].winId())
+    dock_calls = [c for c in _dwm_calls if c[0] == dock_hwnd]
+    assert dock_calls, ("floating dock titlebar not synced", _dwm_calls, dock_hwnd)
     from pastelabel.ui.theme import ThemeManager
     expected_dark = ThemeManager.get_mode().value == "dark"
-    assert _dwm_calls[-1][1] is expected_dark, (
-        _dwm_calls[-1][1], expected_dark)
+    assert dock_calls[-1][1] is expected_dark, (dock_calls, expected_dark)
 finally:
     _dwm.set_titlebar_dark = _orig_dwm
     docks["class"].setFloating(False)
