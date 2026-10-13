@@ -27,15 +27,75 @@ def _run_qt(script):
 
 # ---------- worker ----------
 
-def test_render_worker_passes_everything_to_engine():
-    """worker 要把源、detector、范围、绘制规格都透传给引擎。"""
+def test_render_worker_passes_everything_to_engine(monkeypatch):
+    """worker.run() 真调引擎，且把范围/绘制规格/筛选原样传下去。
+
+    不用源码字符串断言：那种测试在「接线绿、参数传丢」时照样通过。
+    这里把引擎换成记录参数的替身，直接跑 run()（同步跑，省掉事件循环）。
+    """
+    from pastelabel.engine import video_io
     from pastelabel.ui.inference_workers import VideoRenderWorker
 
-    src = inspect.getsource(VideoRenderWorker.run)
-    assert "render_video" in src
-    for kw in ("detector", "resize_fn", "scope", "render", "class_filter",
-               "cancel", "progress"):
-        assert kw in src, f"run() 没把 {kw} 传给引擎"
+    seen = {}
+
+    def fake_render_video(video_path, detector, **kwargs):
+        seen["video_path"] = video_path
+        seen["detector"] = detector
+        seen.update(kwargs)
+        return "RESULT-SENTINEL"
+
+    monkeypatch.setattr(video_io, "render_video", fake_render_video)
+
+    spec = object()
+    filt = ["person"]
+    worker = VideoRenderWorker("in.mp4", "DET", output_path="out.mp4",
+                               scope={"mode": "full"}, render=spec,
+                               class_filter=filt)
+    # 进程内的假 pyqtSignal 只有 connect、没有 emit（conftest 的最薄替身），
+    # 而 run() 要真的 emit。就地换成带 emit 的替身，避免动 conftest 影响
+    # 全仓 2000+ 用例。真实信号接线由真实 Qt 子进程用例覆盖。
+    done, failed = [], []
+    worker.progress = _NoopSignal()
+    worker.finished_ok = _NoopSignal()
+    worker.failed = _NoopSignal()
+    worker.finished_ok.connect(done.append)
+    worker.failed.connect(failed.append)
+    worker.run()
+
+    assert failed == [], failed
+    assert done == ["RESULT-SENTINEL"], done
+    assert seen["video_path"] == "in.mp4"
+    assert seen["detector"] == "DET"
+    assert seen["output_path"] == "out.mp4"
+    assert seen["scope"] == {"mode": "full"}, "范围没传下去"
+    assert seen["render"] is spec, "绘制规格没传下去（框会画不出来）"
+    assert seen["class_filter"] == filt, "类别筛选没传下去"
+    # 取消回调要接到自己的标志上：cancel() 之后引擎能看到 True
+    assert callable(seen["cancel"]) and callable(seen["progress"])
+    worker.cancel()
+    assert seen["cancel"]() is True, "cancel() 没传到引擎的取消回调"
+
+
+def test_render_worker_reports_engine_failure(monkeypatch):
+    """引擎抛错 → failed 信号带原因，不当成成功。"""
+    from pastelabel.engine import video_io
+    from pastelabel.ui.inference_workers import VideoRenderWorker
+
+    def boom(*a, **kw):
+        raise video_io.VideoError("编码器打不开")
+
+    monkeypatch.setattr(video_io, "render_video", boom)
+    worker = VideoRenderWorker("in.mp4", "DET")
+    done, failed = [], []
+    worker.progress = _NoopSignal()
+    worker.finished_ok = _NoopSignal()
+    worker.failed = _NoopSignal()
+    worker.finished_ok.connect(done.append)
+    worker.failed.connect(failed.append)
+    worker.run()
+
+    assert done == []
+    assert failed == ["编码器打不开"], failed
 
 
 def test_render_worker_signature_has_render_and_scope():
@@ -102,58 +162,208 @@ def test_dialog_validate_requires_model_and_source():
 
 # ---------- mixin ----------
 
-def test_mixin_starts_render_worker_with_main_thread_colors():
-    """mixin 起 ④A 任务：类别色必须在主线程取好再交给 worker。"""
+from pastelabel.ui.mixins.video import VideoMixin as _VideoMixinBase
+
+
+class _RenderHost(_VideoMixinBase):
+    """只喂 _start_video_render 要用的东西，不建真实窗口。
+
+    继承 mixin 本体：这样 `_compose_render_spec` 等真方法参与测试，
+    只把「需要真窗口」的几处换成替身。
+    """
+
+    def __init__(self, detector=None, scope_error=None, filter_value=None):
+        self._detector = detector
+        self._busy = False
+        self.hints = []
+        self._scope_error = scope_error
+        self._filter_value = filter_value
+
+    def _video_dialog_hint(self, message):
+        self.hints.append(message)
+
+    def _scope_for_run(self):
+        if self._scope_error is not None:
+            raise self._scope_error
+        return None
+
+    def _filter_for_run(self):
+        return self._filter_value
+
+    def _all_class_names(self):
+        return list(getattr(self._detector, "class_names", None) or [])
+
+    def get_label_color(self, label):
+        return {"person": "#FF0000"}.get(label, "#00FF80")
+
+
+class _Detector:
+    class_names = ["person", "car"]
+
+    def __init__(self):
+        self.model_path = "m.onnx"
+
+
+def _settings(**overrides):
+    base = dict(video_path="in.mp4", output_path="out.mp4",
+                render={"labels": ["person"], "show_labels": True,
+                        "show_scores": False})
+    base.update(overrides)
+    return base
+
+
+class _NoopSignal:
+    """信号替身：connect 收下回调，emit 时逐个调用。"""
+
+    def __init__(self):
+        self.slots = []
+
+    def connect(self, slot):
+        self.slots.append(slot)
+
+    def emit(self, *args):
+        for slot in list(self.slots):
+            slot(*args)
+
+
+class _CapturedWorker:
+    """替掉 VideoRenderWorker：记下构造参数，不起真线程。"""
+
+    def __init__(self, calls, *args, **kwargs):
+        calls.append({"args": args, "kwargs": kwargs})
+        self.started = False
+        self.cancelled = False
+        # 每个实例自己的信号替身：类属性会让不同用例连到同一个 slots 列表，
+        # 后面的用例会收到前面用例的回调（跨用例污染）。
+        self.progress = _NoopSignal()
+        self.finished_ok = _NoopSignal()
+        self.failed = _NoopSignal()
+        self.finished = _NoopSignal()
+
+    def start(self):
+        self.started = True
+
+    def cancel(self):
+        self.cancelled = True
+
+    def deleteLater(self):
+        pass
+
+
+@pytest.fixture
+def fake_worker(monkeypatch):
+    calls = []
+    from pastelabel.ui import inference_workers
+
+    monkeypatch.setattr(
+        inference_workers, "VideoRenderWorker",
+        lambda *a, **kw: _CapturedWorker(calls, *a, **kw))
+    return calls
+
+
+def test_start_render_worker_gets_main_thread_colors(fake_worker):
+    """类别色必须在主线程取好交给 worker（后台不能读 editor 取色）。"""
     from pastelabel.ui.mixins.video import VideoMixin
 
-    src = inspect.getsource(VideoMixin)
-    assert "_start_video_render" in src
-    starter = inspect.getsource(VideoMixin._start_video_render)
-    assert "VideoRenderWorker" in starter
-    assert "get_label_color" in starter or "_compose_render_spec" in starter
+    host = _RenderHost(detector=_Detector())
+    assert VideoMixin._start_video_render(host, _settings()) is True
+    assert len(fake_worker) == 1
+    render = fake_worker[0]["kwargs"]["render"]
+    assert render is not None, "勾了类别却没带绘制规格"
+    assert render.labels == {"person"}
+    assert render.label_colors["person"] == "#FF0000"
+    assert host._busy is True, "起了任务要置忙"
 
 
-def test_mixin_reports_render_result_and_warns_about_burned_boxes():
-    """完成后要提示「框已烧进画面，不可再改」与不含音轨（首版限制）。"""
+def test_start_render_worker_passes_scope_and_filter(fake_worker):
+    """范围与类别筛选都要原样交给后台，不能丢成 None。"""
     from pastelabel.ui.mixins.video import VideoMixin
 
-    src = inspect.getsource(VideoMixin._on_render_finished)
-    assert "output_path" in src
-    assert "frame_count" in src
+    sentinel = ["person"]
+    host = _RenderHost(detector=_Detector(), filter_value=sentinel)
+    VideoMixin._start_video_render(host, _settings())
+    kwargs = fake_worker[0]["kwargs"]
+    assert kwargs["class_filter"] == sentinel
+    assert "scope" in kwargs and kwargs["scope"] is None, "全图 = None"
+    assert kwargs["output_path"] == "out.mp4"
 
 
-def test_mixin_dispatches_render_action():
-    """start_requested 分发要认 ACTION_RENDER。"""
+def test_start_render_worker_without_detector_hints(fake_worker):
+    """没加载模型：明确提示，且**不能**起线程。"""
     from pastelabel.ui.mixins.video import VideoMixin
 
-    src = inspect.getsource(VideoMixin._on_video_start_requested)
-    assert "ACTION_RENDER" in src
-    assert "_start_video_render" in src
+    host = _RenderHost(detector=None)
+    assert VideoMixin._start_video_render(host, _settings()) is False
+    assert fake_worker == [], "没模型不能起任务"
+    assert host.hints, "要说明为什么起不来"
+    assert host._busy is False
 
 
-def test_mixin_cancel_covers_render_worker():
-    """弹窗取消要能取消 ④A 任务。"""
+def test_start_render_worker_blocks_second_run(fake_worker):
+    """已经在跑（或忙）时不能再起一个。"""
     from pastelabel.ui.mixins.video import VideoMixin
 
-    src = inspect.getsource(VideoMixin._cancel_video_task)
-    assert "_render_worker" in src
+    host = _RenderHost(detector=_Detector())
+    assert VideoMixin._start_video_render(host, _settings()) is True
+    assert VideoMixin._start_video_render(host, _settings()) is False
+    assert len(fake_worker) == 1, "不能起第二个任务"
 
 
-def test_mixin_cleanup_handles_render_worker():
-    """任务结束要释放引用，否则第二次跑被 busy 挡住。"""
+def test_start_render_worker_rejects_bad_scope_before_running(fake_worker):
+    """范围非法（没画 ROI 等）在启动时拦下，不进后台跑出 0 框结果。"""
     from pastelabel.ui.mixins.video import VideoMixin
 
-    assert hasattr(VideoMixin, "_cleanup_render_worker")
-    src = inspect.getsource(VideoMixin._cleanup_render_worker)
-    assert "_render_worker" in src
+    host = _RenderHost(detector=_Detector(), scope_error=ValueError("没画区域"))
+    assert VideoMixin._start_video_render(host, _settings()) is False
+    assert fake_worker == []
+    assert "没画区域" in " ".join(host.hints)
 
 
-def test_mixin_render_requires_loaded_detector():
-    """没加载模型就不能起 ④A：先提示，不静默什么都不做。"""
+def test_start_render_worker_without_render_options(fake_worker):
+    """关掉叠加时 render=None，引擎走「只推理不绘制」。"""
     from pastelabel.ui.mixins.video import VideoMixin
 
-    src = inspect.getsource(VideoMixin._start_video_render)
-    assert "_detector" in src or "detector" in src
+    host = _RenderHost(detector=_Detector())
+    VideoMixin._start_video_render(host, _settings(render=None))
+    assert fake_worker[0]["kwargs"]["render"] is None
+
+
+def test_dispatch_recognizes_render_action():
+    """start_requested 分发到 ④A，不是掉进抽帧兜底分支。"""
+    from pastelabel.ui import video_dialog
+    from pastelabel.ui.mixins.video import VideoMixin
+
+    calls = []
+    host = _RenderHost()
+    host._video_dialog = None
+    host._busy = False
+    host._start_video_render = lambda s: calls.append(("render", s)) or True
+    host._start_video_compose = lambda s: calls.append(("compose", s)) or True
+    host._start_video_extract = lambda s: calls.append(("extract", s)) or True
+
+    VideoMixin._on_video_start_requested(
+        host, video_dialog.ACTION_RENDER, _settings())
+    assert calls and calls[0][0] == "render", calls
+
+
+def test_cancel_covers_render_worker():
+    """弹窗取消要能取消 ④A 任务（三个 worker 都要覆盖）。"""
+    from pastelabel.ui.mixins.video import VideoMixin
+
+    class _Worker:
+        def __init__(self):
+            self.cancelled = False
+
+        def cancel(self):
+            self.cancelled = True
+
+    worker = _Worker()
+    host = _RenderHost()
+    host._render_worker = worker
+    host._video_worker = None
+    host._compose_worker = None
+    VideoMixin._cancel_video_task(host)
+    assert worker.cancelled is True, "④A 任务没被取消"
 
 
 # ---------- 真实 Qt：第三页的行为 ----------

@@ -338,7 +338,13 @@ def test_render_video_verifies_readback_fps(tmp_path, monkeypatch):
 
 
 def test_render_video_early_eof_is_a_failure(tmp_path, monkeypatch):
-    """实际解码帧数少于探测值 → 失败，不能把短片当成功。"""
+    """实际解码帧数少于探测值 → 失败，不能把短片当成功。
+
+    断言**具体诊断**而不是「只要抛错就行」：源被截断（读到 EOF）与编码器
+    丢帧（回读帧数不符）是两种不同的故障，用户要采取的动作也不同。
+    宽松匹配会让「读到 EOF 就 break」这种实现悄悄通过——它最后也会因为
+    回读帧数不符而报错，但报的是错误的病因。
+    """
     from pastelabel.engine import video_io
     from pastelabel.engine.video_io import render_video
 
@@ -348,9 +354,12 @@ def test_render_video_early_eof_is_a_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(video_io, "probe",
                         lambda path: _bump_frame_count(real_probe(path), 5))
 
-    with pytest.raises(VideoError, match="帧数|提前"):
+    with pytest.raises(VideoError) as excinfo:
         render_video(video, _FakeDetector(), output_path=str(out),
                      resize_fn=_noop_resize)
+    message = str(excinfo.value)
+    assert "提前结束" in message, f"报错了但不是「源提前结束」：{message}"
+    assert "10" in message, f"要报出实际解出多少帧：{message}"
     assert not out.exists()
 
 
@@ -631,3 +640,115 @@ else:
     if chosen == "NOFONT":
         pytest.skip("系统没有可画汉字的字体")
     assert black > 5, f"标签条上没有字形笔画，中文可能没渲染：{black}"
+
+
+# ---------- 类别筛选 ----------
+
+def test_render_video_filters_boxes_by_selected_classes(tmp_path):
+    """勾了类别就只算/只画勾上的；没勾的类别不进 detected_total。"""
+    from pastelabel.engine.video_io import render_video
+
+    video = _make_video(tmp_path / "src.mp4", count=4)
+    out = tmp_path / "out.mp4"
+    detector = _FakeDetector(boxes=[
+        {"label": "person", "x": 5.0, "y": 5.0, "width": 10.0, "height": 10.0,
+         "score": 0.9, "class_id": 0},
+        {"label": "car", "x": 30.0, "y": 5.0, "width": 10.0, "height": 10.0,
+         "score": 0.8, "class_id": 1},
+    ])
+
+    result = render_video(video, detector, output_path=str(out),
+                          resize_fn=_noop_resize, class_filter=["person"])
+
+    assert result.detected_total == 4, "每帧只该留下 person 一个框"
+    assert result.frame_count == 4
+
+
+def test_render_video_empty_class_filter_drops_everything(tmp_path):
+    """「全不选」传空集合 = 一个框都不留（与引擎既有语义一致）。"""
+    from pastelabel.engine.video_io import render_video
+
+    video = _make_video(tmp_path / "src.mp4", count=3)
+    out = tmp_path / "out.mp4"
+    result = render_video(video, _FakeDetector(), output_path=str(out),
+                          resize_fn=_noop_resize, class_filter=[])
+    assert result.detected_total == 0
+    assert result.frame_count == 3, "不画框也要出完整时长的视频"
+
+
+def test_render_video_none_class_filter_keeps_everything(tmp_path):
+    """不过滤（None）时所有框都算，不能顺手清空。"""
+    from pastelabel.engine.video_io import render_video
+
+    video = _make_video(tmp_path / "src.mp4", count=3)
+    out = tmp_path / "out.mp4"
+    result = render_video(video, _FakeDetector(), output_path=str(out),
+                          resize_fn=_noop_resize, class_filter=None)
+    assert result.detected_total == 3
+
+
+def test_render_video_cancel_after_frames_writes_no_leftover(tmp_path):
+    """取消时已经写了好几帧 → 那半个视频必须清掉，不能留垃圾。
+
+    既有用例只覆盖「一帧没写就取消」：那种情况下 mp4v 连文件头都没落盘，
+    即使不清理也看不到残留，所以查不出「取消后不清临时文件」的 bug。
+    """
+    from pastelabel.engine.video_io import render_video
+
+    video = _make_video(tmp_path / "src.mp4", count=40, fps=10.0)
+    out = tmp_path / "out.mp4"
+    seen = {"n": 0}
+
+    def cancel():
+        return seen["n"] >= 6
+
+    result = render_video(video, _FakeDetector(), output_path=str(out),
+                          resize_fn=_noop_resize, cancel=cancel,
+                          on_frame=lambda i: seen.__setitem__("n", seen["n"] + 1))
+
+    assert result.cancelled is True
+    assert result.frames_written >= 6, "要真写过帧，这条才有效"
+    assert not out.exists(), "取消不能留正式输出"
+    leftovers = [p for p in os.listdir(tmp_path) if "partial" in p]
+    assert leftovers == [], f"取消后留下半个视频：{leftovers}"
+
+
+def test_render_video_detector_failure_after_frames_writes_no_leftover(tmp_path):
+    """跑了几帧后推理炸了 → 临时文件同样要清掉。"""
+    from pastelabel.engine.video_io import render_video
+
+    class _BoomAfter(_FakeDetector):
+        def detect(self, rgb, resize_fn, conf_threshold=None, iou_threshold=None):
+            if len(self.calls) >= 4:
+                raise RuntimeError("模型炸了")
+            return super().detect(rgb, resize_fn, conf_threshold, iou_threshold)
+
+    video = _make_video(tmp_path / "src.mp4", count=20)
+    out = tmp_path / "out.mp4"
+    with pytest.raises((VideoError, RuntimeError)):
+        render_video(video, _BoomAfter(), output_path=str(out),
+                     resize_fn=_noop_resize)
+
+    assert not out.exists()
+    leftovers = [p for p in os.listdir(tmp_path) if "partial" in p]
+    assert leftovers == [], f"异常后留下半个视频：{leftovers}"
+
+
+def test_render_video_early_eof_leaves_no_leftover(tmp_path, monkeypatch):
+    """探测帧数比实际多 → 报错且不留临时文件（已经写了若干帧）。"""
+    from pastelabel.engine import video_io
+    from pastelabel.engine.video_io import render_video
+
+    video = _make_video(tmp_path / "src.mp4", count=10)
+    out = tmp_path / "out.mp4"
+    real_probe = video_io.probe
+    monkeypatch.setattr(video_io, "probe",
+                        lambda path: _bump_frame_count(real_probe(path), 5))
+
+    with pytest.raises(VideoError, match="提前结束"):
+        render_video(video, _FakeDetector(), output_path=str(out),
+                     resize_fn=_noop_resize)
+
+    assert not out.exists()
+    leftovers = [p for p in os.listdir(tmp_path) if "partial" in p]
+    assert leftovers == [], f"提前结束时留下半个视频：{leftovers}"
