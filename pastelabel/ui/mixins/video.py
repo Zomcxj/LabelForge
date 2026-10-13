@@ -314,8 +314,20 @@ class VideoMixin:
     def _on_render_finished(self, result):
         self._busy = False
         if result.cancelled:
+            # ④A 最慢（18 秒视频要推理 541 次），跑完的帧不白费：引擎会留一个
+            # 能播的半成品。报出它在哪、有多长，用户能直接用，不用从头再来。
+            partial = getattr(result, "partial_path", "")
             self._close_video_dialog(tr("已取消推理成片"))
-            self.status_label.setText(tr("已取消推理成片"))
+            if partial:
+                self.status_label.setText(
+                    f"{tr('已取消推理成片')} "
+                    f"{result.frames_written} {tr('帧')}")
+                self._video_info(
+                    f"{tr('已取消，保留已完成的部分')}: {partial}\n"
+                    f"{result.frames_written} {tr('帧')}  "
+                    f"{tr('正式输出未生成')}")
+            else:
+                self.status_label.setText(tr("已取消推理成片"))
             return
         text = (f"{tr('推理成片完成')} {result.frame_count} {tr('帧')}  "
                 f"{result.duration:.3f} {tr('秒')}")

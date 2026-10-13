@@ -890,7 +890,10 @@ class RenderVideoResult:
 
     `frames_written` 在取消时表示已写进去的帧数；`source_frame_count` 是
     探测到的源帧数，用来对照 `frame_count`（实际编码帧数）。
+    `partial_path` 只在取消时非空：那是保留下来的可播放半成品（`.partial.mp4`），
+    正式输出名始终不会被占用。
     """
+
     output_path: str
     frame_count: int
     source_frame_count: int
@@ -899,9 +902,35 @@ class RenderVideoResult:
     cancelled: bool = False
     frames_written: int = 0
     detected_total: int = 0
+    partial_path: str = ""
 
 
-def _verify_rendered_output(tmp_path, info):
+class _VerifyCancelled(Exception):
+    """内部信号：回读校验途中被取消（不是失败，不该按失败清理）。"""
+
+
+def _partial_is_playable(tmp_path, info):
+    """取消时判断半成品能不能播：能解出第一帧且尺寸正确才算。
+
+    只解一帧就够——writer 正常 `release()` 过，容器是完整的。零帧取消时
+    mp4v 仍会留下几十字节的文件头，按「文件存在」判断会留下一个打不开的
+    假产物。尺寸也要查：编码器截过边的半成品同样是废的。
+    """
+    cv2 = _load_cv2()
+    capture = cv2.VideoCapture(tmp_path)
+    try:
+        if not capture.isOpened():
+            return False
+        ok, frame = capture.read()
+        if not ok or frame is None:
+            return False
+        height, width = frame.shape[:2]
+        return (width, height) == (info.width, info.height)
+    finally:
+        capture.release()
+
+
+def _verify_rendered_output(tmp_path, info, cancel=None):
     """顺序解码临时产物，返回实际帧数；同时核对尺寸。
 
     不用 `CAP_PROP_FRAME_COUNT`：它可能报的是容器声明值，与真能解出来的
@@ -909,6 +938,9 @@ def _verify_rendered_output(tmp_path, info):
 
     尺寸必须逐帧核对：实测 mp4v 对 65x49 的 `isOpened()` 返回 True，
     但回读是 64x48——只看 isOpened 会产出一条尺寸不对的片子。
+
+    `cancel` 每帧查一次：长视频的回读本身也要花时间，用户按了取消就该停
+    （抛 `_VerifyCancelled`，由调用方按「取消」而不是「失败」处理）。
     """
     cv2 = _load_cv2()
     capture = cv2.VideoCapture(tmp_path)
@@ -917,6 +949,8 @@ def _verify_rendered_output(tmp_path, info):
     count = 0
     try:
         while True:
+            if cancel is not None and cancel():
+                raise _VerifyCancelled()
             ok, frame = capture.read()
             if not ok:
                 break
@@ -930,6 +964,25 @@ def _verify_rendered_output(tmp_path, info):
     finally:
         capture.release()
     return count, fps
+
+def _cancelled_render_result(tmp_path, output_path, info, frames_written,
+                             detected_total):
+    """取消收尾：能播的半成品留在 `.partial.mp4`，正式输出名绝不占用。
+
+    ④A 是全app最慢的一条路（18 秒视频要推理 541 次），用户中途取消时已经
+    跑完的那几分钟不该白费——留一个能播的半成品，比删掉更有用。零帧取消
+    或尺寸被截边的半成品是废的，直接清掉，不留打不开的假产物。
+    """
+    if frames_written > 0 and _partial_is_playable(tmp_path, info):
+        partial = tmp_path
+    else:
+        _remove_quietly(tmp_path)
+        partial = ""
+    return RenderVideoResult(
+        output_path=output_path, frame_count=frames_written,
+        source_frame_count=info.frame_count, duration=info.duration,
+        output_fps=info.fps, cancelled=True, frames_written=frames_written,
+        detected_total=detected_total, partial_path=partial)
 
 
 def render_video(video_path, detector, output_path=None, resize_fn=None,
@@ -946,7 +999,11 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
     类别色必须由调用方在主线程预先取好放进 spec，后台不能读 editor 取色。
 
     编码走同目录 `.partial.mp4` 临时文件，逐帧回读核对帧数/尺寸/帧率通过
-    才 `os.replace` 到正式名——失败或取消不留看似成功的输出，也不动旧成品。
+    才 `os.replace` 到正式名——失败不留看似成功的输出，也不动旧成品。
+
+    取消是例外：跑完的帧不白费，能播的半成品以 `.partial.mp4` 名保留并在
+    结果里给出 `partial_path`（正式输出名始终不占用）。零帧取消或半成品
+    尺寸不对则清掉。这是本条与 ④B（取消即删）的唯一分歧，见计划 §4.5。
     """
     cv2 = _load_cv2()
     if not output_path:
@@ -1036,14 +1093,16 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
             _remove_quietly(tmp_path)
 
     if cancelled:
-        _remove_quietly(tmp_path)
-        return RenderVideoResult(
-            output_path=output_path, frame_count=frames_written,
-            source_frame_count=info.frame_count, duration=info.duration,
-            output_fps=info.fps, cancelled=True, frames_written=frames_written,
-            detected_total=detected_total)
+        return _cancelled_render_result(
+            tmp_path, output_path, info, frames_written, detected_total)
 
-    actual_frames, actual_fps = _verify_rendered_output(tmp_path, info)
+    # 回读验收也要能取消：长视频的逐帧回读本身就要花时间，用户按了取消就该停
+    try:
+        actual_frames, actual_fps = _verify_rendered_output(tmp_path, info,
+                                                            cancel=cancel)
+    except _VerifyCancelled:
+        return _cancelled_render_result(
+            tmp_path, output_path, info, frames_written, detected_total)
     if actual_frames != info.frame_count:
         _remove_quietly(tmp_path)
         raise VideoError(

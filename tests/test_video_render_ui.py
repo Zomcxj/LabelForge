@@ -535,3 +535,96 @@ print("RESULT", repr((emitted, d.isVisible())))
     emitted, visible = result
     assert emitted == [True], "跑任务时取消要发取消信号"
     assert visible is False, "空闲时按取消才是关窗"
+
+
+# ---------- 取消后的报告（计划 §4.5：保留可播放半成品） ----------
+
+class _StatusStub:
+    def __init__(self):
+        self.text = ""
+
+    def setText(self, text):
+        self.text = text
+
+
+class _RenderFinishedStub:
+    """只喂 _on_render_finished 要用的东西。"""
+
+    def __init__(self):
+        self.status_label = _StatusStub()
+        self._busy = True
+        self.infos = []
+        self.warns = []
+        self.dialog_texts = []
+
+    def _close_video_dialog(self, text=None):
+        self.dialog_texts.append(text)
+
+    def _video_info(self, message):
+        self.infos.append(message)
+
+    def _video_warn(self, message):
+        self.warns.append(message)
+
+
+def _render_result(**overrides):
+    from types import SimpleNamespace
+
+    base = dict(cancelled=False, frame_count=40, source_frame_count=40,
+                duration=4.0, output_fps=10.0, output_path="out.mp4",
+                frames_written=40, detected_total=12, partial_path="")
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def test_render_finished_reports_output_and_burn_in_warning():
+    """正常完成：报输出路径 + 帧数/时长，并说清框已烧进画面、不含音轨。"""
+    from pastelabel.ui.mixins.video import VideoMixin
+
+    stub = _RenderFinishedStub()
+    VideoMixin._on_render_finished(stub, _render_result())
+    assert stub._busy is False
+    assert stub.warns == []
+    assert "40" in stub.status_label.text, stub.status_label.text
+    assert stub.infos and "out.mp4" in stub.infos[0], stub.infos
+    assert "烧进画面" in stub.infos[0], "要提醒框不能再改"
+    assert "音轨" in stub.infos[0], "首版不含音轨要说明"
+
+
+def test_render_cancelled_reports_kept_partial():
+    """取消：报出半成品在哪、有多少帧、正式输出没生成。"""
+    from pastelabel.ui.mixins.video import VideoMixin
+
+    stub = _RenderFinishedStub()
+    VideoMixin._on_render_finished(stub, _render_result(
+        cancelled=True, frames_written=17, frame_count=17,
+        partial_path=r"D:\v\.out.mp4.partial.mp4"))
+    assert stub._busy is False, "取消也要清掉忙标志"
+    assert stub.dialog_texts == ["已取消推理成片"], stub.dialog_texts
+    assert stub.infos, "取消时也要告诉用户半成品在哪"
+    assert "partial" in stub.infos[0], stub.infos
+    assert "17" in stub.infos[0], stub.infos
+    assert "17" in stub.status_label.text, stub.status_label.text
+
+
+def test_render_cancelled_without_partial_is_quiet():
+    """零帧取消：没有半成品可报，就不弹「保留了什么」。"""
+    from pastelabel.ui.mixins.video import VideoMixin
+
+    stub = _RenderFinishedStub()
+    VideoMixin._on_render_finished(stub, _render_result(
+        cancelled=True, frames_written=0, frame_count=0, partial_path=""))
+    assert stub._busy is False
+    assert stub.infos == [], stub.infos
+    assert stub.status_label.text == "已取消推理成片", stub.status_label.text
+
+
+def test_render_failed_reports_reason():
+    """失败：报原因，不当成成功。"""
+    from pastelabel.ui.mixins.video import VideoMixin
+
+    stub = _RenderFinishedStub()
+    VideoMixin._on_render_failed(stub, "编码器打不开")
+    assert stub._busy is False
+    assert stub.dialog_texts == ["推理成片失败"], stub.dialog_texts
+    assert stub.warns == ["编码器打不开"], stub.warns

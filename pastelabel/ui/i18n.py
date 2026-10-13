@@ -210,6 +210,8 @@ _strings = {
         "推理成片完成": "推理成片完成",
         "推理成片失败": "推理成片失败",
         "已取消推理成片": "已取消推理成片",
+        "已取消，保留已完成的部分": "已取消，保留已完成的部分",
+        "正式输出未生成": "正式输出未生成",
         "帧": "帧",
         "输出路径为空": "输出路径为空",
         "框已烧进画面，不能再改；首版不含音轨":
@@ -918,6 +920,8 @@ _strings = {
         "推理成片完成": "Inference video done",
         "推理成片失败": "Inference video failed",
         "已取消推理成片": "Inference video cancelled",
+        "已取消，保留已完成的部分": "Cancelled; the finished part was kept",
+        "正式输出未生成": "No final output was written",
         "帧": "frames",
         "输出路径为空": "Output path is empty",
         "框已烧进画面，不能再改；首版不含音轨":

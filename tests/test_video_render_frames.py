@@ -308,8 +308,9 @@ def test_render_video_removes_temp_file_on_failure(tmp_path, monkeypatch):
     out = tmp_path / "out.mp4"
     real_probe = video_io._verify_rendered_output
     monkeypatch.setattr(video_io, "_verify_rendered_output",
-                        lambda path, info: (real_probe(path, info)[0] + 1,
-                                            real_probe(path, info)[1]))
+                        lambda path, info, cancel=None: (
+                            real_probe(path, info)[0] + 1,
+                            real_probe(path, info)[1]))
 
     with pytest.raises(VideoError, match="帧数不符"):
         render_video(video, _FakeDetector(), output_path=str(out),
@@ -329,7 +330,7 @@ def test_render_video_verifies_readback_fps(tmp_path, monkeypatch):
     out = tmp_path / "out.mp4"
     real_probe = video_io._verify_rendered_output
     monkeypatch.setattr(video_io, "_verify_rendered_output",
-                        lambda path, info: (real_probe(path, info)[0], 999.0))
+                        lambda path, info, cancel=None: (real_probe(path, info)[0], 999.0))
 
     with pytest.raises(VideoError, match="帧率不符"):
         render_video(video, _FakeDetector(), output_path=str(out),
@@ -373,14 +374,17 @@ def test_render_video_failure_keeps_previous_output(tmp_path, monkeypatch):
     out.write_bytes(b"OLD-OUTPUT")
     real_probe = video_io._verify_rendered_output
     monkeypatch.setattr(video_io, "_verify_rendered_output",
-                        lambda path, info: (real_probe(path, info)[0] + 3,
-                                            real_probe(path, info)[1]))
+                        lambda path, info, cancel=None: (
+                            real_probe(path, info)[0] + 3,
+                            real_probe(path, info)[1]))
 
     with pytest.raises(VideoError):
         render_video(video, _FakeDetector(), output_path=str(out),
                      resize_fn=_noop_resize)
 
     assert out.read_bytes() == b"OLD-OUTPUT", "失败不能动旧成品"
+    assert [p for p in os.listdir(tmp_path) if "partial" in p] == [], \
+        "失败时半成品也要清掉"
 
 
 def test_render_video_reports_detector_failure_per_frame(tmp_path):
@@ -423,7 +427,7 @@ def test_render_video_cancel_stops_and_releases(tmp_path):
 
 
 def test_render_video_cancel_leaves_no_partial_when_nothing_written(tmp_path):
-    """一帧都没写就取消 → 不留垃圾文件。"""
+    """一帧都没写就取消 → 不留垃圾文件（mp4v 会留下解不出帧的文件头）。"""
     from pastelabel.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=20)
@@ -433,6 +437,7 @@ def test_render_video_cancel_leaves_no_partial_when_nothing_written(tmp_path):
 
     assert result.cancelled is True
     assert result.frames_written == 0
+    assert result.partial_path == "", "零帧取消没有可用的半成品"
     assert not out.exists()
     assert [p for p in os.listdir(tmp_path) if "partial" in p] == []
 
@@ -687,11 +692,15 @@ def test_render_video_none_class_filter_keeps_everything(tmp_path):
     assert result.detected_total == 3
 
 
-def test_render_video_cancel_after_frames_writes_no_leftover(tmp_path):
-    """取消时已经写了好几帧 → 那半个视频必须清掉，不能留垃圾。
+def test_render_video_cancel_keeps_playable_partial(tmp_path):
+    """取消时已经写了好几帧 → 保留可播放的半成品，但绝不占正式输出名。
 
-    既有用例只覆盖「一帧没写就取消」：那种情况下 mp4v 连文件头都没落盘，
-    即使不清理也看不到残留，所以查不出「取消后不清临时文件」的 bug。
+    ④A 是全 app 最慢的一条路（18 秒视频要推理 541 次），跑完的帧不白费。
+    计划 §4.5/§7.4 要求：可播放的部分产物以 `.partial.mp4` 名保留并报告
+    已完成帧数；零帧或不可播放的才清理。
+
+    既有用例只覆盖「一帧没写就取消」：那种情况下 mp4v 连文件头都落盘了
+    （几十字节），但一帧都解不出来——所以「文件存在」不能当判据。
     """
     from pastelabel.engine.video_io import render_video
 
@@ -708,9 +717,41 @@ def test_render_video_cancel_after_frames_writes_no_leftover(tmp_path):
 
     assert result.cancelled is True
     assert result.frames_written >= 6, "要真写过帧，这条才有效"
-    assert not out.exists(), "取消不能留正式输出"
-    leftovers = [p for p in os.listdir(tmp_path) if "partial" in p]
-    assert leftovers == [], f"取消后留下半个视频：{leftovers}"
+    assert not out.exists(), "取消不能留正式输出（正式名永远不占用）"
+
+    partial = result.partial_path
+    assert partial, "写过帧的取消要留一个能播的半成品"
+    assert "partial" in os.path.basename(partial), partial
+    assert os.path.exists(partial)
+    assert os.path.normcase(partial) != os.path.normcase(str(out))
+
+    # 「留着」必须是真能播的：解出来的帧数要等于报告给用户的已完成帧数
+    cap = cv2.VideoCapture(partial)
+    decoded = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        decoded += 1
+    cap.release()
+    assert decoded == result.frames_written, (decoded, result.frames_written)
+
+
+def test_render_video_cancel_result_reports_partial_not_final(tmp_path):
+    """取消的结果里 output_path 仍是正式名（供 UI 显示），半成品另给字段。"""
+    from pastelabel.engine.video_io import render_video
+
+    video = _make_video(tmp_path / "src.mp4", count=40, fps=10.0)
+    out = tmp_path / "out.mp4"
+    seen = {"n": 0}
+    result = render_video(
+        video, _FakeDetector(), output_path=str(out), resize_fn=_noop_resize,
+        cancel=lambda: seen["n"] >= 5,
+        on_frame=lambda i: seen.__setitem__("n", seen["n"] + 1))
+
+    assert result.cancelled is True
+    assert result.output_path == str(out), "正式路径要原样回报，别改成半成品名"
+    assert result.partial_path != result.output_path
 
 
 def test_render_video_detector_failure_after_frames_writes_no_leftover(tmp_path):
@@ -731,7 +772,7 @@ def test_render_video_detector_failure_after_frames_writes_no_leftover(tmp_path)
 
     assert not out.exists()
     leftovers = [p for p in os.listdir(tmp_path) if "partial" in p]
-    assert leftovers == [], f"异常后留下半个视频：{leftovers}"
+    assert leftovers == [], f"失败时不能拿半成品当挡箭牌，要清干净：{leftovers}"
 
 
 def test_render_video_early_eof_leaves_no_leftover(tmp_path, monkeypatch):
@@ -752,3 +793,35 @@ def test_render_video_early_eof_leaves_no_leftover(tmp_path, monkeypatch):
     assert not out.exists()
     leftovers = [p for p in os.listdir(tmp_path) if "partial" in p]
     assert leftovers == [], f"提前结束时留下半个视频：{leftovers}"
+
+
+def test_render_video_cancel_during_readback_stops_and_keeps_partial(tmp_path):
+    """取消也要能打断回读：长视频的回读本身要花时间。
+
+    回读被打断不是失败——半成品照样留着，结果标记 cancelled。原实现里
+    取消只在写帧循环里查，回读阶段按了取消要等整条视频解完才有反应。
+    """
+    from pastelabel.engine.video_io import render_video
+
+    video = _make_video(tmp_path / "src.mp4", count=30, fps=10.0)
+    out = tmp_path / "out.mp4"
+    state = {"written": 0, "verifying": False}
+
+    def cancel():
+        # 写帧阶段不取消；等所有帧写完、进入回读阶段再取消
+        return state["verifying"]
+
+    def on_frame(index):
+        state["written"] = index
+        if index >= 30:
+            state["verifying"] = True
+
+    result = render_video(video, _FakeDetector(), output_path=str(out),
+                          resize_fn=_noop_resize, cancel=cancel,
+                          on_frame=on_frame)
+
+    assert result.cancelled is True, "回读阶段的取消没被响应"
+    assert not out.exists(), "回读被取消不能发布正式文件"
+    assert result.frames_written == 30
+    partial = result.partial_path
+    assert partial and os.path.exists(partial), "半成品要留着"
