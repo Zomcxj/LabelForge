@@ -884,6 +884,188 @@ def _probe_output(path):
     return count, fps
 
 
+@dataclass
+class RenderVideoResult:
+    """④A 逐帧推理编码的结果。
+
+    `frames_written` 在取消时表示已写进去的帧数；`source_frame_count` 是
+    探测到的源帧数，用来对照 `frame_count`（实际编码帧数）。
+    """
+    output_path: str
+    frame_count: int
+    source_frame_count: int
+    duration: float
+    output_fps: float
+    cancelled: bool = False
+    frames_written: int = 0
+    detected_total: int = 0
+
+
+def _verify_rendered_output(tmp_path, info):
+    """顺序解码临时产物，返回实际帧数；同时核对尺寸。
+
+    不用 `CAP_PROP_FRAME_COUNT`：它可能报的是容器声明值，与真能解出来的
+    帧数不符（尤其被截断的文件）。逐帧 read() 才是实际能播放的长度。
+
+    尺寸必须逐帧核对：实测 mp4v 对 65x49 的 `isOpened()` 返回 True，
+    但回读是 64x48——只看 isOpened 会产出一条尺寸不对的片子。
+    """
+    cv2 = _load_cv2()
+    capture = cv2.VideoCapture(tmp_path)
+    if not capture.isOpened():
+        raise VideoError(f"产物读不回来：{tmp_path}")
+    count = 0
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            height, width = frame.shape[:2]
+            if (width, height) != (info.width, info.height):
+                raise VideoError(
+                    f"产物尺寸被截边：{width}x{height} != "
+                    f"{info.width}x{info.height}（编码器不支持该尺寸）")
+            count += 1
+        fps = float(capture.get(cv2.CAP_PROP_FPS))
+    finally:
+        capture.release()
+    return count, fps
+
+
+def render_video(video_path, detector, output_path=None, resize_fn=None,
+                 scope=None, render=None, class_filter=None,
+                 cancel=None, progress=None, on_frame=None):
+    """④A：原视频逐帧推理，把框画在每一帧上，再编码成新视频。
+
+    与 ④B（`compose_video`）的区别：画面来自原视频的**全部**帧而不是抽帧
+    图片，标注是现场推理得到的，所以不需要 ② 的清单。输出帧数、分辨率、
+    帧率、时长都与源一致。
+
+    `scope` 是 ③ 的范围配置（None = 全图），复用 `detect_in_scope()`。
+    `render` 是 `video_render.RenderSpec`（None = 只推理不绘制）；
+    类别色必须由调用方在主线程预先取好放进 spec，后台不能读 editor 取色。
+
+    编码走同目录 `.partial.mp4` 临时文件，逐帧回读核对帧数/尺寸/帧率通过
+    才 `os.replace` 到正式名——失败或取消不留看似成功的输出，也不动旧成品。
+    """
+    cv2 = _load_cv2()
+    if not output_path:
+        raise VideoError("必须指定输出路径")
+    if resize_fn is None:
+        raise VideoError("必须提供 resize_fn（模型输入缩放函数）")
+
+    info = probe(video_path)
+    output_path = os.path.abspath(output_path)
+    if os.path.normcase(output_path) == os.path.normcase(
+            os.path.abspath(info.path)):
+        raise VideoError(f"输出路径与源视频相同：{output_path}")
+
+    parent = os.path.dirname(output_path)
+    try:
+        os.makedirs(parent or ".", exist_ok=True)
+    except OSError as exc:
+        raise VideoError(f"输出目录不可用：{parent}（{exc}）") from exc
+
+    # 范围在启动时定稿：非法配置在这里就报错，不进后台跑出「成功但 0 框」
+    from .inference_scope import check_reference_size, normalize_scope
+    active_scope = normalize_scope(scope, (info.width, info.height))
+    if active_scope is not None:
+        check_reference_size(active_scope, (info.width, info.height))
+
+    tmp_path = os.path.join(
+        parent, f".{os.path.basename(output_path)}.partial.mp4")
+    capture = None
+    writer = None
+    frames_written = 0
+    detected_total = 0
+    cancelled = False
+    failed = False
+
+    try:
+        capture = cv2.VideoCapture(info.path)
+        if not capture.isOpened():
+            raise VideoError(f"无法打开视频：{info.path}")
+
+        writer = cv2.VideoWriter(tmp_path, cv2.VideoWriter_fourcc(*"mp4v"),
+                                 info.fps, (info.width, info.height))
+        if not writer.isOpened():
+            raise VideoError(f"编码器打不开：{tmp_path}")
+
+        while frames_written < info.frame_count:
+            if cancel is not None and cancel():
+                cancelled = True
+                break
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                raise VideoError(
+                    f"视频提前结束：只解出 {frames_written} 帧，"
+                    f"探测为 {info.frame_count} 帧")
+
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            if active_scope is not None:
+                from .inference_task import detect_in_scope
+                boxes = detect_in_scope(rgb, detector, resize_fn, active_scope)
+            else:
+                boxes = detector.detect(rgb, resize_fn)
+            if class_filter is not None:
+                allowed = {str(c) for c in class_filter}
+                boxes = [b for b in boxes if b.get("label") in allowed]
+            detected_total += len(boxes)
+
+            if render is not None and boxes:
+                from .video_render import draw_boxes
+                rgb = draw_boxes(rgb, boxes, render)
+
+            # write() 的 Python 返回值是 None，不是成功布尔值，不能判失败；
+            # 尺寸不符的帧会被静默丢弃，所以尺寸由回读验收兜底
+            writer.write(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+            frames_written += 1
+            if on_frame is not None:
+                on_frame(frames_written)
+            if progress is not None:
+                progress(frames_written, info.frame_count)
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        if capture is not None:
+            capture.release()
+        if writer is not None:
+            writer.release()
+        if failed:
+            _remove_quietly(tmp_path)
+
+    if cancelled:
+        _remove_quietly(tmp_path)
+        return RenderVideoResult(
+            output_path=output_path, frame_count=frames_written,
+            source_frame_count=info.frame_count, duration=info.duration,
+            output_fps=info.fps, cancelled=True, frames_written=frames_written,
+            detected_total=detected_total)
+
+    actual_frames, actual_fps = _verify_rendered_output(tmp_path, info)
+    if actual_frames != info.frame_count:
+        _remove_quietly(tmp_path)
+        raise VideoError(
+            f"产物帧数不符：{actual_frames} != {info.frame_count}")
+    if actual_fps <= 0 or abs(actual_fps - info.fps) > 0.05:
+        _remove_quietly(tmp_path)
+        raise VideoError(
+            f"产物帧率不符：{actual_fps} != {info.fps}")
+
+    try:
+        os.replace(tmp_path, output_path)
+    except OSError as exc:
+        _remove_quietly(tmp_path)
+        raise VideoError(f"输出文件写入失败：{output_path}（{exc}）") from exc
+
+    return RenderVideoResult(
+        output_path=output_path, frame_count=info.frame_count,
+        source_frame_count=info.frame_count, duration=info.duration,
+        output_fps=info.fps, frames_written=frames_written,
+        detected_total=detected_total)
+
+
 def _remove_quietly(path):
     try:
         if os.path.exists(path):
