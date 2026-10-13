@@ -62,8 +62,8 @@ PasteLabel/
 │   │   ├── save_manager.py
 │   │   ├── shape_io.py         # 形状编解码、置信度显示与 YOLO 行生成（矩形/多边形/关键点/旋转框）
 │   │   ├── splitter.py
-│   │   ├── video_io.py       # 视频探测/抽帧时间轴/解码导出/映射清单/合成（cv2 延迟导入，无 Qt 依赖）
-│   │   ├── video_render.py   # 合成叠加标签框：QPainter 离屏绘制（延迟导入 PyQt5，纯函数）
+│   │   ├── video_io.py       # 视频探测/抽帧时间轴/解码导出/映射清单/合成/逐帧推理编码 render_video（cv2 延迟导入，无 Qt 依赖）
+│   │   ├── video_render.py   # 叠加标签框：QPainter 离屏绘制（延迟导入 PyQt5，纯函数；合成页与推理成片页共用）
 │   │   ├── undo_manager.py
 │   │   ├── voc_exporter.py
 │   │   ├── yolo_exporter.py
@@ -100,7 +100,7 @@ PasteLabel/
 │   │   ├── settings_dialog.py
 │   │   ├── sliding_window_dialog.py # 滑窗参数窗口（窗口尺寸/重叠/实时预估窗口数）
 │   │   ├── theme.py
-│   │   ├── video_dialog.py   # 视频弹窗：抽帧 / 合成（含叠加标签框）两个标签页
+│   │   ├── video_dialog.py   # 视频弹窗：抽帧 / 合成（含叠加标签框）/ 推理成片 三个标签页
 │   │   └── mixins/
 │   │       ├── __init__.py
 │   │       ├── background_list.py
@@ -115,7 +115,7 @@ PasteLabel/
 │   │       ├── panels.py
 │   │       ├── processing_panel_builder.py
 │   │       ├── quality_lint.py
-│   │       ├── video.py         # 视频抽帧入口、后台任务生命周期、加载为数据集
+│   │       ├── video.py         # 视频抽帧/合成/推理成片入口、后台任务生命周期、加载为数据集
 │   │       ├── stats.py
 │   │       ├── theme.py
 │   │       ├── toolbar.py
@@ -159,6 +159,8 @@ PasteLabel/
 │   ├── test_ui_layout_regressions.py
 │   ├── test_video_render.py          # 叠加标签框离屏绘制（真实 Qt 子进程）
 │   ├── test_video_compose_ui.py      # 合成页控件与 render 接线（真实 Qt 全链路）
+│   ├── test_video_render_frames.py   # ④A 引擎 render_video：逐帧推理/回读验收/取消留半成品
+│   ├── test_video_render_ui.py       # ④A 推理成片页：worker/mixin 接线 + 真实 Qt 全链路（弹窗→引擎）
 │   ├── test_inference_scope.py       # 滑窗/语义区域范围枚举与跨窗去重
 │   ├── test_inference_scope_wiring.py # 推理范围接入任务层：四模式偏移/参考图尺寸/取消
 │   ├── test_inference_scope_ui.py    # 推理范围界面接线（真实 Qt 子进程）
