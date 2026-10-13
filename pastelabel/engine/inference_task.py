@@ -430,14 +430,17 @@ def failure_summary(results):
 
 
 def beijing_timestamp(now=None):
-    """北京时间戳，精确到毫秒。
+    """北京时间的时刻（`时:分:秒.毫秒`），**不含年月日**。
+
+    这是给推理进度窗的日志行用的：一次批量推理只跑一趟，同一秒内不会有跨天
+    的记录，年月日是纯噪声，去掉后一行更短、文件名看得更清。
 
     界面统一按 UTC+8 显示，不跟随本机时区——本机时区变了日志时间也不该变。
     """
     from datetime import datetime, timedelta, timezone
     tz = timezone(timedelta(hours=8))
     moment = now.astimezone(tz) if now is not None else datetime.now(tz)
-    return moment.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    return moment.strftime("%H:%M:%S.%f")[:-3]
 
 
 def read_sidecar_boxes(image_path):

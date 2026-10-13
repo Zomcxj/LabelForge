@@ -331,14 +331,26 @@ def test_run_batch_class_filter_counts_filtered_boxes():
     assert seen == [1]
 
 
-def test_beijing_timestamp_is_utc_plus_8_with_milliseconds():
-    """北京时间固定 UTC+8，不跟本机时区；精确到毫秒（3 位小数）。"""
+def test_beijing_timestamp_is_time_only_utc_plus_8_with_milliseconds():
+    """北京时间固定 UTC+8，不跟本机时区；只给时刻、不给年月日；精确到毫秒。"""
     from datetime import datetime, timezone
     from pastelabel.engine.inference_task import beijing_timestamp
 
     # 2024-01-01 00:00:00 UTC -> 北京时间 08:00:00.123
     moment = datetime(2024, 1, 1, 0, 0, 0, 123456, tzinfo=timezone.utc)
-    assert beijing_timestamp(moment) == "2024-01-01 08:00:00.123"
+    assert beijing_timestamp(moment) == "08:00:00.123"
+
+
+def test_beijing_timestamp_has_no_date():
+    """日志行不带年月日：2026-10-12 这种日期串不该出现在时间戳里。"""
+    import re
+    from datetime import datetime, timezone
+    from pastelabel.engine.inference_task import beijing_timestamp
+
+    moment = datetime(2024, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    got = beijing_timestamp(moment)
+    assert not re.search(r"\d{4}-\d{2}-\d{2}", got), got
+    assert len(got) == len("08:00:00.000"), got  # HH:MM:SS.mmm
 
 
 def test_beijing_timestamp_ignores_the_local_timezone():
@@ -358,12 +370,13 @@ def test_beijing_timestamp_ignores_the_local_timezone():
                          text=True, env=env, timeout=60,
                          encoding="utf-8", errors="replace")
     assert out.returncode == 0, out.stderr
-    # 与当场算出的 UTC+8 时刻只差几秒，说明用的是固定偏移而不是本机时区
+    # 与当场算出的 UTC+8 时刻只差几分钟，说明用的是固定偏移而不是本机时区
+    # （比到秒会偶发跨秒失败：子进程本身要花时间启动）
     from pastelabel.engine.inference_task import beijing_timestamp
 
     expected = beijing_timestamp()
     got = out.stdout.strip()
-    assert got[:16] == expected[:16], (got, expected)
+    assert got[:5] == expected[:5], (got, expected)
 
 
 def test_beijing_timestamp_truncates_not_rounds():

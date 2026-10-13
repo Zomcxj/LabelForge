@@ -7,6 +7,7 @@
 import ast
 import inspect
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -1052,6 +1053,26 @@ def test_progress_tolerates_three_arg_progress_calls():
     from pastelabel.ui.inference_progress import InferenceProgressDialog
     src = inspect.getsource(InferenceProgressDialog.set_progress)
     assert "if boxes is None" in src, src
+
+
+def test_real_log_line_shows_time_boxes_ms_and_no_date():
+    """真实控件：日志行是 `[时:分:秒.毫秒] 文件名 · N 个框 · 耗时ms`，
+    时刻**不带年月日**（用户要求：一次批量只跑一趟，日期是噪声）。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.inference_progress import InferenceProgressDialog
+
+app = QApplication([])
+d = InferenceProgressDialog()
+d.set_total(3)
+d.set_progress(1, 3, "car.jpg", boxes=4, elapsed_ms=123)
+print("RESULT", repr(d.log_area.toPlainText()))
+""")
+    line = out.strip().removeprefix("RESULT ").strip("'\"")
+    assert re.match(r"^\[\d{2}:\d{2}:\d{2}\.\d{3}\] car\.jpg", line), line
+    assert "car.jpg" in line and "123ms" in line, line
+    assert not re.search(r"\d{4}-\d{2}-\d{2}", line), f"日志带上了年月日：{line}"
 
 
 def test_progress_reset_clears_log_and_counter():
