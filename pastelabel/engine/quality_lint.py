@@ -1,6 +1,6 @@
 """标注质检 lint：纯逻辑，无 Qt 控件依赖。
 
-检查项：越界框 / 超小框 / 小目标不可检出 / 小目标需放大 / 重复框（同类高 IoU）/
+检查项：越界框 / 小目标不可检出 / 小目标需放大 / 重复框（同类高 IoU）/
 异类重叠（高 IoU）/ 近似名 / group 不一致。缺 sidecar / 空标注由背景图列表状态
 图标负责，质检不再上报。
 """
@@ -18,7 +18,6 @@ from ..core.utils import calculate_iou
 
 KIND_LABELS = {
     'out_of_bounds': '越界框',
-    'tiny_box': '超小框',
     'tiny_unreachable': '小目标不可检出',
     'tiny_needs_p2': '小目标需放大',
     'duplicate': '重复框',
@@ -28,7 +27,12 @@ KIND_LABELS = {
     'skipped_pairwise': '跳过两两比对',
 }
 
-#: 归一化短边比例的直方图分桶边界。刻意压在判档阈值上而不是等宽分桶：
+#: 小目标判据的标定基准：所有图片与框先等比缩放（长边→该值、短边补边）到
+#: 这个边长，再按 4px / 8px / 16px 判档。阈值本身就是按它定的，改这里等于
+#: 重新标定三档，config 里的三个比例也一并失效。
+TINY_INPUT_SIZE = 640
+
+#: 短边比例的直方图分桶边界。刻意压在判档阈值上而不是等宽分桶：
 #: 数据集里大框占多数时，等宽桶会把 0~2.5% 的整个决策区糊进第一桶，
 #: 看不出"该不该上滑窗"。前两个桶是 🔴 区、第三个是 🟡 区、其余为 ✅。
 TINY_RATIO_EDGES = (0.0, 0.003125, 0.00625, 0.0125, 0.025,
@@ -68,11 +72,18 @@ def _bbox(box):
 
 
 def normalized_min_side(box, image_width, image_height):
-    """框短边占原图对应边的比例 min(w/W, h/H)；不可计算时返回 None。
+    """框短边比例：min(w, h) / max(W, H)；不可计算时返回 None。
+
+    口径是**把原图与框等比缩放（长边→640、短边不足处补边）到模型输入后，
+    框短边占 640 的比例**，乘 `TINY_INPUT_SIZE` 就是它在模型输入里的像素数。
+    阈值 4px / 8px / 16px @640 就是按这个前提定的，所以判档与训练分辨率无关。
+
+    分母取**长边**而不是各轴各比各的：预处理是等比的，短边会被同比例缩小，
+    各轴比自己的边会把这个缩水抹掉（1920x1080 上 100x100 按轴算是 5.2% 很
+    "健康"，等比缩放到 640 后其实只剩 33px）。
 
     只看矩形检测框：关键点宽高恒为 0（比例会算成 0，等于把每个关键点判死），
-    多边形的 bbox 也不代表目标本身，两者都跳过。等比缩放下这个比例在训练输入
-    里保持不变，所以能直接当"模型眼里目标有多大"用，不需要知道 imgsz。
+    多边形的 bbox 也不代表目标本身，两者都跳过。
     """
     if not isinstance(box, dict):
         return None
@@ -97,7 +108,7 @@ def normalized_min_side(box, image_width, image_height):
         return None
     if w <= 0 or h <= 0 or iw <= 0 or ih <= 0:
         return None
-    return min(w / iw, h / ih)
+    return min(w, h) / max(iw, ih)
 
 
 def is_tiny_exempt(box):
@@ -185,7 +196,6 @@ def lint_shapes(shapes, image_width, image_height, label_index=None):
     issues = []
     shapes = [s for s in (shapes or []) if isinstance(s, dict)]
     tol = QUALITY_LINT_CONFIG['bounds_tolerance']
-    min_side = QUALITY_LINT_CONFIG['min_box_side']
 
     if image_width and image_height:
         for i, box in enumerate(shapes):
@@ -211,37 +221,31 @@ def lint_shapes(shapes, image_width, image_height, label_index=None):
         w = rect[2] - rect[0]
         h = rect[3] - rect[1]
         if is_tiny_exempt(box):
-            # 人工确认保留：两类尺寸问题都不再报。1000x5 的电线会同时命中
-            # 归一化 🔴 和 tiny_box，只豁免其一会让「保留」形同虚设。
+            # 人工确认保留：尺寸问题不再报（1000x5 的电线在等比缩放到 640 后
+            # 厚度只剩 1.6px，会被判 🔴，但标注员说了那是有意为之）。
             # 越界/重复等在别的循环里判，不受这里影响。
             continue
         ratio = normalized_min_side(box, image_width, image_height)
         kind = tiny_ratio_kind(ratio)
         if kind is not None:
-            # 640 输入下 8px 恰好等于 1.25%，归一化档与 tiny_box 完全重叠。
-            # 归一化结论与分辨率无关、信息量更大，故命中时不再重复报 tiny_box；
-            # 只有比例判为通过、但绝对像素仍可疑时（如小图上的退化框）才报后者。
             # min_side/both_below 给第 4 列提示用：标注员需要知道该拉宽、拉高
-            # 还是整个框都得放大。both_below 用命中档自己的线（fail 档对
+            # 还是整个框都得放大。等比缩放下宽高共用同一个系数，所以哪条边是
+            # 短边就看原始像素，不能再拿各轴的占比去比（那是旧口径的残留，
+            # 非方图上会把短边判反）。both_below 用命中档自己的线（fail 档对
             # fail 线、warn 档对 warn 线），与 ratio 的判档口径一致。
             threshold = (QUALITY_LINT_CONFIG['tiny_fail_ratio']
                          if kind == 'tiny_unreachable'
                          else QUALITY_LINT_CONFIG['tiny_warn_ratio'])
-            width_ratio = w / image_width
-            height_ratio = h / image_height
+            scale = TINY_INPUT_SIZE / max(image_width, image_height)
             issues.append({
                 'kind': kind, 'label': box.get('label', ''),
                 'box_index': i, 'ratio': ratio,
-                'min_side': 'width' if width_ratio <= height_ratio else 'height',
-                'both_below': width_ratio < threshold and height_ratio < threshold,
+                'min_side': 'width' if w <= h else 'height',
+                'both_below': (w * scale < threshold * TINY_INPUT_SIZE
+                               and h * scale < threshold * TINY_INPUT_SIZE),
                 'detail': f"{ratio * 100:.2f}% W:{w:.0f} H:{h:.0f}",
             })
             continue
-        if min(w, h) < min_side:
-            issues.append({
-                'kind': 'tiny_box', 'label': box.get('label', ''),
-                'box_index': i, 'detail': f"W:{w:.0f} H:{h:.0f}",
-            })
 
     if len(shapes) <= QUALITY_LINT_CONFIG['max_boxes_pairwise']:
         issues.extend(_pairwise_issues(shapes))
@@ -481,7 +485,7 @@ def lint_dataset(image_paths, memory_boxes=None, progress_cb=None,
     issues = []
     summary = {
         'scanned_images': 0,
-        'out_of_bounds': 0, 'tiny_box': 0, 'duplicate': 0,
+        'out_of_bounds': 0, 'duplicate': 0,
         'tiny_unreachable': 0, 'tiny_needs_p2': 0,
         'cross_label_overlap': 0, 'similar_name': 0, 'group_mismatch': 0,
         'skipped_pairwise': 0,

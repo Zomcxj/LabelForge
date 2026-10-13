@@ -251,7 +251,7 @@ class QualityLintDialog(QDialog):
     def _populate_table(self):
         self.table.setRowCount(len(self._issues))
         # 一律不着色（用户裁决）：审核靠第 4 列文字，红黄底反而把审核结论
-        # 和普通问题（越界/超小框/重复…）混在一起。
+        # 和普通问题（越界/重复…）混在一起。
         for row, issue in enumerate(self._issues):
             items = [
                 tr(KIND_LABELS.get(issue.get('kind'), issue.get('kind', ''))),

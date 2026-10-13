@@ -363,7 +363,6 @@ _strings = {
         "张已写入": "张已写入",
         "数据集已切换，推理结果已丢弃": "数据集已切换，推理结果已丢弃",
         "越界框": "越界框",
-        "超小框": "超小框",
         "小目标不可检出": "小目标不可检出",
         "小目标需放大": "小目标需放大",
         "重复框": "重复框",
@@ -392,7 +391,7 @@ _strings = {
         "未找到可统计的检测框": "未找到可统计的检测框",
         "存在常规配置检不到的目标：建议提高训练分辨率或启用滑窗切片；确有意的细长目标可右键「标记保留」":
             "存在常规配置检不到的目标：建议提高训练分辨率或启用滑窗切片；确有意的细长目标可右键「标记保留」",
-        "min(w,h) 占原图比例": "min(w,h) 占原图比例",
+        "min(w,h) 占图长边比例": "min(w,h) 占图长边比例",
         "检测框数": "检测框数",
         "无分布数据": "无分布数据",
         "常规配置检不到，建议提高分辨率或滑窗切片": "常规配置检不到，建议提高分辨率或滑窗切片",
@@ -1074,7 +1073,6 @@ _strings = {
         "未安装 onnxruntime，无法执行推理": "onnxruntime is not installed; cannot run inference",
         "数据集已切换，推理结果已丢弃": "Dataset changed; inference results discarded",
         "越界框": "Out of bounds",
-        "超小框": "Tiny box",
         "小目标不可检出": "Undetectable target",
         "小目标需放大": "Target needs upscaling",
         "重复框": "Duplicate box",
@@ -1103,7 +1101,7 @@ _strings = {
         "未找到可统计的检测框": "No detection boxes to measure",
         "存在常规配置检不到的目标：建议提高训练分辨率或启用滑窗切片；确有意的细长目标可右键「标记保留」":
             "Some targets are undetectable at default settings: raise the training resolution or enable sliding-window slicing. Right-click and choose \"Mark as kept\" for intentionally elongated targets.",
-        "min(w,h) 占原图比例": "min(w,h) as a fraction of the image",
+        "min(w,h) 占图长边比例": "min(w,h) as a fraction of the longer image side",
         "检测框数": "Boxes",
         "无分布数据": "No distribution data",
         "常规配置检不到，建议提高分辨率或滑窗切片": "Undetectable at default settings; raise resolution or slice with a sliding window",

@@ -52,7 +52,7 @@ def test_documentation_covers_semantic_region_and_quality_lint():
 
     assert "标注质检" in readme
     assert "标注质检" in guide
-    for term in ("越界框", "超小框", "重复框", "异类重叠", "近似名", "分组不一致"):
+    for term in ("越界框", "小目标不可检出", "重复框", "异类重叠", "近似名", "分组不一致"):
         assert term in guide, term
     assert "双击" in guide and "忽略此类问题" in guide
 

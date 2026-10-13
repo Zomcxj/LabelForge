@@ -13,6 +13,17 @@ def _box(label="cat", x=10, y=10, w=100, h=50, shape_type=None, **extra):
     return box
 
 
+def test_tiny_box_is_no_longer_a_kind():
+    """「超小框」已删除：原来按原图短边 < 8px 判，与训练分辨率脱钩。
+
+    同一像素尺寸在不同的图上结论天差地别（8px 在 480 图上缩放到 640 后
+    是 10.7px、很健康；在 1920 图上只剩 2.7px、根本检不到），所以统一到
+    640 空间的三档判据，不再有这一档。
+    """
+    from pastelabel.engine.quality_lint import KIND_LABELS
+    assert "tiny_box" not in KIND_LABELS
+
+
 def test_clean_shapes_produce_no_issues():
     issues = lint_shapes([_box()], 200, 200)
     assert issues == []
@@ -28,9 +39,14 @@ def test_out_of_bounds_tolerance_one_pixel():
     assert lint_shapes([_box(x=-1, y=-1, w=101, h=51)], 100, 50) == []
 
 
-def test_tiny_box_detected():
-    issues = lint_shapes([_box(w=5, h=50)], 200, 200)
-    assert {i["kind"] for i in issues} == {"tiny_box"}
+def test_degenerate_box_on_small_image_is_flagged():
+    """200x200 上的 5x50：等比缩放到 640 后短边 16px? 不 —— 5x3.2=16px 边界。
+
+    5/200 = 2.5%，正好是「稳定检出」线 —— 通过。这条守住「小图上退化框
+    也不该乱报」：旧口径按原图像素 5px 报了超小框，新口径按 640 空间
+    判是 16px，属于能稳定检出。
+    """
+    assert lint_shapes([_box(w=5, h=50)], 200, 200) == []
 
 
 def test_tiny_issue_records_width_as_small_side():
@@ -560,7 +576,7 @@ def test_worker_exposes_signals_and_run_calls_lint():
 def test_i18n_quality_lint_terms():
     from pastelabel.ui.i18n import _strings
     for key in ("质检", "标注质检", "越界框",
-                "超小框", "重复框", "异类重叠", "近似名", "group 不一致",
+                "小目标不可检出", "小目标需放大", "重复框", "异类重叠", "近似名", "group 不一致",
                 "跳过两两比对", "正在扫描", "未发现问题", "双击跳转到问题图"):
         assert key in _strings["zh"], key
         assert key in _strings["en"], key
@@ -632,14 +648,15 @@ def test_jump_to_lint_issue_ignores_invalid_index():
     editor._jump_to_lint_issue({"image_index": 99, "box_index": None})
 
 
-def test_keypoint_not_reported_as_tiny_box():
-    """关键点 width/height=0 是正常形态，不能报超小框。"""
+def test_keypoint_not_reported_as_tiny_target():
+    """关键点 width/height=0 是正常形态，不能报小目标两类档。"""
     point = {"label": "kp", "shape_type": "point", "points": [[50, 50]],
              "x": 50, "y": 50, "width": 0, "height": 0, "group_id": 1}
     box = {"label": "car", "x": 0, "y": 0, "width": 100, "height": 100,
            "group_id": 1}
     issues = lint_shapes([box, point], 500, 500)
-    assert not [i for i in issues if i["kind"] == "tiny_box"]
+    assert not [i for i in issues
+                if i["kind"] in ("tiny_unreachable", "tiny_needs_p2")]
 
 
 def test_edit_distance_one_typo_detected(monkeypatch):
@@ -1219,8 +1236,8 @@ def test_sort_groups_same_image_together():
     from pastelabel.ui.quality_lint_dialog import QualityLintDialog
     dialog = QualityLintDialog.__new__(QualityLintDialog)
     issues = [
-        {"kind": "tiny_box", "label": "Zed", "image_index": 5},
-        {"kind": "tiny_box", "label": "Aaa", "image_index": 1},
+        {"kind": "tiny_needs_p2", "label": "Zed", "image_index": 5},
+        {"kind": "tiny_needs_p2", "label": "Aaa", "image_index": 1},
         {"kind": "out_of_bounds", "label": "", "image_index": 5},
         {"kind": "cross_label_overlap", "label": "Car",
          "label_a": "Car", "label_b": "SUV", "image_index": 1},
@@ -1228,9 +1245,9 @@ def test_sort_groups_same_image_together():
     ordered = dialog._sort_issues(issues)
     indexes = [i["image_index"] for i in ordered]
     assert indexes == [1, 1, 5, 5], indexes
-    # 同图内按类型顺序：越界框（KIND_LABELS 第一）在超小框之前
+    # 同图内按类型顺序：越界框（KIND_LABELS 第一）在小目标之前
     assert [i["kind"] for i in ordered if i["image_index"] == 5] == \
-        ["out_of_bounds", "tiny_box"]
+        ["out_of_bounds", "tiny_needs_p2"]
 
 
 def test_dialog_corner_button_themed():
@@ -1934,62 +1951,106 @@ def test_i18n_scanned_images_key_has_en_translation():
     assert _strings["en"]["扫描图片"] == "Scanned images"
 
 
-# ---- 小目标可检测性审核：min(w/W, h/H) 三档判据 ----
-# 640 图上阈值换算成像素正好是 4px / 8px / 16px，测试统一用 640 便于对齐。
+# ---- 小目标可检测性审核：等比缩放到 640 后的像素判据 ----
+# 短边比例 = min(w, h) / max(W, H)：这是「原图与框等比缩放（长边→640、短边补边）
+# 到模型输入后，框短边占 640 的比例」，乘 640 就是模型输入里的像素数。
+# 阈值 4px / 8px / 16px @640。分母取长边而不是各轴各比，因为预处理是等比的。
+
+def test_tensor_side_pixels_is_ratio_times_640():
+    """核心口径：比例 × 640 = 框在模型输入里的短边像素。"""
+    from pastelabel.engine.quality_lint import normalized_min_side, TINY_INPUT_SIZE
+    assert TINY_INPUT_SIZE == 640
+    # 704x576 图上的 10x8 框：等比缩放到 640 后短边 640->524 那一档
+    box = _box(x=0, y=0, w=10, h=8)
+    ratio = normalized_min_side(box, 704, 576)
+    assert ratio == 8 / 704              # 分母是长边 704，不是高 576
+    assert abs(ratio * 640 - 7.27) < 0.01
+
 
 def test_tiny_unreachable_below_fail_ratio():
-    """3px = 0.47% < 0.625%：常规配置根本检不到。"""
+    """3px @640 = 0.47% < 0.625%：常规配置根本检不到。"""
     assert {i["kind"] for i in lint_shapes([_box(w=3, h=3)], 640, 640)} == {
         "tiny_unreachable"}
 
 
 def test_tiny_needs_p2_between_fail_and_warn():
-    """6px = 0.94%，落在 [0.625%, 1.25%)：需 P2 头或滑窗放大。"""
+    """6px @640 = 0.94%，落在 [0.625%, 1.25%)：需 P2 头或滑窗放大。"""
     assert {i["kind"] for i in lint_shapes([_box(w=6, h=6)], 640, 640)} == {
         "tiny_needs_p2"}
 
 
 def test_fail_ratio_boundary_belongs_to_warn_tier():
-    """正好 4px = 0.625% 是 🟡 不是 🔴（下界取闭区间）。"""
+    """正好 4px @640 = 0.625% 是 🟡 不是 🔴（下界取闭区间）。"""
     assert {i["kind"] for i in lint_shapes([_box(w=4, h=4)], 640, 640)} == {
         "tiny_needs_p2"}
 
 
 def test_warn_ratio_boundary_passes_clean():
-    """正好 8px = 1.25% 通过；8 也不小于 min_box_side，两类都不报。"""
+    """正好 8px @640 = 1.25% 通过。"""
     assert lint_shapes([_box(w=8, h=8)], 640, 640) == []
 
 
-def test_worse_axis_decides_ratio():
-    """1000x5 的电线：宽占 50% 很健康，高只占 0.5% → 取较差轴判 🔴。
-
-    这也是不能用 sqrt(w*h) 定级的原因：等效面积 70px 看着正常，实际厚度 5px。
-    """
-    assert {i["kind"] for i in
-            lint_shapes([_box(x=0, y=0, w=1000, h=5)], 2000, 1000)} == {
+def test_square_image_matches_intuitive_pixel_reading():
+    """方图是最容易心算的情形：480x480 上 6px 框缩放到 640 后正好 8px。"""
+    assert lint_shapes([_box(w=6, h=6)], 480, 480) == []
+    # 480 上 4px -> 640 上 5.33px，落 🟡
+    assert {i["kind"] for i in lint_shapes([_box(w=4, h=4)], 480, 480)} == {
+        "tiny_needs_p2"}
+    # 480 上 3px -> 640 上 4px，正好踩 🟡 下界
+    assert {i["kind"] for i in lint_shapes([_box(w=3, h=3)], 480, 480)} == {
+        "tiny_needs_p2"}
+    # 480 上 2px -> 640 上 2.67px，落 🔴
+    assert {i["kind"] for i in lint_shapes([_box(w=2, h=2)], 480, 480)} == {
         "tiny_unreachable"}
 
 
-def test_ratio_normalizes_per_axis_not_against_square():
-    """非方图按轴各比各的：宽比 W、高比 H，不能拿同一个分母。"""
-    # 10/1600 = 0.625% 正好踩 🟡 下界；若误用 W=800 当分母则是 1.25% 会通过
-    assert {i["kind"] for i in
-            lint_shapes([_box(x=0, y=0, w=40, h=10)], 800, 1600)} == {
-        "tiny_needs_p2"}
-    # 20/1600 = 1.25% 通过
-    assert lint_shapes([_box(x=0, y=0, w=40, h=20)], 800, 1600) == []
+def test_bigger_image_makes_same_box_worse():
+    """同一像素尺寸的框，图越大缩放到 640 后越小 —— 结论必须跟着变。
+
+    这正是旧口径（各轴比自己的边）的错误来源：1920x1080 上的 100x100 框
+    各轴 5.2%/9.3% 都"健康"，但等比缩放到 640 后只剩 33px。
+    """
+    # 1920x1080 上 8x8：缩放到 640 后只有 2.67px -> 🔴
+    assert {i["kind"] for i in lint_shapes([_box(w=8, h=8)], 1920, 1080)} == {
+        "tiny_unreachable"}
+    # 同一张图上的 24x24 -> 8px @640 -> 通过
+    assert lint_shapes([_box(w=24, h=24)], 1920, 1080) == []
+    # 320x320 上 4x4：缩放到 640 是放大到 8px -> 通过（旧口径会误报）
+    assert lint_shapes([_box(w=4, h=4)], 320, 320) == []
 
 
-def test_new_tier_suppresses_tiny_box_on_same_shape():
-    """640 图上 8px 恰好等于 1.25%，两类完全重叠 → 只报信息量更大的那条。"""
-    issues = lint_shapes([_box(w=3, h=3)], 640, 640)
-    assert [i["kind"] for i in issues] == ["tiny_unreachable"]
+def test_worse_axis_decides_ratio():
+    """1000x5 的电线：等比缩放后厚度只剩 1.6px @640 -> 🔴。
+
+    这也是不能用 sqrt(w*h) 定级的原因：等效面积 70px 看着正常，实际厚度 5px。
+    """
+    issues = lint_shapes([_box(x=0, y=0, w=1000, h=5)], 2000, 1000)
+    assert {i["kind"] for i in issues} == {"tiny_unreachable"}
+    # 5/2000 = 0.25% -> 1.6px @640
+    assert issues[0]["ratio"] == 5 / 2000
 
 
-def test_tiny_box_kept_when_ratio_says_healthy():
-    """小图上的退化框：200x200 上 5px 占 2.5% 比例健康，绝对像素仍可疑。"""
-    assert {i["kind"] for i in lint_shapes([_box(w=5, h=50)], 200, 200)} == {
-        "tiny_box"}
+def test_short_side_of_image_is_not_the_denominator():
+    """分母必须是长边：竖图 576x704 与横图 704x576 上同一个框结论相同。
+
+    等比缩放只看长边，取短边当分母会把竖图结果算错 22%。
+    """
+    for W, H in [(704, 576), (576, 704)]:
+        assert {i["kind"] for i in
+                lint_shapes([_box(x=0, y=0, w=10, h=8)], W, H)} == {
+            "tiny_needs_p2"}, (W, H)
+
+
+def test_no_tiny_box_kind_anymore():
+    """「超小框」这一档已删除：它的语义被 640 空间的 4/8/16px 三档完全覆盖。
+
+    没有 imageWidth/Height 时比例无从算起，此时也**不报**（旧口径会退回
+    原图像素的 tiny_box，等于又冒出第二套口径）。
+    """
+    from pastelabel.engine.quality_lint import KIND_LABELS
+    assert "tiny_box" not in KIND_LABELS
+    assert lint_shapes([_box(w=3, h=3)], 0, 0) == []
+    assert lint_shapes([_box(w=5, h=50)], 200, 200) == []
 
 
 def test_keypoint_never_reported_as_tiny_target():
@@ -2014,12 +2075,6 @@ def test_polygon_skipped_by_ratio_check():
     kinds = {i["kind"] for i in lint_shapes([poly], 640, 640)}
     assert "tiny_unreachable" not in kinds
     assert "tiny_needs_p2" not in kinds
-
-
-def test_missing_image_size_falls_back_to_absolute_check_only():
-    """没有 imageWidth/Height 时比例无从算起，只保留绝对像素检查。"""
-    assert {i["kind"] for i in lint_shapes([_box(w=3, h=3)], 0, 0)} == {
-        "tiny_box"}
 
 
 def test_exempt_flag_silences_both_size_checks():
@@ -2531,7 +2586,7 @@ def test_i18n_small_target_audit_terms():
             "尺寸/提示", "小目标可检测性", "检测框",
             "不可检出", "需放大", "可通过", "稳定检出",
             "已标记保留", "标记保留", "标记保留选中的 {n} 项", "标记失败",
-            "未找到可统计的检测框", "min(w,h) 占原图比例", "检测框数",
+            "未找到可统计的检测框", "min(w,h) 占图长边比例", "检测框数",
             "无分布数据", "常规配置检不到，建议提高分辨率或滑窗切片",
             "需 P2 检测头或裁剪放大",
             "存在常规配置检不到的目标：建议提高训练分辨率或启用滑窗切片；"
@@ -2582,6 +2637,29 @@ def test_kind_labels_cover_new_tiny_kinds():
     from pastelabel.engine.quality_lint import KIND_LABELS
     assert "tiny_unreachable" in KIND_LABELS
     assert "tiny_needs_p2" in KIND_LABELS
+
+
+def test_stable_line_is_not_the_warn_line(tmp_path):
+    """12px @640（1.875%）落 warn 与 stable 之间：算通过，但**不算**稳定检出。
+
+    这条守住 stable 线（16px）与 warn 线（8px）是两个数：把 stable 线误设成
+    warn 线时，只有落在两线之间的框才会暴露 —— 现有用例的框要么 < 8px、
+    要么 >= 16px，全都擦肩而过。stable 是报告参考线，把「勉强够」的框算进
+    「稳定检出」会让用户以为这类目标已经稳了。
+    """
+    from pastelabel.engine.quality_lint import lint_dataset
+    img = _write_image_and_json(tmp_path, "stable", [
+        {"label": "a", "x": 0, "y": 0, "width": 12, "height": 12,
+         "shape_type": "rectangle"},
+        {"label": "b", "x": 100, "y": 0, "width": 16, "height": 16,
+         "shape_type": "rectangle"},
+    ], image_size=(640, 640))
+
+    report = lint_dataset([img])["tiny_report"]
+
+    assert report["pass"] == 2          # 两个都算通过
+    assert report["stable"] == 1        # 只有 16px 那个达到稳定线
+    assert report["warn"] == 0
 
 
 def test_tiny_report_counts_three_tiers(tmp_path):

@@ -58,7 +58,7 @@ PasteLabel/
 │   │   ├── label_manager.py
 │   │   ├── inference_scope.py # 滑窗/语义区域推理范围枚举与跨窗去重（纯逻辑，无 Qt 依赖）
 │   │   ├── paste_engine.py
-│   │   ├── quality_lint.py     # 标注质检扫描（越界/超小/重复/重叠/近似名/分组，纯逻辑）
+│   │   ├── quality_lint.py     # 标注质检扫描（越界/小目标两档/重复/重叠/近似名/分组，纯逻辑）
 │   │   ├── save_manager.py
 │   │   ├── shape_io.py         # 形状编解码、置信度显示与 YOLO 行生成（矩形/多边形/关键点/旋转框）
 │   │   ├── splitter.py
