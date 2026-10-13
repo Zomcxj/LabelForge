@@ -50,12 +50,15 @@ class InferenceMixin:
         self._load_model_with_names(path, self._saved_class_names(path), saved)
 
     def _saved_inference_settings(self):
-        """上次用过的阈值与输入尺寸；没有则给空表用引擎默认值。"""
+        """上次用过的输入尺寸；阈值与窗口参数另有来源，这里不给。
+
+        阈值（置信度/NMS）**刻意不读回**：它们是「这次要怎么看」的临时
+        旋钮，跨启动沿用会让用户对着自己忘了调过的值犯迷糊——框多框少
+        说不清。不给键即可，worker 拿到 None 就走引擎默认值。
+        """
         from ...core import config_manager
         settings = config_manager.load_all().get('inference_settings') or {}
         return {
-            "conf_threshold": settings.get("conf_threshold"),
-            "iou_threshold": settings.get("iou_threshold"),
             "input_size": settings.get("input_size"),
         }
 
@@ -632,17 +635,20 @@ class InferenceMixin:
     # ---------- 配置持久化 ----------
 
     def _save_inference_settings(self):
+        """只持久化「下次打开还想用」的东西。
+
+        明确**不存**置信度/NMS：它们每次启动都该回到默认值（用户要求），
+        存了反而会在下次加载模型时被 `_saved_inference_settings` 之外的
+        路径读回去。输入尺寸与窗口参数保留。
+        """
         from ...core import config_manager
         detector = getattr(self, '_detector', None)
         row = getattr(self, 'model_row', None)
         if detector is None or row is None:
             return
-        conf, iou = row.thresholds()
         width, height = row.input_size()
         config_manager.save_all(inference_settings={
             "model_path": detector.model_path,
-            "conf_threshold": conf,
-            "iou_threshold": iou,
             "input_size": (width, height),
             # 只存窗口参数；范围模式不存，每次启动都回到全图，避免恢复出一个
             # 没有 ROI 的区域模式。

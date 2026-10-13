@@ -473,6 +473,38 @@ print("RESULT", repr((settings.get("video_path") is not None,
     assert show_labels is True and changed is False
 
 
+def test_real_qt_render_tab_prompts_when_model_missing():
+    """没加载模型时，推理成片页要有显眼且可照做的提示。
+
+    用户实测反馈：打开第三页只看到开始按钮是灰的，不知道该怎么办。
+    原来只在模型名那一行写「请先加载模型」，颜色与正文一样、也没有说
+    去哪里加载，很容易被当成「这页坏了」。
+
+    要求：提示用强调色（`videoHint`），并说清去哪加载；加载模型后
+    提示消失，按钮恢复可用。
+    """
+    result = _run_prelude('''
+d = VideoDialog()
+d.show()
+d.tabs.setCurrentIndex(2)
+d.set_video(SRC)
+before = (d.render_model_hint_label.isVisible(),
+          d.render_model_hint_label.text(),
+          d.render_model_hint_label.objectName(),
+          d.render_btn.isEnabled())
+d.set_detector_info(["person"], "m.onnx")
+after = (d.render_model_hint_label.isVisible(), d.render_btn.isEnabled())
+print("RESULT", repr((before, after)))
+''')
+    before, after = result
+    visible, text, name, enabled = before
+    assert visible is True, "没模型时提示必须显示出来"
+    assert "加载模型" in text, f"提示要说清去哪加载：{text!r}"
+    assert name == "videoHint", f"提示要用强调色（videoHint）：{name}"
+    assert enabled is False, "没模型不能开始"
+    assert after == (False, True), f"加载模型后提示要消失、按钮可用：{after}"
+
+
 def test_real_qt_render_validate_blocks_missing_model():
     """没模型时 validate 要给出原因（提示区显示），不是静默不动作。"""
     result = _run_prelude('''
@@ -578,7 +610,7 @@ def _render_result(**overrides):
 
 
 def test_render_finished_reports_output_and_burn_in_warning():
-    """正常完成：报输出路径 + 帧数/时长，并说清框已烧进画面、不含音轨。"""
+    """正常完成：报输出路径 + 帧数/时长，并说清框已烧进画面。"""
     from pastelabel.ui.mixins.video import VideoMixin
 
     stub = _RenderFinishedStub()
@@ -588,7 +620,7 @@ def test_render_finished_reports_output_and_burn_in_warning():
     assert "40" in stub.status_label.text, stub.status_label.text
     assert stub.infos and "out.mp4" in stub.infos[0], stub.infos
     assert "烧进画面" in stub.infos[0], "要提醒框不能再改"
-    assert "音轨" in stub.infos[0], "首版不含音轨要说明"
+    assert "音轨" not in stub.infos[0], "不提音轨，用户没问过这个"
 
 
 def test_render_cancelled_reports_kept_partial():

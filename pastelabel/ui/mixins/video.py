@@ -336,7 +336,7 @@ class VideoMixin:
         # 框已经画进像素了，明确说清不能再改，免得用户回头找标注
         self._video_info(
             f"{tr('输出文件')}: {result.output_path}\n"
-            f"{tr('框已烧进画面，不能再改；首版不含音轨')}")
+            f"{tr('框已烧进画面，不能再改')}")
 
     def _on_render_failed(self, message):
         self._busy = False

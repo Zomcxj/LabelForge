@@ -415,6 +415,16 @@ class VideoDialog(QDialog):
         self.render_model_label.setWordWrap(True)
         layout.addWidget(self.render_model_label)
 
+        # 没加载模型时的显眼提示：只把开始按钮变灰，用户会以为这页坏了。
+        # 用强调色（videoHint）并说清去哪加载，加载完自动隐藏。
+        self.render_model_hint_label = QLabel(tr(
+            "还没有加载模型：点画布上方参数行里的「加载模型」，"
+            "本页才能开始逐帧推理。"))
+        self.render_model_hint_label.setObjectName("videoHint")
+        self.render_model_hint_label.setWordWrap(True)
+        self.render_model_hint_label.setVisible(False)
+        layout.addWidget(self.render_model_hint_label)
+
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
@@ -430,7 +440,7 @@ class VideoDialog(QDialog):
         layout.addWidget(self._build_overlay_group("render"))
 
         note = QLabel(tr("逐帧推理：每一帧都推理并画框，速度比抽帧慢；"
-                         "框会烧进画面，之后不能再改。首版不含音轨。"))
+                         "框会烧进画面，之后不能再改。"))
         note.setObjectName("videoHint")
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -898,7 +908,8 @@ class VideoDialog(QDialog):
                 f"{tr('模型')}: {getattr(self, '_render_model_name', '') or '-'}"
                 f"  {tr('类别')}: {len(self._render_class_names)}")
         else:
-            self.render_model_label.setText(tr("请先加载模型"))
+            self.render_model_label.setText(tr("尚未加载模型"))
+        self.render_model_hint_label.setVisible(not has_model)
 
         # 类别来自模型，不像合成页那样需要扫 sidecar：有模型就有类别可选
         group = self._render_overlay

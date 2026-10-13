@@ -826,14 +826,64 @@ def test_current_image_without_detection_saves_when_paste_shapes_exist(tmp_path)
 
 # ---------- 设置持久化与动态轴 ----------
 
-def test_saved_thresholds_are_restored_on_reload():
-    """重新加载模型要沿用上次的阈值与尺寸，不能每次都回到默认。"""
-    src = inspect.getsource(InferenceMixin._saved_inference_settings)
-    assert "conf_threshold" in src
-    assert "iou_threshold" in src
-    assert "input_size" in src
+def test_loading_a_model_does_not_restore_thresholds():
+    """加载模型的入口仍要读配置，但读回来的只剩尺寸（阈值不恢复）。"""
     load = inspect.getsource(InferenceMixin._load_inference_model)
     assert "_saved_inference_settings" in load
+    saved = inspect.getsource(InferenceMixin._saved_inference_settings)
+    assert "input_size" in saved
+
+
+def test_thresholds_are_not_remembered_across_launches():
+    """阈值不跨启动记忆：每次加载模型都回到引擎默认值。
+
+    用户实测反馈：调过置信度/NMS 之后重启，加载模型时又被旧值套上，
+    而他早就忘了上次调过——结果框多框少说不清。阈值是「这次要怎么看」
+    的临时旋钮，只有输入尺寸与窗口参数（`window_spec`）值得记住。
+
+    断言分两层：存的时候不写这两个键，读的时候也不取值——只删一边的话
+    旧配置文件里的残留值还是会被读回来。
+    """
+    save_src = inspect.getsource(InferenceMixin._save_inference_settings)
+    saved_src = inspect.getsource(InferenceMixin._saved_inference_settings)
+    assert "conf_threshold" not in save_src, "不该再存置信度阈值"
+    assert "iou_threshold" not in save_src, "不该再存 NMS 阈值"
+    assert "conf_threshold" not in saved_src, "不该再读回置信度阈值"
+    assert "iou_threshold" not in saved_src, "不该再读回 NMS 阈值"
+    # 该记的还要记
+    for key in ("input_size", "window_spec", "model_path"):
+        assert key in save_src, f"{key} 仍应持久化"
+
+
+def test_real_launch_ignores_saved_thresholds():
+    """真实控件：配置文件里躺着旧阈值，加载模型时也要用默认值。
+
+    这是「不跨启动记忆」的落脚点——只查源码字符串的话，只要还有别的
+    地方读配置就照样能恢复旧值。
+    """
+    out = _run_real_qt("""
+import os, tempfile
+from PyQt5.QtWidgets import QApplication
+app = QApplication([])
+
+from pastelabel.core import config_manager
+from pastelabel.engine.onnx_inference import DEFAULT_CONF, DEFAULT_IOU
+config_manager.CONFIG_PATH = os.path.join(tempfile.mkdtemp(), "c.json")
+config_manager.save_config({"inference_settings": {
+    "model_path": "m.onnx", "conf_threshold": 0.77, "iou_threshold": 0.11,
+    "input_size": [512, 512], "window_spec": {"w": 512, "h": 512, "overlap": 64},
+}})
+
+from pastelabel.ui.mixins.inference import InferenceMixin
+settings = InferenceMixin._saved_inference_settings(None)
+print(settings.get("conf_threshold"), settings.get("iou_threshold"))
+print(DEFAULT_CONF, DEFAULT_IOU)
+print(settings.get("input_size"))
+""")
+    lines = [ln.strip() for ln in out.strip().splitlines() if ln.strip()]
+    assert lines[0] == "None None", f"旧配置里的阈值被读回来了：{lines[0]}"
+    assert lines[1] == "0.25 0.45", lines[1]
+    assert lines[2] == "(512, 512)", f"输入尺寸仍要记住：{lines[2]}"
 
 
 def test_worker_passes_saved_thresholds_to_detector():

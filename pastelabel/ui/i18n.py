@@ -214,9 +214,12 @@ _strings = {
         "正式输出未生成": "正式输出未生成",
         "帧": "帧",
         "输出路径为空": "输出路径为空",
-        "框已烧进画面，不能再改；首版不含音轨":
-            "框已烧进画面，不能再改；首版不含音轨",
+        "框已烧进画面，不能再改": "框已烧进画面，不能再改",
         "在画面里画出每张图的标注框": "在画面里画出每张图的标注框",
+        "还没有加载模型：点画布上方参数行里的「加载模型」，本页才能开始逐帧推理。":
+            "还没有加载模型：点画布上方参数行里的「加载模型」，本页才能开始逐帧推理。",
+        "逐帧推理：每一帧都推理并画框，速度比抽帧慢；框会烧进画面，之后不能再改。":
+            "逐帧推理：每一帧都推理并画框，速度比抽帧慢；框会烧进画面，之后不能再改。",
         "类别名": "类别名",
         "没有标注文件，不能叠加标签框": "没有标注文件，不能叠加标签框",
         "标注读不出来": "标注读不出来",
@@ -923,10 +926,16 @@ _strings = {
         "正式输出未生成": "No final output was written",
         "帧": "frames",
         "输出路径为空": "Output path is empty",
-        "框已烧进画面，不能再改；首版不含音轨":
-            "Boxes are burned into the pixels and cannot be edited; "
-            "no audio track in this version",
+        "框已烧进画面，不能再改":
+            "Boxes are burned into the pixels and cannot be edited",
         "在画面里画出每张图的标注框": "Draw each image's annotation boxes onto the video",
+        "还没有加载模型：点画布上方参数行里的「加载模型」，本页才能开始逐帧推理。":
+            "No model is loaded yet: click \u201cLoad model\u201d in the parameter row "
+            "above the canvas to enable frame-by-frame inference on this page.",
+        "逐帧推理：每一帧都推理并画框，速度比抽帧慢；框会烧进画面，之后不能再改。":
+            "Frame-by-frame inference: every frame is inferred and drawn; slower "
+            "than extracting frames. Boxes are burned into the pixels and cannot "
+            "be edited afterwards.",
         "类别名": "Label names",
         "没有标注文件，不能叠加标签框": "No annotation files found, cannot overlay boxes",
         "标注读不出来": "Cannot read annotation",

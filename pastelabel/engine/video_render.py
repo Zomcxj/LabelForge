@@ -153,7 +153,13 @@ def _box_anchor(box):
 
 
 def _draw_label(painter, anchor_x, anchor_y, text, bg_color, font):
-    """在框上方画标签条；顶到画面外就改画在框内侧。"""
+    """在框上方画标签条；顶到画面外就改画在框内侧。
+
+    必须 `painter.setFont(font)`：条子尺寸是拿 `QFontMetrics(font)` 量的，
+    不设字体的话 `drawText` 会退回 painter 当前字体（应用字体），
+    字比条小一大截——1080p 下条子 27px 高、字只有十几像素。
+    画布那条路（`_draw_label_above_rect`）设了字体，只有这里漏了。
+    """
     from PyQt5.QtCore import QRectF, Qt
     from PyQt5.QtGui import QColor, QFontMetrics
 
@@ -167,6 +173,7 @@ def _draw_label(painter, anchor_x, anchor_y, text, bg_color, font):
     rect = QRectF(anchor_x, top, text_width + pad * 2, text_height)
     painter.fillRect(rect, QColor(*bg_color))
     painter.setPen(QColor(0, 0, 0))
+    painter.setFont(font)
     painter.drawText(rect.adjusted(pad, 0, -pad, 0),
                      Qt.AlignLeft | Qt.AlignVCenter, text)
 

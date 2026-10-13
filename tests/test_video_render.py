@@ -245,6 +245,81 @@ else:
     assert white > 0, "框上方除标签条外应保持背景色"
 
 
+def test_label_text_matches_the_label_bar_font():
+    """标签条上的文字必须用标签条自己那套字号画。
+
+    回归：`_draw_label` 拿 `QFontMetrics(font)` 量好了条子尺寸（1080p 下
+    27px 高），却**没有 `painter.setFont(font)`**，于是 `drawText` 用
+    painter 默认的（应用）字号渲染——条子是按 27px 画的，字只有十多像素，
+    切片推理成片里的标注因此看着「字比条小一大截」。画布那条路
+    （`_draw_label_above_rect`）设了字体，所以只有视频这条路不一致。
+
+    判据不看具体像素数，看**墨迹与标签字号的比例**：墨迹宽度要接近该字号
+    的文字总宽 `horizontalAdvance`，墨迹高度要占 `metrics.height()` 的
+    合理比例。这样换字体、换平台都不影响判定；而「没 setFont」时字宽只有
+    一半左右、字高也矮一截，两条都过不去。
+
+    显式把应用字体设成 10pt：真实场景里 painter 默认字号就是应用字体，
+    必须让「应用字号 ≠ 标签字号」这个前提确定成立，否则本用例会随
+    环境默认字号漂移。条高不按实测像素算——标签条与框的上边线同色相接，
+    行掩膜会把边线并进来，按 `metrics.height()` 判更稳。
+    """
+    result = _run_qt('''
+import sys
+sys.path.insert(0, r"%s")
+from PyQt5.QtWidgets import QApplication
+app = QApplication([])
+import numpy as np
+from PyQt5.QtGui import QFont, QFontMetrics
+from pastelabel.engine.video_render import (RenderSpec, draw_boxes,
+                                            _auto_font_pixels)
+
+app.setFont(QFont(QFont().family(), 10))        # 应用字体：明显小于标签字号
+
+img = np.full((1080, 1920, 3), 255, np.uint8)
+spec = RenderSpec(label_colors={"car": "#FF0000"},
+                  show_labels=True, show_scores=True)
+BOX_TOP = 1000
+out = draw_boxes(img, [{"label": "car", "score": 0.72,
+                        "shape_type": "rectangle", "x": 400, "y": BOX_TOP,
+                        "width": 300, "height": 60}], spec)
+
+band = out[BOX_TOP - 60:BOX_TOP - 3]            # 只留标签条那一条带
+red = (band[:, :, 0] == 255) & (band[:, :, 1] == 0) & (band[:, :, 2] == 0)
+rows = np.where(red.any(axis=1))[0]
+cols = np.where(red.any(axis=0))[0]
+bar = band[rows.min():rows.max() + 1, cols.min():cols.max() + 1]
+ink = (bar[:, :, 0] < 100) & (bar[:, :, 1] < 100) & (bar[:, :, 2] < 100)
+ink_rows = np.where(ink.any(axis=1))[0]
+ink_cols = np.where(ink.any(axis=0))[0]
+
+font = QFont()
+font.setPixelSize(_auto_font_pixels(1080))
+metrics = QFontMetrics(font)
+text = "car 0.72"
+print("RESULT", repr((
+    int(bar.shape[0]),
+    int(bar.shape[1]),
+    int(ink_rows.max() - ink_rows.min() + 1) if len(ink_rows) else 0,
+    int(ink_cols.max() - ink_cols.min() + 1) if len(ink_cols) else 0,
+    int(metrics.height()),
+    int(metrics.horizontalAdvance(text)),
+)))
+''')
+    bar_h, bar_w, ink_h, ink_w, metrics_h, advance = result
+    assert ink_h > 0 and ink_w > 0, "标签条上一个字形像素都没有，文字根本没画出来"
+    assert ink_w > 0.7 * advance, (
+        f"文字宽度远小于标签字号应有的宽度（{ink_w} vs {advance}）："
+        "drawText 用的不是标签字号的字体")
+    assert ink_h > 0.45 * metrics_h, (
+        f"文字墨迹高 {ink_h} 不到标签字号高度 {metrics_h} 的一半："
+        "字比条小，painter 没设标签字体")
+    # 条宽 = 文字宽 + 左右内边距；墨迹不能溢出条子
+    assert ink_w <= bar_w, f"文字画出了标签条：{ink_w} > {bar_w}"
+    assert bar_w < advance + 4 * 6, (
+        f"标签条宽 {bar_w} 相对文字宽 {advance} 过大，条子与文字不匹配")
+
+
 def test_label_bar_uses_the_category_color():
     """不同类别的标签条各用各自的类别色，不是一律同色。"""
     result = _run_qt('''

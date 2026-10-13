@@ -265,13 +265,26 @@ def test_i18n_video_terms():
     "pastelabel/ui/mixins/video.py",
 ])
 def test_every_tr_key_in_video_code_is_translated(rel):
-    """视频相关代码里每个 tr() 键都必须在两个语言表里有定义。"""
+    """视频相关代码里每个 tr() 键都必须在两个语言表里有定义。
+
+    用 AST 取键而不是正则：`tr("上半句" "下半句")` 这种跨行隐式拼接
+    在源码里是**一个**字符串，正则却只会逮到第一个片段，于是整串
+    从来没进过词条表也照样绿（推理成片页那句说明就这样漏掉了）。
+    """
+    import ast
+
     missing = []
-    src = (ROOT / rel).read_text(encoding="utf-8")
-    for key in sorted(set(re.findall(r"tr\(['\"]([^'\"]+)['\"]\)", src))):
+    tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "tr" and node.args):
+            continue
+        arg = node.args[0]
+        if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+            continue
         for lang in ("zh", "en"):
-            if key not in i18n._strings[lang]:
-                missing.append((rel, lang, key))
+            if arg.value not in i18n._strings[lang]:
+                missing.append((rel, lang, arg.value, node.lineno))
     assert not missing, missing
 
 
@@ -778,6 +791,71 @@ print("RESULT", repr((with_manifest.compose_fps_spin.isEnabled(),
         f"禁用状态下应显示清单实际帧率 {label_fps}，实际显示 {shown_value}"
     assert shown_value != 5.0, "不能留着默认 5.0 让人以为写死了"
     assert plain_default == 5.0, "无清单时仍应给一个可编辑的默认值"
+
+
+def test_extract_fps_cap_follows_the_cached_video(tmp_path):
+    """「每秒抽几帧」上限跟着源帧率走：换视频要重算上限并回落到合法值。
+
+    用户实测反馈：上限跟源帧率这件事要落在用户真能看到的地方——换一个
+    高帧率的源，上限要跟着抬；换一个低帧率的源，之前填写的高值要能被
+    上限拉回来，而不是留着一个超过源帧率的数字。
+
+    分别造 8 / 30 fps 两个源，因为同一弹窗里换视频才会暴露「上限没跟着
+    重算」或「旧值越界」这类问题（mp4v 写不出奇数尺寸，这里用偶数）。
+    """
+    import subprocess
+    import sys
+
+    script = '''
+import os, sys, tempfile
+sys.path.insert(0, r"%s")
+from PyQt5.QtWidgets import QApplication
+app = QApplication([])
+import cv2, numpy as np
+from pastelabel.ui.video_dialog import VideoDialog
+
+tmp = tempfile.mkdtemp()
+def make(fps, name):
+    path = os.path.join(tmp, name)
+    vw = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (64, 48))
+    for _ in range(12):
+        vw.write(np.zeros((48, 64, 3), np.uint8))
+    vw.release()
+    return path
+
+slow = make(8.0, "slow.mp4")
+fast = make(30.0, "fast.mp4")
+
+d = VideoDialog()
+d.set_video(slow)
+slow_cap = d.fps_spin.maximum()
+d.fps_spin.setValue(8.0)                 # 用户调到上限
+kept = d.fps_spin.value()
+d.set_video(fast)                        # 换成高帧率源
+fast_cap = d.fps_spin.maximum()
+fast_value = d.fps_spin.value()
+d.set_video(slow)                        # 再换回低帧率源
+back_cap = d.fps_spin.maximum()
+back_value = d.fps_spin.value()
+print("RESULT", repr((slow_cap, kept, fast_cap, fast_value,
+                      back_cap, back_value)))
+''' % str(ROOT)
+
+    proc = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                          text=True, encoding="utf-8", errors="replace", timeout=300)
+    out = (proc.stdout or "") + (proc.stderr or "")
+    line = [l for l in out.splitlines() if l.startswith("RESULT")]
+    assert line, f"子进程没有输出：{out[-1500:]}"
+    slow_cap, kept, fast_cap, fast_value, back_cap, back_value = \
+        eval(line[0][len("RESULT"):].strip())
+
+    assert abs(slow_cap - 8.0) < 1e-6, f"8fps 源的上限应为 8：{slow_cap}"
+    assert abs(kept - 8.0) < 1e-6, kept
+    assert abs(fast_cap - 30.0) < 1e-6, f"换 30fps 源后上限应抬到 30：{fast_cap}"
+    assert fast_value <= fast_cap + 1e-6, (fast_value, fast_cap)
+    assert abs(back_cap - 8.0) < 1e-6, f"换回 8fps 源后上限应回落：{back_cap}"
+    assert back_value <= back_cap + 1e-6, \
+        f"旧的高帧率值必须被上限拉回来：{back_value} > {back_cap}"
 
 
 # ---------- 任务期间的弹窗行为 ----------
