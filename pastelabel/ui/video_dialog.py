@@ -30,6 +30,67 @@ VIDEO_FILTER = ("视频文件 (*.mp4 *.avi *.mov *.mkv *.flv *.wmv *.webm *.m4v)
 
 ACTION_EXTRACT = "extract"
 ACTION_COMPOSE = "compose"
+ACTION_RENDER = "render"
+
+
+class _OverlayGroup:
+    """一组「叠加标签框」控件。
+
+    两个标签页各有一组：合成页的类别来自 sidecar 标注，推理成片页的类别
+    来自模型的类别表，数据源不同，不能共用同一个列表控件（两页同时存在，
+    各自要显示各自的内容）。
+    """
+
+    def __init__(self, overlay_check, label_list, all_btn, none_btn,
+                 show_label_check, show_score_check):
+        self.overlay_check = overlay_check
+        self.label_list = label_list
+        self.all_btn = all_btn
+        self.none_btn = none_btn
+        self.show_label_check = show_label_check
+        self.show_score_check = show_score_check
+
+    def widgets(self):
+        return (self.label_list, self.all_btn, self.none_btn,
+                self.show_label_check, self.show_score_check)
+
+    def set_checked(self, checked):
+        state = Qt.Checked if checked else Qt.Unchecked
+        for index in range(self.label_list.count()):
+            self.label_list.item(index).setCheckState(state)
+
+    def selected(self):
+        """勾选的类别名列表（顺序跟列表一致）。"""
+        chosen = []
+        for index in range(self.label_list.count()):
+            item = self.label_list.item(index)
+            if item.checkState() == Qt.Checked:
+                chosen.append(item.data(Qt.UserRole))
+        return chosen
+
+    def fill(self, labels):
+        """重建类别列表（有内容时主开关默认打开：用户就是要看框）。"""
+        self.label_list.clear()
+        for label, count in (labels or {}).items():
+            text = f"{label} ({count})" if count else str(label)
+            item = QListWidgetItem(text)
+            item.setData(Qt.UserRole, label)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked)
+            self.label_list.addItem(item)
+        self.overlay_check.setChecked(bool(labels))
+
+    def options(self):
+        """当前勾选；没有可选类别或主开关关着时返回 None。"""
+        if self.label_list.count() == 0:
+            return None
+        if not self.overlay_check.isChecked():
+            return None
+        return {
+            "labels": self.selected(),
+            "show_labels": self.show_label_check.isChecked(),
+            "show_scores": self.show_score_check.isChecked(),
+        }
 
 
 class VideoDialog(QDialog):
@@ -50,12 +111,15 @@ class VideoDialog(QDialog):
         self._compose_manifest = None      # 探测到的清单，None = 没有
         self._compose_plan = None
         self._compose_images = []          # 合成要用的图片（扫标注用）
+        self._render_class_names = []      # 模型类别表（推理成片页列类别）
+        self._render_model_name = ""
         self._running = False              # 任务在跑：锁参数、亮进度条
         self.action = ACTION_EXTRACT
         self._build_ui()
         self._apply_style()
         self._sync_extract_enabled()
         self._sync_compose_enabled()
+        self._sync_render_enabled()
 
     # ---------- 界面 ----------
 
@@ -70,6 +134,7 @@ class VideoDialog(QDialog):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_extract_tab(), tr("抽帧"))
         self.tabs.addTab(self._build_compose_tab(), tr("合成"))
+        self.tabs.addTab(self._build_render_tab(), tr("推理成片"))
         layout.addWidget(self.tabs)
 
         # 底部进度条：任务跑起来才显示，空闲时不占视觉
@@ -88,13 +153,18 @@ class VideoDialog(QDialog):
     # ---------- 任务状态 ----------
 
     def _verb(self):
-        return tr("合成中") if self.action == ACTION_COMPOSE else tr("抽帧中")
+        if self.action == ACTION_COMPOSE:
+            return tr("合成中")
+        if self.action == ACTION_RENDER:
+            return tr("推理成片中")
+        return tr("抽帧中")
 
     def set_running(self, running):
         """锁/解锁参数与开始按钮；「取消」按钮的含义随之改变。"""
         self._running = bool(running)
         self._sync_extract_enabled()
         self._sync_compose_enabled()
+        self._sync_render_enabled()
 
     def begin_run(self):
         """按下「开始」：先亮不确定态进度条，收到进度再变确定态。"""
@@ -120,6 +190,8 @@ class VideoDialog(QDialog):
         """在当前页的提示区说明原因（不关窗）。"""
         if self.action == ACTION_COMPOSE:
             self.compose_hint_label.setText(message)
+        elif self.action == ACTION_RENDER:
+            self.render_hint_label.setText(message)
         else:
             self.hint_label.setText(message)
 
@@ -283,7 +355,7 @@ class VideoDialog(QDialog):
 
         layout.addLayout(grid)
 
-        layout.addWidget(self._build_overlay_group())
+        layout.addWidget(self._build_overlay_group("compose"))
 
         self.compose_hint_label = QLabel("")
         self.compose_hint_label.setObjectName("videoHint")
@@ -307,54 +379,146 @@ class VideoDialog(QDialog):
 
         return self.compose_tab
 
-    def _build_overlay_group(self):
+    def _build_render_tab(self):
+        """④A 逐帧推理成片：源视频 + 模型 + 叠加选项 + 输出。
+
+        与抽帧页共用同一个「已选视频」（同一份源，选一次就能抽帧或成片），
+        但输出路径与叠加选项独立。
+        """
+        self.render_tab = QWidget()
+        layout = QVBoxLayout(self.render_tab)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        source = QHBoxLayout()
+        source.setSpacing(6)
+        self.render_pick_btn = QPushButton(tr("选择视频"))
+        self.render_pick_btn.setObjectName("optionsBtn")
+        self.render_pick_btn.setFixedHeight(24)
+        self.render_pick_btn.setToolTip(tr("选择视频文件"))
+        self.render_pick_btn.clicked.connect(self._pick_video)
+        source.addWidget(self.render_pick_btn)
+
+        self.render_path_edit = QLineEdit()
+        self.render_path_edit.setReadOnly(True)
+        self.render_path_edit.setPlaceholderText(tr("尚未选择视频"))
+        source.addWidget(self.render_path_edit, 1)
+        layout.addLayout(source)
+
+        self.render_info_label = QLabel("")
+        self.render_info_label.setObjectName("videoInfo")
+        self.render_info_label.setWordWrap(True)
+        layout.addWidget(self.render_info_label)
+
+        self.render_model_label = QLabel("")
+        self.render_model_label.setObjectName("videoInfo")
+        self.render_model_label.setWordWrap(True)
+        layout.addWidget(self.render_model_label)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
+        grid.setColumnStretch(1, 1)
+
+        self.render_out_lbl = QLabel(tr("输出视频"))
+        grid.addWidget(self.render_out_lbl, 0, 0)
+        self.render_out_edit = QLineEdit()
+        self.render_out_edit.setReadOnly(True)
+        grid.addWidget(self.render_out_edit, 0, 1)
+        layout.addLayout(grid)
+
+        layout.addWidget(self._build_overlay_group("render"))
+
+        note = QLabel(tr("逐帧推理：每一帧都推理并画框，速度比抽帧慢；"
+                         "框会烧进画面，之后不能再改。首版不含音轨。"))
+        note.setObjectName("videoHint")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        self.render_hint_label = QLabel("")
+        self.render_hint_label.setObjectName("videoHint")
+        self.render_hint_label.setWordWrap(True)
+        layout.addWidget(self.render_hint_label)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        self.render_cancel_btn = QPushButton(tr("取消"))
+        self.render_cancel_btn.setObjectName("optionsBtn")
+        self.render_cancel_btn.setFixedHeight(26)
+        self.render_cancel_btn.clicked.connect(self._on_cancel_clicked)
+        buttons.addWidget(self.render_cancel_btn)
+
+        self.render_btn = QPushButton(tr("开始推理成片"))
+        self.render_btn.setObjectName("optionsBtn")
+        self.render_btn.setFixedHeight(26)
+        self.render_btn.clicked.connect(self._on_start_render)
+        buttons.addWidget(self.render_btn)
+        layout.addLayout(buttons)
+
+        return self.render_tab
+
+    def _build_overlay_group(self, attr):
         """「叠加标签框」一组控件：主开关 + 类别多选 + 类别名/置信度开关。
 
         默认跟着画布走（显示类别名、显示置信度都开），免得编辑器里看到的
         和导出的视频不一样。
+
+        `attr` 是属性前缀：`compose` 或 `render`，两组控件各自独立（合成页
+        的类别来自 sidecar，推理成片页的来自模型类别表）。
         """
         box = QWidget()
         layout = QVBoxLayout(box)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        self.compose_overlay_check = QCheckBox(tr("叠加标签框"))
-        self.compose_overlay_check.setToolTip(tr("在画面里画出每张图的标注框"))
-        self.compose_overlay_check.stateChanged.connect(self._on_overlay_toggled)
-        layout.addWidget(self.compose_overlay_check)
+        overlay_check = QCheckBox(tr("叠加标签框"))
+        overlay_check.setToolTip(tr("在画面里画出每张图的标注框"))
+        overlay_check.stateChanged.connect(self._on_overlay_toggled)
+        layout.addWidget(overlay_check)
 
-        self.compose_label_list = QListWidget()
-        self.compose_label_list.setObjectName("composeLabelList")
-        self.compose_label_list.setSelectionMode(QAbstractItemView.NoSelection)
-        self.compose_label_list.setFixedHeight(84)
-        layout.addWidget(self.compose_label_list)
+        label_list = QListWidget()
+        label_list.setObjectName(f"{attr}LabelList")
+        label_list.setSelectionMode(QAbstractItemView.NoSelection)
+        label_list.setFixedHeight(84)
+        layout.addWidget(label_list)
 
         tools = QHBoxLayout()
         tools.setSpacing(6)
         tools.addWidget(QLabel(tr("类别")))
-        self.compose_all_btn = QPushButton(tr("全选"))
-        self.compose_all_btn.setObjectName("optionsBtn")
-        self.compose_all_btn.setFixedHeight(22)
-        self.compose_all_btn.clicked.connect(lambda: self._check_all_labels(True))
-        tools.addWidget(self.compose_all_btn)
-        self.compose_none_btn = QPushButton(tr("全不选"))
-        self.compose_none_btn.setObjectName("optionsBtn")
-        self.compose_none_btn.setFixedHeight(22)
-        self.compose_none_btn.clicked.connect(lambda: self._check_all_labels(False))
-        tools.addWidget(self.compose_none_btn)
+        all_btn = QPushButton(tr("全选"))
+        all_btn.setObjectName("optionsBtn")
+        all_btn.setFixedHeight(22)
+        tools.addWidget(all_btn)
+        none_btn = QPushButton(tr("全不选"))
+        none_btn.setObjectName("optionsBtn")
+        none_btn.setFixedHeight(22)
+        tools.addWidget(none_btn)
         tools.addStretch()
         layout.addLayout(tools)
 
         texts = QHBoxLayout()
         texts.setSpacing(12)
-        self.compose_show_label_check = QCheckBox(tr("类别名"))
-        self.compose_show_label_check.setChecked(True)
-        texts.addWidget(self.compose_show_label_check)
-        self.compose_show_score_check = QCheckBox(tr("置信度"))
-        self.compose_show_score_check.setChecked(True)
-        texts.addWidget(self.compose_show_score_check)
+        show_label_check = QCheckBox(tr("类别名"))
+        show_label_check.setChecked(True)
+        texts.addWidget(show_label_check)
+        show_score_check = QCheckBox(tr("置信度"))
+        show_score_check.setChecked(True)
+        texts.addWidget(show_score_check)
         texts.addStretch()
         layout.addLayout(texts)
+
+        group = _OverlayGroup(overlay_check, label_list, all_btn, none_btn,
+                              show_label_check, show_score_check)
+        setattr(self, f"_{attr}_overlay", group)
+        # 兼容既有属性名：合成页的控件与测试都按 compose_* 访问
+        setattr(self, f"{attr}_overlay_check", overlay_check)
+        setattr(self, f"{attr}_label_list", label_list)
+        setattr(self, f"{attr}_all_btn", all_btn)
+        setattr(self, f"{attr}_none_btn", none_btn)
+        setattr(self, f"{attr}_show_label_check", show_label_check)
+        setattr(self, f"{attr}_show_score_check", show_score_check)
+        all_btn.clicked.connect(lambda: group.set_checked(True))
+        none_btn.clicked.connect(lambda: group.set_checked(False))
         return box
 
     def _apply_style(self):
@@ -409,6 +573,16 @@ class VideoDialog(QDialog):
         EOF 核对实际帧数，传显式范围会丢掉这层检查。
         合成：有清单时只传清单路径（时长以清单为准），没有才传帧率。
         """
+        if self.action == ACTION_RENDER:
+            settings = {
+                "video_path": self._video_path,
+                "output_path": self.render_out_edit.text(),
+            }
+            render = self._render_overlay.options()
+            if render is not None:
+                settings["render"] = render
+            return settings
+
         if self.action == ACTION_COMPOSE:
             settings = {
                 "images_dir": self._compose_dir,
@@ -418,7 +592,7 @@ class VideoDialog(QDialog):
                 settings["output_fps"] = self.compose_fps_spin.value()
             else:
                 settings["manifest_path"] = self._compose_manifest
-            render = self.render_settings()
+            render = self.compose_overlay_settings()
             if render is not None:
                 settings["render"] = render
             return settings
@@ -438,6 +612,17 @@ class VideoDialog(QDialog):
 
     def validate(self):
         """按当前动作校验；返回错误文案，通过则返回 None。"""
+        if self.action == ACTION_RENDER:
+            if not self._video_path:
+                return tr("请先选择视频文件")
+            if self._info is None:
+                return self.render_hint_label.text() or tr("视频文件不存在")
+            if not getattr(self, "_render_class_names", None):
+                return tr("请先加载模型")
+            if not self.render_out_edit.text():
+                return tr("输出路径为空")
+            return None
+
         if self.action == ACTION_COMPOSE:
             if not self._compose_dir:
                 return tr("请先选择图片目录")
@@ -480,6 +665,7 @@ class VideoDialog(QDialog):
             self.info_label.setText("")
             self.out_edit.setText("")
             self._sync_extract_enabled()
+            self._sync_render_enabled()
             return
 
         info = self._info
@@ -495,6 +681,7 @@ class VideoDialog(QDialog):
         self.end_spin.setValue(info.duration)
         self.out_edit.setText(video_io.output_dir_for(path))
         self._sync_extract_enabled()
+        self._sync_render_enabled()
 
     def _sync_extract_enabled(self):
         ready = self._info is not None and not self._running
@@ -600,32 +787,20 @@ class VideoDialog(QDialog):
         self._fill_compose_labels(labels)
 
     def _fill_compose_labels(self, labels):
-        """重建类别列表；有标注时主开关默认打开（用户就是要看框）。"""
-        self.compose_label_list.clear()
-        for label, count in (labels or {}).items():
-            item = QListWidgetItem(f"{label} ({count})")
-            item.setData(Qt.UserRole, label)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked)
-            self.compose_label_list.addItem(item)
-        self.compose_overlay_check.setChecked(bool(labels))
+        """重建合成页的类别列表；有标注时主开关默认打开（用户就是要看框）。"""
+        self._compose_overlay.fill(labels)
 
     def _check_all_labels(self, checked):
-        state = Qt.Checked if checked else Qt.Unchecked
-        for index in range(self.compose_label_list.count()):
-            self.compose_label_list.item(index).setCheckState(state)
+        self._compose_overlay.set_checked(checked)
 
     def _on_overlay_toggled(self, _state=None):
+        """两页的叠加主开关都会触发：各自刷新各自的可用状态。"""
         self._sync_compose_enabled()
+        self._sync_render_enabled()
 
     def selected_labels(self):
-        """勾选的类别名列表（顺序跟列表一致）。"""
-        chosen = []
-        for index in range(self.compose_label_list.count()):
-            item = self.compose_label_list.item(index)
-            if item.checkState() == Qt.Checked:
-                chosen.append(item.data(Qt.UserRole))
-        return chosen
+        """合成页勾选的类别名列表（顺序跟列表一致）。"""
+        return self._compose_overlay.selected()
 
     def _compose_output_for(self, images_dir):
         """输出视频路径：图片目录同级，`<目录名>.mp4`；重名时加序号。"""
@@ -661,13 +836,15 @@ class VideoDialog(QDialog):
             self.compose_overlay_check.setChecked(False)
         overlay = (ready and has_labels and idle
                    and self.compose_overlay_check.isChecked())
-        for widget in (self.compose_label_list, self.compose_all_btn,
-                       self.compose_none_btn, self.compose_show_label_check,
-                       self.compose_show_score_check):
+        for widget in self._compose_overlay.widgets():
             widget.setEnabled(overlay)
 
-    def render_settings(self):
-        """叠加参数；不叠加（或没有类别可选）时返回 None。
+    def compose_overlay_settings(self):
+        """合成页的叠加参数；不叠加（或没有类别可选）时返回 None。
+
+        名字带 compose 是因为**两页各有一组叠加控件**：合成页的类别来自
+        sidecar 标注、推理成片页的来自模型类别表。叫 render_settings 会
+        让人以为是推理成片页的参数。
 
         `labels` 用列表而不是集合：空列表 = 一个都不画，与 None（全画）
         区分开，引擎那边靠这个区分。
@@ -675,15 +852,79 @@ class VideoDialog(QDialog):
         这里只看「有没有得画」和用户的勾选，**不看控件的 enabled 状态**：
         任务在跑时控件是禁用的，而 `settings()` 恰好可能在那之后被调用。
         """
-        if self.compose_label_list.count() == 0:
-            return None
-        if not self.compose_overlay_check.isChecked():
-            return None
-        return {
-            "labels": self.selected_labels(),
-            "show_labels": self.compose_show_label_check.isChecked(),
-            "show_scores": self.compose_show_score_check.isChecked(),
-        }
+        return self._compose_overlay.options()
+
+    # ---------- 推理成片页 ----------
+
+    def set_detector_info(self, class_names=None, model_name=""):
+        """告诉弹窗当前加载的模型与类别表（推理成片页据此列类别）。
+
+        弹窗是每次新建的，所以打开时由主窗口灌一次；模型没加载就传空，
+        页面会禁用开始按钮并说明原因。
+
+        类别来自模型（不是 sidecar），所以直接填列表、默认全勾上——
+        用户要的就是「把模型认得的东西都画出来」。
+        """
+        self._render_class_names = [str(n) for n in (class_names or [])]
+        self._render_model_name = model_name or ""
+        group = self._render_overlay
+        group.label_list.clear()
+        if self._render_class_names:
+            group.fill({name: 0 for name in self._render_class_names})
+        else:
+            group.overlay_check.setChecked(False)
+        self._sync_render_enabled()
+
+    def _sync_render_enabled(self):
+        """推理成片页的可用状态：要有源视频、有模型、不在跑任务。"""
+        has_model = bool(getattr(self, "_render_class_names", None))
+        ready = self._info is not None and has_model and not self._running
+
+        self.render_pick_btn.setEnabled(not self._running)
+        self.render_btn.setEnabled(ready)
+        self.render_path_edit.setText(self._video_path)
+        if self._info is not None:
+            info = self._info
+            self.render_info_label.setText(
+                f"{info.width}×{info.height}  {info.fps:.3f} FPS  "
+                f"{info.frame_count} 帧  {info.duration:.3f} 秒")
+            self.render_out_edit.setText(self._render_output_for(self._video_path))
+        else:
+            self.render_info_label.setText("")
+            self.render_out_edit.setText("")
+
+        if has_model:
+            self.render_model_label.setText(
+                f"{tr('模型')}: {getattr(self, '_render_model_name', '') or '-'}"
+                f"  {tr('类别')}: {len(self._render_class_names)}")
+        else:
+            self.render_model_label.setText(tr("请先加载模型"))
+
+        # 类别来自模型，不像合成页那样需要扫 sidecar：有模型就有类别可选
+        group = self._render_overlay
+        group.overlay_check.setEnabled(ready)
+        overlay = ready and group.overlay_check.isChecked()
+        for widget in group.widgets():
+            widget.setEnabled(overlay)
+
+    def _render_output_for(self, video_path):
+        """推理成片的输出：视频同级 `<主名>_render.mp4`，重名加序号。"""
+        parent = os.path.dirname(os.path.abspath(video_path))
+        stem = os.path.splitext(os.path.basename(video_path))[0] or "render"
+        candidate = os.path.join(parent, f"{stem}_render.mp4")
+        index = 2
+        while os.path.exists(candidate):
+            candidate = os.path.join(parent, f"{stem}_render_{index}.mp4")
+            index += 1
+        return candidate
+
+    def _on_start_render(self):
+        self.action = ACTION_RENDER
+        message = self.validate()
+        if message:
+            self.render_hint_label.setText(message)
+            return
+        self.start_requested.emit(ACTION_RENDER, self.settings())
 
     def _on_start_compose(self):
         self.action = ACTION_COMPOSE

@@ -30,6 +30,10 @@ class VideoMixin:
         from ..video_dialog import ACTION_COMPOSE, VideoDialog
 
         dialog = VideoDialog(self)
+        # 推理成片页要列模型的类别；弹窗每次新建，所以每次灌一遍
+        dialog.set_detector_info(self._all_class_names(),
+                                 getattr(getattr(self, '_detector', None),
+                                         'model_path', ''))
         dialog.start_requested.connect(self._on_video_start_requested)
         dialog.cancel_requested.connect(self._cancel_video_task)
         self._video_dialog = dialog
@@ -40,13 +44,15 @@ class VideoMixin:
 
     def _on_video_start_requested(self, action, settings):
         """弹窗按下「开始」：起对应任务；起不来就把原因写回弹窗提示区。"""
-        from ..video_dialog import ACTION_COMPOSE
+        from ..video_dialog import ACTION_COMPOSE, ACTION_RENDER
 
         if getattr(self, '_busy', False):
             self._video_dialog_hint(tr("已有任务在运行，请稍候"))
             return
         dialog = self._video_dialog
-        if action == ACTION_COMPOSE:
+        if action == ACTION_RENDER:
+            started = self._start_video_render(settings)
+        elif action == ACTION_COMPOSE:
             started = self._start_video_compose(settings)
         else:
             started = self._start_video_extract(settings)
@@ -73,8 +79,9 @@ class VideoMixin:
 
     def _cancel_video_task(self):
         """弹窗上按了「取消」：取消当前在跑的任务（弹窗留着显示进度）。"""
-        worker = getattr(self, '_video_worker', None) or \
-            getattr(self, '_compose_worker', None)
+        worker = (getattr(self, '_video_worker', None)
+                  or getattr(self, '_compose_worker', None)
+                  or getattr(self, '_render_worker', None))
         if worker is not None:
             worker.cancel()
 
@@ -258,4 +265,83 @@ class VideoMixin:
     def _video_info(self, message):
         from ..dialog_helpers import information
         information(self, tr("完成"), message)
+
+    # ---------- 推理成片（④A） ----------
+
+    def _start_video_render(self, settings):
+        """起后台逐帧推理编码线程；返回是否真的起了。
+
+        需要已加载的模型：没模型就明确提示，不静默什么都不做。类别色与
+        范围都在这里（主线程）定稿，后台只负责逐帧跑。
+        """
+        if getattr(self, '_busy', False) or getattr(self, '_render_worker', None):
+            return False
+        detector = getattr(self, '_detector', None)
+        if detector is None:
+            self._video_dialog_hint(tr("请先加载模型"))
+            return False
+        from ..inference_workers import VideoRenderWorker
+
+        # 范围非法（没画 ROI、窗口参数坏）在启动时拦下，不进后台跑出 0 框结果
+        try:
+            scope = self._scope_for_run()
+        except Exception as exc:
+            self._video_dialog_hint(str(exc))
+            return False
+
+        render = self._compose_render_spec(settings.get("render"))
+        worker = VideoRenderWorker(
+            settings["video_path"], detector,
+            output_path=settings["output_path"],
+            scope=scope, render=render,
+            class_filter=self._filter_for_run(), parent=self)
+        self._render_worker = worker
+        self._render_settings = dict(settings)
+        self._busy = True
+        worker.progress.connect(self._on_render_progress)
+        worker.finished_ok.connect(self._on_render_finished)
+        worker.failed.connect(self._on_render_failed)
+        worker.finished.connect(lambda w=worker: self._cleanup_render_worker(w))
+        worker.start()
+        return True
+
+    def _on_render_progress(self, done, total):
+        """进度只进弹窗；主窗口状态栏不再显示「推理成片中 x/x」。"""
+        dialog = getattr(self, '_video_dialog', None)
+        if dialog is not None:
+            dialog.set_progress(done, total)
+
+    def _on_render_finished(self, result):
+        self._busy = False
+        if result.cancelled:
+            self._close_video_dialog(tr("已取消推理成片"))
+            self.status_label.setText(tr("已取消推理成片"))
+            return
+        text = (f"{tr('推理成片完成')} {result.frame_count} {tr('帧')}  "
+                f"{result.duration:.3f} {tr('秒')}")
+        self._close_video_dialog(tr("推理成片完成"))
+        self.status_label.setText(text)
+        # 框已经画进像素了，明确说清不能再改，免得用户回头找标注
+        self._video_info(
+            f"{tr('输出文件')}: {result.output_path}\n"
+            f"{tr('框已烧进画面，不能再改；首版不含音轨')}")
+
+    def _on_render_failed(self, message):
+        self._busy = False
+        self._close_video_dialog(tr("推理成片失败"))
+        self.status_label.setText(tr("推理成片失败"))
+        self._video_warn(message)
+
+    def _cleanup_render_worker(self, worker):
+        if worker is getattr(self, '_render_worker', None):
+            self._render_worker = None
+        self._busy = False
+        worker.deleteLater()
+
+    def _cancel_video_render(self):
+        """请求取消；线程会在下一帧退出。"""
+        worker = getattr(self, '_render_worker', None)
+        if worker is not None:
+            worker.cancel()
+            self.status_label.setText(tr("正在取消..."))
 

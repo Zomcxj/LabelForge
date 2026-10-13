@@ -230,3 +230,48 @@ class VideoComposeWorker(QThread):
 
     def cancel(self):
         self._cancelled = True
+
+
+class VideoRenderWorker(QThread):
+    """后台逐帧推理编码（④A）。progress: (done, total) 按帧。
+
+    源视频的**每一帧**都跑一次推理并绘制，所以比 ④B 慢得多：进度按帧上报、
+    必须能取消。`render`/`scope`/`class_filter` 都由主线程定稿后传入——
+    `get_label_color()` 会写缓存与配置，后台线程不能调用它。
+    """
+    progress = pyqtSignal(int, int)
+    finished_ok = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+    def __init__(self, video_path, detector, output_path=None, resize_fn=None,
+                 scope=None, render=None, class_filter=None, parent=None):
+        super().__init__(parent)
+        self._video_path = video_path
+        self._detector = detector
+        self._output_path = output_path
+        self._resize_fn = resize_fn
+        self._scope = scope
+        self._render = render
+        self._class_filter = class_filter
+        self._cancelled = False
+
+    def run(self):
+        from ..engine import video_io
+        from ..engine.inference_image import resize_for_model
+        try:
+            result = video_io.render_video(
+                self._video_path, self._detector,
+                output_path=self._output_path,
+                resize_fn=self._resize_fn or resize_for_model,
+                scope=self._scope,
+                render=self._render,
+                class_filter=self._class_filter,
+                cancel=lambda: self._cancelled,
+                progress=self.progress.emit,
+            )
+            self.finished_ok.emit(result)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+    def cancel(self):
+        self._cancelled = True

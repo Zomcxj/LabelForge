@@ -147,7 +147,7 @@ pytest tests/ -v
 
 ## 许可证
 
-本项目采用 [GNU General Public License v3.0](./LICENSE)（`GPL-3.0-only`），与参考项目 X-AnyLabeling 的许可证版本一致。
+本项目采用 [GNU General Public License v3.0](./LICENSE)（`GPL-3.0-only`）。
 
 Copyright (c) 2026 Zomcxj
 

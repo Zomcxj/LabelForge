@@ -30,13 +30,15 @@ def test_overlay_texts_are_translated(key):
 
 
 def test_overlay_tr_keys_are_defined():
-    """合成页用到的 tr() 键都必须在语言表里（防止只写 tr 不加词条）。"""
-    src = (ROOT / "pastelabel/ui/video_dialog.py").read_text(encoding="utf-8")
+    """视频弹窗与 mixin 用到的 tr() 键都必须在语言表里（防止只写 tr 不加词条）。"""
     missing = []
-    for key in sorted(set(re.findall(r"tr\(['\"]([^'\"]+)['\"]\)", src))):
-        for lang in ("zh", "en"):
-            if key not in i18n._strings[lang]:
-                missing.append((lang, key))
+    for rel in ("pastelabel/ui/video_dialog.py",
+                "pastelabel/ui/mixins/video.py"):
+        src = (ROOT / rel).read_text(encoding="utf-8")
+        for key in sorted(set(re.findall(r"tr\(['\"]([^'\"]+)['\"]\)", src))):
+            for lang in ("zh", "en"):
+                if key not in i18n._strings[lang]:
+                    missing.append((lang, key, rel))
     assert not missing, missing
 
 
@@ -134,39 +136,68 @@ def test_scan_labels_ignores_shapes_without_points(tmp_path):
 
 # ---------- 弹窗控件 ----------
 
-def test_compose_tab_has_overlay_controls():
-    """合成页要有：主开关、类别多选列表、类别名开关、置信度开关、全选/全不选。"""
-    src = inspect.getsource(
-        __import__("pastelabel.ui.video_dialog", fromlist=["VideoDialog"]).VideoDialog)
-    for name in ("compose_overlay_check", "compose_label_list",
-                 "compose_show_label_check", "compose_show_score_check",
-                 "compose_all_btn", "compose_none_btn"):
-        assert name in src, name
+def test_overlay_group_options_are_behavioral():
+    """`_OverlayGroup` 的勾选语义：默认全勾、两个文字开关独立、全不选=不画。
+
+    进程内的假 QListWidgetItem 没有 setFlags/checkState（conftest 只补了
+    最薄的替身），所以这条走真实 Qt 子进程。不看源码字符串：那是接线，
+    接线错了字符串断言照样通过。
+    """
+    result = _run_qt(_PRELUDE + '''
+d = VideoDialog()
+d.set_compose_dir(make_dir({"a.png": ["person", "car"], "b.png": ["person"]}))
+g = d._compose_overlay
+default = g.options()
+g.show_score_check.setChecked(False)
+independent = g.options()
+g.set_checked(False)
+none_checked = (g.options()["labels"], g.overlay_check.isChecked())
+g.overlay_check.setChecked(False)
+master_off = g.options()
+print("RESULT", repr((default, independent, none_checked, master_off)))
+''')
+    default, independent, none_checked, master_off = result
+    assert default["labels"] == ["person", "car"], "默认全勾上"
+    assert default["show_labels"] is True and default["show_scores"] is True
+    assert independent["show_scores"] is False
+    assert independent["show_labels"] is True, "两个开关必须独立"
+    assert none_checked[0] == [], "全不选 = 一个都不画（不是全画）"
+    assert none_checked[1] is True, "全不选不改主开关"
+    assert master_off is None, "主开关关着就不带 render"
 
 
-def test_overlay_sub_options_follow_master_switch():
-    """主开关关掉时，类别列表与两个文字开关都要禁用。"""
-    from pastelabel.ui.video_dialog import VideoDialog
-
-    src = inspect.getsource(VideoDialog._sync_compose_enabled)
-    assert "compose_overlay_check" in src
-    for name in ("compose_label_list", "compose_show_label_check",
-                 "compose_show_score_check", "compose_all_btn", "compose_none_btn"):
-        assert name in src, name
+def test_overlay_group_fill_keeps_real_label_names():
+    """列表项显示「类别 (次数)」，但交回引擎的是原类别名，不是显示文本。"""
+    result = _run_qt(_PRELUDE + '''
+d = VideoDialog()
+d.set_compose_dir(make_dir({"a.png": ["person"], "b.png": ["person", "person"]}))
+item = d.compose_label_list.item(0)
+print("RESULT", repr((item.text(), d._compose_overlay.options()["labels"])))
+''')
+    shown, labels = result
+    assert shown == "person (3)", shown
+    assert labels == ["person"], "不能把显示文本当类别名交回引擎"
 
 
 def test_settings_omits_render_when_overlay_off():
-    """不叠加时不能往参数里塞 render（引擎据此走纯合成路径）。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    """不叠加时不能往参数里塞 render（引擎据此走纯合成路径）。
 
-    src = inspect.getsource(VideoDialog.settings)
-    assert "render_settings" in src, "settings() 应通过 render_settings() 决定带不带 render"
-    detail = inspect.getsource(VideoDialog.render_settings)
-    assert "compose_overlay_check" in detail
-    assert "isChecked" in detail
-    # 不能看控件的 enabled：任务在跑时控件是禁用的，那时取参数会凭空丢掉 render
-    assert "isEnabled" not in detail
-    assert "compose_label_list.count()" in detail
+    真 Qt 子进程里按主开关，再看 settings 里有没有 render。
+    """
+    result = _run_qt(_PRELUDE + '''
+d = VideoDialog()
+d.set_compose_dir(make_dir({"a.png": ["person"], "b.png": ["person"]}))
+on = "render" in compose_settings(d)
+d.compose_overlay_check.setChecked(False)
+off = "render" in compose_settings(d)
+d.compose_overlay_check.setChecked(True)
+again = "render" in compose_settings(d)
+print("RESULT", repr((on, off, again)))
+''')
+    on, off, again = result
+    assert on is True, "默认有标注时要带 render"
+    assert off is False, "主开关关掉就不能带 render"
+    assert again is True, "重新打开要恢复"
 
 
 # ---------- 子进程 + 真实 Qt ----------
