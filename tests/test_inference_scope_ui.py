@@ -13,7 +13,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 from pastelabel.engine.inference_scope import (
-    MODE_FULL, MODE_ROI, MODE_ROI_WINDOW, MODE_WINDOW, ScopeError,
+    MODE_FULL, MODE_ROI, MODE_WINDOW, ScopeError,
 )
 
 _QT_EXIT_GUARD = """
@@ -233,17 +233,16 @@ print(p.ok_btn.isEnabled())
 
 
 def test_real_scope_panel_shows_controls_per_mode():
-    """真实控件：窗口按钮只在窗口相关模式显示，区域按钮只在区域相关模式显示。"""
+    """真实控件：窗口按钮只在滑窗显示，区域按钮只在区域显示，全图都不显示。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import (
-    MODE_FULL, MODE_WINDOW, MODE_ROI, MODE_ROI_WINDOW)
+from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, region_count=2,
                reference_size=(3840, 2160))
-for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI, MODE_ROI_WINDOW):
+for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
     p.set_mode(mode)
     print(mode, p.window_btn.isHidden(), p.region_btn.isHidden())
 """)
@@ -251,7 +250,6 @@ for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI, MODE_ROI_WINDOW):
     assert lines[0] == "full True True", lines[0]
     assert lines[1] == "window False True", lines[1]
     assert lines[2] == "roi True False", lines[2]
-    assert lines[3] == "roi_window False False", lines[3]
 
 
 def test_real_scope_panel_selection_reports_windows_only_when_needed():
@@ -434,20 +432,6 @@ def test_scope_for_run_roi_without_regions_raises():
     host = _scope_host(mode=MODE_ROI, regions=[])
     with pytest.raises(ScopeError):
         host._scope_for_run()
-
-
-def test_scope_for_run_roi_window_carries_both():
-    """区域+滑窗同时带区域与窗口参数。"""
-    host = _scope_host(mode=MODE_ROI_WINDOW,
-                       regions=[{"x": 0, "y": 0, "width": 100, "height": 100}],
-                       windows={"w": 64, "h": 64, "overlap": 0},
-                       size=(100, 100))
-
-    scope = host._scope_for_run()
-
-    assert scope["mode"] == MODE_ROI_WINDOW
-    assert scope["windows"] == {"w": 64, "h": 64, "overlap": 0}
-    assert scope["regions"] and scope["reference_size"] == (100, 100)
 
 
 def test_scope_for_run_rejects_bad_window_params_at_start():
@@ -671,7 +655,7 @@ def test_scope_modules_have_all_translations():
         keys |= set(re.findall(r"tr\(['\"]([^'\"]+)['\"]\)", source))
     for _mode, name, hint in _MODE_KEYS:
         keys |= {name, hint}
-    keys |= {"全图", "滑窗", "区域", "区域+滑窗"}
+    keys |= {"全图", "滑窗", "区域"}
 
     missing = sorted((key, lang) for key in keys for lang in ("zh", "en")
                      if key not in i18n._strings[lang])

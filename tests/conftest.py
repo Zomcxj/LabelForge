@@ -13,6 +13,12 @@ _os.environ.setdefault(
     'PASTELABEL_CONFIG_PATH',
     _os.path.join(_tempfile.mkdtemp(prefix='pastelabel_test_'), 'config.json'),
 )
+# 真 Qt 子进程里要 print 中文再回读到父进程断言，编码必须两端一致。
+# 不设这个变量时子进程按 Windows 默认代码页（GBK）编码 stdout，中文变成
+# `\ufffd` 乱码、断言里那句「期望的中文」永远匹配不上——症状是「真 Qt 用例
+# 里凡是比中文字的都在报错」，但看起来像功能坏了。设一次即可，子进程通过
+# `os.environ | {...}` 一并继承。
+_os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 del _os, _tempfile
 
 # 子进程默认使用当前测试解释器；需要指定其他解释器时显式设置环境变量

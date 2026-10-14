@@ -344,40 +344,6 @@ def test_roi_scope_rejects_degenerate_region():
     assert results[0].error
 
 
-# ---------- 区域+滑窗 ----------
-
-def test_roi_window_scope_enumerates_windows_inside_the_region():
-    """区域+滑窗：窗口在 ROI 外接矩形内枚举，偏移叠加 ROI 原点。"""
-    detector = _FakeDetector()
-
-    boxes = detect_in_scope(np.zeros((100, 200, 3), dtype=np.uint8), detector,
-                            None, {"mode": "roi_window",
-                                   "regions": [{"x": 0, "y": 0, "width": 200,
-                                                "height": 100}],
-                                   "windows": {"w": 100, "h": 100, "overlap": 0}})
-
-    assert detector.calls == [(100, 100), (100, 100)]
-    assert sorted(b["x"] for b in boxes) == [45.0, 145.0]
-
-
-def test_roi_window_offsets_combine_region_and_window():
-    """ROI 与窗口偏移必须相加，只加一个会让框落错位置。"""
-    detector = _FakeDetector()
-
-    boxes = detect_in_scope(np.zeros((200, 400, 3), dtype=np.uint8), detector,
-                            None, {"mode": "roi_window",
-                                   "regions": [{"x": 200, "y": 100,
-                                                "width": 200, "height": 100}],
-                                   "windows": {"w": 100, "h": 100, "overlap": 0}})
-
-    # 框宽 10、窗口中心 50 → 框左上 x = 45；第 2 窗再加 100 的窗内偏移
-    # 最终 = 45 + ROI.x(200) + 窗偏移(0 / 100) = 245 / 345
-    xs = sorted(b["x"] for b in boxes)
-    assert xs == [245.0, 345.0], xs
-    # y = 45 + ROI.y(100) + 0 = 145
-    assert all(b["y"] == 145.0 for b in boxes)
-
-
 # ---------- 参考图尺寸 ----------
 
 def test_reference_size_mismatch_fails_only_that_image():

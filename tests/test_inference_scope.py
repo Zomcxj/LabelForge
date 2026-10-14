@@ -9,7 +9,7 @@ import pytest
 
 from pastelabel.engine.augmenter.crop import MAX_WINDOW
 from pastelabel.engine.inference_scope import (
-    ScopeError, iter_regions, iter_windows, merge_scope_results,
+    MODES, ScopeError, iter_regions, iter_windows, merge_scope_results,
     normalize_scope, region_bbox, region_contains_box_center,
 )
 
@@ -249,13 +249,12 @@ def test_normalize_scope_none_means_full_image():
     assert normalize_scope(None, image_size=(64, 48)) is None
 
 
-def test_normalize_scope_requires_regions_for_roi_modes():
+def test_normalize_scope_requires_regions_for_roi_mode():
     """区域范围必须带 ROI；缺失/空表都报错。"""
-    for mode in ("roi", "roi_window"):
-        with pytest.raises(ScopeError):
-            normalize_scope({"mode": mode, "regions": []}, image_size=(64, 48))
-        with pytest.raises(ScopeError):
-            normalize_scope({"mode": mode}, image_size=(64, 48))
+    with pytest.raises(ScopeError):
+        normalize_scope({"mode": "roi", "regions": []}, image_size=(64, 48))
+    with pytest.raises(ScopeError):
+        normalize_scope({"mode": "roi"}, image_size=(64, 48))
 
 
 def test_normalize_scope_window_mode_requires_window_spec():
@@ -268,6 +267,13 @@ def test_normalize_scope_rejects_unknown_mode():
     """未知范围模式报错，不静默退回全图。"""
     with pytest.raises(ScopeError):
         normalize_scope({"mode": "随便"}, image_size=(64, 48))
+
+
+def test_roi_window_mode_is_gone():
+    """已删除的「区域+滑窗」不再是合法模式。"""
+    assert "roi_window" not in MODES
+    with pytest.raises(ScopeError):
+        normalize_scope({"mode": "roi_window"}, image_size=(64, 48))
 
 
 def test_normalize_scope_rejects_unknown_keys():

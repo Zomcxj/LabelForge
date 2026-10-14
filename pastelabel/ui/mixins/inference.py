@@ -292,14 +292,14 @@ class InferenceMixin:
         读到正在被改的列表。参考图尺寸一并记下，尺寸不符的图会单独报失败。
         """
         from ...engine.inference_scope import (
-            MODE_ROI, MODE_ROI_WINDOW, MODE_WINDOW, ScopeError, normalize_scope,
+            MODE_ROI, MODE_WINDOW, ScopeError, normalize_scope,
         )
 
         mode = getattr(self, '_scope_mode', MODE_FULL)
         if mode == MODE_FULL:
             return None
         scope = {"mode": mode}
-        if mode in (MODE_WINDOW, MODE_ROI_WINDOW):
+        if mode == MODE_WINDOW:
             windows = self._effective_window_spec()
             # 目前不可达：`_effective_window_spec()` 三条分支都回非空表。
             # 保留是为了以后改默认值（比如允许「不设参数」）时有个兜底，
@@ -307,10 +307,10 @@ class InferenceMixin:
             if not windows:
                 raise ScopeError("滑窗范围缺少窗口参数")
             scope["windows"] = dict(windows)
-        if mode in (MODE_ROI, MODE_ROI_WINDOW):
+        if mode == MODE_ROI:
             regions = self._region_boxes()
             if not regions:
-                raise ScopeError(tr("没有可用区域，请先在贴图模式画好区域"))
+                raise ScopeError(tr("没有可用区域，请先画好区域"))
             # 这里深拷贝是为了语义明确（scope 必须是快照）；即使去掉，
             # `normalize_scope()` 内部也会 deepcopy 两次，结果一样。
             scope["regions"] = copy.deepcopy(regions)
@@ -326,16 +326,16 @@ class InferenceMixin:
         if row is None:
             return
         from ...engine.inference_scope import (
-            MODE_ROI, MODE_ROI_WINDOW, MODE_WINDOW,
+            MODE_ROI, MODE_WINDOW,
         )
 
         mode = getattr(self, '_scope_mode', MODE_FULL)
         if mode == MODE_FULL:
             row.set_scope_summary(tr("全图"))
             return
-        names = {MODE_WINDOW: "滑窗", MODE_ROI: "区域", MODE_ROI_WINDOW: "区域+滑窗"}
+        names = {MODE_WINDOW: "滑窗", MODE_ROI: "区域"}
         detail = ""
-        if mode in (MODE_WINDOW, MODE_ROI_WINDOW):
+        if mode == MODE_WINDOW:
             spec = getattr(self, '_window_spec', None) or {}
             if spec:
                 detail = f" {spec.get('w')}×{spec.get('h')}/{spec.get('overlap')}"
@@ -347,10 +347,10 @@ class InferenceMixin:
         只影响显示，不改 `edit_mode`：区域编辑仍然只在贴图模式，否则会
         影响贴图交互。
         """
-        from ...engine.inference_scope import MODE_ROI, MODE_ROI_WINDOW
+        from ...engine.inference_scope import MODE_ROI
 
         mode = getattr(self, '_scope_mode', MODE_FULL)
-        self._show_scope_regions = mode in (MODE_ROI, MODE_ROI_WINDOW)
+        self._show_scope_regions = mode == MODE_ROI
         canvas = getattr(self, 'canvas', None)
         if canvas is not None and hasattr(canvas, 'update'):
             canvas.update()
@@ -392,7 +392,7 @@ class InferenceMixin:
         paths = [images[i] for i in indices if 0 <= i < len(images)]
         if not paths:
             return
-        from ...engine.inference_scope import MODE_ROI, MODE_ROI_WINDOW, ScopeError
+        from ...engine.inference_scope import MODE_ROI, ScopeError
         from ..inference_workers import InferenceWorker
 
         # 范围在启动时定稿：非法配置（没画区域、窗口参数坏）在这里就拦下，
@@ -403,7 +403,7 @@ class InferenceMixin:
             self.status_label.setText(tr("推理范围无效"))
             self._inference_warn(str(exc))
             return
-        if scope is not None and scope.get("mode") in (MODE_ROI, MODE_ROI_WINDOW):
+        if scope is not None and scope.get("mode") == MODE_ROI:
             self._note_scope_replace(scope)
 
         self._save_inference_settings()
@@ -481,11 +481,8 @@ class InferenceMixin:
         """
         if not self._replace_mode():
             return
-        from ...engine.inference_scope import MODE_ROI_WINDOW
-
-        mode = tr("区域+滑窗") if scope.get("mode") == MODE_ROI_WINDOW else tr("区域")
         self.status_label.setText(
-            f"{mode}: {tr('覆盖会替换本图全部旧自动框，区域之外的也会被删除')}")
+            f"{tr('区域')}: {tr('覆盖会替换本图全部旧自动框，区域之外的也会被删除')}")
 
     def _cleanup_run_worker(self, worker):
         if worker is getattr(self, '_run_worker', None):

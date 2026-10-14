@@ -1,4 +1,4 @@
-"""推理范围面板：全图 / 滑窗 / 区域 / 区域+滑窗。
+"""推理范围面板：全图 / 滑窗 / 区域。
 
 窗口参数走 `SlidingWindowDialog`，区域沿用画布上的临时区域（`region_boxes`）。
 面板只负责收集选择，校验与快照由 `mixins/inference.py` 在启动任务前完成。
@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..engine.inference_scope import (
-    MODE_FULL, MODE_ROI, MODE_ROI_WINDOW, MODE_WINDOW,
+    MODE_FULL, MODE_ROI, MODE_WINDOW,
 )
 from .dialog_helpers import center_on_parent, sync_titlebar
 from .i18n import t as tr
@@ -19,7 +19,6 @@ _MODE_KEYS = (
     (MODE_FULL, "全图", "整张图推理一次"),
     (MODE_WINDOW, "滑窗", "按窗口切分后逐窗推理，结果合并去重"),
     (MODE_ROI, "区域", "只在画布上画好的区域内推理"),
-    (MODE_ROI_WINDOW, "区域+滑窗", "在区域内再按窗口切分"),
 )
 
 
@@ -147,9 +146,9 @@ class ScopePanel(QDialog):
         self._reference = size
 
     def selection(self):
-        """(mode, windows)；窗口参数只在窗口模式相关时返回。"""
+        """(mode, windows)；窗口参数只在滑窗模式返回。"""
         mode = self.mode()
-        if mode in (MODE_WINDOW, MODE_ROI_WINDOW):
+        if mode == MODE_WINDOW:
             return mode, dict(self._windows)
         return mode, None
 
@@ -164,8 +163,8 @@ class ScopePanel(QDialog):
 
     def _refresh(self, _checked=None):
         mode = self.mode()
-        needs_window = mode in (MODE_WINDOW, MODE_ROI_WINDOW)
-        needs_region = mode in (MODE_ROI, MODE_ROI_WINDOW)
+        needs_window = mode == MODE_WINDOW
+        needs_region = mode == MODE_ROI
         self.window_btn.setVisible(needs_window)
         self.window_btn.setText(f"{tr('滑窗参数')}: {self.window_summary()}"
                                 if self._windows else tr("滑窗参数"))
@@ -175,7 +174,7 @@ class ScopePanel(QDialog):
 
         warnings = []
         if needs_region and not self._region_count:
-            warnings.append(tr("没有可用区域，请先在贴图模式画好区域"))
+            warnings.append(tr("没有可用区域，请先画好区域"))
         if needs_region:
             warnings.append(tr("区域推理只保留框中心落在区域内的结果"))
         self.warn_label.setText("\n".join(warnings))

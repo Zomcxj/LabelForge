@@ -108,7 +108,7 @@ class ModelRow(QWidget):
         self.scope_btn.setObjectName("optionsBtn")
         self.scope_btn.setFixedHeight(24)
         self.scope_btn.setEnabled(False)
-        self.scope_btn.setToolTip(tr("全图 / 滑窗 / 区域 / 区域+滑窗"))
+        self.scope_btn.setToolTip(tr("全图 / 滑窗 / 区域"))
         self.scope_btn.clicked.connect(self.scope_requested.emit)
         layout.addWidget(self.scope_btn)
 
@@ -247,7 +247,7 @@ class ModelRow(QWidget):
         self._refresh_replace_text()
         # 筛选按钮的计数文案由主窗口按当前选择重设
         self.filter_btn.setToolTip(tr("保留勾选的类别；没勾选的会被过滤掉"))
-        self.scope_btn.setToolTip(tr("全图 / 滑窗 / 区域 / 区域+滑窗"))
+        self.scope_btn.setToolTip(tr("全图 / 滑窗 / 区域"))
 
     def _tooltip(self, name, size, providers):
         parts = [name, f"{tr('输入尺寸')}: {size[0]}x{size[1]}"]

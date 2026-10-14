@@ -247,7 +247,7 @@ def detect_in_scope(rgb, detector, resize_fn, scope):
     ROI 的多边形掩膜只在裁剪副本上生成，不改写原图。
     """
     from .inference_scope import (
-        MODE_ROI, MODE_ROI_WINDOW, MODE_WINDOW,
+        MODE_ROI, MODE_WINDOW,
         iter_regions, iter_windows, merge_scope_results, region_bbox,
         region_contains_box_center,
     )
@@ -255,7 +255,7 @@ def detect_in_scope(rgb, detector, resize_fn, scope):
     height, width = int(rgb.shape[0]), int(rgb.shape[1])
     mode = scope.get("mode")
     windows = None
-    if mode in (MODE_WINDOW, MODE_ROI_WINDOW):
+    if mode == MODE_WINDOW:
         windows = iter_windows(width, height, scope.get("windows") or {})
 
     if mode == MODE_ROI:
@@ -266,22 +266,6 @@ def detect_in_scope(rgb, detector, resize_fn, scope):
             crop, ox, oy = _masked_crop(rgb, region, x1, y1, x2, y2)
             boxes = detector.detect(crop, resize_fn)
             chunks.append((ox, oy, boxes))
-        merged = merge_scope_results(chunks, _scope_iou(detector),
-                                    image_size=(width, height))
-        return [b for b in merged
-                if any(region_contains_box_center(r, b) for r in regions)]
-
-    if mode == MODE_ROI_WINDOW:
-        regions = iter_regions(scope.get("regions"), (width, height))
-        chunks = []
-        for region in regions:
-            x1, y1, x2, y2 = region.bbox
-            for wx, wy, ww, wh in iter_windows(int(x2 - x1), int(y2 - y1),
-                                               scope.get("windows") or {}):
-                crop, ox, oy = _masked_crop(rgb, region, x1 + wx, y1 + wy,
-                                            x1 + wx + ww, y1 + wy + wh)
-                boxes = detector.detect(crop, resize_fn)
-                chunks.append((ox, oy, boxes))
         merged = merge_scope_results(chunks, _scope_iou(detector),
                                     image_size=(width, height))
         return [b for b in merged

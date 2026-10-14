@@ -19,8 +19,7 @@ from .onnx_inference import DEFAULT_IOU, nms_per_class
 MODE_FULL = "full"
 MODE_WINDOW = "window"
 MODE_ROI = "roi"
-MODE_ROI_WINDOW = "roi_window"
-MODES = (MODE_FULL, MODE_WINDOW, MODE_ROI, MODE_ROI_WINDOW)
+MODES = (MODE_FULL, MODE_WINDOW, MODE_ROI)
 
 _SCOPE_KEYS = {"mode", "windows", "regions", "reference_size"}
 _WINDOW_KEYS = {"w", "h", "overlap"}
@@ -226,14 +225,14 @@ def normalize_scope(scope, image_size):
         return {"mode": MODE_FULL}
 
     out = {"mode": mode}
-    if mode in (MODE_WINDOW, MODE_ROI_WINDOW):
+    if mode == MODE_WINDOW:
         windows = scope.get("windows")
         if not isinstance(windows, dict):
             raise ScopeError("滑窗范围必须提供窗口参数")
         # 立刻用真实图尺寸校验一次，非法参数在启动时就报错
         iter_windows(image_size[0], image_size[1], windows)
         out["windows"] = dict(windows)
-    if mode in (MODE_ROI, MODE_ROI_WINDOW):
+    if mode == MODE_ROI:
         regions = scope.get("regions")
         if not isinstance(regions, (list, tuple)) or not regions:
             raise ScopeError("区域范围必须提供 ROI")
