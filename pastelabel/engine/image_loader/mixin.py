@@ -231,6 +231,37 @@ class ImageLoaderMixin:
             self.background_list.viewport().update()
             self._finalize_dataset_load()
 
+    def _clear_background_dataset(self):
+        """清空背景图列表、画布与按索引缓存的标注（数据集不可用时用）。
+
+        文件夹被删掉后必须走到这里：列表行留着会指向不存在的文件，画布还停在
+        最后一张图上，用户点任何一行都会失败。与「选择文件夹」的导入前清场保持
+        同一套字段，避免两处遗漏不同步。
+        """
+        if hasattr(self, 'background_images'):
+            self.background_images.clear()
+        self.detection_boxes_dict = {}
+        self.canvas_items_dict = {}
+        self.detection_boxes = []
+        self.canvas_items = []
+        self.current_background_index = -1
+        self.current_background = None
+        bg_list = getattr(self, 'background_list', None)
+        if bg_list is not None:
+            bg_list.clear()
+        # 相对路径显示的基准就是这个文件夹，没了就别再留着
+        self._memory_background_path = ""
+        canvas = getattr(self, 'canvas', None)
+        if canvas is not None:
+            canvas.reset_view()
+            canvas.update()
+        if hasattr(self, 'update_label_list'):
+            self.update_label_list()
+        if hasattr(self, 'update_file_count'):
+            self.update_file_count()
+        if bg_list is not None:
+            bg_list.viewport().update()
+
     def refresh_background_list(self):
         """重扫当前背景文件夹，就地增删列表项。返回 (changed, added, removed)。
 
@@ -243,8 +274,17 @@ class ImageLoaderMixin:
         """
         self._refresh_notice = ""
         folder = getattr(self, '_memory_background_path', '') or ''
-        if not folder or not os.path.isdir(folder):
+        if not folder:
             self._refresh_notice = tr("refresh_need_folder")
+            return False, 0, 0
+        if not os.path.isdir(folder):
+            # 文件夹在运行期间被删掉（或整个盘符拔了）：列表里那些行都指向不存在
+            # 的文件，留着只会让人点开报错。此时**清空画布与列表**，让界面如实
+            # 反映「现在没有数据集」，而不是假装还能刷新。
+            # 区分「从来没加载过」（folder 为空，上面那条）与「加载过但现在没了」：
+            # 后者要清，前者没东西可清，提示也更有意义。
+            self._clear_background_dataset()
+            self._refresh_notice = tr("refresh_folder_missing")
             return False, 0, 0
         try:
             names = sorted(os.listdir(folder), key=natural_sort_key)
