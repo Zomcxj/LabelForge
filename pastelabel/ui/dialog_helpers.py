@@ -25,6 +25,36 @@ def center_on_parent(dialog, parent=None):
     dialog.move(x, y)
 
 
+def place_within(dialog, rect):
+    """把对话框摆到 rect（父窗口坐标）那块，并钳到所在屏幕的可用区。
+
+    rect 是右侧侧栏那块位置。**不要求弹窗装进 rect**：范围弹窗最小宽 440px，
+    而侧栏固定 350px，几何上装不下——用户要的是「盖在背景图列表上方、别盖画布」，
+    不是「塞进侧栏」。所以这里只把左上角对齐到 rect 内，超出部分由钳制与
+    弹窗自身尺寸决定，允许盖住侧栏右边一点。
+    """
+    if rect is None or rect.isEmpty():
+        center_on_parent(dialog)
+        return
+    # 左上角落在 rect 内即可；水平居中到 rect 会因弹窗更宽而反向溢出到画布上
+    x = rect.left() + 8
+    y = rect.top() + 8
+    screen = QApplication.screenAt(dialog.parent().mapToGlobal(rect.center())) \
+        if dialog.parent() is not None else None
+    if screen is None:
+        screen = QApplication.primaryScreen()
+    if screen is not None:
+        available = screen.availableGeometry()
+        top_left = dialog.parent().mapToGlobal(QPoint(0, 0)) \
+            if dialog.parent() is not None else QPoint(0, 0)
+        gx, gy = top_left.x() + x, top_left.y() + y
+        gx = max(available.left(), min(gx, available.right() - dialog.width()))
+        gy = max(available.top(), min(gy, available.bottom() - dialog.height()))
+        dialog.move(gx - top_left.x(), gy - top_left.y())
+        return
+    dialog.move(x, y)
+
+
 class ThemedInputDialog(QInputDialog):
     def __init__(self, parent=None, anchor_pos=None):
         super().__init__(parent)

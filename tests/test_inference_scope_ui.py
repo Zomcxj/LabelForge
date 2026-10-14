@@ -750,3 +750,88 @@ print('mode' in saved, 'window_spec' in saved)
     lines = _lines(out)
     assert lines[0] == "{'w': 512, 'h': 512, 'overlap': 64}", lines[0]
     assert lines[1] == "False True", lines[1]
+
+
+def test_real_scope_panel_positions_over_side_panel():
+    """真实控件：弹窗左上角落在右侧栏那块（全局坐标），而不是屏幕正中。
+
+    不要求装进侧栏：范围弹窗最小宽 440px、侧栏固定 350px，装不下。
+    用户要的是「盖在背景图列表上方、别盖画布」。
+    锚点取「屏幕中部偏左」是为了避开钳制：800px 屏上 440px 弹窗若贴到
+    中右部就会被钳回右边（那是另一个用例的事），这里单独验「跟着锚点走」。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtCore import QRect
+from pastelabel.ui.scope_panel import ScopePanel
+
+app = QApplication([])
+avail = app.primaryScreen().availableGeometry()
+# 左侧锚点：给 440px 弹窗留得下，钳制不会介入
+anchor = QRect(avail.left() + 10, avail.top() + 30, 350,
+               min(400, avail.height() - 40))
+host = QWidget()
+host.resize(avail.width(), avail.height())
+host.show()
+panel = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, parent=host)
+panel.set_anchor_rect(anchor)
+panel.show()
+# 用全局坐标比较：panel.geometry() 是相对父窗口的，边界值易混
+panel_tl = panel.mapToGlobal(panel.rect().topLeft())
+anchor_tl = host.mapToGlobal(anchor.topLeft())
+print(anchor_tl.x() <= panel_tl.x() <= anchor_tl.x() + 40)
+print(anchor_tl.y() <= panel_tl.y() <= anchor_tl.y() + 40)
+panel.close()
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", lines[0]
+    assert lines[1] == "True", lines[1]
+
+
+def test_real_scope_panel_clamps_anchor_to_screen():
+    """锚点超出屏幕可用区时钳回屏内：不能把弹窗推到看不见的地方。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtCore import QRect
+from pastelabel.ui.scope_panel import ScopePanel
+
+app = QApplication([])
+avail = app.primaryScreen().availableGeometry()
+host = QWidget()
+host.resize(avail.width(), avail.height())
+host.show()
+panel = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, parent=host)
+# 故意把锚点放到屏幕右边缘之外
+panel.set_anchor_rect(QRect(avail.right() + 50, avail.top(), 400, 400))
+panel.show()
+g = panel.geometry()
+print(avail.left() <= g.left() and g.right() <= avail.right())
+print(avail.top() <= g.top() and g.bottom() <= avail.bottom())
+panel.close()
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", lines[0]
+    assert lines[1] == "True", lines[1]
+
+
+def test_real_scope_panel_without_anchor_centers_on_parent():
+    """没给锚点（取不到右侧栏）时退回居中，行为与改动前一致。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QWidget
+from pastelabel.ui.scope_panel import ScopePanel
+
+app = QApplication([])
+host = QWidget()
+host.resize(800, 600)
+host.show()
+panel = ScopePanel(parent=host)
+panel.show()
+g = panel.geometry()
+# 居中：左右留白大致相等。800-440=360 是奇数，整数除法的 1px 舍入
+# 加上宿主自身的窗口装饰偏移（实测 4px），容差给到 6。
+left_gap = g.left() - host.geometry().left()
+right_gap = host.geometry().right() - g.right()
+print(abs(left_gap - right_gap) <= 6)
+panel.close()
+""")
+    assert _lines(out)[0] == "True", out

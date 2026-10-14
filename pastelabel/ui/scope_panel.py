@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
 from ..engine.inference_scope import (
     MODE_FULL, MODE_ROI, MODE_WINDOW,
 )
-from .dialog_helpers import center_on_parent, sync_titlebar
+from .dialog_helpers import place_within, sync_titlebar
 from .i18n import t as tr
 from .theme import ThemeManager
 
@@ -35,6 +35,7 @@ class ScopePanel(QDialog):
         self._windows = dict(windows or {})
         self._region_count = int(region_count or 0)
         self._reference = reference_size
+        self._anchor_rect = None
         self._build_ui()
         self._apply_style()
         self.set_mode(mode)
@@ -114,7 +115,7 @@ class ScopePanel(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
-        center_on_parent(self, self.parent())
+        place_within(self, self._anchor_rect)
         sync_titlebar(self)
 
     # ---------- 对外接口 ----------
@@ -144,6 +145,10 @@ class ScopePanel(QDialog):
     def set_reference(self, size):
         """参考图尺寸：窗口数预估要用它；没有参考图时预估显示为不可用。"""
         self._reference = size
+
+    def set_anchor_rect(self, rect):
+        """右侧侧栏那块位置；None 表示居中显示（拿不到侧栏时）。"""
+        self._anchor_rect = rect
 
     def selection(self):
         """(mode, windows)；窗口参数只在滑窗模式返回。"""

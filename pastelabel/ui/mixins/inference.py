@@ -250,6 +250,10 @@ class InferenceMixin:
         panel.set_windows(self._effective_window_spec())
         panel.set_region_count(len(self._region_boxes()))
         panel.set_reference(self._reference_image_size())
+        # 防御式取侧栏几何：`_side_panel_geometry` 来自 PanelsMixin，本 mixin
+        # 不假定宿主一定混入了它（拿不到就退回居中，与改动前一致）。
+        geometry_fn = getattr(self, '_side_panel_geometry', None)
+        panel.set_anchor_rect(geometry_fn() if callable(geometry_fn) else None)
         panel.retranslate()
         panel.set_mode(getattr(self, '_scope_mode', MODE_FULL))
         panel.exec_()

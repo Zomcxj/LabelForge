@@ -1,7 +1,7 @@
 """Panels UI building mixin."""
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QPushButton
 from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QRect
 from ...canvas import Canvas
 from ...widgets.canvas_adjustment import CanvasAdjustmentWidget
 from ...widgets.spinner import _SpinnerWidget
@@ -65,6 +65,18 @@ class PanelsMixin:
         )
         self.canvas_adjustment.raise_()
 
+    def _side_panel_geometry(self):
+        """右侧控制栏相对主窗口的矩形；还没建好时返回 None。
+
+        给「推理范围」弹窗定位用：它要摆在这块地方（悬浮在背景图列表上方），
+        而不是屏幕正中——居中会挡住画布。
+        """
+        widget = getattr(self, '_side_control_widget', None)
+        if widget is None or self.width() <= 0:
+            return None
+        top_left = widget.mapTo(self, widget.rect().topLeft())
+        return QRect(top_left, widget.size())
+
     def _on_opacity_changed(self, value):
         if hasattr(self, 'canvas'):
             self.canvas.shape_opacity = value / 100.0
@@ -89,6 +101,7 @@ class PanelsMixin:
         # Top 0 matches canvas top edge (sides/bottom keep inset).
         control_layout.setContentsMargins(6, 0, 6, 6)
         self._side_control_layout = control_layout
+        self._side_control_widget = control_widget
         self._side_sections = []
 
         self._create_background_list_section(control_layout)
