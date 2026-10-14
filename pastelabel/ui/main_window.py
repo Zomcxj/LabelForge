@@ -117,6 +117,9 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self._canvas_image_copy_enabled = bool(settings.get('canvas_image_copy_enabled', False))
         self._relative_path_display = bool(settings.get('relative_path_display', False))
         self._magnifier_enabled = bool(settings.get('magnifier_enabled', False))
+        # 默认开启：画布空了就删掉 sidecar json
+        self._delete_empty_json_on_switch = bool(
+            settings.get('delete_empty_json_on_switch', True))
         MAGNIFIER_CONFIG['zoom'] = max(0.8, min(3.0, float(settings.get('magnifier_zoom', MAGNIFIER_CONFIG['zoom']))))
         MAGNIFIER_CONFIG['size'] = max(80, min(400, int(settings.get('magnifier_size', MAGNIFIER_CONFIG['size']))))
         pos = settings.get('magnifier_position', MAGNIFIER_CONFIG['position'])
@@ -156,6 +159,8 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
             self._relative_path_display = False
         if not hasattr(self, '_magnifier_enabled'):
             self._magnifier_enabled = False
+        if not hasattr(self, '_delete_empty_json_on_switch'):
+            self._delete_empty_json_on_switch = True
         self.drag_offset = QPoint(0, 0)
         self._busy = False
         # 推理状态：模型只加载一次，阈值改动即时写回 detector
@@ -452,12 +457,15 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self._canvas_image_copy_enabled = False
         self._magnifier_enabled = False
         self._relative_path_display = False
+        self._delete_empty_json_on_switch = True
         if hasattr(self, 'canvas_copy_action'):
             self.canvas_copy_action.setChecked(False)
         if hasattr(self, 'magnifier_action'):
             self.magnifier_action.setChecked(False)
         if hasattr(self, 'relative_path_action'):
             self.relative_path_action.setChecked(False)
+        if hasattr(self, 'delete_empty_json_action'):
+            self.delete_empty_json_action.setChecked(True)
         if hasattr(self, '_refresh_background_path_texts'):
             self._refresh_background_path_texts()
         if hasattr(self, 'update_shortcuts'):

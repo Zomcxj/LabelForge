@@ -438,6 +438,8 @@ def load_all():
         'canvas_image_copy_enabled': bool(config.get('canvas_image_copy_enabled', False)),
         'relative_path_display': bool(config.get('relative_path_display', False)),
         'magnifier_enabled': bool(config.get('magnifier_enabled', False)),
+        # 默认开启：画布空了就删掉 sidecar json
+        'delete_empty_json_on_switch': bool(config.get('delete_empty_json_on_switch', True)),
         'magnifier_position': str(config.get('magnifier_position', MAGNIFIER_CONFIG['position'])),
         'magnifier_zoom': float(config.get('magnifier_zoom', MAGNIFIER_CONFIG['zoom'])),
         'magnifier_size': int(config.get('magnifier_size', MAGNIFIER_CONFIG['size'])),
@@ -472,7 +474,7 @@ def save_all(shortcuts=None, theme=None, language=None, max_labels=None,
              rotate_step=None,
              label_font_size=None, label_position=None,
              canvas_image_copy_enabled=None, relative_path_display=None,
-             magnifier_enabled=None,
+             magnifier_enabled=None, delete_empty_json_on_switch=None,
              magnifier_position=None, magnifier_zoom=None, magnifier_size=None,
              label_cache_slots=None, nudge_step=None,
                detection_box_scale_step=None, paste_item_scale_step=None,
@@ -510,6 +512,8 @@ def save_all(shortcuts=None, theme=None, language=None, max_labels=None,
         config['relative_path_display'] = bool(relative_path_display)
     if magnifier_enabled is not None:
         config['magnifier_enabled'] = bool(magnifier_enabled)
+    if delete_empty_json_on_switch is not None:
+        config['delete_empty_json_on_switch'] = bool(delete_empty_json_on_switch)
     if magnifier_position is not None:
         config['magnifier_position'] = str(magnifier_position)
     if magnifier_zoom is not None:

@@ -496,7 +496,18 @@ class ThemeManager:
             QMenu#optionsMenu {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
+                border-radius: 6px;
                 padding: 4px;
+            }}
+            QMenu {{
+                background-color: {t['widget_bg']};
+                border: 1px solid {t['border_color']};
+                border-radius: 6px;
+                padding: 4px;
+            }}
+            QMenu::item {{
+                padding: 6px 16px;
+                border-radius: 4px;
             }}
             QMenu#optionsMenu::item {{
                 padding: 6px 16px;

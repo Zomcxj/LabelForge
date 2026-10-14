@@ -85,5 +85,13 @@ def test_canvas_adjustment_i18n_entries_exist_in_both_languages():
 def test_options_popup_uses_correct_core_import_depth():
     source = (ROOT / "pastelabel" / "ui" / "mixins" / "options_popup.py").read_text(encoding="utf-8")
 
+    # 这个文件在 ui/mixins/ 下，core 在 pastelabel/ 下 → 必须是三级 `...`。
+    # 不断言具体条数：写死数字会在每次新增一个用到配置的开关时假红，
+    # 而它真正要防的是「用了少一层点的错误 import」。
     assert "from ..core import config_manager" not in source
-    assert source.count("from ...core import config_manager") == 3
+    assert "from ...core import config_manager" in source
+    # 所有 config_manager 的导入都必须走三级，不允许混用其它层级
+    import re
+    imports = re.findall(r"from (\.+)core import config_manager", source)
+    assert imports, "没找到 config_manager 导入"
+    assert set(imports) == {"..."}, imports

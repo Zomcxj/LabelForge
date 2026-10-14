@@ -14,6 +14,21 @@ class CanvasMenuMixin:
     """右键菜单逻辑"""
 
     @staticmethod
+    def _rounded_menu(parent):
+        """建一个带圆角的右键悬浮菜单。
+
+        只写 QSS 的 `border-radius` 是不够的：QMenu 是顶层窗口，Qt 默认给它
+        一块不透明的方角窗口背景，圆角会被盖住（实测四角 alpha 仍为 255）。
+        必须同时打开 `WA_TranslucentBackground` 并去掉边框，角上的像素才会
+        真的被切掉。样式本身在 `theme.py` 的全局 `QMenu` 规则里。
+        """
+        menu = QMenu(parent)
+        menu.setAttribute(Qt.WA_TranslucentBackground)
+        menu.setWindowFlags(menu.windowFlags() | Qt.FramelessWindowHint
+                            | Qt.NoDropShadowWindowHint)
+        return menu
+
+    @staticmethod
     def _remove_index_from_mapping(mapping, removed_index):
         """删除背景图后同步重排按图片索引保存的数据。"""
         return {
@@ -110,7 +125,7 @@ class CanvasMenuMixin:
         points = region.get('points') or []
         fixed = getattr(self._editor, 'region_fixed', False)
 
-        menu = QMenu(self)
+        menu = self._rounded_menu(self)
         delete_action = QAction(tr("删除顶点"), self)
         delete_action.setEnabled(not fixed and len(points) > 3)
         delete_action.triggered.connect(
@@ -181,7 +196,7 @@ class CanvasMenuMixin:
         if index is None:
             return
         fixed = getattr(self._editor, 'region_fixed', False)
-        menu = QMenu(self)
+        menu = self._rounded_menu(self)
 
         delete_action = QAction(tr("删除区域"), self)
         delete_action.setEnabled(not fixed)
@@ -367,7 +382,7 @@ class CanvasMenuMixin:
         return None
 
     def _show_polygon_vertex_menu(self, box_index, vertex_index, mouse_pos):
-        menu = QMenu(self)
+        menu = self._rounded_menu(self)
         action = QAction(tr("删除顶点"), self)
         box = self._editor.detection_boxes[box_index]
         action.setEnabled(len(box.get("points") or []) > 3)
@@ -379,7 +394,7 @@ class CanvasMenuMixin:
 
     def _show_box_label_menu(self, box_index, mouse_pos):
         """检测框右键修改标签菜单"""
-        menu = QMenu(self)
+        menu = self._rounded_menu(self)
 
         current_label = self._editor.detection_boxes[box_index].get("label", "")
 
@@ -593,7 +608,7 @@ class CanvasMenuMixin:
         self.update()
 
     def _show_restore_context_menu(self, mouse_pos):
-        menu = QMenu(self)
+        menu = self._rounded_menu(self)
 
         restore_action = QAction(tr("恢复到工作路径"), self)
         restore_action.triggered.connect(self._restore_current_background)
@@ -629,7 +644,7 @@ class CanvasMenuMixin:
         self._editor._show_delete_view()
 
     def _show_background_context_menu(self, mouse_pos):
-        menu = QMenu(self)
+        menu = self._rounded_menu(self)
 
         delete_labels_action = QAction(tr("删除标签文件"), self)
         delete_labels_action.triggered.connect(self._delete_current_label_file)
@@ -747,7 +762,7 @@ class CanvasMenuMixin:
         self._editor._show_work_view()
 
     def _show_paste_context_menu(self, item_index, mouse_pos):
-        menu = QMenu(self)
+        menu = self._rounded_menu(self)
 
         remove_action = QAction(tr("移除"), self)
         remove_action.triggered.connect(

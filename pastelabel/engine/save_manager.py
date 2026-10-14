@@ -186,6 +186,10 @@ class SaveManager(QObject):
         Annotate mode: save when there are boxes, or when all boxes were
         cleared but a sidecar JSON already exists (persist empty / 空标签).
         Never create a brand-new empty JSON for never-annotated images.
+
+        画布被清空时（默认行为，可在「选项」里关掉）**删除**已存在的
+        sidecar JSON：留着空 json 会让「这张图没标过」变成「这张图标过但
+        一个标签都没有」，下游训练/统计都得额外分辨这两种情况。
         """
         if self.editor._is_delete_view:
             return
@@ -202,7 +206,12 @@ class SaveManager(QObject):
             json_path = f"{os.path.splitext(orig_path)[0]}.json"
             has_boxes = bool(self.editor.detection_boxes)
             json_exists = os.path.exists(json_path)
-            # Has labels → save; all deleted but had JSON → save empty; never annotated → skip
+            if not has_boxes and json_exists:
+                if getattr(self.editor, '_delete_empty_json_on_switch', True):
+                    self._delete_sidecar_json(json_path)
+                    return
+                # 开关关掉：维持旧行为，写一份空 json 覆盖
+            # Has labels → save; never annotated → skip
             if not has_boxes and not json_exists:
                 return
             if self.editor.current_background is None:
@@ -220,6 +229,18 @@ class SaveManager(QObject):
         if not save_info:
             return
         self.save_json(*save_info)
+
+    def _delete_sidecar_json(self, json_path):
+        """删除空的 sidecar JSON；失败只记日志，不打断切图。
+
+        切图是高频动作，删不掉（只读盘、被占用）也不该弹窗拦住用户；
+        下次切回来若仍是空画布还会再试一次。
+        """
+        try:
+            os.remove(json_path)
+        except OSError as exc:
+            from ..core.exception_hook import _write_log
+            _write_log(f"删除空标注 JSON 失败：{json_path}：{exc}")
     
     def save_all_canvas(self):
         """保存所有画布"""

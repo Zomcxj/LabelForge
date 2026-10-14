@@ -66,3 +66,80 @@ def test_hover_button_rules_do_not_override_the_unified_text_color(mode, color):
         block = _rule(style, selector)
         if "color:" in block:
             assert f"color: {color};" in block
+
+
+# ---------- 右键悬浮菜单圆角 ----------
+
+def _menu_corner_probe(script, timeout=60):
+    env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT),
+                        "PYTHONIOENCODING": "utf-8"}
+    result = subprocess.run(
+        [sys.executable, "-c", script + _QT_EXIT_GUARD], cwd=ROOT, env=env,
+        text=True, capture_output=True, encoding="utf-8", errors="replace",
+        timeout=timeout,
+    )
+    assert result.returncode == 0, result.stderr
+    return [ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()]
+
+
+@pytest.mark.parametrize("mode", ["LIGHT", "DARK"])
+def test_real_qt_context_menu_has_rounded_corners(mode):
+    """右键悬浮菜单的**四角必须被渲染成透明**（真圆角，不是只写了 QSS）。
+
+    只断言样式表里有 `border-radius` 是空转的：菜单没设无边框窗口标志时，
+    Qt 会照旧画方角，QSS 的圆角被窗口背景盖住，肉眼看还是方的。所以这里
+    真的把菜单渲染一遍，然后检查四个角上的像素是不是透明的。
+    """
+    out = _menu_corner_probe(f'''
+from PyQt5.QtWidgets import QApplication, QMenu, QAction
+from PyQt5.QtGui import QImage, QPainter
+from pastelabel.ui.theme import ThemeManager, ThemeMode
+
+app = QApplication.instance() or QApplication([])
+ThemeManager.set_mode(ThemeMode.{mode})
+app.setStyleSheet(ThemeManager.get_stylesheet())
+
+# 必须走真的构造路径：QSS 的圆角只有配上无边框+透明窗口才生效，
+# 自己 new 一个裸 QMenu 测不到这一点。
+from pastelabel.canvas.canvas_menu import CanvasMenuMixin
+menu = CanvasMenuMixin._rounded_menu(None)
+menu.addAction(QAction("删除", menu))
+menu.addAction(QAction("复制", menu))
+menu.resize(160, 80)
+menu.ensurePolished()
+
+img = QImage(160, 80, QImage.Format_ARGB32)
+img.fill(0)
+painter = QPainter(img)
+menu.render(painter)
+painter.end()
+
+# 四角与中心：角应透明、中心应不透明
+corners = [(0, 0), (159, 0), (0, 79), (159, 79)]
+for x, y in corners:
+    print("corner", x, y, img.pixelColor(x, y).alpha())
+print("center", img.pixelColor(80, 40).alpha())
+''')
+    alphas = [int(ln.split()[-1]) for ln in out if ln.startswith("corner")]
+    center = int([ln for ln in out if ln.startswith("center")][0].split()[-1])
+    assert len(alphas) == 4, out
+    assert center > 200, ("菜单中心应不透明", center)
+    assert all(a < 200 for a in alphas), ("四角应被切成透明（圆角）", alphas)
+
+
+@pytest.mark.parametrize("mode", ["LIGHT", "DARK"])
+def test_options_menu_keeps_its_own_rule(mode):
+    """选项菜单（optionsMenu）的专用样式仍在：全局 QMenu 规则不能把它顶掉。
+
+    这条在进程内断言（不需要渲染）：全局加圆角时最容易踩的坑是顺手把
+    对象名规则的圆角/内边距删掉，或写错层级让专用规则失效。
+    """
+    ThemeManager.set_mode(getattr(ThemeMode, mode))
+    css = ThemeManager.get_stylesheet()
+    # 全局 QMenu 规则存在（右键悬浮菜单靠它拿圆角）
+    assert "QMenu {" in css
+    # 选项菜单的专用规则仍在，且同样有圆角
+    assert "QMenu#optionsMenu {" in css
+    block = css[css.index("QMenu#optionsMenu {"):]
+    block = block[:block.index("}")]
+    assert "border-radius" in block, block

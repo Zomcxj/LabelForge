@@ -128,6 +128,15 @@ class OptionsPopupMixin:
         self._menu_actions.append((self.relative_path_action, None, None,
                                    "相对路径显示"))
 
+        self.delete_empty_json_action = self.options_menu.addAction("")
+        self.delete_empty_json_action.setCheckable(True)
+        self.delete_empty_json_action.setChecked(
+            getattr(self, '_delete_empty_json_on_switch', True))
+        self.delete_empty_json_action.triggered.connect(
+            self._on_delete_empty_json_menu_changed)
+        self._menu_actions.append((self.delete_empty_json_action, None, None,
+                                   "画布清空时删除标注文件"))
+
         self.options_btn.setMenu(self.options_menu)
         layout.addWidget(self.options_btn)
 
@@ -209,6 +218,7 @@ class OptionsPopupMixin:
             (tr("画布图片复制"), None, None, lambda: self._on_canvas_copy_menu_changed(not getattr(self, '_canvas_image_copy_enabled', False)), lambda: getattr(self, '_canvas_image_copy_enabled', False)),
             (tr("窗口放大器"), None, None, lambda: self._on_magnifier_menu_changed(not getattr(self, '_magnifier_enabled', False)), lambda: getattr(self, '_magnifier_enabled', False)),
             (tr("相对路径显示"), None, None, lambda: self._on_relative_path_menu_changed(not getattr(self, '_relative_path_display', False)), lambda: getattr(self, '_relative_path_display', False)),
+            (tr("画布清空时删除标注文件"), None, None, lambda: self._on_delete_empty_json_menu_changed(not getattr(self, '_delete_empty_json_on_switch', True)), lambda: getattr(self, '_delete_empty_json_on_switch', True)),
         ]
         for text, shortcut_action, checkbox, handler, getter in items:
             button = QPushButton()
@@ -278,6 +288,19 @@ class OptionsPopupMixin:
         config_manager.save_all(relative_path_display=self._relative_path_display)
         if hasattr(self, '_refresh_background_path_texts'):
             self._refresh_background_path_texts()
+
+    def _on_delete_empty_json_menu_changed(self, checked):
+        """切换「画布清空时删除标注文件」。
+
+        只改标志位，不删也不补任何已存在的 json：这是**切图时**的行为开关，
+        下次切图才生效。否则一关掉就得凭空造出一堆空 json 才「一致」。
+        """
+        self._delete_empty_json_on_switch = bool(checked)
+        if hasattr(self, 'delete_empty_json_action'):
+            self.delete_empty_json_action.setChecked(self._delete_empty_json_on_switch)
+        from ...core import config_manager
+        config_manager.save_all(
+            delete_empty_json_on_switch=self._delete_empty_json_on_switch)
 
     def _show_memory_records(self):
         """显示记忆记录弹窗"""
