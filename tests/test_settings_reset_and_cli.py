@@ -16,6 +16,34 @@ SETTINGS_SRC = ROOT / "pastelabel" / "ui" / "settings_dialog.py"
 MAIN_WINDOW_SRC = ROOT / "pastelabel" / "ui" / "main_window.py"
 MAIN_SRC = ROOT / "pastelabel" / "main.py"
 
+_GUARD = """
+import os, sys
+sys.stdout.flush()
+os._exit(0)
+"""
+
+
+def _run_real_qt(script):
+    """在真 Qt offscreen 子进程里跑脚本：控件几何/文本断言必须走真 Qt。
+
+    进程内的假 PyQt5 没有布局与真实几何，`mapTo` 之类的比较没有意义。
+    """
+    import os
+    import subprocess
+
+    env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PYTHONPATH=str(ROOT))
+    result = subprocess.run(
+        [sys.executable, "-c", script + _GUARD],
+        cwd=ROOT, env=env, text=True, capture_output=True,
+        encoding="utf-8", errors="replace",
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def _lines(out):
+    return [ln.strip() for ln in out.strip().splitlines() if ln.strip()]
+
 
 @pytest.fixture
 def temp_config(tmp_path, monkeypatch):
@@ -121,13 +149,18 @@ def test_reset_button_uses_the_danger_style():
 
 
 def test_reset_button_is_placed_at_the_bottom_left_of_the_dialog():
-    """按钮必须在底部按钮行里、且排在保存/取消之前（左下角）。"""
+    """按钮必须在底部按钮行里、且排在保存/取消之前（左下角）。
+
+    现在它在左下角的一个竖列里（上面是重置按钮、下面是版本号），但仍必须
+    排在保存/取消之前，才会贴左侧而不是被挤到中间。
+    """
     source = SETTINGS_SRC.read_text(encoding="utf-8")
     block = source[source.index("btn_layout = QHBoxLayout()"):source.index("layout.addLayout(btn_layout)")]
-    assert "btn_layout.addWidget(self.reset_all_btn)" in block
-    assert block.index("btn_layout.addWidget(self.reset_all_btn)") < block.index('QPushButton(tr("保存"))')
-    # 重置按钮后紧跟 stretch，才会贴左边
-    assert block.index("btn_layout.addWidget(self.reset_all_btn)") < block.index("btn_layout.addStretch()")
+    assert "left_col.addWidget(self.reset_all_btn)" in block
+    assert "btn_layout.addLayout(left_col)" in block
+    assert block.index("left_col.addWidget(self.reset_all_btn)") < block.index('QPushButton(tr("保存"))')
+    # 重置列表后紧跟 stretch，才会贴左边
+    assert block.index("btn_layout.addLayout(left_col)") < block.index("btn_layout.addStretch()")
 
 
 def test_settings_pages_align_their_first_row():
@@ -270,3 +303,63 @@ def test_cli_help_text_is_not_empty():
     parser_source = inspect.getsource(_parse_args)
     assert "argparse" in parser_source
     assert "--labels" in parser_source
+
+
+# ---------- 版本号展示（左下角，恢复默认设置下方） ----------
+
+def test_real_settings_dialog_shows_version_below_reset_button():
+    """真实控件：左下角显示 `PasteLabel v<版本>`，且在「恢复默认设置」下方。
+
+    不断言具体版本号：那会让每次发版都红一条测试。版本串的正确性由
+    `test_real_settings_dialog_version_tracks_package_constant` 保证
+    （它比对的就是包常量），这里只管「位置与格式」。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.ui.settings_dialog import SettingsDialog
+from pastelabel import __version__
+
+app = QApplication.instance() or QApplication([])
+# 用真 ImageEditor 当宿主：SettingsDialog 的构造会读宿主的快捷方式输入框
+# （prefix_input 等），裸 QWidget 不够。
+window = ImageEditor()
+d = SettingsDialog(window)
+# 必须 show()：不显示时 Qt 不做布局，mapTo 拿到的坐标没有意义。
+d.show()
+app.processEvents()
+label = d.version_label
+# 不比对具体版本号（发版时会变），只比对「格式」与「取自包常量」
+print(label.text().startswith("PasteLabel v"))
+print(label.text() == f"PasteLabel v{__version__}")
+# 位置：在「恢复默认设置」按钮下方（y 更大）
+reset_tl = d.reset_all_btn.mapTo(d, d.reset_all_btn.rect().topLeft())
+label_tl = label.mapTo(d, label.rect().topLeft())
+print(label_tl.y() > reset_tl.y())
+# 且整列贴对话框左边缘（不是被 stretch 推到中间）
+print(reset_tl.x() <= 12, label_tl.x() <= 12)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", lines[0]
+    assert lines[1] == "True", lines[1]
+    assert lines[2] == "True", lines[2]
+    assert lines[3] == "True True", lines[3]
+
+
+def test_real_settings_dialog_version_tracks_package_constant():
+    """版本号的唯一来源是 `pastelabel.__version__`：改常量即改显示。"""
+    out = _run_real_qt("""
+import pastelabel
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui import settings_dialog
+
+app = QApplication([])
+original = pastelabel.__version__
+try:
+    pastelabel.__version__ = '9.9.9-test'
+    d = settings_dialog.SettingsDialog(None)
+    print(d.version_label.text())
+finally:
+    pastelabel.__version__ = original
+""")
+    assert _lines(out)[0] == "PasteLabel v9.9.9-test", out

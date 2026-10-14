@@ -452,7 +452,16 @@ class SettingsDialog(QDialog):
         self.reset_all_btn.setObjectName("dangerBtn")
         self.reset_all_btn.setToolTip(tr("重置所有设置"))
         self.reset_all_btn.clicked.connect(self._reset_all_settings)
-        btn_layout.addWidget(self.reset_all_btn)
+
+        # 左下角：重置按钮在上、版本号在下。版本取自 `pastelabel.__version__`，
+        # 不硬编码——发版时只需改包常量，不会两处漂移。
+        left_col = QVBoxLayout()
+        left_col.setSpacing(2)
+        left_col.addWidget(self.reset_all_btn)
+        self.version_label = QLabel(self._version_text())
+        self.version_label.setObjectName("versionLabel")
+        left_col.addWidget(self.version_label)
+        btn_layout.addLayout(left_col)
         btn_layout.addStretch()
 
         save_btn = QPushButton(tr("保存"))
@@ -465,6 +474,13 @@ class SettingsDialog(QDialog):
         btn_layout.addWidget(cancel_btn)
 
         layout.addLayout(btn_layout)
+
+    @staticmethod
+    def _version_text():
+        """左下角版本串；取不到 `__version__` 时不显示假版本号。"""
+        from .. import __version__
+
+        return f"PasteLabel v{__version__}" if __version__ else "PasteLabel"
 
     def _reset_all_settings(self):
         """恢复出厂设置（需二次确认）。"""

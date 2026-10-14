@@ -203,6 +203,10 @@ class ThemeManager:
             QLabel#shortcutStatusLabel {{
                 padding: 2px 8px;
             }}
+            QLabel#versionLabel {{
+                color: {t['text_secondary']};
+                padding-left: 2px;
+            }}
             QListWidget {{
                 border: 1px solid {t['border_color']};
                 border-radius: 8px;
