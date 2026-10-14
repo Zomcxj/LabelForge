@@ -29,9 +29,9 @@ PasteLabel/
 │   │   ├── __init__.py
 │   │   ├── canvas.py
 │   │   ├── canvas_drawing.py
-│   │   ├── canvas_interaction.py
-│   │   ├── canvas_menu.py
-│   │   └── canvas_renderer.py
+│   │   ├── canvas_interaction.py  # 含区域就地绘制会话（不切贴图模式、不进撤销）
+│   │   ├── canvas_menu.py         # 右键悬浮菜单；统一经 _rounded_menu() 建带圆角面板
+│   │   └── canvas_renderer.py     # 渲染；区域轮廓仅在范围小窗开着时绘制
 │   ├── core/                  # 配置、工具与异常处理
 │   │   ├── __init__.py
 │   │   ├── config.py
@@ -56,7 +56,7 @@ PasteLabel/
 │   │   │   ├── scan.py
 │   │   │   └── status.py
 │   │   ├── label_manager.py
-│   │   ├── inference_scope.py # 滑窗/语义区域推理范围枚举与跨窗去重（纯逻辑，无 Qt 依赖）
+│   │   ├── inference_scope.py # 滑窗/区域推理范围枚举与跨窗去重（纯逻辑，无 Qt 依赖）
 │   │   ├── paste_engine.py
 │   │   ├── quality_lint.py     # 标注质检扫描（越界/小目标两档/重复/重叠/近似名/分组，纯逻辑）
 │   │   ├── save_manager.py
@@ -95,10 +95,10 @@ PasteLabel/
 │   │   ├── model_row.py       # 画布上方的模型参数行（加载/阈值/尺寸/覆盖模式/类别筛选/推理范围/关闭）
 │   │   ├── processing_panel.py # ProcessingPanel 执行与日志逻辑
 │   │   ├── quality_lint_dialog.py # 标注质检结果窗口
-│   │   ├── scope_panel.py    # 推理范围选择面板（全图/滑窗/区域/区域+滑窗）
+│   │   ├── scope_panel.py    # 推理范围选择面板（全图/滑窗/区域）
 │   │   ├── segmented_control.py
 │   │   ├── settings_dialog.py
-│   │   ├── sliding_window_dialog.py # 滑窗参数窗口（窗口尺寸/重叠/实时预估窗口数）
+│   │   ├── sliding_window_dialog.py # 滑窗参数窗口（窗口尺寸/重叠/预估窗口数/原图网格预览/模板按钮，模板与数据增强共用记录）
 │   │   ├── theme.py
 │   │   ├── video_dialog.py   # 视频弹窗：抽帧 / 合成（含叠加标签框）/ 推理成片 三个标签页
 │   │   └── mixins/
@@ -127,7 +127,8 @@ PasteLabel/
 │       ├── hover_popup.py
 │       ├── processing.py      # 扫描提示、Worker 与折叠区控件
 │       ├── spinner.py
-│       └── task_badge.py      # 标签行任务徽标（det / seg / pose / obb）
+│       ├── task_badge.py      # 标签行任务徽标（det / seg / pose / obb）
+│       └── window_overlay_preview.py # 原图叠加滑窗网格预览（滑窗弹窗调参时实时重画）
 ├── tests/                     # pytest 回归测试
 │   ├── __init__.py
 │   ├── conftest.py
@@ -162,8 +163,11 @@ PasteLabel/
 │   ├── test_video_render_frames.py   # ④A 引擎 render_video：逐帧推理/回读验收/取消留半成品
 │   ├── test_video_render_ui.py       # ④A 推理成片页：worker/mixin 接线 + 真实 Qt 全链路（弹窗→引擎）
 │   ├── test_inference_scope.py       # 滑窗/语义区域范围枚举与跨窗去重
-│   ├── test_inference_scope_wiring.py # 推理范围接入任务层：四模式偏移/参考图尺寸/取消
+│   ├── test_inference_scope_wiring.py # 推理范围接入任务层：三模式偏移/参考图尺寸/合并阈值跟随/取消
 │   ├── test_inference_scope_ui.py    # 推理范围界面接线（真实 Qt 子进程）
+│   ├── test_inference_region_session.py # 区域就地绘制会话：不切模式、不进撤销、随弹窗开关
+│   ├── test_save_dedup_regressions.py  # 保存前同类框去重；画布清空时切图删除 sidecar
+│   ├── test_theme_text_palette_regressions.py # 主题文字色与右键悬浮菜单圆角（真实 Qt 渲染像素）
 │   └── ...                     # 其他领域回归测试
 └── docs/
     ├── project_structure.md   # 本文档
