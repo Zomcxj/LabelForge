@@ -835,3 +835,216 @@ print(abs(left_gap - right_gap) <= 6)
 panel.close()
 """)
     assert _lines(out)[0] == "True", out
+
+
+def test_real_sliding_dialog_preview_follows_params():
+    """真实控件：改参数 → 预览窗口数跟着变，且与引擎一致。
+
+    方向要注意：**减小重叠会让窗口数变少**（重叠越大越密）。实测
+    2000×1000 图、默认 640×640/重叠 200 得 10 窗；把宽度降到 500、
+    重叠清零后 500×640/重叠 0 得 8 窗。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from pastelabel.engine.inference_scope import iter_windows
+
+app = QApplication([])
+d = SlidingWindowDialog(reference_size=(2000, 1000))
+before = d.preview.window_count()
+d._w.setValue(500)
+d._ov.setValue(0)
+after = d.preview.window_count()
+print(before, after)
+print(before != after)
+print(d.preview.is_valid())
+print(after == len(iter_windows(2000, 1000, d.spec())))
+""")
+    lines = _lines(out)
+    assert lines[0] == "10 8", lines[0]
+    assert lines[1] == "True", lines[1]
+    assert lines[2] == "True", lines[2]
+    assert lines[3] == "True", lines[3]
+
+
+def test_real_sliding_dialog_preview_matches_engine_count():
+    """预览窗口数必须等于 iter_windows()：画面上的网格就是实际会跑的窗口。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from pastelabel.engine.inference_scope import iter_windows
+
+app = QApplication([])
+d = SlidingWindowDialog(reference_size=(2000, 1000))
+spec = d.spec()
+print(d.preview.window_count() == len(iter_windows(2000, 1000, spec)))
+""")
+    assert _lines(out)[0] == "True", out
+
+
+def test_real_sliding_dialog_preview_unusable_without_reference():
+    """没有参考图时预览显示不可用，但弹窗仍能开、不崩。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+
+app = QApplication([])
+d = SlidingWindowDialog(reference_size=None)
+print(d.preview.window_count(), d.preview.is_valid())
+d.repaint()
+print('ok')
+""")
+    lines = _lines(out)
+    assert lines[0] == "None False", lines[0]
+    assert lines[1] == "ok", lines[1]
+
+
+def test_real_sliding_dialog_template_fills_and_refreshes_preview():
+    """真实控件：点模板 → 回填输入框 + 预览窗口数**确实变了**。
+
+    断言「变了」而不是「不为 None」：后者在预览完全不刷新的情况下也会过
+    （旧 spec 还在，仍算得出窗口数）——变异验证时发现该断言杀不死
+    「点击不回刷预览」这个变异体。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from pastelabel.core import config_manager
+
+app = QApplication([])
+config_manager.add_crop_template({'w': 320, 'h': 320, 'overlap': 100,
+                                  'min_visible': 0.5})
+d = SlidingWindowDialog(reference_size=(2000, 1000),
+                        spec={'w': 640, 'h': 640, 'overlap': 200})
+before = d.preview.window_count()
+print(len(d.template_buttons()) > 0)
+d.template_buttons()[0].click()
+print(d.spec())
+after = d.preview.window_count()
+print(before, after, before != after)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", lines[0]
+    assert lines[1] == "{'w': 320, 'h': 320, 'overlap': 100}", lines[1]
+    # 2000×1000 图上：640/重叠 200 → 10 窗；320/重叠 100 → 45 窗
+    assert lines[2] == "10 45 True", lines[2]
+
+
+def test_real_sliding_dialog_template_still_editable_after_click():
+    """点模板后仍可继续改宽高：不被模板值锁死，也不禁用输入框。
+
+    断言 disabled 状态是必要的：只断言 setValue 生效的话，
+    「点模板后 disable 掉输入框」这个变异体杀不死——程序化 setValue
+    在 disabled 控件上一样能改值（变异验证时证实过）。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from pastelabel.core import config_manager
+
+app = QApplication([])
+config_manager.add_crop_template({'w': 384, 'h': 384, 'overlap': 64,
+                                  'min_visible': 0.5})
+d = SlidingWindowDialog(reference_size=(2000, 1000))
+d.template_buttons()[0].click()
+print(d._w.isEnabled(), d._h.isEnabled(), d._ov.isEnabled())
+d._w.setValue(900)
+print(d.spec())
+""")
+    lines = _lines(out)
+    assert lines[0] == "True True True", lines[0]
+    assert lines[1] == "{'w': 900, 'h': 384, 'overlap': 64}", lines[1]
+
+
+def test_real_sliding_dialog_has_no_templates_when_config_empty():
+    """配置里没有模板时不显示模板按钮（也不崩）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from pastelabel.core import config_manager
+
+app = QApplication([])
+cfg = config_manager.load_config()
+cfg['crop_templates'] = []
+config_manager.save_config(cfg)
+d = SlidingWindowDialog(reference_size=(2000, 1000))
+print(len(d.template_buttons()))
+""")
+    assert _lines(out)[0] == "0", out
+
+
+def test_real_sliding_dialog_does_not_write_template_by_itself():
+    """弹窗自身只读不写：操作后配置里的模板数不变（写模板由调用方在确定后做）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from pastelabel.core import config_manager
+
+app = QApplication([])
+config_manager.add_crop_template({'w': 384, 'h': 384, 'overlap': 64,
+                                  'min_visible': 0.5})
+before = len(config_manager.load_crop_templates())
+d = SlidingWindowDialog(reference_size=(2000, 1000))
+d._w.setValue(777)
+d.preview.window_count()
+d.template_buttons()[0].click() if d.template_buttons() else None
+after = len(config_manager.load_crop_templates())
+print(before == after, before > 0)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True True", lines[0]
+
+
+def test_real_scope_panel_records_template_only_on_accept():
+    """点「确定」才记模板；「取消」与直接关闭都不记（两者等价）。
+
+    这是 spec 第 7/8 条的落地断言。用替身弹窗控制 exec_ 的返回值，
+    避免测试里真开模态窗。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QDialog
+from pastelabel.core import config_manager as cm
+from pastelabel.ui import scope_panel as sp
+import pastelabel.ui.sliding_window_dialog as swd
+
+app = QApplication([])
+Real = swd.SlidingWindowDialog
+
+class FakeAccepted(Real):
+    def exec_(self):
+        self._w.setValue(512)
+        self._h.setValue(512)
+        self._ov.setValue(64)
+        return QDialog.Accepted
+
+class FakeRejected(Real):
+    def exec_(self):
+        self._w.setValue(999)
+        return QDialog.Rejected
+
+panel = sp.ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200})
+
+swd.SlidingWindowDialog = FakeAccepted
+before = len(cm.load_crop_templates())
+panel._edit_windows()
+after = len(cm.load_crop_templates())
+print(before, after)
+print(panel._windows)
+
+swd.SlidingWindowDialog = FakeRejected
+before2 = len(cm.load_crop_templates())
+panel._edit_windows()
+after2 = len(cm.load_crop_templates())
+print(before2, after2)
+print(panel._windows)
+""")
+    lines = _lines(out)
+    # 断言「增量」而不是绝对条数：配置路径是本进程共享的，同批其它用例
+    # 可能已经写过模板，硬编码起始条数会变成顺序依赖的假红。
+    accepted_before, accepted_after = (int(v) for v in lines[0].split())
+    assert accepted_after == accepted_before + 1, lines[0]
+    assert lines[1] == "{'w': 512, 'h': 512, 'overlap': 64}", lines[1]
+    rejected_before, rejected_after = (int(v) for v in lines[2].split())
+    assert rejected_after == rejected_before, lines[2]
+    # 取消不该改参数：仍是确定后的值，不是替身设的 999
+    assert lines[3] == "{'w': 512, 'h': 512, 'overlap': 64}", lines[3]

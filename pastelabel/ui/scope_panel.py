@@ -194,6 +194,13 @@ class ScopePanel(QDialog):
         if dialog.exec_() != QDialog.Accepted:
             return
         self._windows = dialog.spec()
+        # 只有确定才记录模板：与「取消/关闭都不生效」同一条规则。
+        # 共用数据增强那份 crop_templates，所以这里只补一个能让校验通过的
+        # min_visible（推理侧不读它，但 _normalize_crop_template 要求它在
+        # 0.5~1.0 之间）。
+        from ..core.config_manager import add_crop_template
+
+        add_crop_template(dict(self._windows, min_visible=0.5))
         self._refresh()
 
     def retranslate(self):
