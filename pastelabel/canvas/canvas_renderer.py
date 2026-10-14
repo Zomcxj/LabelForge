@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, QPointF, QRectF
 import numpy as np
 
 from ..core.config import DETECTION_BOX_CONFIG, PASTE_ITEM_CONFIG, GRID_CONFIG, MAGNIFIER_CONFIG, CROSSHAIR_CONFIG
+from ..engine.inference_scope import ScopeError, iter_windows
 from ..ui.theme import ThemeManager
 
 class CanvasRendererMixin:
@@ -54,6 +55,11 @@ class CanvasRendererMixin:
 
             if background_rect:
                 self._draw_grid(sp, background_rect)
+
+            # 滑窗网格直接叠在主画布上（没有单独的小预览窗）。画在区域之前、
+            # 缩小框之前：网格是「范围参照」，不该盖住标注框。
+            if background_rect and self._show_scope_grid():
+                self._draw_scope_grid(sp, background_rect)
 
             sp.setOpacity(self.shape_opacity)
 
@@ -157,6 +163,71 @@ class CanvasRendererMixin:
             painter.drawLine(int(background_rect.left()), int(y),
                            int(background_rect.right()), int(y))
             y += scaled_spacing
+
+    def _show_scope_grid(self):
+        """是否在主画布上画滑窗网格。
+
+        条件：范围面板开着**且**当前选的是「滑窗」。用户要求「滑窗和区域各自
+        的内容直接显示在画布上」——所以切到区域时网格就该消失，只剩区域框；
+        关掉面板则两者都不显示（它只是调参时的参照）。
+        """
+        if not getattr(self._editor, '_scope_panel_open', False):
+            return False
+        from ..engine.inference_scope import MODE_WINDOW
+        return getattr(self._editor, '_scope_mode', None) == MODE_WINDOW
+
+    def _draw_scope_grid(self, painter, background_rect):
+        """把滑窗的窗口网格画在主画布上（换算到背景图坐标）。
+
+        窗口起点复用引擎的 `iter_windows()`，与「每张图 X × Y = N 个窗口」
+        的文字同源，画的格子就是要跑的窗口。参数非法时什么都不画（不是画
+        一半），否则用户会以为「这些窗会跑」。
+        """
+        spec = getattr(self._editor, '_scope_window_spec', None)
+        if not spec:
+            return
+        iw, ih = self._scope_grid_reference_size()
+        if iw <= 0 or ih <= 0:
+            return
+        try:
+            windows = iter_windows(iw, ih, spec)
+        except ScopeError:
+            return
+
+        from ..core.config import REGION_CONFIG
+        color = QColor(REGION_CONFIG['border_color'])
+        color.setAlpha(200)
+        pen = QPen(color, 1, Qt.DashLine)
+        pen.setDashPattern(REGION_CONFIG['dash_pattern'])
+        painter.save()
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        visible = QRectF(self.rect())
+        for (x, y, w, h) in windows:
+            rect = QRectF(
+                background_rect.left() + x * self.background_scale,
+                background_rect.top() + y * self.background_scale,
+                w * self.background_scale,
+                h * self.background_scale)
+            # 大图 + 小窗口会有上万格，逐格全画会卡死；视口外的直接跳过
+            if not rect.intersects(visible):
+                continue
+            painter.drawRect(rect)
+        painter.restore()
+
+    def _scope_grid_reference_size(self):
+        """窗口网格按哪个尺寸切：当前背景图的**原始像素**尺寸。
+
+        用原来的图像尺寸而不是画布尺寸：窗口是原图上的裁剪范围，按画布
+        （已缩放）算会让格子数目与真实要跑的窗口数对不上。
+        """
+        pixmap = getattr(self._editor, 'current_background', None)
+        if pixmap is not None and not pixmap.isNull():
+            return pixmap.width(), pixmap.height()
+        size = getattr(self._editor, '_scope_reference_size', None)
+        if size:
+            return int(size[0]), int(size[1])
+        return 0, 0
 
     def _is_paste_mode(self):
         """区域仅在贴图模式显示/编辑。"""

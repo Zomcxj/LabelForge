@@ -1,20 +1,24 @@
-"""滑窗参数控件：宽 / 高 / 重叠 + 窗口数预估 + 原图网格预览 + 模板按钮。
+"""滑窗参数控件：宽 / 高 / 重叠 + 窗口数预估 + 模板按钮。
 
 抽成控件而不是留在某个对话框里，是因为它有两个宿主：
-- `ScopePanel` 把它**内嵌**在范围弹窗里（用户要求：点「滑窗」直接看到参数与
-  原图网格，不再叠开第二个窗口）；
+- `ScopePanel` 把它**内嵌**在范围弹窗里；
 - `SlidingWindowDialog` 仍单独存在，供需要独立窗口的路径使用。
+
+**这里没有预览图**：窗口网格直接画在编辑区的**主画布**上（用户明确要求
+「直接在画布展示，不要单独小窗显示全图」）。控件只负责参数与「现在会切出
+多少窗」的文字，网格的绘制由 `mixins/inference.py` 交给画布完成；本控件把
+`changed` 发出去，宿主据此重画网格。
 
 窗口数一律以 `iter_windows()` 的实际结果为准，不用 `size_for_count()` 反推
 ——后者取整后可能多出一窗。非法参数的口径也与引擎一致（`重叠 >= 窗口尺寸`
 不算错，引擎会钳；真失败是尺寸越界/非正/超 `MAX_WINDOWS`）。
 
 模板与数据增强**共用同一份** `crop_templates`（双向同步，最多 3 条）。点击
-模板只回填输入框并刷新预览，**不生效**：必须由宿主的「确定」才写回。控件
-自身不写模板——写模板由调用方在确定之后做。
+模板只回填输入框，**不生效**：必须由宿主的「确定」才写回。控件自身不写模板
+——写模板由调用方在确定之后做。
 
-预览画**真实原图**（宿主传入 `QPixmap`）再叠网格，让用户看清窗口落在画面
-的哪个部分；拿不到图时退回尺寸占位并给文字提示。
+**只有选中「滑窗」时才可编辑**（用户要求）：`set_editable(False)` 会把输入框
+与模板按钮一并禁用，既点不动也改不动。
 """
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
@@ -26,7 +30,6 @@ from ...engine.augmenter.crop import MAX_WINDOW
 from ...engine.inference_scope import ScopeError, iter_windows
 from ..i18n import t as tr
 from ..theme import ThemeManager
-from .window_overlay_preview import WindowOverlayPreview
 
 DEFAULT_WINDOW = 640
 DEFAULT_OVERLAP = 200
@@ -52,8 +55,7 @@ class WindowParamsWidget(QWidget):
                                     (self._h, "h", DEFAULT_WINDOW),
                                     (self._ov, "overlap", DEFAULT_OVERLAP)):
             spin.setValue(_as_int(spec.get(key), fallback))
-        # 预览要等参数填好再设，否则会画一次 640 默认值的网格
-        self.preview.set_image(reference_size)
+        self._editable = True
         self._refresh_estimate()
 
     # ---------- 构建 ----------
@@ -104,12 +106,7 @@ class WindowParamsWidget(QWidget):
         params.addStretch()
         body.addLayout(params, 1)
 
-        # 原图叠加预览：窗口落在原图哪里，一眼可见。
-        # 图与参数在 __init__ 里填（要等 _w/_h/_ov 建好才能取 spec()）。
-        self.preview = WindowOverlayPreview()
-        self.preview.setMinimumWidth(220)
-        body.addWidget(self.preview, 1)
-
+        # 曾经这里有个缩略预览小图，已删除：网格改画在主画布上。
         self._templates = QVBoxLayout()
         body.addLayout(self._templates, 0)
         self._rebuild_templates()
@@ -158,6 +155,10 @@ class WindowParamsWidget(QWidget):
             self._template_buttons.append(btn)
             self._templates.addWidget(btn)
         self._templates.addStretch()
+        # 重建会造出新的按钮，它们默认是可用的——把当前的可编辑状态重新套上，
+        # 否则「未选中滑窗」时刷一次模板就把禁用以外的按钮放出来了。
+        for btn in self._template_buttons:
+            btn.setEnabled(getattr(self, '_editable', True))
 
     # ---------- 对外接口 ----------
 
@@ -177,14 +178,36 @@ class WindowParamsWidget(QWidget):
         self._refresh_estimate()
 
     def set_reference(self, size):
-        """参考图尺寸与图：窗口数预估与预览都要用。"""
+        """参考图尺寸：窗口数预估要用它。"""
         self._reference = size
-        self.preview.set_image(size)
         self._refresh_estimate()
 
-    def set_pixmap(self, pixmap):
-        """当前背景图（QPixmap）；预览把它画在网格底下。"""
-        self.preview.set_pixmap(pixmap)
+    def set_editable(self, editable):
+        """是否可编辑：只有选中「滑窗」时才允许改参数与点模板。
+
+        禁用而不是仅隐藏——用户要求「未选中滑窗时不能修改点击」。禁用后
+        输入框仍显示当前值，用户还能核对「这次会跑多大窗口」。
+        """
+        self._editable = bool(editable)
+        for widget in self._editable_widgets():
+            widget.setEnabled(self._editable)
+        return self._editable
+
+    def is_editable(self):
+        return self._editable
+
+    def spins_enabled(self):
+        """三个输入框是否**实际可用**（测试与调用方用来核对禁用生效）。"""
+        return all(spin.isEnabled() for spin in (self._w, self._h, self._ov))
+
+    def templates_enabled(self):
+        """模板按钮是否实际可用（无模板时返回 None，表示无从谈起）。"""
+        if not self._template_buttons:
+            return None
+        return all(btn.isEnabled() for btn in self._template_buttons)
+
+    def _editable_widgets(self):
+        return [self._w, self._h, self._ov] + list(self._template_buttons)
 
     def window_count(self):
         """按参考图算出的实际窗口数；没有参考图或参数非法时返回 None。"""
@@ -231,10 +254,9 @@ class WindowParamsWidget(QWidget):
     def _refresh_estimate(self, _value=None):
         """预估窗口数：参数非法就明说，并让宿主禁用确定，非法值不能进任务。
 
-        预览与这段文字同时更新：两者都是「当前参数的后果」，任何一条路径漏掉
-        更新，用户就会看到文字说 45 窗、画面画着别的网格。
+        `changed` 一定要发：主画布上的网格由宿主监听这个信号来重画，漏发
+        就会出现「文字说 45 窗、画面画着别的网格」。
         """
-        self.preview.set_spec(self.spec())
         if not self._reference:
             self._estimate.setText(tr("未加载图片，无法预估窗口数"))
             self.changed.emit()

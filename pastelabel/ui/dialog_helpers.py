@@ -28,17 +28,19 @@ def center_on_parent(dialog, parent=None):
 def place_within(dialog, rect):
     """把对话框摆到 rect（父窗口坐标）那块，并钳到所在屏幕的可用区。
 
-    rect 是右侧侧栏那块位置。**不要求弹窗装进 rect**：范围弹窗最小宽 440px，
-    而侧栏固定 350px，几何上装不下——用户要的是「盖在背景图列表上方、别盖画布」，
-    不是「塞进侧栏」。所以这里只把左上角对齐到 rect 内，超出部分由钳制与
-    弹窗自身尺寸决定，允许盖住侧栏右边一点。
+    rect 是「背景图列表底边 ~ 标签列表顶边」这条带。**不要求弹窗装进 rect**：
+    范围弹窗最小宽 440px，而侧栏固定 350px，几何上装不下——用户要的是「落在
+    两个列表中间、别盖画布」，不是「塞进侧栏」。
+
+    竖直方向按**居中**摆：只把左上角对齐 rect 顶部的话，弹窗比这条带高时会
+    整块压到下面的标签列表上，就不是「中间」了。
     """
     if rect is None or rect.isEmpty():
         center_on_parent(dialog)
         return
     # 左上角落在 rect 内即可；水平居中到 rect 会因弹窗更宽而反向溢出到画布上
     x = rect.left() + 8
-    y = rect.top() + 8
+    y = rect.center().y() - dialog.height() // 2
     screen = QApplication.screenAt(dialog.parent().mapToGlobal(rect.center())) \
         if dialog.parent() is not None else None
     if screen is None:

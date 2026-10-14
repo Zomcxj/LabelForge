@@ -1,8 +1,14 @@
 """推理范围面板：全图 / 滑窗 / 区域。
 
-滑窗参数**内嵌在本面板里**（宽/高/重叠 + 原图网格预览 + 模板），点「滑窗」
-直接就能调参、直接能看到窗口落在原图哪里，不再叠开第二个窗口。
+滑窗参数**内嵌在本面板里**（宽/高/重叠 + 窗口数预估 + 模板按钮），点「滑窗」
+直接就能调参。但窗口网格**不在面板里画**——它直接叠画在编辑区的**主画布**上
+（用户要求「直接在画布展示，不要单独小窗显示全图」）；区域框同理。本面板只
+发 `overlay_changed` 让宿主重画，面板自身没有任何缩略图。
+
 区域沿用画布上的临时区域（`region_boxes`），「编辑区域」直接在背景图上画。
+
+**只有选中「滑窗」时滑窗参数才可用**，选中「区域」时同理只有区域相关可用；
+未选中的那一组禁用且隐藏（用户要求「未选中滑窗时不能修改点击」）。
 
 面板是**非模态**的：弹窗开着时用户仍要点画布画区域，模态会吃掉发往画布的
 鼠标事件（Qt 只把输入送给模态窗及其子窗口），那样「点编辑区域直接在图上画」
@@ -36,6 +42,9 @@ class ScopePanel(QDialog):
     # 确定/取消/直接关闭都要让宿主收尾（结束区域绘制会话）。非模态后不再有
     # `exec_()` 的返回值可看，改由信号通知，每条关闭路径都会发。
     finished_ok = pyqtSignal(bool)
+    # 面板状态变了（切模式/改窗口参数/区域数变化）→ 宿主重画主画布上的
+    # 网格与区域轮廓。网格不再有面板内的小预览图，只能靠这条信号驱动。
+    overlay_changed = pyqtSignal()
 
     def __init__(self, windows=None, mode=MODE_FULL, region_count=0,
                  reference_size=None, parent=None):
@@ -171,21 +180,22 @@ class ScopePanel(QDialog):
         self._reference = size
         self.window_params.set_reference(size)
 
-    def set_background_pixmap(self, pixmap):
-        """当前背景图：内嵌预览把它画在网格底下（原图上叠加）。"""
-        self.window_params.set_pixmap(pixmap)
-
-    def refresh_templates(self):
-        """重新读取共用模板（数据增强那边改过模板后要能刷到）。"""
-        self.window_params.refresh_templates()
-
     def window_params_widget(self):
         """内嵌的滑窗参数控件（测试与调用方取用）。"""
         return self.window_params
 
     def set_anchor_rect(self, rect):
-        """右侧侧栏那块位置；None 表示居中显示（拿不到侧栏时）。"""
+        """面板竖直位置要对齐的那块区域（由宿主按两个列表算出来）。
+
+        用户澄清「上面是层级不是位置」：面板在层级/顺序上要落在背景图列表
+        与标签列表**中间**，所以这里收到的是那两个列表之间的那条带，而不是
+        整个侧栏——只对齐侧栏顶部会一直盖住背景图列表。
+        """
         self._anchor_rect = rect
+
+    def window_spec(self):
+        """当前窗口参数（引擎口径）。网格绘制要用它，与是否选中滑窗无关。"""
+        return dict(self.window_params.spec())
 
     def selection(self):
         """(mode, windows)；窗口参数只在滑窗模式返回。"""
@@ -211,9 +221,15 @@ class ScopePanel(QDialog):
         # 参数控件整个跟着模式显隐：全图/区域时它没有意义，留着只会让人
         # 以为「这些参数也在生效」。
         self.window_params.setVisible(needs_window)
+        # 只有选中「滑窗」时才可编辑：用户要求「未选中滑窗时不能修改点击」。
+        # 禁用与隐藏都要有——隐藏解决「看不到就不乱点」，禁用解决「点不到、
+        # 也改不动」，两者缺一都可能被键盘焦点或程序化调用绕过。
+        self.window_params.set_editable(needs_window)
         self.region_btn.setVisible(needs_region)
         self.region_label.setVisible(needs_region)
         self.region_label.setText(f"{self._region_count} {tr('个区域')}")
+        # 区域按钮也只有在选中「区域」时可用（与滑窗参数对称）
+        self.region_btn.setEnabled(needs_region)
 
         warnings = []
         if needs_region and not self._region_count:
@@ -229,6 +245,8 @@ class ScopePanel(QDialog):
         if needs_window and not self.window_params.is_valid():
             valid = False
         self.ok_btn.setEnabled(valid)
+        # 网格/区域画在主画布上，由宿主监听这个信号重画
+        self.overlay_changed.emit()
 
     def retranslate(self):
         """切语言后刷新面板文字。"""

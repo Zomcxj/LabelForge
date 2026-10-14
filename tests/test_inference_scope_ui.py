@@ -353,11 +353,7 @@ print(p.ok_btn.isEnabled())
 
 
 def test_real_scope_panel_shows_controls_per_mode():
-    """真实控件：滑窗**参数控件**只在滑窗显示，区域按钮只在区域显示。
-
-    参数已内嵌进面板（不再是「滑窗参数」按钮 + 第二个窗口），所以这里断言
-    整个参数控件 `window_params` 的显隐，以及其中的预览/输入框一并随之。
-    """
+    """真实控件：滑窗参数控件只在滑窗显示，区域按钮只在区域显示。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.scope_panel import ScopePanel
@@ -373,16 +369,146 @@ for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
     app.processEvents()
     # 用 isVisible()（会连带看父控件）而不是 isHidden()：子控件没有单独
     # 隐藏过时 isHidden() 恒为 False，断言会变成空转。
-    print(mode, p.window_params.isVisible(), p.region_btn.isVisible(),
-          p.window_params.preview.isVisible())
+    print(mode, p.window_params.isVisible(), p.region_btn.isVisible())
 # 面板本身必须是非模态的：否则弹窗开着时画布收不到鼠标事件，「就地画区域」失效
 print(p.isModal())
 """)
     lines = _lines(out)
-    assert lines[0] == "full False False False", lines[0]
-    assert lines[1] == "window True False True", lines[1]
-    assert lines[2] == "roi False True False", lines[2]
+    assert lines[0] == "full False False", lines[0]
+    assert lines[1] == "window True False", lines[1]
+    assert lines[2] == "roi False True", lines[2]
     assert lines[3] == "False", lines[3]
+
+
+def test_real_scope_params_are_disabled_unless_window_mode_selected():
+    """只有选中「滑窗」时宽/高/重叠与模板按钮才**可点**，否则禁用。
+
+    用户要求「未选中滑窗时不能修改点击」。只隐藏是不够的：隐藏的控件
+    在某些布局路径下仍会被键盘焦点/程序化调用改到，而且用户看不到
+    当前值就没法核对「这次要跑多大窗口」。所以分别断言 disabled（可见
+    或不可见都好，但一定不能可用）。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+
+app = QApplication([])
+# 造出模板按钮：先写一条共用模板
+from pastelabel.core import config_manager as cm
+cfg = cm.load_config()
+cfg['crop_templates'] = [{'w': 512, 'h': 512, 'overlap': 64,
+                          'min_visible': 0.7, 'square': False,
+                          'fill': False, 'fill_rgb': [0, 0, 0]}]
+cm.save_config(cfg)
+
+p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, region_count=2,
+               reference_size=(3840, 2160))
+p.show()
+app.processEvents()
+btns = p.window_params.template_buttons()
+print(len(btns))
+for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
+    p.set_mode(mode)
+    app.processEvents()
+    wp = p.window_params
+    print(mode, wp.spins_enabled(), wp.templates_enabled(),
+          p.region_btn.isEnabled())
+# 禁用状态下用户**点不动**：这是「不能修改点击」的真实保证。
+# 不断言 setValue() 会失败——那是程序化写入，Qt 有意让它绕过 enabled，
+# 拿它当断言是量的东西与结论不同构。
+p.set_mode(MODE_ROI)
+app.processEvents()
+print(wp.is_editable(), wp.spins_enabled(), wp._w.isEnabled())
+""")
+    lines = _lines(out)
+    assert lines[0] == "1", lines[0]
+    # 全图：滑窗参数与模板都禁用、区域按钮也不可用
+    assert lines[1] == "full False False False", lines[1]
+    # 滑窗：参数可用、模板可用、区域按钮禁用
+    assert lines[2] == "window True True False", lines[2]
+    # 区域：参数与模板禁用、区域按钮可用
+    assert lines[3] == "roi False False True", lines[3]
+    assert lines[4] == "False False False", lines[4]
+
+
+def test_real_scope_panel_never_shows_a_thumbnail_preview():
+    """面板里**不再有**缩略预览小图：网格/区域直接画在主画布上。
+
+    用户要求「直接在画布展示，不要单独小窗显示全图」。所以面板里不该再有
+    `WindowOverlayPreview` 这类控件——留着就会又出现一个「单独小窗显示全图」。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from pastelabel.engine.inference_scope import MODE_WINDOW
+
+app = QApplication([])
+p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
+               reference_size=(3840, 2160))
+p.set_mode(MODE_WINDOW)
+p.show()
+app.processEvents()
+leftovers = p.findChildren(WindowOverlayPreview)
+print(len(leftovers))
+# 参数控件里也不该有
+print(len(p.window_params.findChildren(WindowOverlayPreview)))
+""")
+    lines = _lines(out)
+    assert lines[0] == "0", lines[0]
+    assert lines[1] == "0", lines[1]
+
+
+def test_real_scope_panel_anchors_between_the_two_lists():
+    """面板竖直位置落在「背景图列表」与「标签列表」之间。
+
+    用户澄清「上面是层级不是位置」——它指的是插入层级/顺序上处在两者中间，
+    而不是像素上贴着列表顶端。这里用两个真实列表控件的几何来钉：弹窗的
+    竖直中心必须落在背景图列表底边与标签列表顶边之间。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1400, 900)
+w.show()
+app.processEvents()
+
+# 让侧栏列表有真实几何
+w._detector = type("D", (), {"model_path": "m.onnx", "conf_threshold": .25,
+                             "iou_threshold": .45, "class_names": []})()
+w._open_scope_panel()
+app.processEvents()
+panel = w._scope_panel
+bg = w.bg_list_group
+lb = w.label_group
+bg_top = bg.mapTo(w, bg.rect().topLeft()).y()
+bg_bottom = bg_top + bg.height()
+lb_top = lb.mapTo(w, lb.rect().topLeft()).y()
+p_top = panel.mapTo(w, panel.rect().topLeft()).y()
+p_center = p_top + panel.height() // 2
+print('bg', bg_top, bg_bottom)
+print('label_top', lb_top)
+print('panel_top', p_top)
+print('panel_center', p_center)
+print('panel_top >= bg_top', p_top >= bg_top)
+print('panel_center <= lb_top', p_center <= lb_top)
+panel.close()
+app.processEvents()
+""")
+    lines = _lines(out)
+    bg_top, bg_bottom = (int(v) for v in lines[0].split()[1:])
+    lb_top = int(lines[1].split()[1])
+    p_top = int(lines[2].split()[1])
+    p_center = int(lines[3].split()[1])
+    assert lines[4] == "panel_top >= bg_top True", lines[4]
+    assert lines[5] == "panel_center <= lb_top True", lines[5]
+    # 量的是「确实有列表」而不是退化成 0 高度
+    assert bg_bottom > bg_top, lines[0]
+    assert lb_top > bg_top, (bg_top, lb_top)
 
 
 def test_real_scope_panel_embeds_window_params_without_second_dialog():
@@ -421,8 +547,8 @@ print(len(old_btn))
     assert lines[3] == "0", lines[3]
 
 
-def test_real_scope_panel_inline_params_preview_tracks_edits():
-    """真实控件：**面板内**改参数，预览窗口数立刻跟着变（不需要开第二个窗）。"""
+def test_real_scope_panel_inline_params_track_edits():
+    """真实控件：**面板内**改参数，窗口数立刻跟着变（不需要开第二个窗）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.scope_panel import ScopePanel
@@ -435,50 +561,195 @@ p.set_mode(MODE_WINDOW)
 p.show()
 app.processEvents()
 print(p.window_params.window_count())
-print(p.window_params.preview.window_count())
 p.window_params._w.setValue(1280); p.window_params._h.setValue(1280)
 p.window_params._ov.setValue(0)
 app.processEvents()
+# 3840×2160 配 1280×1280、重叠 0 → 3 × 2 = 6 窗
 print(p.window_params.window_count())
-print(p.window_params.preview.window_count())
 print(p.selection())
 """)
     lines = _lines(out)
     assert lines[0] == "45", lines[0]
-    assert lines[1] == "45", lines[1]
-    # 3840×2160 配 1280×1280、重叠 0 → 3 × 2 = 6 窗
-    assert lines[2] == "6", lines[2]
-    assert lines[3] == "6", lines[3]
-    assert lines[4] == ("('window', {'w': 1280, 'h': 1280, 'overlap': 0})"), lines[4]
+    assert lines[1] == "6", lines[1]
+    assert lines[2] == ("('window', {'w': 1280, 'h': 1280, 'overlap': 0})"), lines[2]
 
 
-def test_real_scope_panel_window_params_keep_pixmap_visible():
-    """真实控件：预览能把**原图**画出来（复审 B-4：之前只有色块+网格）。"""
+def test_real_scope_panel_asks_the_canvas_to_redraw_on_change():
+    """改参数要发 `overlay_changed`：主画布上的网格靠这条信号重画。
+
+    网格已经不在面板里画了，所以「参数变了但信号没发」的后果是**画面不更新**
+    （用户改完宽高，画布上的格子还是旧的），而不是某个控件没刷新。这条钉住
+    信号真的会发，且切模式也会发。
+    """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QPixmap, QColor, QImage
 from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+
+app = QApplication([])
+p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
+               reference_size=(3840, 2160))
+signals = []
+p.overlay_changed.connect(lambda: signals.append(len(signals)))
+p.set_mode(MODE_WINDOW)
+app.processEvents()
+after_mode = len(signals)
+p.window_params._w.setValue(1280)
+app.processEvents()
+after_param = len(signals)
+p.set_mode(MODE_ROI)
+app.processEvents()
+after_switch = len(signals)
+print(after_mode > 0, after_param > after_mode, after_switch > after_param)
+# 面板里不该有任何缩略预览控件（已在画布上画）
+from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+print(len(p.findChildren(WindowOverlayPreview)))
+""")
+    lines = _lines(out)
+    assert lines[0] == "True True True", lines[0]
+    assert lines[1] == "0", lines[1]
+
+
+def test_real_canvas_draws_scope_grid_when_window_mode_selected():
+    """主画布真的画出了滑窗网格，且只有选中滑窗时才画。
+
+    这是用户要求的落点：「滑窗…直接在画布展示，不要单独小窗显示全图」。
+    画布把网格画到一张图上，数「青色调」像素（网格色是 #00D4FF）。
+
+    不能按精确 RGB 比：网格是半透明叠在背景图上的，实际像素是混合色
+    （实测背景 40,70,100 + 网格 → #0fa0c6 之类），拿纯色比会假红。
+    按「蓝 > 绿 > 红」这个青色签名数，再要求「区域模式下这些像素消失」
+    ——后者才是「滑窗与区域各自的内容分开显示」的证据。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_WINDOW, MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1200, 800)
+w.show()
+app.processEvents()
+
+img = QImage(1600, 1200, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+app.processEvents()
+
+w._detector = type("D", (), {"model_path": "m.onnx", "conf_threshold": .25,
+                             "iou_threshold": .45, "class_names": []})()
+# 1600×1200 配 800×600、重叠 0 → 2×2 = 4 窗，缩放后格子仍够大
+w._scope_window_spec = {'w': 800, 'h': 600, 'overlap': 0}
+w._scope_mode = MODE_WINDOW
+w._scope_panel_open = True
+
+canvas = w.canvas
+canvas.resize(1000, 700)
+app.processEvents()
+
+def count_grid():
+    im = QImage(canvas.size(), QImage.Format_ARGB32)
+    im.fill(QColor('white'))
+    pnt = QPainter(im)
+    canvas.render(pnt)
+    pnt.end()
+    n = 0
+    for y in range(im.height()):
+        for x in range(im.width()):
+            c = im.pixelColor(x, y)
+            # 青色签名：蓝最大、红最小（网格 #00D4FF 叠在深蓝底上）
+            if c.blue() > 150 and c.blue() > c.green() > c.red():
+                n += 1
+    return n
+
+win_px = count_grid()
+w._scope_mode = MODE_ROI
+roi_px = count_grid()
+w._scope_mode = MODE_WINDOW
+w._scope_panel_open = False
+off_px = count_grid()
+
+print(win_px)
+print(roi_px)
+print(off_px)
+print(win_px > roi_px and win_px > off_px)
+""")
+    lines = _lines(out)
+    win_px = int(lines[0])
+    roi_px = int(lines[1])
+    off_px = int(lines[2])
+    assert win_px > 100, f"滑窗模式没画出网格（青色像素 {win_px}）"
+    assert roi_px < 20, f"区域模式仍画了网格（{roi_px}）"
+    assert off_px < 20, f"面板关掉仍画了网格（{off_px}）"
+    assert lines[3] == "True", lines[3]
+
+
+def test_real_canvas_scope_grid_follows_the_parameters():
+    """改窗口参数，画布上的网格跟着变（不是画一次就定格）。
+
+    这条防的是「信号发了但画布用的是快照」：宿主要在收到 `overlay_changed`
+    时把新参数取过去，否则用户改完宽高，画面还是旧格子。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
 from pastelabel.engine.inference_scope import MODE_WINDOW
 
 app = QApplication([])
-p = ScopePanel(windows={'w': 100, 'h': 100, 'overlap': 0},
-               reference_size=(400, 400))
-p.set_mode(MODE_WINDOW)
-# 一张纯色图：画出来与预览底色不同，能据此判断「图真的画了」
-img = QImage(400, 400, QImage.Format_RGB888)
-img.fill(QColor(200, 30, 30))
-p.set_background_pixmap(QPixmap.fromImage(img))
-p.show()
+w = ImageEditor()
+w.resize(1200, 800)
+w.show()
 app.processEvents()
-pv = p.window_params.preview
-print(pv._pixmap is not None)
-print(pv._image_size)
-print(pv.window_count())
+img = QImage(1600, 1200, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+w._detector = type("D", (), {"model_path": "m.onnx", "conf_threshold": .25,
+                             "iou_threshold": .45, "class_names": []})()
+app.processEvents()
+
+canvas = w.canvas
+canvas.resize(1000, 700)
+app.processEvents()
+from PyQt5.QtWidgets import QSpinBox
+
+w._open_scope_panel()
+app.processEvents()
+panel = w._scope_panel
+panel.set_mode(MODE_WINDOW)
+app.processEvents()
+
+def count_grid():
+    im = QImage(canvas.size(), QImage.Format_ARGB32)
+    im.fill(QColor('white'))
+    pnt = QPainter(im)
+    canvas.render(pnt)
+    pnt.end()
+    return sum(1 for y in range(im.height()) for x in range(im.width())
+               if im.pixelColor(x, y).blue() > 150
+               and im.pixelColor(x, y).blue() > im.pixelColor(x, y).green()
+               > im.pixelColor(x, y).red())
+
+few = count_grid()
+# 窗口变小 → 格子变多 → 网格像素显著增加
+panel.window_params._w.setValue(400)
+panel.window_params._h.setValue(300)
+app.processEvents()
+many = count_grid()
+print(few > 0)
+print(many > few)
+print(w._scope_window_spec)
+panel.close()
+app.processEvents()
 """)
     lines = _lines(out)
-    assert lines[0] == "True", lines[0]
-    assert lines[1] == "(400, 400)", lines[1]
-    assert lines[2] == "16", lines[2]
+    assert lines[0] == "True", lines
+    assert lines[1] == "True", f"改参数后网格没变: {lines}"
+    assert lines[2] == "{'w': 400, 'h': 300, 'overlap': 200}", lines[2]
 
 
 def test_real_scope_panel_selection_reports_windows_only_when_needed():
@@ -1090,13 +1361,17 @@ print('mode' in saved, 'window_spec' in saved)
     assert lines[1] == "False True", lines[1]
 
 
-def test_real_scope_panel_positions_over_side_panel():
-    """真实控件：弹窗左上角落在右侧栏那块（全局坐标），而不是屏幕正中。
+def test_real_scope_panel_positions_on_its_anchor():
+    """真实控件：弹窗**竖直居中**在锚点那块（全局坐标），而不是屏幕正中。
 
-    不要求装进侧栏：范围弹窗最小宽 440px、侧栏固定 350px，装不下。
-    用户要的是「盖在背景图列表上方、别盖画布」。
-    锚点取「屏幕中部偏左」是为了避开钳制：800px 屏上 440px 弹窗若贴到
-    中右部就会被钳回右边（那是另一个用例的事），这里单独验「跟着锚点走」。
+    锚点现在是「背景图列表底边 ~ 标签列表顶边」那条带，所以竖直方向要按
+    带的中心对齐——只把顶边对齐会让弹窗整块压到下面的标签列表上，那就不是
+    用户要的「两个列表中间」了。
+
+    水平仍取锚点左侧 +8：不要求装进侧栏（弹窗最小宽 440px、侧栏 350px，
+    装不下），要的是「落在列表中间的层级上、别盖画布」。
+    锚点取「屏幕上偏左」是为了避开钳制：贴到中右部会被钳回右边（那是
+    `test_real_scope_panel_clamps_anchor_to_screen` 的事）。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
@@ -1114,16 +1389,24 @@ host.show()
 panel = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, parent=host)
 panel.set_anchor_rect(anchor)
 panel.show()
+app.processEvents()
 # 用全局坐标比较：panel.geometry() 是相对父窗口的，边界值易混
 panel_tl = panel.mapToGlobal(panel.rect().topLeft())
 anchor_tl = host.mapToGlobal(anchor.topLeft())
+anchor_center_global_y = host.mapToGlobal(anchor.center()).y()
+panel_center_global_y = panel_tl.y() + panel.height() // 2
+# 水平：贴着锚点左边（+8 左右）
 print(anchor_tl.x() <= panel_tl.x() <= anchor_tl.x() + 40)
-print(anchor_tl.y() <= panel_tl.y() <= anchor_tl.y() + 40)
+# 竖直：弹窗中心与锚点中心对齐（允许几像素的取整误差）
+print(abs(panel_center_global_y - anchor_center_global_y) <= 4)
+# 且确实不再贴顶（贴顶就说明居中没生效）
+print(panel_tl.y() != anchor_tl.y())
 panel.close()
 """)
     lines = _lines(out)
     assert lines[0] == "True", lines[0]
-    assert lines[1] == "True", lines[1]
+    assert lines[1] == "True", f"没竖直居中于锚点: {lines}"
+    assert lines[2] == "True", f"仍在贴锚点顶边: {lines}"
 
 
 def test_real_scope_panel_clamps_anchor_to_screen():
@@ -1175,8 +1458,11 @@ panel.close()
     assert _lines(out)[0] == "True", out
 
 
-def test_real_sliding_dialog_preview_follows_params():
-    """真实控件：改参数 → 预览窗口数跟着变，且与引擎一致。
+def test_real_sliding_dialog_count_follows_params():
+    """真实控件：改参数 → 窗口数跟着变，且与引擎一致。
+
+    弹窗自身不再画预览（网格改画在主画布上），所以这里量 `window_count()`；
+    它仍是「画面上的格子数」的来源，与引擎同源这条不变。
 
     方向要注意：**减小重叠会让窗口数变少**（重叠越大越密）。实测
     2000×1000 图、默认 640×640/重叠 200 得 10 窗；把宽度降到 500、
@@ -1189,13 +1475,13 @@ from pastelabel.engine.inference_scope import iter_windows
 
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=(2000, 1000))
-before = d.preview.window_count()
+before = d.window_count()
 d._w.setValue(500)
 d._ov.setValue(0)
-after = d.preview.window_count()
+after = d.window_count()
 print(before, after)
 print(before != after)
-print(d.preview.is_valid())
+print(d.params.is_valid())
 print(after == len(iter_windows(2000, 1000, d.spec())))
 """)
     lines = _lines(out)
@@ -1205,8 +1491,8 @@ print(after == len(iter_windows(2000, 1000, d.spec())))
     assert lines[3] == "True", lines[3]
 
 
-def test_real_sliding_dialog_preview_matches_engine_count():
-    """预览窗口数必须等于 iter_windows()：画面上的网格就是实际会跑的窗口。"""
+def test_real_sliding_dialog_count_matches_engine_count():
+    """窗口数必须等于 iter_windows()：画面上的网格就是实际会跑的窗口。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
@@ -1215,34 +1501,38 @@ from pastelabel.engine.inference_scope import iter_windows
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=(2000, 1000))
 spec = d.spec()
-print(d.preview.window_count() == len(iter_windows(2000, 1000, spec)))
+print(d.window_count() == len(iter_windows(2000, 1000, spec)))
 """)
     assert _lines(out)[0] == "True", out
 
 
-def test_real_sliding_dialog_preview_unusable_without_reference():
-    """没有参考图时预览显示不可用，但弹窗仍能开、不崩。"""
+def test_real_sliding_dialog_count_unusable_without_reference():
+    """没有参考图时算不出窗口数（返回 None），但弹窗仍能开、不崩。
+
+    注意 `is_valid()` 此时是 **True**：没有参考图意味着「还不知道要跑多少窗」，
+    按不可用禁掉确定反而是错的（用户可能先配参数、后加载图）。这条只钉
+    「算不出数目但不崩」，不把 is_valid 的口径写死在这。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=None)
-print(d.preview.window_count(), d.preview.is_valid())
+print(d.window_count(), d.params.is_valid())
 d.repaint()
 print('ok')
 """)
     lines = _lines(out)
-    assert lines[0] == "None False", lines[0]
+    assert lines[0] == "None True", lines[0]
     assert lines[1] == "ok", lines[1]
 
 
-def test_real_sliding_dialog_template_fills_and_refreshes_preview():
-    """真实控件：点模板 → 回填输入框 + 预览窗口数**确实变了**。
+def test_real_sliding_dialog_template_fills_and_updates_count():
+    """真实控件：点模板 → 回填输入框 + 窗口数**确实变了**。
 
-    断言「变了」而不是「不为 None」：后者在预览完全不刷新的情况下也会过
+    断言「变了」而不是「不为 None」：后者在完全不重算的情况下也会过
     （旧 spec 还在，仍算得出窗口数）——变异验证时发现该断言杀不死
-    「点击不回刷预览」这个变异体。
+    「点击不回填/不重算」这个变异体。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -1254,11 +1544,11 @@ config_manager.add_crop_template({'w': 320, 'h': 320, 'overlap': 100,
                                   'min_visible': 0.5})
 d = SlidingWindowDialog(reference_size=(2000, 1000),
                         spec={'w': 640, 'h': 640, 'overlap': 200})
-before = d.preview.window_count()
+before = d.window_count()
 print(len(d.template_buttons()) > 0)
 d.template_buttons()[0].click()
 print(d.spec())
-after = d.preview.window_count()
+after = d.window_count()
 print(before, after, before != after)
 """)
     lines = _lines(out)
@@ -1324,7 +1614,7 @@ config_manager.add_crop_template({'w': 384, 'h': 384, 'overlap': 64,
 before = len(config_manager.load_crop_templates())
 d = SlidingWindowDialog(reference_size=(2000, 1000))
 d._w.setValue(777)
-d.preview.window_count()
+d.window_count()
 d.template_buttons()[0].click() if d.template_buttons() else None
 after = len(config_manager.load_crop_templates())
 print(before == after, before > 0)
