@@ -246,3 +246,73 @@ def test_log_area_font_is_one_step_up_from_default():
     assert "font-size: 12px;" in block
     assert "font-size: 11px;" not in block
     assert "border-radius: 6px;" in block, "圆角样式不应被误改"
+
+
+def test_real_qt_options_popup_paints_rounded_corners():
+    """选项悬浮窗四角必须真的被切掉（用户报「底部还是直角」）。
+
+    只写 QSS 的 `border-radius` 不够：Qt 会给顶层窗口铺一块不透明的方角
+    背景，把圆角盖住。必须同时开 `WA_TranslucentBackground`（不铺那块方底）
+    与 `WA_StyledBackground`（裸 QWidget 默认不画 QSS 的背景色，会变成全透明）。
+
+    通过 `QStyle.PE_Widget` 让样式引擎真画一遍背景再数四角 alpha：直接
+    `widget.grab()`/`render()` 都拿不到 QSS 背景（量出来全 0，会假绿）。
+    """
+    script = '''
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor, QImage, QPainter
+from PyQt5.QtWidgets import QApplication, QStyle, QStyleOption
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.ui.theme import ThemeManager
+
+app = QApplication.instance() or QApplication([])
+app.setStyleSheet(ThemeManager.get_stylesheet())
+window = ImageEditor()
+window.resize(900, 600)
+window.show()
+app.processEvents()
+window._rebuild_options_popup()
+popup = window.options_menu
+
+assert popup.objectName() == "optionsPopup", popup.objectName()
+assert popup.testAttribute(Qt.WA_TranslucentBackground), "没开透明背景，圆角会被方底盖住"
+assert popup.testAttribute(Qt.WA_StyledBackground), "没开样式背景，QSS 背景根本不会画"
+
+popup.resize(220, 300)
+popup.show()
+app.processEvents()
+
+image = QImage(popup.size(), QImage.Format_ARGB32)
+image.fill(QColor(0, 0, 0, 0))
+painter = QPainter(image)
+option = QStyleOption()
+option.initFrom(popup)
+popup.style().drawPrimitive(QStyle.PE_Widget, option, painter, popup)
+painter.end()
+
+width, height = image.width(), image.height()
+
+def alpha(x, y):
+    return image.pixelColor(x, y).alpha()
+
+# 四角（含底部两角，用户报的就是底部）都要被切掉
+for name, (x, y) in (
+    ("左上", (0, 0)),
+    ("右上", (width - 1, 0)),
+    ("左下", (0, height - 1)),
+    ("右下", (width - 1, height - 1)),
+):
+    assert alpha(x, y) < 120, (name, alpha(x, y))
+
+# 但边中点与中心必须仍然画出来——否则是「整个背景没画」而非「圆角」
+assert alpha(width // 2, height // 2) > 200, alpha(width // 2, height // 2)
+assert alpha(width // 2, height - 1) > 200, alpha(width // 2, height - 1)
+'''
+    result = subprocess.run(
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
+        cwd=ROOT,
+        env=os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr

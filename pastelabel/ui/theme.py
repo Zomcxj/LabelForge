@@ -700,7 +700,8 @@ class ThemeManager:
             }}
             QWidget#optionsPopup {{
                 background-color: {t['widget_bg']};
-                border: none;
+                border: 1px solid {t['border_color']};
+                border-radius: 8px;
             }}
             QWidget#optionsPopup QPushButton {{
                 background-color: {t['widget_bg']};
