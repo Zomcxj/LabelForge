@@ -110,7 +110,9 @@ class InferenceMixin:
         self._detector = detector
         self._model_size = size
         self._model_format = detector.resolve_format()
-        self._inference_dataset = tuple(self.background_images)
+        # 不要把这里当成「数据集快照」定稿：加载模型与「跑哪份数据集」是两回事，
+        # 在这里记下来会让「先加载模型、再切数据集」之后的推理结果全被丢弃。
+        # 快照在 `_start_inference` 里按当次任务记。
         row = self._ensure_model_row()
         row.set_model(
             os.path.basename(detector.model_path), detector.conf_threshold,
@@ -253,27 +255,64 @@ class InferenceMixin:
             panel = ScopePanel(parent=self)
             panel.edit_regions_requested.connect(self._edit_regions_for_scope)
             panel.finished_ok.connect(self._on_scope_panel_closed)
+            panel.overlay_changed.connect(self._on_scope_overlay_changed)
             self._scope_panel = panel
         panel.set_windows(self._effective_window_spec())
         panel.set_region_count(len(self._region_boxes()))
         panel.set_reference(self._reference_image_size())
-        # 预览叠的是**真实原图**：窗口落在画面哪个部分一眼可见。
-        panel.set_background_pixmap(getattr(self, 'current_background', None))
-        panel.refresh_templates()
-        # 防御式取侧栏几何：`_side_panel_geometry` 来自 PanelsMixin，本 mixin
-        # 不假定宿主一定混入了它（拿不到就退回居中，与改动前一致）。
-        geometry_fn = getattr(self, '_side_panel_geometry', None)
-        panel.set_anchor_rect(geometry_fn() if callable(geometry_fn) else None)
+        # 面板竖直位置落在「背景图列表」与「标签列表」中间（用户澄清：
+        # 「上面」指的是层级/顺序，不是贴着列表顶端的像素位置）。
+        panel.set_anchor_rect(self._scope_anchor_rect())
         panel.retranslate()
         panel.set_mode(getattr(self, '_scope_mode', MODE_FULL))
         # 面板开着 = 显示区域轮廓、允许就地画区域（B：开则显示、关则不显示）。
         # 收尾在 `_on_scope_panel_closed`（确定/取消/直接关闭三条路径都会走），
         # 会话若漏收，标注模式的鼠标行为会被一直劫持。
         self._scope_panel_open = True
+        self._scope_window_spec = panel.window_spec()
+        self._scope_reference_size = self._reference_image_size()
         self._sync_scope_region_display()
         panel.show()
         panel.raise_()
         panel.activateWindow()
+
+    def _scope_anchor_rect(self):
+        """面板该对齐的那条带：背景图列表底边到标签列表顶边之间。
+
+        为什么不用整个侧栏：只对齐侧栏顶部会一直盖住背景图列表，而用户要的
+        位置是「两个列表中间」。拿不到某个列表时退回整个侧栏那块（不至于
+        跑到屏幕正中挡住画布）。
+        """
+        from PyQt5.QtCore import QRect
+
+        panel_geometry = getattr(self, '_side_panel_geometry', None)
+        fallback = panel_geometry() if callable(panel_geometry) else None
+        bg = getattr(self, 'bg_list_group', None)
+        label = getattr(self, 'label_group', None)
+        if bg is None or label is None:
+            return fallback
+        try:
+            bg_bottom = bg.mapTo(self, bg.rect().bottomLeft()).y()
+            label_top = label.mapTo(self, label.rect().topLeft()).y()
+        except (AttributeError, TypeError):
+            return fallback
+        if label_top <= bg_bottom:
+            return fallback
+        # 这条带的高度可能为 0（两个列表紧邻），给一点高度让「居中」有意义
+        return QRect(0, bg_bottom, max(1, bg.width()), max(1, label_top - bg_bottom))
+
+    def _on_scope_overlay_changed(self):
+        """面板状态变了 → 重画主画布上的滑窗网格与区域轮廓。
+
+        网格不再有面板内的小预览，只能靠这条路径刷新。同时把当前窗口参数
+        快照到宿主上，画布绘制时不依赖面板还活着（面板关掉后画布可能仍要
+        重绘一帧）。
+        """
+        panel = getattr(self, '_scope_panel', None)
+        if panel is not None:
+            self._scope_window_spec = panel.window_spec()
+            self._scope_mode = panel.mode()
+        self._sync_scope_region_display()
 
     def _on_scope_panel_closed(self, accepted):
         """面板关闭（确定/取消/直接关闭都经此）：先收会话，再决定是否生效。"""
@@ -475,6 +514,14 @@ class InferenceMixin:
             self._note_scope_replace(scope)
 
         self._save_inference_settings()
+        # 数据集快照在这里定稿：它表达的是「这轮跑的是哪份数据集」，用来丢弃
+        # **跑到一半**换了数据集时迟到的结果。
+        #
+        # 原来这份快照只在加载模型时写（`_on_model_loaded`），于是「先加载模型、
+        # 再切数据集」之后快照永远不等于当前数据集，`_inference_dataset_changed()`
+        # 恒为 True，所有结果一进门就被当「过期的」丢掉——现象是日志/进度窗
+        # 明明显示检测到框，却一张都没保存（用户报的 bug）。
+        self._inference_dataset = tuple(images)
         worker = InferenceWorker(
             paths, indices, detector, self._filter_for_run(), scope=scope,
             parent=self)
@@ -683,14 +730,47 @@ class InferenceMixin:
         if index < 0:
             return False
         path = self.background_images[index]
-        # 与批量一致：没框也没贴图就不写盘，避免留下 shapes 为 [] 的空 json
         if not merged and not (getattr(self, 'canvas_items', None) or []):
+            # 无框也无贴图：既定的「不写盘」口径（`200ace1`：否则数据集里会多出
+            # 一堆 shapes 为 [] 的空 json）。
+            #
+            # 但磁盘上可能还留着**这一轮刚清掉的旧内容**（覆盖模式下的上一轮
+            # 自动框）。`remove_empty_sidecar` 只删「原文 shapes 为空」的文件，
+            # 看到旧框会拒绝删，于是磁盘停在旧状态、图标也就一直显示「已标注」，
+            # 要切图才变（用户报的现象）。这种情况先把清空后的状态写出去，让它
+            # 真的变空，再删。
+            #
+            # 只在「盘上确实有内容」时才多这一次写：本来就空的文件直接删，
+            # 不写（否则会给每张无检出的图都补一次无谓的写盘）。
+            if self._sidecar_has_content(path):
+                self.save_json(path, os.path.basename(path), "",
+                               canvas_items=self.canvas_items, current_index=index)
             remove_empty_sidecar(path)
+            self._refresh_background_item_status(index, path)
             return False
         # 传入画布贴图，避免重写 sidecar 时把贴图 shape 丢掉
         self.save_json(path, os.path.basename(path), "",
                        canvas_items=self.canvas_items, current_index=index)
         return True
+
+    @staticmethod
+    def _sidecar_has_content(image_path):
+        """sidecar 里是否有 shape（读不出来/损坏一律当「有」，保守不删）。"""
+        import json
+        import os
+
+        json_path = os.path.splitext(image_path)[0] + ".json"
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return False
+        if not isinstance(data, dict):
+            return True
+        shapes = data.get("shapes")
+        if not isinstance(shapes, list):
+            return True
+        return bool(shapes)
 
     def _inference_dataset_changed(self):
         """数据集是否已换：换了就丢弃迟到结果，不写到别的图上。"""
