@@ -148,19 +148,24 @@ def test_reset_button_uses_the_danger_style():
     assert 'setObjectName("dangerBtn")' in block
 
 
-def test_reset_button_is_placed_at_the_bottom_left_of_the_dialog():
-    """按钮必须在底部按钮行里、且排在保存/取消之前（左下角）。
+def test_reset_button_sits_immediately_left_of_save():
+    """「恢复默认设置」必须紧邻「保存」左边（用户要求挪过去）。
 
-    现在它在左下角的一个竖列里（上面是重置按钮、下面是版本号），但仍必须
-    排在保存/取消之前，才会贴左侧而不是被挤到中间。
+    布局：`[版本号] ←stretch→ [恢复默认设置] [保存] [取消]`。
+    顺序断言要同时看「在保存之前」和「中间不夹 stretch」——只看前者的话，
+    把它留在左下角（stretch 之后、保存之前）也会过。
     """
     source = SETTINGS_SRC.read_text(encoding="utf-8")
     block = source[source.index("btn_layout = QHBoxLayout()"):source.index("layout.addLayout(btn_layout)")]
-    assert "left_col.addWidget(self.reset_all_btn)" in block
-    assert "btn_layout.addLayout(left_col)" in block
-    assert block.index("left_col.addWidget(self.reset_all_btn)") < block.index('QPushButton(tr("保存"))')
-    # 重置列表后紧跟 stretch，才会贴左边
-    assert block.index("btn_layout.addLayout(left_col)") < block.index("btn_layout.addStretch()")
+    reset_at = block.index("btn_layout.addWidget(self.reset_all_btn)")
+    save_at = block.index("btn_layout.addWidget(save_btn)")
+    stretch_at = block.index("btn_layout.addStretch()")
+    assert reset_at < save_at, "恢复默认设置要在保存左边"
+    assert stretch_at < reset_at, "stretch 必须在两者之前，否则按钮还在左下角"
+    # 版本号仍在左下角（stretch 之前）
+    assert block.index("left_col.addWidget(self.version_label)") < stretch_at
+    # 它已不再属于「左下角竖列」
+    assert "left_col.addWidget(self.reset_all_btn)" not in block
 
 
 def test_settings_pages_align_their_first_row():
@@ -305,10 +310,10 @@ def test_cli_help_text_is_not_empty():
     assert "--labels" in parser_source
 
 
-# ---------- 版本号展示（左下角，恢复默认设置下方） ----------
+# ---------- 版本号展示（左下角）与底部按钮顺序 ----------
 
-def test_real_settings_dialog_shows_version_below_reset_button():
-    """真实控件：左下角显示 `PasteLabel v<版本>`，且在「恢复默认设置」下方。
+def test_real_settings_dialog_shows_version_at_bottom_left():
+    """真实控件：左下角显示 `PasteLabel v<版本>`；重置按钮紧邻保存左边。
 
     不断言具体版本号：那会让每次发版都红一条测试。版本串的正确性由
     `test_real_settings_dialog_version_tracks_package_constant` 保证
@@ -332,18 +337,23 @@ label = d.version_label
 # 不比对具体版本号（发版时会变），只比对「格式」与「取自包常量」
 print(label.text().startswith("PasteLabel v"))
 print(label.text() == f"PasteLabel v{__version__}")
-# 位置：在「恢复默认设置」按钮下方（y 更大）
-reset_tl = d.reset_all_btn.mapTo(d, d.reset_all_btn.rect().topLeft())
+# 版本号贴对话框左边缘（仍在左下角，没被挪走）
 label_tl = label.mapTo(d, label.rect().topLeft())
-print(label_tl.y() > reset_tl.y())
-# 且整列贴对话框左边缘（不是被 stretch 推到中间）
-print(reset_tl.x() <= 12, label_tl.x() <= 12)
+print(label_tl.x() <= 12)
+# 「恢复默认设置」紧邻「保存」左边：右边界不超过保存的左边界
+reset_tl = d.reset_all_btn.mapTo(d, d.reset_all_btn.rect().topLeft())
+save_btn = d.findChild(type(d.reset_all_btn), "successBtn")
+save_tl = save_btn.mapTo(d, save_btn.rect().topLeft())
+print(reset_tl.x() + d.reset_all_btn.width() <= save_tl.x())
+# 且确实在保存左边（单独看一眼，防「顺序对了但被 stretch 顶到右边」）
+print(reset_tl.x() < save_tl.x())
 """)
     lines = _lines(out)
     assert lines[0] == "True", lines[0]
     assert lines[1] == "True", lines[1]
     assert lines[2] == "True", lines[2]
-    assert lines[3] == "True True", lines[3]
+    assert lines[3] == "True", lines[3]
+    assert lines[4] == "True", lines[4]
 
 
 def test_real_settings_dialog_version_tracks_package_constant():

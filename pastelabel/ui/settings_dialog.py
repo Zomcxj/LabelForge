@@ -453,16 +453,20 @@ class SettingsDialog(QDialog):
         self.reset_all_btn.setToolTip(tr("重置所有设置"))
         self.reset_all_btn.clicked.connect(self._reset_all_settings)
 
-        # 左下角：重置按钮在上、版本号在下。版本取自 `pastelabel.__version__`，
-        # 不硬编码——发版时只需改包常量，不会两处漂移。
+        # 左下角只放版本号；「恢复默认设置」挪到保存左边（用户要求）。
+        # 版本取自 `pastelabel.__version__`，不硬编码——发版时只需改包常量，
+        # 不会两处漂移。
         left_col = QVBoxLayout()
         left_col.setSpacing(2)
-        left_col.addWidget(self.reset_all_btn)
         self.version_label = QLabel(self._version_text())
         self.version_label.setObjectName("versionLabel")
         left_col.addWidget(self.version_label)
         btn_layout.addLayout(left_col)
         btn_layout.addStretch()
+
+        # 顺序：恢复默认设置 → 保存 → 取消。危险动作紧邻保存但仍在左侧，
+        # 且与保存之间不夹 stretch，避免它被推到行中间。
+        btn_layout.addWidget(self.reset_all_btn)
 
         save_btn = QPushButton(tr("保存"))
         save_btn.setObjectName("successBtn")
