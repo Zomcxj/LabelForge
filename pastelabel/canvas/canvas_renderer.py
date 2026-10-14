@@ -69,11 +69,11 @@ class CanvasRendererMixin:
 
             if self.is_drawing_box:
                 self._draw_temp_box(sp)
-            if getattr(self, 'is_drawing_region', False) and self._is_paste_mode():
+            if getattr(self, 'is_drawing_region', False) and self._region_draw_visible():
                 self._draw_temp_region_box(sp)
             if getattr(self, 'is_drawing_polygon', False):
                 self._draw_temp_polygon(sp, background_rect)
-            if getattr(self, 'is_drawing_region_polygon', False) and self._is_paste_mode():
+            if getattr(self, 'is_drawing_region_polygon', False) and self._region_draw_visible():
                 self._draw_temp_region_polygon(sp, background_rect)
 
             sp.setOpacity(1.0)
@@ -162,6 +162,15 @@ class CanvasRendererMixin:
         """区域仅在贴图模式显示/编辑。"""
         return (getattr(self._editor, 'edit_mode', 'paste') == 'paste'
                 and not getattr(self._editor, '_is_delete_view', False))
+
+    def _region_draw_visible(self):
+        """临时区域框是否该画：贴图模式，或区域绘制会话中。
+
+        会话内标注模式也要看得见——否则用户在标注模式画区域时看不到自己在
+        画什么。只影响「画不画临时框」，不改交互。
+        """
+        return self._is_paste_mode() or bool(
+            getattr(self, '_region_session', False))
 
     def _show_regions(self):
         """是否画区域轮廓：贴图模式，或推理范围选了区域。

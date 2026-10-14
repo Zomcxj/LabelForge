@@ -13,6 +13,41 @@ from .canvas_menu import CanvasMenuMixin
 class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
     """Canvas 交互混入类 - 事件入口 + 通用操作"""
 
+    # ---------- 区域绘制会话（推理范围用，不切模式） ----------
+
+    def region_session_active(self):
+        """是否处于「画推理区域」会话：会话内标注模式也放行区域绘制。"""
+        return bool(getattr(self, '_region_session', False))
+
+    def begin_region_session(self):
+        """开启区域绘制会话；已在会话中返回 False。
+
+        会话只切换绘制入口，**不改 edit_mode**：标注模式下拖框/画多边形等
+        行为必须保持原样，所以靠 mousePressEvent 里的优先级重定向来隔离，
+        而不是切到贴图模式再切回来。
+        """
+        if self.region_session_active():
+            return False
+        self._region_session = True
+        self._start_add_region()
+        self._notify_region_session_changed()
+        return True
+
+    def end_region_session(self):
+        """收会话并复位绘制态；没有会话时是空操作。"""
+        if not self.region_session_active():
+            return
+        self._region_session = False
+        self._reset_region_drawing_state()
+        self._notify_region_session_changed()
+
+    def _notify_region_session_changed(self):
+        """会话起止时通知编辑器（状态栏与区域计数要跟着刷）。"""
+        editor = getattr(self, '_editor', None)
+        handler = getattr(editor, '_on_region_session_changed', None)
+        if callable(handler):
+            handler()
+
     def _box_visible(self, box):
         """框是否通过任务/分组筛选（未启用筛选则全部可见）。"""
         from ..core.utils import box_visible
@@ -45,6 +80,24 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 self._handle_background_click(mouse_pos)
             return
 
+        if self.region_session_active():
+            # 会话内：左键优先去画区域，包括按在已有检测框/贴图上——否则
+            # 用户想框一块区域时会被「拖走了一个标注框」抢掉。
+            self._drag_out_pending = False
+            if getattr(self, 'is_drawing_region_polygon', False):
+                if event.button() == Qt.LeftButton:
+                    self._handle_region_polygon_press(mouse_pos)
+                elif event.button() == Qt.RightButton:
+                    self._prompt_finish_region_polygon()
+                return
+            if event.button() == Qt.LeftButton:
+                self._handle_region_press(mouse_pos)
+            elif event.button() == Qt.RightButton:
+                # 右键 = 取消当前这一个 + 结束会话
+                self._cancel_region_drawing()
+                self.end_region_session()
+            return
+
         if getattr(self, 'is_drawing_region', False):
             # 区域绘制模式：左键画矩形，右键取消
             self._drag_out_pending = False
@@ -60,7 +113,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if getattr(self, 'is_drawing_region_polygon', False):
             # 多边形区域绘制：左键逐点添加，右键完成
             self._drag_out_pending = False
-            if not self._is_paste_mode():
+            if not self._is_paste_mode() and not self.region_session_active():
                 self._reset_region_drawing_state()
                 return
             if event.button() == Qt.LeftButton:

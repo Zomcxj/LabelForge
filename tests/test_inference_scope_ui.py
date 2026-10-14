@@ -516,6 +516,36 @@ class _Detector:
         return False
 
 
+class _FakeCanvas:
+    # 范围接线用的画布替身：只暴露会话接口。
+    # 「会话内交互到底怎么变」由 tests/test_inference_region_session.py 用真
+    # Canvas 钉；这里只验 mixin 有没有正确开/收会话。
+
+    def __init__(self):
+        self._active = False
+        self.begin_count = 0
+        self.end_count = 0
+
+    def region_session_active(self):
+        return self._active
+
+    def begin_region_session(self):
+        if self._active:
+            return False
+        self._active = True
+        self.begin_count += 1
+        return True
+
+    def end_region_session(self):
+        if not self._active:
+            return
+        self._active = False
+        self.end_count += 1
+
+    def update(self):
+        pass
+
+
 class _Host(InferenceMixin, QWidget):
     def __init__(self):
         super().__init__()
@@ -535,6 +565,7 @@ class _Host(InferenceMixin, QWidget):
         self._canvas_layout = None
         self.current_background = None
         self.switched_to = []
+        self.canvas = _FakeCanvas()
 
     def _set_edit_mode(self, mode, animated=False):
         self.switched_to.append((mode, animated))
@@ -619,22 +650,94 @@ print("windows 是字典:", isinstance(panel.windows(), dict), panel.windows())
     assert lines[2].startswith("windows 是字典: True"), lines
 
 
-def test_real_mixin_edit_regions_switches_to_paste_mode():
-    """「编辑区域」必须真的切到贴图模式，否则用户没法画区域。
+def test_real_mixin_edit_regions_starts_session_without_switching_mode():
+    """「编辑区域」就地开绘制会话，**不切贴图模式**（③）。
 
-    踩过的坑：这里原来调 `_switch_to_paste_mode()`，**这个方法根本不存在**，
-    `getattr(..., None)` 兜住后静默什么都不做——按钮点了没反应，也没有报错。
-    真实入口是主窗口的 `_set_edit_mode('paste')`。
+    这条是 spec 第 9 条的反向断言：以前这里切 `_set_edit_mode('paste')`，
+    现在必须一次都不切。`switched_to` 是宿主上的探针，专门用来抓
+    「偷偷切过去又切回来」——只断言 edit_mode 值不变是不够的。
+
+    踩过的坑仍保留在本用例的意图里：入口必须真的产生可观察效果
+    （会话激活），否则就是「按钮点了没反应」的旧毛病。
     """
     out = _run_real_qt(_MIXIN_HOST + """
 h = _Host()
 h._edit_regions_for_scope()
 print(h.switched_to)
+print(h.canvas.region_session_active())
 print(h.status_label.text_)
 """)
     lines = _lines(out)
-    assert lines[0] == "[('paste', True)]", lines[0]
-    assert "贴图模式" in lines[1], lines[1]
+    assert lines[0] == "[]", lines[0]
+    assert lines[1] == "True", lines[1]
+    assert "拖动" in lines[2] or "区域" in lines[2], lines[2]
+
+
+def test_real_mixin_edit_regions_is_noop_without_canvas():
+    """宿主没有 canvas 时不炸：防御式取属性，静默返回。"""
+    out = _run_real_qt(_MIXIN_HOST + """
+h = _Host()
+h.canvas = None
+h._edit_regions_for_scope()
+print(h.switched_to)
+print('ok')
+""")
+    lines = _lines(out)
+    assert lines[0] == "[]", lines[0]
+    assert lines[1] == "ok", lines[1]
+
+
+def test_real_mixin_edit_regions_twice_keeps_one_session():
+    """重复点「编辑区域」不重复开会话：第二次 begin 返回 False。"""
+    out = _run_real_qt(_MIXIN_HOST + """
+h = _Host()
+h._edit_regions_for_scope()
+h._edit_regions_for_scope()
+print(h.canvas.region_session_active())
+print(h.canvas.begin_count)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", lines[0]
+
+
+def test_real_mixin_panel_open_drives_region_display():
+    """区域轮廓显示绑「范围弹窗是否打开」：开则显示、关则不显示（B）。
+
+    弹窗关着时仍保留原有行为：选了区域范围就显示（否则用户不知道框为什么
+    只出现在某块地方）。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+h = _Host()
+h._on_model_loaded(_Detector(), (640, 640), "model")
+h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
+
+# 弹窗打开（全图模式）：也要显示区域轮廓，用户才能边看边画
+h._scope_mode = MODE_FULL
+h._scope_panel_open = True
+h._sync_scope_region_display()
+print('open-full', getattr(h, '_show_scope_regions', None))
+
+# 弹窗关闭、全图模式：不显示
+h._scope_panel_open = False
+h._sync_scope_region_display()
+print('closed-full', getattr(h, '_show_scope_regions', None))
+
+# 弹窗关闭、区域模式：仍显示（原有行为）
+h._scope_mode = MODE_ROI
+h._sync_scope_region_display()
+print('closed-roi', getattr(h, '_show_scope_regions', None))
+
+# 弹窗打开、滑窗模式：显示
+h._scope_mode = MODE_WINDOW
+h._scope_panel_open = True
+h._sync_scope_region_display()
+print('open-window', getattr(h, '_show_scope_regions', None))
+""")
+    lines = _lines(out)
+    assert lines[0] == "open-full True", lines[0]
+    assert lines[1] == "closed-full False", lines[1]
+    assert lines[2] == "closed-roi True", lines[2]
+    assert lines[3] == "open-window True", lines[3]
 
 
 def test_scope_modules_have_all_translations():
@@ -1048,3 +1151,94 @@ print(panel._windows)
     assert rejected_after == rejected_before, lines[2]
     # 取消不该改参数：仍是确定后的值，不是替身设的 999
     assert lines[3] == "{'w': 512, 'h': 512, 'overlap': 64}", lines[3]
+
+
+def test_real_mixin_panel_close_ends_session_and_hides_regions():
+    """关弹窗一定收会话并关掉区域显示：确定/取消/直接关闭三条路径都一样。
+
+    用 try/finally 的必要性在这里：`exec_()` 抛异常或被跳过时也必须收干净，
+    否则会话泄漏、标注模式的鼠标行为会被一直劫持。
+
+    这条用替身面板控制 exec_ 的返回值，避免真开模态窗。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+h = _Host()
+h._on_model_loaded(_Detector(), (640, 640), "model")
+h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
+
+class _Panel:
+    Accepted = 1
+    def __init__(self, parent=None):
+        self._result = 0
+    def set_windows(self, *a): pass
+    def set_region_count(self, *a): pass
+    def set_reference(self, *a): pass
+    def set_anchor_rect(self, *a): pass
+    def retranslate(self): pass
+    def set_mode(self, *a): pass
+    def selection(self): return ('full', None)
+    def result(self): return self._result
+    def exec_(self):
+        # 模拟「弹窗开着时开了会话」，返回时状态应为已收
+        h._edit_regions_for_scope()
+        print('during-open', h.canvas.region_session_active())
+        print('during-show', getattr(h, '_show_scope_regions', None))
+        return self._result
+
+h._scope_panel = _Panel()
+h._open_scope_panel()
+print('after-close', h.canvas.region_session_active())
+print('after-show', getattr(h, '_show_scope_regions', None))
+print('end_count', h.canvas.end_count)
+""")
+    lines = _lines(out)
+    assert lines[0] == "during-open True", lines[0]
+    # 弹窗开着时也要显示区域轮廓（B）
+    assert lines[1] == "during-show True", lines[1]
+    assert lines[2] == "after-close False", lines[2]
+    # 关闭后是「全图」模式：区域轮廓不再显示（B：关则不显示）
+    assert lines[3] == "after-show False", lines[3]
+    assert lines[4] == "end_count 1", lines[4]
+
+
+def test_real_mixin_panel_exception_still_ends_session():
+    """弹窗 `exec_()` 抛异常时也必须收会话并恢复显示。
+
+    这是 try/finally 唯一的不可替代作用：去掉它，正常路径与取消路径都察觉
+    不到差异（我试过，变异体在其它用例下存活），只有异常路径能暴露泄漏。
+    会话泄漏的后果是标注模式鼠标行为被永久劫持，所以值得单独钉一条。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+h = _Host()
+h._on_model_loaded(_Detector(), (640, 640), "model")
+h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
+
+class _Panel:
+    Accepted = 1
+    def __init__(self, parent=None):
+        pass
+    def set_windows(self, *a): pass
+    def set_region_count(self, *a): pass
+    def set_reference(self, *a): pass
+    def set_anchor_rect(self, *a): pass
+    def retranslate(self): pass
+    def set_mode(self, *a): pass
+    def result(self): return 0
+    def exec_(self):
+        h._edit_regions_for_scope()
+        raise RuntimeError('boom')
+
+h._scope_panel = _Panel()
+try:
+    h._open_scope_panel()
+except RuntimeError as exc:
+    print('raised', str(exc))
+print('session', h.canvas.region_session_active())
+print('show', getattr(h, '_show_scope_regions', None))
+print('end_count', h.canvas.end_count)
+""")
+    lines = _lines(out)
+    assert lines[0] == "raised boom", lines[0]
+    assert lines[1] == "session False", lines[1]
+    assert lines[2] == "show False", lines[2]
+    assert lines[3] == "end_count 1", lines[3]

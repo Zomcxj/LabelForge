@@ -256,7 +256,19 @@ class InferenceMixin:
         panel.set_anchor_rect(geometry_fn() if callable(geometry_fn) else None)
         panel.retranslate()
         panel.set_mode(getattr(self, '_scope_mode', MODE_FULL))
-        panel.exec_()
+        # 弹窗开着 = 显示区域轮廓、允许就地画区域（B：开则显示、关则不显示）。
+        # 用 try/finally 保证「确定/取消/直接关闭」三条路径都会收干净：
+        # 会话若漏收，标注模式的鼠标行为会被一直劫持。
+        self._scope_panel_open = True
+        self._sync_scope_region_display()
+        try:
+            panel.exec_()
+        finally:
+            self._scope_panel_open = False
+            canvas = getattr(self, 'canvas', None)
+            if canvas is not None and hasattr(canvas, 'end_region_session'):
+                canvas.end_region_session()
+            self._sync_scope_region_display()
         if panel.result() != panel.Accepted:
             return
         mode, windows = panel.selection()
@@ -267,11 +279,27 @@ class InferenceMixin:
         self._refresh_scope_button()
 
     def _edit_regions_for_scope(self):
-        """跳到贴图模式编辑区域；区域只在贴图模式可编辑。"""
-        self.status_label.setText(tr("区域在贴图模式里绘制，切过去后不会丢失当前标注"))
-        switch = getattr(self, '_set_edit_mode', None)
-        if callable(switch):
-            switch('paste', animated=True)
+        """开区域绘制会话：就地画，不切贴图模式（③）。
+
+        会话把鼠标重定向到区域绘制，标注模式的拖框/画多边形在会话期间让位；
+        关掉范围弹窗（或右键）即恢复。所以这里**不调用** `_set_edit_mode`。
+        """
+        canvas = getattr(self, 'canvas', None)
+        if canvas is None or not hasattr(canvas, 'begin_region_session'):
+            return
+        if not canvas.begin_region_session():
+            return
+        self.status_label.setText(tr("在图上拖动即可添加区域；Esc 取消当前这一个"))
+
+    def _on_region_session_changed(self):
+        """会话起止回调：刷新状态栏、区域计数与范围摘要。"""
+        self._refresh_scope_button()
+        panel = getattr(self, '_scope_panel', None)
+        if panel is not None:
+            panel.set_region_count(len(self._region_boxes()))
+        canvas = getattr(self, 'canvas', None)
+        if canvas is not None and not canvas.region_session_active():
+            self.status_label.setText(tr("区域绘制结束"))
 
     def _region_boxes(self):
         """画布上的临时区域；没有则为空表。"""
@@ -346,15 +374,17 @@ class InferenceMixin:
         row.set_scope_summary(tr(names[mode]), detail)
 
     def _sync_scope_region_display(self):
-        """范围含区域时让画布在标注模式也画区域轮廓。
+        """范围弹窗打开期间画区域轮廓（B：开则显示、关则不显示）。
 
-        只影响显示，不改 `edit_mode`：区域编辑仍然只在贴图模式，否则会
-        影响贴图交互。
+        只影响显示，不改 `edit_mode`：区域绘制走「会话」机制，与贴图交互隔离。
+        弹窗关着时也保留原有行为：选了区域范围就仍显示轮廓（否则用户不知道
+        框为什么只出现在某块地方）。
         """
         from ...engine.inference_scope import MODE_ROI
 
         mode = getattr(self, '_scope_mode', MODE_FULL)
-        self._show_scope_regions = mode == MODE_ROI
+        self._show_scope_regions = (bool(getattr(self, '_scope_panel_open', False))
+                                    or mode == MODE_ROI)
         canvas = getattr(self, 'canvas', None)
         if canvas is not None and hasattr(canvas, 'update'):
             canvas.update()

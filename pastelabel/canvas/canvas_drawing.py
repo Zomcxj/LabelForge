@@ -71,6 +71,24 @@ class CanvasDrawingMixin:
             'x': float(x), 'y': float(y),
             'width': float(width), 'height': float(height),
         })
+        self._after_region_committed()
+
+    def _after_region_committed(self):
+        """落笔后：会话内继续留在绘制态（允许连续画），会话外照旧复位。
+
+        `_reset_region_drawing_state()` 会把 `is_drawing_region` 置 False 并
+        把 `draw_start_pos` 置 None；会话内若照做，用户画完一个区域就退出了
+        绘制态，第二个区域画不出来（`_handle_region_press` 只在绘制态生效）。
+        会话由面板「确定」收尾，所以这里只清掉这一次的临时状态。
+        """
+        if self.region_session_active():
+            self.draw_start_pos = None
+            self.temp_draw_box = None
+            self.temp_region_points = []
+            self.setCursor(Qt.CrossCursor)
+            self._notify_region_session_changed()
+            self.update()
+            return
         self._reset_region_drawing_state()
 
     def _reset_region_drawing_state(self):
@@ -160,7 +178,7 @@ class CanvasDrawingMixin:
             'x': float(x), 'y': float(y),
             'width': float(width), 'height': float(height),
         })
-        self._reset_region_drawing_state()
+        self._after_region_committed()
 
     def _prompt_finish_region_polygon(self, pop_duplicate=False):
         if not self._can_close_region_polygon():

@@ -71,7 +71,7 @@ class ScopePanel(QDialog):
         row.addStretch()
         self.region_btn = QPushButton(tr("编辑区域"))
         self.region_btn.setObjectName("optionsBtn")
-        self.region_btn.setToolTip(tr("区域在贴图模式里绘制，切过去后不会丢失当前标注"))
+        self.region_btn.setToolTip(tr("在图上拖动即可添加区域，不切换模式"))
         self.region_btn.clicked.connect(self.edit_regions_requested.emit)
         row.addWidget(self.region_btn)
         layout.addLayout(row)

@@ -705,7 +705,9 @@ _strings = {
         "在区域内再按窗口切分": "在区域内再按窗口切分",
         "全图 / 滑窗 / 区域": "全图 / 滑窗 / 区域",
         "重叠": "重叠",
-        "区域在贴图模式里绘制，切过去后不会丢失当前标注": "区域在贴图模式里绘制，切过去后不会丢失当前标注",
+        "在图上拖动即可添加区域；Esc 取消当前这一个": "在图上拖动即可添加区域；Esc 取消当前这一个",
+        "区域绘制结束": "区域绘制结束",
+        "在图上拖动即可添加区域，不切换模式": "在图上拖动即可添加区域，不切换模式",
     },
     "en": {
         "背景图:": "Image:",
@@ -1419,7 +1421,9 @@ _strings = {
         "在区域内再按窗口切分": "Split the regions into windows as well",
         "全图 / 滑窗 / 区域": "Full image / Sliding window / Regions",
         "重叠": "overlap",
-        "区域在贴图模式里绘制，切过去后不会丢失当前标注": "Regions are drawn in paste mode; switching over keeps current annotations",
+        "在图上拖动即可添加区域；Esc 取消当前这一个": "Drag on the image to add a region; Esc cancels the current one",
+        "区域绘制结束": "Region drawing finished",
+        "在图上拖动即可添加区域，不切换模式": "Drag on the image to add a region without switching mode",
     }
 }
 
