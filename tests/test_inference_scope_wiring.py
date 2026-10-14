@@ -609,3 +609,79 @@ def test_unknown_mode_is_rejected():
     results = run_batch(["a.jpg"], _FakeDetector(), _loader(), None,
                         scope={"mode": "diagonal"})
     assert results[0].error and "未知范围模式" in results[0].error
+
+
+# ---------- 跨窗合并的 NMS 阈值必须取本次任务的模型行值 ----------
+
+class _SameSpotDetector:
+    """每个窗口都报出裁剪图正中心的同一个目标（故意制造跨窗重复）。
+
+    两个窗口的裁剪中心在原图上相距 `窗口尺寸 - 重叠`；`side` 控制框边长，
+    从而控制这两个重复框的 IoU，让阈值高低能真正改变保留数量。
+    """
+
+    def __init__(self, iou, side, label="person", class_id=0):
+        self.iou_threshold = iou
+        self.side = side
+        self.label = label
+        self.class_id = class_id
+        self.calls = []
+
+    def detect(self, rgb, resize_fn):
+        h, w = int(rgb.shape[0]), int(rgb.shape[1])
+        self.calls.append((w, h))
+        half = self.side / 2.0
+        return [{"x": w / 2.0 - half, "y": h / 2.0 - half,
+                 "width": float(self.side), "height": float(self.side),
+                 "label": self.label, "score": 0.9,
+                 "class_id": self.class_id}]
+
+
+# 150×100 的图切两个 100×100 窗口、重叠 50 → 恰好 2 个窗口，中心相距 50px。
+# 框边长取 150px 时两个重复框的 IoU = (150-50)/(150+50) = 0.5，正好卡在
+# 「严阈值 0.3 要抑制」与「松阈值 0.95 要保留」之间。
+_TWO_WINDOW_RGB = np.zeros((100, 150, 3), dtype=np.uint8)
+_TWO_WINDOW_SCOPE = {"mode": "window",
+                     "windows": {"w": 100, "h": 100, "overlap": 50}}
+_TWO_WINDOW_BOX_SIDE = 150
+
+
+def test_window_merge_uses_detector_iou_threshold_not_a_constant():
+    """跨窗合并的 NMS 阈值取 `detector.iou_threshold`，不是写死的常量。
+
+    这是「阈值跟随模型行」这条接线的唯一钉子：`merge_scope_results` 自己
+    尊重阈值已有 `test_inference_scope.py::test_merge_respects_iou_threshold`
+    覆盖，但**没人钉住 `detect_in_scope` 真的把 detector 的值传了进去**。
+    同一张图、同一批重复框（IoU 0.5），只改 detector 的阈值，保留数量必须
+    跟着变；若把 `_scope_iou(detector)` 换成 `DEFAULT_IOU`（0.45），严的那
+    一路会变成 1→1 看似通过，松的那一路则拿不到 2，本条即红。
+    """
+    tight = _SameSpotDetector(iou=0.3, side=_TWO_WINDOW_BOX_SIDE)
+    boxes_tight = detect_in_scope(_TWO_WINDOW_RGB, tight, None,
+                                  _TWO_WINDOW_SCOPE)
+
+    loose = _SameSpotDetector(iou=0.95, side=_TWO_WINDOW_BOX_SIDE)
+    boxes_loose = detect_in_scope(_TWO_WINDOW_RGB, loose, None,
+                                  _TWO_WINDOW_SCOPE)
+
+    assert len(tight.calls) == len(loose.calls) == 2, "两次都必须跑满 2 个窗口"
+    assert len(boxes_tight) == 1, [b["x"] for b in boxes_tight]
+    assert len(boxes_loose) == 2, [b["x"] for b in boxes_loose]
+
+
+def test_window_merge_threshold_is_per_run_not_shared_state():
+    """两次调用互不影响：阈值来自各自的 detector，没有跨调用的残留。
+
+    `detect_in_scope` 是模块级函数，若阈值被缓存在模块变量里，先紧后松
+    与先松后紧会得到同样的结果。两个方向都跑，结论必须对称。
+    """
+
+    def count(iou):
+        return len(detect_in_scope(
+            _TWO_WINDOW_RGB, _SameSpotDetector(iou=iou, side=_TWO_WINDOW_BOX_SIDE),
+            None, _TWO_WINDOW_SCOPE))
+
+    # 先紧后松
+    assert (count(0.3), count(0.95)) == (1, 2)
+    # 先松后紧（反过来）：仍各自正确 → 没有被上一次性污染
+    assert (count(0.95), count(0.3)) == (2, 1)
