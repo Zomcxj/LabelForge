@@ -254,17 +254,27 @@ class InferenceMixin:
         if panel is None:
             panel = ScopePanel(parent=self)
             panel.edit_regions_requested.connect(self._edit_regions_for_scope)
+            panel.region_delete_requested.connect(self._delete_scope_region)
             panel.finished_ok.connect(self._on_scope_panel_closed)
             panel.overlay_changed.connect(self._on_scope_overlay_changed)
             self._scope_panel = panel
+        # 先把宿主当前的范围模式抓下来。下面 set_windows/set_region_count 等都会
+        # 经 `overlay_changed` 回调 `_on_scope_overlay_changed`，而那里会读
+        # **面板**当时的 mode 写回 `_scope_mode`——面板此刻还停在构造默认值
+        # （全图），于是「上次选了区域 → 再开面板」会被静默重置成全图。
+        # 抓成局部量、最后再落回去，面板一开就跟宿主状态一致。
+        wanted_mode = getattr(self, '_scope_mode', MODE_FULL)
         panel.set_windows(self._effective_window_spec())
-        panel.set_region_count(len(self._region_boxes()))
+        panel.set_regions(self._region_boxes())
         panel.set_reference(self._reference_image_size())
         # 面板竖直位置落在「背景图列表」与「标签列表」中间（用户澄清：
         # 「上面」指的是层级/顺序，不是贴着列表顶端的像素位置）。
         panel.set_anchor_rect(self._scope_anchor_rect())
         panel.retranslate()
-        panel.set_mode(getattr(self, '_scope_mode', MODE_FULL))
+        panel.set_mode(wanted_mode)
+        # set_mode 会 `_refresh` 并发 `overlay_changed`；再按局部量校准一次，
+        # 保证宿主与面板一致（即使中途有回调把 `_scope_mode` 改回旧值）。
+        self._scope_mode = panel.mode()
         # 面板开着 = 显示区域轮廓、允许就地画区域（B：开则显示、关则不显示）。
         # 收尾在 `_on_scope_panel_closed`（确定/取消/直接关闭三条路径都会走），
         # 会话若漏收，标注模式的鼠标行为会被一直劫持。
@@ -365,14 +375,40 @@ class InferenceMixin:
         self.status_label.setText(tr("在图上拖动即可添加区域；Esc 取消当前这一个"))
 
     def _on_region_session_changed(self):
-        """会话起止回调：刷新状态栏、区域计数与范围摘要。"""
+        """会话起止回调：刷新状态栏、区域明细与范围摘要。"""
         self._refresh_scope_button()
         panel = getattr(self, '_scope_panel', None)
         if panel is not None:
-            panel.set_region_count(len(self._region_boxes()))
+            # 用 set_regions（而不是只报个数）：面板要显示每条区域的坐标，
+            # 画完一个就该在列表里出现一行。
+            panel.set_regions(self._region_boxes())
         canvas = getattr(self, 'canvas', None)
         if canvas is not None and not canvas.region_session_active():
             self.status_label.setText(tr("区域绘制结束"))
+
+    def _delete_scope_region(self, index):
+        """删除面板里第 index 条区域，并同步画布与列表。
+
+        真正的删除交给画布（`_delete_region`）——它同时清掉选中态、正在画的
+        临时状态并重绘。面板拿到的只是显示快照，自己 pop 会和画布对不上。
+        画布没有这个方法时（测试替身/其它宿主）退化成直接改 `region_boxes`，
+        保证这个功能不因为宿主差异整体失效。
+        """
+        regions = getattr(self, 'region_boxes', None)
+        if not isinstance(regions, list) or not (0 <= index < len(regions)):
+            return
+        canvas = getattr(self, 'canvas', None)
+        delete = getattr(canvas, '_delete_region', None)
+        if callable(delete):
+            delete(index)
+        else:
+            regions.pop(index)
+        panel = getattr(self, '_scope_panel', None)
+        if panel is not None:
+            panel.set_regions(self._region_boxes())
+        if canvas is not None and hasattr(canvas, 'update'):
+            canvas.update()
+        self._refresh_scope_button()
 
     def _region_boxes(self):
         """画布上的临时区域；没有则为空表。"""
@@ -447,17 +483,22 @@ class InferenceMixin:
         row.set_scope_summary(tr(names[mode]), detail)
 
     def _sync_scope_region_display(self):
-        """范围弹窗打开期间画区域轮廓（B：开则显示、关则不显示）。
+        """区域轮廓只在「面板开着 **且** 选了区域」时画。
 
-        只影响显示，不改 `edit_mode`：区域绘制走「会话」机制，与贴图交互隔离。
-        弹窗关着时也保留原有行为：选了区域范围就仍显示轮廓（否则用户不知道
-        框为什么只出现在某块地方）。
+        两条要求合起来：
+        - 用户要「滑窗和区域各自的内容显示在画布上」：选了滑窗就只该看到滑窗
+          网格，不能还挂着区域框。
+        - 用户要「点确定关掉面板后区域框不该还留在画布上」：所以关掉面板就
+          收起轮廓（面板只是**调范围**时的参照，不是常驻叠加层）。
+
+        编辑能力不受影响：贴图模式下区域本来就看得到、画得动（见渲染侧的
+        `_show_regions()`），这里的开关只管「标注模式下的范围提示」。
         """
         from ...engine.inference_scope import MODE_ROI
 
         mode = getattr(self, '_scope_mode', MODE_FULL)
         self._show_scope_regions = (bool(getattr(self, '_scope_panel_open', False))
-                                    or mode == MODE_ROI)
+                                    and mode == MODE_ROI)
         canvas = getattr(self, 'canvas', None)
         if canvas is not None and hasattr(canvas, 'update'):
             canvas.update()

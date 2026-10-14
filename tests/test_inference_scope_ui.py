@@ -353,7 +353,11 @@ print(p.ok_btn.isEnabled())
 
 
 def test_real_scope_panel_shows_controls_per_mode():
-    """真实控件：滑窗参数控件只在滑窗显示，区域按钮只在区域显示。"""
+    """真实控件：滑窗参数控件**始终显示**，区域按钮只在区域模式显示。
+
+    用户要求「滑窗参数打开窗口就要存在」——参数区不再随模式显隐，一打开面板
+    就能看到当前窗口尺寸与模板。能不能改仍由模式决定（见下一条用例）。
+    """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.scope_panel import ScopePanel
@@ -374,9 +378,10 @@ for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
 print(p.isModal())
 """)
     lines = _lines(out)
-    assert lines[0] == "full False False", lines[0]
+    # 参数区三种模式都在（「打开窗口就要存在」）
+    assert lines[0] == "full True False", lines[0]
     assert lines[1] == "window True False", lines[1]
-    assert lines[2] == "roi False True", lines[2]
+    assert lines[2] == "roi True True", lines[2]
     assert lines[3] == "False", lines[3]
 
 
@@ -1206,44 +1211,51 @@ print(h.canvas.begin_count)
     assert lines[0] == "True", lines[0]
 
 
-def test_real_mixin_panel_open_drives_region_display():
-    """区域轮廓显示绑「范围弹窗是否打开」：开则显示、关则不显示（B）。
+def test_real_mixin_region_display_follows_the_roi_mode_only():
+    """区域轮廓要**同时**满足「面板开着」与「选了区域」。
 
-    弹窗关着时仍保留原有行为：选了区域范围就显示（否则用户不知道框为什么
-    只出现在某块地方）。
+    两条要求叠起来：
+    - 切到滑窗/全图就不能再挂着区域框（否则和滑窗网格混在一起分不清）。
+    - 关掉面板（点确定/取消/直接关）也不能留着——用户报的正是「点确认后
+      画布上的区域框还在」。
+
+    但编辑能力不受影响：贴图模式下区域本来就看得见、画得动。
     """
     out = _run_real_qt(_MIXIN_HOST + """
 h = _Host()
 h._on_model_loaded(_Detector(), (640, 640), "model")
 h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
 
-# 弹窗打开（全图模式）：也要显示区域轮廓，用户才能边看边画
-h._scope_mode = MODE_FULL
+# 面板开着 + 区域：显示
+h._scope_mode = MODE_ROI
 h._scope_panel_open = True
+h._sync_scope_region_display()
+print('open-roi', getattr(h, '_show_scope_regions', None))
+
+# 面板开着 + 滑窗：不显示——用户报的「点滑窗还展示区域画框」
+h._scope_mode = MODE_WINDOW
+h._sync_scope_region_display()
+print('open-window', getattr(h, '_show_scope_regions', None))
+
+# 面板开着 + 全图：不显示
+h._scope_mode = MODE_FULL
 h._sync_scope_region_display()
 print('open-full', getattr(h, '_show_scope_regions', None))
 
-# 弹窗关闭、全图模式：不显示
+# 面板关掉 + 区域：也不显示——用户报的「点确认后区域框还在」
+h._scope_mode = MODE_ROI
 h._scope_panel_open = False
 h._sync_scope_region_display()
-print('closed-full', getattr(h, '_show_scope_regions', None))
-
-# 弹窗关闭、区域模式：仍显示（原有行为）
-h._scope_mode = MODE_ROI
-h._sync_scope_region_display()
 print('closed-roi', getattr(h, '_show_scope_regions', None))
-
-# 弹窗打开、滑窗模式：显示
-h._scope_mode = MODE_WINDOW
-h._scope_panel_open = True
-h._sync_scope_region_display()
-print('open-window', getattr(h, '_show_scope_regions', None))
 """)
     lines = _lines(out)
-    assert lines[0] == "open-full True", lines[0]
-    assert lines[1] == "closed-full False", lines[1]
-    assert lines[2] == "closed-roi True", lines[2]
-    assert lines[3] == "open-window True", lines[3]
+    assert lines[0] == "open-roi True", lines[0]
+    assert lines[1] == "open-window False", (
+        f"切到滑窗后区域轮廓还在显示（{lines}）：用户报的就是这个")
+    assert lines[2] == "open-full False", lines[2]
+    assert lines[3] == "closed-roi False", (
+        f"关掉面板后区域轮廓还在显示（{lines}）："
+        "用户报的「点确认后画布上的区域框还在」")
 
 
 def test_scope_modules_have_all_translations():
@@ -1272,23 +1284,34 @@ def test_scope_modules_have_all_translations():
 
 
 def test_real_mixin_toggles_scope_region_display():
-    """真实控件：范围含区域时打开画布区域轮廓，切回全图/滑窗时关掉。
+    """真实控件：区域轮廓的开关是「面板开着 + 选了区域」两个条件的与。
 
-    标注模式下也要看得见范围，否则用户不知道框为什么只出现在某块地方。
+    标注模式下也要看得见范围，否则用户不知道框为什么只出现在某块地方；
+    但面板一关就得收起，否则「点确认后画布上的区域框还在」。
     """
     out = _run_real_qt(_MIXIN_HOST + """
 h = _Host()
 h._on_model_loaded(_Detector(), (640, 640), "model")
 h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
+
+h._scope_panel_open = True
 for mode in (MODE_ROI, MODE_WINDOW, MODE_FULL):
     h._scope_mode = mode
     h._refresh_scope_button()
-    print(mode, getattr(h, '_show_scope_regions', None))
+    print('open', mode, getattr(h, '_show_scope_regions', None))
+
+h._scope_panel_open = False
+for mode in (MODE_ROI, MODE_WINDOW):
+    h._scope_mode = mode
+    h._refresh_scope_button()
+    print('closed', mode, getattr(h, '_show_scope_regions', None))
 """)
     lines = _lines(out)
-    assert lines[0] == "roi True", lines[0]
-    assert lines[1] == "window False", lines[1]
-    assert lines[2] == "full False", lines[2]
+    assert lines[0] == "open roi True", lines[0]
+    assert lines[1] == "open window False", lines[1]
+    assert lines[2] == "open full False", lines[2]
+    assert lines[3] == "closed roi False", lines[3]
+    assert lines[4] == "closed window False", lines[4]
 
 
 def test_real_window_dialog_warns_when_many_windows():
@@ -1735,15 +1758,20 @@ def test_real_mixin_panel_close_ends_session_on_every_path():
     用**真的** ScopePanel + 真的 `close()`/`accept()`/`reject()`：非模态后
     这些调用会立即返回，不再需要替身拦 `exec_()`；替身恰好会把新机制
     （`finished_ok` 信号回传）整条绕过去，测不到。
+
+    场景取「区域」范围：这里要验的正是「面板开着 → 轮廓在显示 → 关掉 →
+    会话收了、轮廓也收起」。轮廓的收起对应用户报的「点确认后画布上的区域框
+    还在」——面板只是调范围时的参照，关掉就不该继续叠加在画布上。
     """
     out = _run_real_qt(_MIXIN_HOST + """
 from PyQt5.QtWidgets import QApplication
+from pastelabel.engine.inference_scope import MODE_ROI
 
 def scenario(close_call):
     h = _Host()
     h._on_model_loaded(_Detector(), (640, 640), "model")
     h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
-    h._scope_mode = h._scope_mode  # noqa
+    h._scope_mode = MODE_ROI
     h._open_scope_panel()
     # 面板开着时开一个区域绘制会话，模拟用户点了「编辑区域」
     h._edit_regions_for_scope()
@@ -1751,16 +1779,18 @@ def scenario(close_call):
     during_show = h._show_scope_regions
     getattr(h._scope_panel, close_call)()
     QApplication.processEvents()
+    # 关掉后：会话收了、面板标记清了、区域轮廓也收起（三条路径都一样）
     return (during_session, during_show, h.canvas.region_session_active(),
-            h._show_scope_regions, h.canvas.end_count)
+            h._scope_panel_open, h._show_scope_regions, h.canvas.end_count)
 
 for call in ('accept', 'reject', 'close'):
     print(call, scenario(call))
 """)
     lines = _lines(out)
     for i, call in enumerate(("accept", "reject", "close")):
-        # 开着的会话确实激活、轮廓确实在显示
-        assert lines[i] == (f"{call} (True, True, False, False, 1)"), lines[i]
+        # 开着的会话确实激活、轮廓确实在显示；关掉后会话收了、面板标记清了、
+        # 轮廓收起（用户报的「点确认后区域框还在」）
+        assert lines[i] == (f"{call} (True, True, False, False, False, 1)"), lines[i]
 
 
 def test_real_mixin_scope_panel_closing_never_leaves_session_open():
@@ -1790,3 +1820,351 @@ print("show", getattr(h, '_show_scope_regions', None))
     assert lines[2] == "show False", lines[2]
 
 
+
+
+def test_real_mixin_switching_to_window_hides_the_region_outlines():
+    """① 切到「滑窗」后画布上不能再出现区域画框。
+
+    用户报的原始现象：推理范围里画好的区域框，点了「滑窗」还在画面上，和滑窗
+    网格叠在一起，分不清哪个才是这次要跑的范围。
+
+    用真 Canvas 的 `render()` 落到图上再数「区域描边色」像素（不是只看
+    `_show_scope_regions` 这个中间标记——标记对了但绘制路径没接到也是白搭）。
+    区域色是 `REGION_CONFIG['border_color']`，按「是那个色相」判定，不按精确
+    RGB：描边叠在背景上同样是混合色。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.core.config import REGION_CONFIG
+from pastelabel.engine.inference_scope import MODE_WINDOW, MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1200, 800)
+w.show()
+app.processEvents()
+
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+app.processEvents()
+canvas = w.canvas
+canvas.resize(900, 700)
+app.processEvents()
+
+# 画一个覆盖画面大半的区域，保证描边一定进画面
+w.region_boxes = [{'x': 100, 'y': 100, 'width': 700, 'height': 500}]
+w.region_fixed = False
+
+edge = QColor(REGION_CONFIG['border_color'])
+
+def count_region_edge():
+    im = QImage(canvas.size(), QImage.Format_ARGB32)
+    im.fill(QColor('white'))
+    pnt = QPainter(im)
+    canvas.render(pnt)
+    pnt.end()
+    n = 0
+    for y in range(im.height()):
+        for x in range(im.width()):
+            c = im.pixelColor(x, y)
+            # 区域描边是青色系：蓝绿明显高于红
+            if c.blue() > 120 and c.green() > 110 and c.red() < 90:
+                n += 1
+    return n
+
+w._scope_panel_open = True
+w._scope_mode = MODE_ROI
+w._sync_scope_region_display()
+roi_px = count_region_edge()
+
+w._scope_mode = MODE_WINDOW
+w._sync_scope_region_display()
+win_px = count_region_edge()
+
+print(roi_px)
+print(win_px)
+print(roi_px > win_px)
+""")
+    lines = _lines(out)
+    roi_px = int(lines[0])
+    win_px = int(lines[1])
+    assert roi_px > 0, f"区域模式没画出区域框（像素 {roi_px}）"
+    assert lines[2] == "True", (
+        f"切到滑窗后区域框还在画（区域 {roi_px} vs 滑窗 {win_px}）："
+        "用户报的就是这个")
+
+
+def test_real_scope_params_stay_visible_but_locked_outside_window_mode():
+    """② 参数区打开面板就要在；未选「滑窗」时置灰不可改。
+
+    两个要求各自断言：可见性（「要存在」）与可编辑性（「无法编辑」）分开量，
+    免得一个变了另一个跟着"看起来对"。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+
+app = QApplication([])
+p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, region_count=2,
+               reference_size=(3840, 2160))
+p.show()
+app.processEvents()
+for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
+    p.set_mode(mode)
+    app.processEvents()
+    wp = p.window_params
+    print(mode, wp.isVisible(), wp.is_editable())
+""")
+    lines = _lines(out)
+    # 三种模式下参数区都在（② 的「打开窗口就要存在」）
+    assert lines[0] == "full True False", lines[0]
+    assert lines[1] == "window True True", lines[1]
+    assert lines[2] == "roi True False", lines[2]
+
+
+def test_real_scope_panel_mode_selection_is_single_choice():
+    """② 的隐藏前提：三个模式按钮必须真正单选。
+
+    QRadioButton 的自动互斥只在同一个父控件内生效，而这里每个按钮各占一行、
+    父控件不同，若不显式维护就会同时选中多个，`mode()` 只返回字典序里第一个
+    （永远是全图）——表现为「怎么点都切不过去」。
+
+    两条路径都要量，因为它们各自都可能单独失效：
+      * 用户**点击**按钮 → 走 `toggled` → `_on_mode_toggled` 清理其他项；
+      * 程序**set_mode()** → 由 `set_mode` 自己清掉旧的选中项。
+    只测一条的话，另一条的实现被删掉也照样绿。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+
+app = QApplication([])
+p = ScopePanel()
+p.show()
+app.processEvents()
+
+# 路径一：程序调用 set_mode
+for want in (MODE_WINDOW, MODE_ROI, MODE_FULL, MODE_WINDOW):
+    p.set_mode(want)
+    app.processEvents()
+    checked = [m for m, b in p._buttons.items() if b.isChecked()]
+    print('set', want, p.mode(), len(checked))
+
+# 路径二：模拟用户点击（走 toggled -> _on_mode_toggled）
+for want in (MODE_ROI, MODE_FULL, MODE_WINDOW):
+    p._buttons[want].click()
+    app.processEvents()
+    checked = [m for m, b in p._buttons.items() if b.isChecked()]
+    print('click', want, p.mode(), len(checked))
+""")
+    lines = _lines(out)
+    expected_set = ("window", "roi", "full", "window")
+    for i, want in enumerate(expected_set):
+        assert lines[i] == f"set {want} {want} 1", (
+            f"set_mode 没有单选（第 {i+1} 次 wanted={want}）：{lines}")
+    expected_click = ("roi", "full", "window")
+    for j, want in enumerate(expected_click):
+        row = lines[len(expected_set) + j]
+        assert row == f"click {want} {want} 1", (
+            f"点击按钮没有单选（第 {j+1} 次 clicked={want}）：{lines}")
+
+
+def test_real_mixin_reopening_the_panel_keeps_the_chosen_mode():
+    """② 的关联缺陷：重开面板不能把上次选的范围重置成「全图」。
+
+    开面板时的一串 set_* 都会经 `overlay_changed` 回调把**面板**当时的 mode
+    写回宿主，而面板那一刻还停在构造默认值（全图），于是「选了区域 → 关掉 →
+    再打开」会静默变回全图。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+h = _Host()
+h._on_model_loaded(_Detector(), (640, 640), "model")
+h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
+for name, mode in (("区域", MODE_ROI), ("滑窗", MODE_WINDOW)):
+    h._scope_mode = mode
+    h._open_scope_panel()
+    print(name, h._scope_panel.mode(), h._scope_mode)
+""")
+    lines = _lines(out)
+    assert lines[0] == "区域 roi roi", (
+        f"重开面板把「区域」重置了（{lines}）")
+    assert lines[1] == "滑窗 window window", (
+        f"重开面板把「滑窗」重置了（{lines}）")
+
+
+def test_real_scope_panel_lists_region_coordinates_with_delete_buttons():
+    """① 区域画完后，面板里逐条列出坐标，每条右侧有删除按钮。
+
+    用户要求「区域画完后在推理范围窗口显示该框的坐标 加一个删除按钮」。
+    坐标取外接矩形（多边形只有点集，显示第一个点会误导人），退化区域不能
+    把面板构造炸掉。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QLabel, QPushButton
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+p = ScopePanel(region_count=0)
+p.show()
+app.processEvents()
+
+p.set_regions([
+    {'shape_type': 'rectangle', 'x': 10, 'y': 20, 'width': 100, 'height': 50},
+    {'shape_type': 'polygon', 'points': [[5, 5], [105, 15], [55, 95]]},
+    {'x': 0, 'y': 0, 'width': 0, 'height': 0},
+])
+app.processEvents()
+
+def row_text(i):
+    w = p.region_list.itemWidget(p.region_list.item(i))
+    return w.findChild(QLabel, 'scopeRegionText').text()
+
+def has_delete(i):
+    w = p.region_list.itemWidget(p.region_list.item(i))
+    return w.findChild(QPushButton, 'scopeRegionDelete') is not None
+
+print(p.region_list.count())
+print(row_text(0))
+print(row_text(1))
+print(row_text(2))
+print(has_delete(0), has_delete(1), has_delete(2))
+# 明细只在「区域」模式显示（与「编辑区域」按钮同步）
+p.set_mode(MODE_ROI)
+app.processEvents()
+print('roi', p.region_list.isVisible())
+""")
+    lines = _lines(out)
+    assert lines[0] == "3", lines[0]
+    assert lines[1] == "#1  (10, 20) 100×50", lines[1]
+    # 多边形取外接矩形，不是第一个顶点 (5, 5)
+    assert lines[2] == "#2  (5, 5) 100×90", lines[2]
+    # 退化区域不能让整行崩掉
+    assert lines[3] == "#3  (未知)", lines[3]
+    assert lines[4] == "True True True", lines[4]
+    assert lines[5] == "roi True", lines[5]
+
+
+def test_real_scope_panel_delete_removes_the_right_region():
+    """① 点第 N 行的删除，删的就是第 N 条（不是最后一条或第一条）。
+
+    下标必须逐行绑定：闭包直接引用循环变量的话，所有按钮都会删最后一条，
+    而界面上看起来「按钮都在」，很容易漏掉。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+from PyQt5.QtWidgets import QApplication, QPushButton
+from pastelabel.engine.inference_scope import MODE_ROI
+
+h = _Host()
+h._on_model_loaded(_Detector(), (640, 640), "model")
+h.region_boxes = [
+    {'shape_type': 'rectangle', 'x': 10, 'y': 10, 'width': 100, 'height': 80},
+    {'shape_type': 'rectangle', 'x': 200, 'y': 50, 'width': 60, 'height': 60},
+    {'shape_type': 'rectangle', 'x': 400, 'y': 77, 'width': 30, 'height': 30},
+]
+h._open_scope_panel()
+h._scope_panel.set_mode(MODE_ROI)
+app.processEvents()
+
+def click_delete(i):
+    w = h._scope_panel.region_list.itemWidget(h._scope_panel.region_list.item(i))
+    w.findChild(QPushButton, 'scopeRegionDelete').click()
+    app.processEvents()
+
+click_delete(1)   # 删中间那条
+print(len(h.region_boxes))
+print(h.region_boxes[0]['x'], h.region_boxes[1]['x'])
+print(h._scope_panel.region_list.count())
+""")
+    lines = _lines(out)
+    assert lines[0] == "2", lines[0]
+    # 剩下的应是第 1 条与第 3 条（x=10 与 x=400），中间的 x=200 被删
+    assert lines[1] == "10.0 400.0" or lines[1] == "10 400", lines[1]
+    assert lines[2] == "2", lines[2]
+
+
+def test_real_mixin_confirming_the_panel_clears_region_outlines():
+    """② 点「确定」后画布上不能再留着区域框。
+
+    用户报的原始现象：「点击确认后关闭推理范围窗口还是显示在界面」——
+    指的是画布上的区域框还在。用真 Canvas 数「区域描边色」像素，
+    断言确定后归零（不是只看 `_show_scope_regions` 这个中间标记）。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1200, 800)
+w.show()
+app.processEvents()
+
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+w.show_grid_checkbox.setChecked(False)
+app.processEvents()
+canvas = w.canvas
+canvas.resize(900, 700)
+app.processEvents()
+
+w.region_boxes = [{'x': 100, 'y': 100, 'width': 700, 'height': 500}]
+w.region_fixed = False
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+
+def count_edges():
+    im = QImage(canvas.size(), QImage.Format_ARGB32)
+    im.fill(QColor('white'))
+    pnt = QPainter(im)
+    canvas.render(pnt)
+    pnt.end()
+    n = 0
+    for y in range(im.height()):
+        for x in range(im.width()):
+            c = im.pixelColor(x, y)
+            if c.blue() > 120 and c.green() > 110 and c.red() < 90:
+                n += 1
+    return n
+
+w._open_scope_panel()
+w._scope_panel.set_mode(MODE_ROI)
+app.processEvents()
+before = count_edges()
+w._scope_panel.ok_btn.click()
+app.processEvents()
+after_ok = count_edges()
+
+w._open_scope_panel()
+w._scope_panel.set_mode(MODE_ROI)
+app.processEvents()
+w._scope_panel.cancel_btn.click()
+app.processEvents()
+after_cancel = count_edges()
+
+print(before)
+print(after_ok)
+print(after_cancel)
+""")
+    lines = _lines(out)
+    before = int(lines[0])
+    after_ok = int(lines[1])
+    after_cancel = int(lines[2])
+    assert before > 0, f"区域模式下面板开着却没画出区域框（像素 {before}）"
+    assert after_ok == 0, (
+        f"点确定后画布上还留着区域框（{before} → {after_ok}）：用户报的就是这个")
+    assert after_cancel == 0, (
+        f"点取消后画布上还留着区域框（{before} → {after_cancel}）")

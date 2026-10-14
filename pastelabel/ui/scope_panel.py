@@ -17,7 +17,8 @@
 """
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QPushButton, QRadioButton, QVBoxLayout,
+    QDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
+    QRadioButton, QVBoxLayout, QWidget,
 )
 
 from ..engine.inference_scope import (
@@ -45,6 +46,10 @@ class ScopePanel(QDialog):
     # 面板状态变了（切模式/改窗口参数/区域数变化）→ 宿主重画主画布上的
     # 网格与区域轮廓。网格不再有面板内的小预览图，只能靠这条信号驱动。
     overlay_changed = pyqtSignal()
+    # 点了某条区域右侧的删除：带区域下标回宿主（由宿主删真身并刷新画布）。
+    # 面板不直接改 `region_boxes`——它拿到的只是一份用于显示的拷贝，
+    # 自己删改会和画布上的真身脱节。
+    region_delete_requested = pyqtSignal(int)
 
     def __init__(self, windows=None, mode=MODE_FULL, region_count=0,
                  reference_size=None, parent=None):
@@ -53,6 +58,7 @@ class ScopePanel(QDialog):
         self.setMinimumWidth(440)
         self._windows = dict(windows or {})
         self._region_count = int(region_count or 0)
+        self._regions = []
         self._reference = reference_size
         self._anchor_rect = None
         self._build_ui()
@@ -71,7 +77,7 @@ class ScopePanel(QDialog):
             row = QHBoxLayout()
             button = QRadioButton(tr(name))
             button.setObjectName("scopeMode")
-            button.toggled.connect(self._refresh)
+            button.toggled.connect(self._on_mode_toggled)
             self._buttons[mode] = button
             row.addWidget(button)
             label = QLabel(tr(hint))
@@ -99,6 +105,16 @@ class ScopePanel(QDialog):
         self.region_btn.clicked.connect(self.edit_regions_requested.emit)
         row.addWidget(self.region_btn)
         layout.addLayout(row)
+
+        # 已画区域的明细：每条显示坐标 + 尺寸，右侧带删除按钮。用户要求
+        # 「区域画完后在推理范围窗口显示该框的坐标 加一个删除按钮」——
+        # 之前这里只有一个「N 个区域」的计数，看不出框在哪，也没法删。
+        self.region_list = QListWidget()
+        self.region_list.setObjectName("scopeRegionList")
+        self.region_list.setMaximumHeight(110)
+        self.region_list.setSelectionMode(QListWidget.NoSelection)
+        self.region_list.setFocusPolicy(Qt.NoFocus)
+        layout.addWidget(self.region_list)
 
         self.warn_label = QLabel("")
         self.warn_label.setObjectName("scopeWarn")
@@ -139,6 +155,17 @@ class ScopePanel(QDialog):
                 padding: 4px 10px;
             }}
             QPushButton:hover {{ border-color: {theme['accent']}; }}
+            QListWidget#scopeRegionList {{
+                background-color: {theme['panel_bg']};
+                color: {theme['text_primary']};
+                border: 1px solid {theme['border_color']};
+                border-radius: 4px;
+            }}
+            QLabel#scopeRegionText {{ color: {theme['text_primary']}; }}
+            /* 每条区域右侧的删除按钮：做小一点，别和底部的确定/取消抢视觉 */
+            QPushButton#scopeRegionDelete {{
+                padding: 1px 8px; font-size: 11px;
+            }}
         """)
 
     def refresh_theme(self):
@@ -158,8 +185,39 @@ class ScopePanel(QDialog):
                 return mode
         return MODE_FULL
 
+    def _on_mode_toggled(self, _checked=False):
+        """把三个模式按钮维持成「单选」。
+
+        不能依赖 QRadioButton 的自动互斥：它只在**同一个父控件**内生效，而这里
+        每个按钮各自放进一行布局、父控件不同，于是多个按钮能同时选中，
+        `mode()` 只会返回字典序里第一个选中项（永远是「全图」），切到滑窗/区域
+        会静默失效。
+
+        也不用 QButtonGroup：本项目的 PyQt5 在某些导入路径下 `QtWidgets` 是
+        半初始化模块（`QButtonGroup` 取不到），显式写反而更稳。
+        """
+        checked = [m for m, b in self._buttons.items() if b.isChecked()]
+        # 用户可能把当前项再点一次（QRadioButton 默认不允许取消，这里兜底），
+        # 保证任何时候恰好有一个选中项。
+        if not checked:
+            self._buttons[MODE_FULL].setChecked(True)
+            return
+        if len(checked) > 1:
+            for mode in checked[1:]:
+                button = self._buttons[mode]
+                button.blockSignals(True)
+                button.setChecked(False)
+                button.blockSignals(False)
+        self._refresh()
+
     def set_mode(self, mode):
         button = self._buttons.get(mode) or self._buttons[MODE_FULL]
+        # 先全部清掉再选目标：只 setChecked(True) 无法取消别的已选项。
+        for other in self._buttons.values():
+            if other is not button and other.isChecked():
+                other.blockSignals(True)
+                other.setChecked(False)
+                other.blockSignals(False)
         button.setChecked(True)
         self._refresh()
 
@@ -174,6 +232,53 @@ class ScopePanel(QDialog):
     def set_region_count(self, count):
         self._region_count = int(count or 0)
         self._refresh()
+
+    def regions(self):
+        """当前用于显示的区域快照（宿主传入的那一份，不含删除操作）。"""
+        return list(getattr(self, '_regions', []))
+
+    def set_regions(self, regions):
+        """填充区域明细列表（坐标 + 删除按钮）。
+
+        入参是 `region_boxes` 的**快照副本**：面板只用来显示，删改一律经
+        `region_delete_requested` 回宿主，避免面板持有列表引用后自己 pop，
+        和画布上的真身对不上。坐标取 `region_bbox()` 的外接矩形——多边形
+        只有一个点集，直接显示顶点第一个点会误导人。
+        """
+        self._regions = list(regions or [])
+        self._region_count = len(self._regions)
+        self._rebuild_region_list()
+        self._refresh()
+
+    def _rebuild_region_list(self):
+        self.region_list.clear()
+        for index, region in enumerate(getattr(self, '_regions', [])):
+            item = QListWidgetItem()
+            self.region_list.addItem(item)
+            widget = self._build_region_row(index, region)
+            item.setSizeHint(widget.sizeHint())
+            self.region_list.setItemWidget(item, widget)
+
+    def _build_region_row(self, index, region):
+        """单条区域：`#N  (x, y) 宽×高` + 删除按钮。"""
+        row = QWidget()
+        line = QHBoxLayout(row)
+        line.setContentsMargins(2, 1, 2, 1)
+        line.setSpacing(6)
+
+        text = QLabel(f"#{index + 1}  {_region_text(region)}")
+        text.setObjectName("scopeRegionText")
+        line.addWidget(text)
+        line.addStretch()
+
+        delete_btn = QPushButton(tr("删除"))
+        delete_btn.setObjectName("scopeRegionDelete")
+        delete_btn.setToolTip(tr("删除这个区域"))
+        # 用默认参数绑住 index：闭包直接引用循环变量的话，所有按钮都会删最后一条。
+        delete_btn.clicked.connect(
+            lambda _checked=False, i=index: self.region_delete_requested.emit(i))
+        line.addWidget(delete_btn)
+        return row
 
     def set_reference(self, size):
         """参考图尺寸：窗口数预估要用它；没有参考图时预估显示为不可用。"""
@@ -218,16 +323,17 @@ class ScopePanel(QDialog):
         mode = self.mode()
         needs_window = mode == MODE_WINDOW
         needs_region = mode == MODE_ROI
-        # 参数控件整个跟着模式显隐：全图/区域时它没有意义，留着只会让人
-        # 以为「这些参数也在生效」。
-        self.window_params.setVisible(needs_window)
-        # 只有选中「滑窗」时才可编辑：用户要求「未选中滑窗时不能修改点击」。
-        # 禁用与隐藏都要有——隐藏解决「看不到就不乱点」，禁用解决「点不到、
-        # 也改不动」，两者缺一都可能被键盘焦点或程序化调用绕过。
+        # 参数控件**始终可见**：用户要求「打开窗口它就要存在」，一打开面板就能
+        # 看到这次用的是多大的窗口、有几个模板，不必先切到滑窗再回来核对。
+        self.window_params.setVisible(True)
+        # 但只有选中「滑窗」时才可编辑：用户要求「未选中滑窗就无法编辑」。
+        # 显示但置灰——既能看到当前值，又点不动、改不了。
         self.window_params.set_editable(needs_window)
         self.region_btn.setVisible(needs_region)
         self.region_label.setVisible(needs_region)
         self.region_label.setText(f"{self._region_count} {tr('个区域')}")
+        # 区域明细只在选中「区域」时显示（与按钮同步）
+        self.region_list.setVisible(needs_region)
         # 区域按钮也只有在选中「区域」时可用（与滑窗参数对称）
         self.region_btn.setEnabled(needs_region)
 
@@ -258,4 +364,23 @@ class ScopePanel(QDialog):
         self.region_btn.setText(tr("编辑区域"))
         self.region_btn.setToolTip(tr("在图上拖动即可添加区域，不切换模式"))
         self.window_params.retranslate()
+        # 明细行里的「删除」也是 tr() 出来的，切语言要重建才跟着变
+        self._rebuild_region_list()
         self._refresh()
+
+
+def _region_text(region):
+    """区域的一行文字：`(x, y) 宽×高`（外接矩形，多边形也适用）。
+
+    取整显示：ROI 坐标是浮点（缩放换算得来），界面上小数点后一串没有意义，
+    反而挤得看不清。取不到外接矩形（空/退化区域）时退化成「(未知)」，
+    不让一行坏数据把整个面板构造炸掉。
+    """
+    from ..engine.inference_scope import region_bbox
+
+    try:
+        x1, y1, x2, y2 = region_bbox(region)
+    except Exception:
+        return tr("(未知)")
+    return (f"({int(round(x1))}, {int(round(y1))}) "
+            f"{int(round(x2 - x1))}×{int(round(y2 - y1))}")

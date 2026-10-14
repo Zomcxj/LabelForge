@@ -129,6 +129,46 @@ def test_iter_windows_rejects_non_positive_image():
             iter_windows(iw, ih, {"w": 300, "h": 300, "overlap": 0})
 
 
+def test_iter_windows_reuses_the_augmenter_grid_math():
+    """③ 推理窗口与数据增强裁剪共用同一套排布，不另写一份。
+
+    用户要求「滑窗建议还是复用数据增强裁剪那块」。共用才不会有「增强里排 45 窗、
+    推理里排 46 窗」这种对不上的事。这里把推理结果与直接用增强侧
+    `normalized_window()` + `window_starts()`（fill=False）算出来的集合逐项比对。
+    """
+    from pastelabel.engine.augmenter.crop import normalized_window, window_starts
+
+    for iw, ih, spec in ((3840, 2160, {"w": 640, "h": 640, "overlap": 200}),
+                         (1000, 700, {"w": 300, "h": 300, "overlap": 100}),
+                         (913, 457, {"w": 256, "h": 256, "overlap": 37})):
+        cw, ch, ov = normalized_window(iw, ih, spec)
+        expected = [(x, y, cw, ch)
+                    for y in window_starts(ih, ch, ov)
+                    for x in window_starts(iw, cw, ov)]
+        assert iter_windows(iw, ih, spec) == expected, (iw, ih, spec)
+
+
+def test_iter_windows_never_pads_the_edge():
+    """③ 推理一律贴边、不越界补边，即使传了增强侧的 fill=True。
+
+    数据增强的填充口径（fill=True）会让末窗越出图像、由调用方补填充色；推理
+    绝不能这样——补边色会被喂给模型。用户明确要求「不要边缘填充」。
+    """
+    iw, ih = 1000, 700
+    spec = {"w": 300, "h": 300, "overlap": 100}
+
+    plain = iter_windows(iw, ih, spec)
+    # 显式带上 fill=True 也不能改变结果
+    with_fill = iter_windows(iw, ih, dict(spec, fill=True))
+    assert with_fill == plain
+
+    for x, y, w, h in with_fill:
+        assert x + w <= iw and y + h <= ih, (x, y, w, h)
+    # 且确实覆盖到边缘（贴边），不是缩在中间
+    assert max(x + w for x, y, w, h in with_fill) == iw
+    assert max(y + h for x, y, w, h in with_fill) == ih
+
+
 # ---------- ROI ----------
 
 def test_region_bbox_for_rectangle():
