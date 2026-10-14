@@ -180,11 +180,18 @@ print('ok')
 
 
 def test_real_preview_draws_grid_over_image():
-    """重绘后画布上确实出现网格像素：先擦成白底，再断言出现非白像素。"""
+    """重绘后画布上确实出现**网格线**像素，颜色是主题的 accent。
+
+    不能只断言「有非白像素」：`paintEvent` 开头就 `fillRect(canvas_bg)`，
+    底色本身就非白，把 `_draw_grid` 整个改成 no-op 那条断言照样绿（实测过）。
+    这里改为数**accent 色**的像素，且要求它成片出现（格子是线，不是一两点
+    抗锯齿噪点）。
+    """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtGui import QPainter, QColor, QImage
 from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from pastelabel.ui.theme import ThemeManager
 
 app = QApplication([])
 host = QWidget()
@@ -192,59 +199,81 @@ p = WindowOverlayPreview(host)
 p.resize(400, 300)
 p.set_image((2000, 1000))
 p.set_spec({'w': 640, 'h': 640, 'overlap': 200})
+grid = QColor(ThemeManager.get_theme()['accent'])
 img = QImage(400, 300, QImage.Format_ARGB32)
 img.fill(QColor('white'))
 painter = QPainter(img)
 p.render(painter)
 painter.end()
-nonwhite = sum(
-    1 for y in range(0, 300, 3) for x in range(0, 400, 3)
-    if img.pixelColor(x, y) != QColor('white'))
-print(nonwhite > 0)
+
+def is_grid(c):
+    # 允许一点抗锯齿容差，但必须明显偏蓝（accent #2196F3）
+    return (abs(c.red() - grid.red()) < 40 and abs(c.green() - grid.green()) < 40
+            and abs(c.blue() - grid.blue()) < 40)
+
+n = sum(1 for y in range(300) for x in range(400) if is_grid(img.pixelColor(x, y)))
+print('grid pixels', n)
+print('enough', n > 200)
+# 底色不是 accent：否则上面的计数会把底色也算进去，断言退化
+print('bg is not grid', not is_grid(QColor(ThemeManager.get_theme()['canvas_bg'])))
 """)
-    assert _lines(out)[0] == "True", out
+    lines = _lines(out)
+    n = int(lines[0].split()[2])
+    assert n > 200, lines[0]
+    assert lines[1] == "enough True", lines[1]
+    assert lines[2] == "bg is not grid True", lines[2]
 
 
 def test_real_preview_grid_density_tracks_window_count():
     """窗口数变了，画出来的网格跟着变：逐窗口画，不是只画一个外框。
 
-    断言窗口数（精确）而不是非白像素数：缩放后小窗网格线在缩略图上会落在
-    几乎同一批像素上（实测 w=1000 得 2 窗、w=200 得 50 窗，但非白像素只差
-    9 个），拿像素总数比密度会假红。
+    断言 accent 色像素数**随窗口数显著增长**，而不是只断言「画了东西」——
+    后者在 `_draw_grid` 成 no-op 时也为真（底色 fillRect 就够），是空转。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtGui import QPainter, QImage, QColor
 from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from pastelabel.ui.theme import ThemeManager
 
 app = QApplication([])
 host = QWidget()
+grid = QColor(ThemeManager.get_theme()['accent'])
 
-def build(spec):
+def count_grid(spec):
     p = WindowOverlayPreview(host)
     p.resize(400, 300)
     p.set_image((2000, 1000))
     p.set_spec(spec)
-    return p
-
-few = build({'w': 1000, 'h': 1000, 'overlap': 0})
-many = build({'w': 200, 'h': 200, 'overlap': 0})
-print(few.window_count(), many.window_count())
-# 两者都必须真的画了东西（不是空网格）
-from PyQt5.QtGui import QPainter, QImage, QColor
-for p in (few, many):
     img = QImage(400, 300, QImage.Format_ARGB32)
     img.fill(QColor('white'))
     painter = QPainter(img)
     p.render(painter)
     painter.end()
-    n = sum(1 for y in range(0, 300, 2) for x in range(0, 400, 2)
-            if img.pixelColor(x, y) != QColor('white'))
-    print('drew', n > 0)
+    return p.window_count(), sum(
+        1 for y in range(300) for x in range(400)
+        if abs(img.pixelColor(x, y).red() - grid.red()) < 40
+        and abs(img.pixelColor(x, y).green() - grid.green()) < 40
+        and abs(img.pixelColor(x, y).blue() - grid.blue()) < 40)
+
+few_n, few_px = count_grid({'w': 1000, 'h': 1000, 'overlap': 0})
+many_n, many_px = count_grid({'w': 200, 'h': 200, 'overlap': 0})
+print('windows', few_n, many_n)
+print('grid pixels', few_px, many_px)
+# 两者都真的画了网格线
+print('few drew', few_px > 50)
+print('many drew', many_px > 50)
+# 窗口多的必须画得多：只画一个外框时两者像素数会一样
+print('grows', many_px > few_px * 1.5)
 """)
     lines = _lines(out)
-    assert lines[0] == "2 50", lines[0]
-    assert lines[1] == "drew True", lines[1]
-    assert lines[2] == "drew True", lines[2]
+    assert lines[0] == "windows 2 50", lines[0]
+    few_px, many_px = (int(v) for v in lines[1].split()[-2:])
+    assert few_px > 50, lines[1]
+    assert many_px > 50, lines[1]
+    assert lines[2] == "few drew True", lines[2]
+    assert lines[3] == "many drew True", lines[3]
+    assert lines[4] == "grows True", lines[4]
 
 
 def test_real_preview_skips_offscreen_windows_when_clipping():
