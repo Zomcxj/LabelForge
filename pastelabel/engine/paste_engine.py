@@ -19,6 +19,12 @@ class PasteEngineMixin:
     """贴图引擎混入类 - 管理贴图的添加、删除、随机和批量放置"""
 
     def _offset_overlapping_paste_group(self, pasted_group):
+        """把整组框整体右移下移，直到不再与已有框完全重合。
+
+        组里每项是 `(rect, label[, box])`：`box` 是原始检测框字典（可选，旧调用
+        方只给两元组）。多出来的尾随元素原样带着走，否则粘贴时置信度、形状类型
+        这些字段会在这一步被丢掉。
+        """
         existing_boxes = {
             (box['x'], box['y'], box['width'], box['height'])
             for box in getattr(self, 'detection_boxes', [])
@@ -27,26 +33,25 @@ class PasteEngineMixin:
             return pasted_group
 
         adjusted_group = []
-        for rect, label in pasted_group:
-            adjusted_group.append((QRectF(rect.x(), rect.y(), rect.width(), rect.height()), label))
+        for item in pasted_group:
+            rect, label = item[0], item[1]
+            adjusted_group.append(
+                (QRectF(rect.x(), rect.y(), rect.width(), rect.height()), label)
+                + tuple(item[2:]))
         while True:
             group_boxes = [
-                (rect.x(), rect.y(), rect.width(), rect.height())
-                for rect, label in adjusted_group
+                (item[0].x(), item[0].y(), item[0].width(), item[0].height())
+                for item in adjusted_group
             ]
             if not any(box in existing_boxes for box in group_boxes):
                 return adjusted_group
             adjusted_group = [
-                (
-                    QRectF(
-                        rect.x() + OVERLAP_OFFSET_STEP,
-                        rect.y() + OVERLAP_OFFSET_STEP,
-                        rect.width(),
-                        rect.height(),
-                    ),
-                    label,
-                )
-                for rect, label in adjusted_group
+                (QRectF(item[0].x() + OVERLAP_OFFSET_STEP,
+                        item[0].y() + OVERLAP_OFFSET_STEP,
+                        item[0].width(),
+                        item[0].height()),)
+                + tuple(item[1:])
+                for item in adjusted_group
             ]
 
     def add_small_to_canvas(self, item):

@@ -93,22 +93,29 @@ class LabelCacheSlotMixin:
             return
         pasted_group = []
         for box in slot['items']:
+            # 三元组：把原始检测框字典一起带下去，否则粘贴出来只剩坐标和类别，
+            # 置信度（score）和形状类型（shape_type）都会在这一步丢掉。
             pasted_group.append((
                 QRectF(box['x'], box['y'], box['width'], box['height']),
                 box['label'],
+                box,
             ))
         adjusted_group = self._offset_overlapping_paste_group(pasted_group)
         if adjusted_group:
             self.save_undo_state()
             self._last_paste_start = len(self.detection_boxes)
-        for rect, label in adjusted_group:
-            self.detection_boxes.append({
+        for item in adjusted_group:
+            rect, label = item[0], item[1]
+            source = item[2] if len(item) > 2 else {}
+            new_box = dict(source) if isinstance(source, dict) else {}
+            new_box.update({
                 'x': rect.x(),
                 'y': rect.y(),
                 'width': rect.width(),
                 'height': rect.height(),
                 'label': label,
             })
+            self.detection_boxes.append(new_box)
         if adjusted_group:
             self._last_paste_slot = slot_index
             self._last_paste_count = len(adjusted_group)

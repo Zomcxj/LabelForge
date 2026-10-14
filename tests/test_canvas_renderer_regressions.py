@@ -44,7 +44,10 @@ def test_paste_engine_offsets_fully_overlapping_group_by_three_pixels():
 
     assert "OVERLAP_OFFSET_STEP = 3" in source
     assert "def _offset_overlapping_paste_group(" in source
-    assert "for rect, label in pasted_group:" in source
+    # 组里每项是 (rect, label[, box])，多出来的尾随元素要原样带着走，
+    # 否则粘贴会丢掉置信度/形状类型。
+    assert "for item in pasted_group:" in source
+    assert "tuple(item[1:])" in source
 
 
 def test_offset_overlapping_paste_group_keeps_boxes_inside_background_bounds():
