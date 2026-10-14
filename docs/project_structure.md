@@ -95,10 +95,10 @@ PasteLabel/
 │   │   ├── model_row.py       # 画布上方的模型参数行（加载/阈值/尺寸/覆盖模式/类别筛选/推理范围/关闭）
 │   │   ├── processing_panel.py # ProcessingPanel 执行与日志逻辑
 │   │   ├── quality_lint_dialog.py # 标注质检结果窗口
-│   │   ├── scope_panel.py    # 推理范围选择面板（全图/滑窗/区域）
+│   │   ├── scope_panel.py    # 推理范围选择面板（全图/滑窗/区域）；**非模态**，滑窗参数内嵌其中
 │   │   ├── segmented_control.py
 │   │   ├── settings_dialog.py
-│   │   ├── sliding_window_dialog.py # 滑窗参数窗口（窗口尺寸/重叠/预估窗口数/原图网格预览/模板按钮，模板与数据增强共用记录）
+│   │   ├── sliding_window_dialog.py # 滑窗参数窗口（独立窗口形态；参数控件本体在 widgets/window_params.py）
 │   │   ├── theme.py
 │   │   ├── video_dialog.py   # 视频弹窗：抽帧 / 合成（含叠加标签框）/ 推理成片 三个标签页
 │   │   └── mixins/
@@ -128,7 +128,8 @@ PasteLabel/
 │       ├── processing.py      # 扫描提示、Worker 与折叠区控件
 │       ├── spinner.py
 │       ├── task_badge.py      # 标签行任务徽标（det / seg / pose / obb）
-│       └── window_overlay_preview.py # 原图叠加滑窗网格预览（滑窗弹窗调参时实时重画）
+│       ├── window_overlay_preview.py # 原图叠加滑窗网格预览（画真实原图再叠网格；无图时退回纯色占位）
+│       └── window_params.py   # 滑窗参数控件（宽/高/重叠 + 预估 + 原图网格预览 + 模板按钮），被范围面板内嵌、也被滑窗弹窗复用
 ├── tests/                     # pytest 回归测试
 │   ├── __init__.py
 │   ├── conftest.py

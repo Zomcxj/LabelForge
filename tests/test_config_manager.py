@@ -526,18 +526,43 @@ class TestCropTemplates:
         try:
             invalid_specs = [
                 None, 42, "x", [],
-                {"w": 800, "h": 640, "overlap": 200},
                 {"w": 4, "h": 640, "overlap": 200, "min_visible": 0.5},
                 {"w": 800, "h": 9000, "overlap": 200, "min_visible": 0.5},
                 {"w": 800, "h": 640, "overlap": 5000, "min_visible": 0.5},
                 {"w": 800, "h": 640, "overlap": -1, "min_visible": 0.5},
                 {"w": 800, "h": 640, "overlap": 200, "min_visible": 0.3},
                 {"w": 800, "h": 640, "overlap": 200, "min_visible": 1.5},
+                # 显式给了坏值仍要拒（与「没给」区分开）
+                {"w": 800, "h": 640, "overlap": 200, "min_visible": "x"},
             ]
             for spec in invalid_specs:
                 assert config_manager.add_crop_template(spec) is False, spec
             assert config_manager.load_crop_templates() == []
             assert "crop_templates" not in config_manager.load_config()
+        finally:
+            config_manager.CONFIG_PATH = original
+
+    def test_add_without_min_visible_fills_the_default(self, tmp_path):
+        """没给 `min_visible` 不再算非法，按数据增强侧的默认值补齐。
+
+        推理侧的窗口参数只有 w/h/重叠，它把模板写回共享列表时不该被
+        `min_visible` 卡住（那样是静默失败：点确定却什么都没记住）。
+        缺字段用默认值补齐，与「显式给了 0.3 这种越界值要拒」是两回事。
+        """
+        original = _with_temp_config(tmp_path)
+        try:
+            assert config_manager.add_crop_template(
+                {"w": 800, "h": 640, "overlap": 200}) is True
+            templates = config_manager.load_crop_templates()
+            assert len(templates) == 1
+            assert templates[0]["w"] == 800
+            assert templates[0]["min_visible"] == (
+                config_manager.DEFAULT_CROP_MIN_VISIBLE)
+            # 与数据增强侧输入框的默认值一致，不是凭空造的数
+            assert config_manager.DEFAULT_CROP_MIN_VISIBLE == 0.7
+            # 其余字段也照常补齐
+            assert templates[0]["square"] is False
+            assert templates[0]["fill"] is False
         finally:
             config_manager.CONFIG_PATH = original
 

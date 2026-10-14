@@ -331,18 +331,35 @@ def delete_memory_record(index):
 
 CROP_TEMPLATES_LIMIT = 3
 
+# 模板里 `min_visible` 的兜底值。与数据增强侧输入框的默认值（0.7）一致——
+# 推理侧不传该字段时用它补齐，而不是凭空造一个 0.5 或让整条模板被丢掉。
+DEFAULT_CROP_MIN_VISIBLE = 0.7
+
 
 def _normalize_crop_template(spec):
-    """裁剪模板：{w, h, overlap, min_visible, square, fill, fill_rgb}，非法条目返回 None。"""
+    """裁剪模板：{w, h, overlap, min_visible, square, fill, fill_rgb}，非法条目返回 None。
+
+    `min_visible` 是**数据增强侧**的概念（跨窗标注的最低可见比例）。推理侧
+    只关心 w/h/重叠，调用方不传该字段时按 `DEFAULT_CROP_MIN_VISIBLE` 补齐，
+    而不是让整条模板因为缺字段被丢掉（那会让推理侧点确定后「什么都没记住」，
+    且失败是静默的）。
+    """
     if not isinstance(spec, dict):
         return None
     try:
         w = int(spec.get('w', 0))
         h = int(spec.get('h', 0))
         overlap = int(spec.get('overlap', 0))
-        min_visible = float(spec.get('min_visible', 0))
     except (TypeError, ValueError):
         return None
+    raw_visible = spec.get('min_visible')
+    if raw_visible is None:
+        min_visible = DEFAULT_CROP_MIN_VISIBLE
+    else:
+        try:
+            min_visible = float(raw_visible)
+        except (TypeError, ValueError):
+            return None
     if not (8 <= w <= 8192 and 8 <= h <= 8192):
         return None
     if not (0 <= overlap <= 4096):

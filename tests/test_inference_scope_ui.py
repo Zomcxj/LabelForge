@@ -353,7 +353,11 @@ print(p.ok_btn.isEnabled())
 
 
 def test_real_scope_panel_shows_controls_per_mode():
-    """真实控件：窗口按钮只在滑窗显示，区域按钮只在区域显示，全图都不显示。"""
+    """真实控件：滑窗**参数控件**只在滑窗显示，区域按钮只在区域显示。
+
+    参数已内嵌进面板（不再是「滑窗参数」按钮 + 第二个窗口），所以这里断言
+    整个参数控件 `window_params` 的显隐，以及其中的预览/输入框一并随之。
+    """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.scope_panel import ScopePanel
@@ -362,14 +366,119 @@ from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, region_count=2,
                reference_size=(3840, 2160))
+p.show()
+app.processEvents()
 for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
     p.set_mode(mode)
-    print(mode, p.window_btn.isHidden(), p.region_btn.isHidden())
+    app.processEvents()
+    # 用 isVisible()（会连带看父控件）而不是 isHidden()：子控件没有单独
+    # 隐藏过时 isHidden() 恒为 False，断言会变成空转。
+    print(mode, p.window_params.isVisible(), p.region_btn.isVisible(),
+          p.window_params.preview.isVisible())
+# 面板本身必须是非模态的：否则弹窗开着时画布收不到鼠标事件，「就地画区域」失效
+print(p.isModal())
 """)
     lines = _lines(out)
-    assert lines[0] == "full True True", lines[0]
-    assert lines[1] == "window False True", lines[1]
-    assert lines[2] == "roi True False", lines[2]
+    assert lines[0] == "full False False False", lines[0]
+    assert lines[1] == "window True False True", lines[1]
+    assert lines[2] == "roi False True False", lines[2]
+    assert lines[3] == "False", lines[3]
+
+
+def test_real_scope_panel_embeds_window_params_without_second_dialog():
+    """真实控件：滑窗参数就在面板里，点它**不会**再开第二个窗口。
+
+    这是用户报的问题（「点击滑窗怎么多了一个弹窗」）：面板里必须有真实可用的
+    宽/高/重叠输入框，而不是一个再弹窗的按钮。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QSpinBox
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_WINDOW
+
+app = QApplication([])
+p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
+               reference_size=(3840, 2160))
+p.set_mode(MODE_WINDOW)
+p.show()
+app.processEvents()
+wp = p.window_params
+# 三个输入框可见、可编辑，且值就是传入的 spec
+spins = [s for s in wp.findChildren(QSpinBox) if s.isVisible()]
+print(len(spins))
+print(wp.spec())
+print(all(s.isEnabled() for s in spins))
+# 面板里不该再有一个「滑窗参数」按钮（那是旧设计：点它再开窗）
+old_btn = [b for b in p.findChildren(type(p.ok_btn))
+           if "滑窗参数" in b.text()]
+print(len(old_btn))
+""")
+    lines = _lines(out)
+    assert lines[0] == "3", lines[0]
+    assert lines[1] == "{'w': 640, 'h': 640, 'overlap': 200}", lines[1]
+    assert lines[2] == "True", lines[2]
+    assert lines[3] == "0", lines[3]
+
+
+def test_real_scope_panel_inline_params_preview_tracks_edits():
+    """真实控件：**面板内**改参数，预览窗口数立刻跟着变（不需要开第二个窗）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_WINDOW
+
+app = QApplication([])
+p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
+               reference_size=(3840, 2160))
+p.set_mode(MODE_WINDOW)
+p.show()
+app.processEvents()
+print(p.window_params.window_count())
+print(p.window_params.preview.window_count())
+p.window_params._w.setValue(1280); p.window_params._h.setValue(1280)
+p.window_params._ov.setValue(0)
+app.processEvents()
+print(p.window_params.window_count())
+print(p.window_params.preview.window_count())
+print(p.selection())
+""")
+    lines = _lines(out)
+    assert lines[0] == "45", lines[0]
+    assert lines[1] == "45", lines[1]
+    # 3840×2160 配 1280×1280、重叠 0 → 3 × 2 = 6 窗
+    assert lines[2] == "6", lines[2]
+    assert lines[3] == "6", lines[3]
+    assert lines[4] == ("('window', {'w': 1280, 'h': 1280, 'overlap': 0})"), lines[4]
+
+
+def test_real_scope_panel_window_params_keep_pixmap_visible():
+    """真实控件：预览能把**原图**画出来（复审 B-4：之前只有色块+网格）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QPixmap, QColor, QImage
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_WINDOW
+
+app = QApplication([])
+p = ScopePanel(windows={'w': 100, 'h': 100, 'overlap': 0},
+               reference_size=(400, 400))
+p.set_mode(MODE_WINDOW)
+# 一张纯色图：画出来与预览底色不同，能据此判断「图真的画了」
+img = QImage(400, 400, QImage.Format_RGB888)
+img.fill(QColor(200, 30, 30))
+p.set_background_pixmap(QPixmap.fromImage(img))
+p.show()
+app.processEvents()
+pv = p.window_params.preview
+print(pv._pixmap is not None)
+print(pv._image_size)
+print(pv.window_count())
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", lines[0]
+    assert lines[1] == "(400, 400)", lines[1]
+    assert lines[2] == "16", lines[2]
 
 
 def test_real_scope_panel_selection_reports_windows_only_when_needed():
@@ -392,7 +501,7 @@ for mode in (MODE_FULL, MODE_ROI, MODE_WINDOW):
 
 
 def test_real_scope_panel_window_summary_text():
-    """真实控件：窗口摘要带上尺寸与重叠。"""
+    """真实控件：窗口摘要带上尺寸与重叠；没传参数时用控件默认值。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.scope_panel import ScopePanel
@@ -400,11 +509,13 @@ from pastelabel.ui.scope_panel import ScopePanel
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 512, 'overlap': 100})
 print(repr(p.window_summary()))
+# 参数内嵌后控件总有值（默认 640×640 / 重叠 200），所以摘要不会是空串——
+# 这正是「滑窗模式直接就有参数可调」的体现。
 print(repr(ScopePanel().window_summary()))
 """)
     lines = _lines(out)
     assert lines[0] == "'640×512 重叠 100'", lines[0]
-    assert lines[1] == "''", lines[1]
+    assert lines[1] == "'640×640 重叠 200'", lines[1]
 
 
 def test_real_scope_panel_edit_regions_signal():
@@ -734,41 +845,44 @@ print(h.model_row.scope_summary_label.text(), h._scope_for_run())
     assert lines[7] == "全图 None", lines[7]
 
 
-def test_real_mixin_open_scope_panel_constructs_panel_with_loaded_model():
-    """真实控件：加载模型后点「推理范围」要能真的把面板建起来。
+def test_real_mixin_open_scope_panel_constructs_non_modal_panel():
+    """真实控件：加载模型后点「推理范围」要真的把面板建起来，且是**非模态**。
 
     踩过的坑：`ScopePanel(self)` 把 editor 当成第一个位置参数 `windows`，
     运行时报 `TypeError: 'ImageEditor' object is not iterable`。原用例在
     **加载模型前**调 `_open_scope_panel()`，撞上「请先加载模型」的提前返回，
-    根本没走到构造那行，所以一直是绿的。这里必须先加载模型，再拦下 `exec_()`
-    不让它真的开窗口（否则测试会挂住）。
+    根本没走到构造那行，所以一直是绿的。
+
+    现在**真的** `show()` 面板（不再是拦下 `exec_()`）：非模态后 `show()` 会
+    立刻返回，测试不会挂住，而且能顺带验证「面板确实是非模态的」——应用级
+    模态会吃掉发往画布的鼠标事件，让就地画区域失效。
     """
     out = _run_real_qt(_MIXIN_HOST + """
+from PyQt5.QtWidgets import QApplication
+
 h = _Host()
 h._on_model_loaded(_Detector(), (640, 640), "model")
+h._open_scope_panel()
 
-import pastelabel.ui.scope_panel as sp
-created = []
-orig_exec = sp.ScopePanel.exec_
-def fake_exec(self):
-    created.append(self)
-    return 0
-sp.ScopePanel.exec_ = fake_exec
-try:
-    h._open_scope_panel()
-finally:
-    sp.ScopePanel.exec_ = orig_exec
-
-print("面板已建:", len(created) == 1)
-panel = created[0]
-# 关键：parent 必须是宿主，windows 不能被塞成 editor
+panel = h._scope_panel
+print("面板已建:", panel is not None)
 print("parent 是宿主:", panel.parent() is h)
 print("windows 是字典:", isinstance(panel.windows(), dict), panel.windows())
+print("非模态:", not panel.isModal())
+print("可见:", panel.isVisible())
+# 关键：没有 activeModalWidget 拦截输入，画布才能收到鼠标事件
+print("无模态窗:", QApplication.activeModalWidget() is None)
+panel.close()
+print("关闭后会话已收:", h.canvas.region_session_active() is False)
 """)
     lines = _lines(out)
     assert lines[0] == "面板已建: True", lines
     assert lines[1] == "parent 是宿主: True", lines
     assert lines[2].startswith("windows 是字典: True"), lines
+    assert lines[3] == "非模态: True", lines
+    assert lines[4] == "可见: True", lines
+    assert lines[5] == "无模态窗: True", lines
+    assert lines[6] == "关闭后会话已收: True", lines
 
 
 def test_real_mixin_edit_regions_starts_session_without_switching_mode():
@@ -1219,147 +1333,170 @@ print(before == after, before > 0)
     assert lines[0] == "True True", lines[0]
 
 
-def test_real_scope_panel_records_template_only_on_accept():
+def test_real_mixin_records_template_only_on_accept():
     """点「确定」才记模板；「取消」与直接关闭都不记（两者等价）。
 
-    这是 spec 第 7/8 条的落地断言。用替身弹窗控制 exec_ 的返回值，
-    避免测试里真开模态窗。
+    这是 spec 第 7/8 条的落地断言。参数内嵌进面板后不再有第二个窗口，所以
+    直接驱动 `finished_ok` 走真实路径，而不是拿替身拦 `exec_()`——那样恰好
+    把「非模态 + 信号回传」这条新机制绕过去了。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+from pastelabel.core import config_manager as cm
+from pastelabel.engine.inference_scope import MODE_WINDOW
+
+h = _Host()
+h._on_model_loaded(_Detector(), (640, 640), "model")
+
+# 1) 非滑窗模式下点确定：不该记模板（窗口参数对全图模式没有意义）
+h._scope_mode = MODE_FULL
+before = len(cm.load_crop_templates())
+h._on_scope_panel_closed(True)
+print("full", len(cm.load_crop_templates()) - before)
+
+# 2) 取消：不该记模板，也不该改范围
+h._scope_mode = MODE_FULL
+h._window_spec = {'w': 640, 'h': 640, 'overlap': 200}
+before = len(cm.load_crop_templates())
+h._on_scope_panel_closed(False)
+print("cancel", len(cm.load_crop_templates()) - before)
+print("cancel mode", h._scope_mode)
+
+# 3) 滑窗模式点确定：记一条
+import pastelabel.ui.scope_panel as sp
+
+class _Panel:
+    Accepted = 1
+    def __init__(self):
+        pass
+    def selection(self):
+        return (MODE_WINDOW, {'w': 512, 'h': 512, 'overlap': 64})
+    def set_region_count(self, n):
+        pass
+
+h._scope_panel = _Panel()
+before = len(cm.load_crop_templates())
+h._on_scope_panel_closed(True)
+print("accept", len(cm.load_crop_templates()) - before)
+print("spec", h._window_spec)
+
+# 4) 同样的参数再点一次确定：**不重复写**（防把增强侧真模板挤掉）
+before = len(cm.load_crop_templates())
+h._on_scope_panel_closed(True)
+print("repeat", len(cm.load_crop_templates()) - before)
+
+# 5) 参数变了再确定：应记一条新的
+class _Panel2(_Panel):
+    def selection(self):
+        return (MODE_WINDOW, {'w': 1024, 'h': 1024, 'overlap': 128})
+
+h._scope_panel = _Panel2()
+before = len(cm.load_crop_templates())
+h._on_scope_panel_closed(True)
+print("changed", len(cm.load_crop_templates()) - before)
+""")
+    lines = _lines(out)
+    assert lines[0] == "full 0", lines[0]
+    assert lines[1] == "cancel 0", lines[1]
+    assert lines[2] == "cancel mode full", lines[2]
+    assert lines[3] == "accept 1", lines[3]
+    assert lines[4] == "spec {'w': 512, 'h': 512, 'overlap': 64}", lines[4]
+    # 关键：重复确定不再重复写（B-3）
+    assert lines[5] == "repeat 0", lines[5]
+    assert lines[6] == "changed 1", lines[6]
+
+
+def test_recorded_template_does_not_fabricate_min_visible():
+    """记进共享模板时**不伪造** `min_visible`（复审 B-3）。
+
+    早先硬塞 `min_visible=0.5` 只为过校验，那是凭空的数。现在缺该字段时由
+    `_normalize_crop_template` 用与数据增强默认一致的 0.7 补齐。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QDialog
+from PyQt5.QtWidgets import QApplication
 from pastelabel.core import config_manager as cm
-from pastelabel.ui import scope_panel as sp
-import pastelabel.ui.sliding_window_dialog as swd
 
 app = QApplication([])
-Real = swd.SlidingWindowDialog
+# 清空模板列表：直接写配置文件，避免受同一进程里别的用例影响
+cfg = cm.load_config()
+cfg['crop_templates'] = []
+cm.save_config(cfg)
+print(cm.load_crop_templates())
 
-class FakeAccepted(Real):
-    def exec_(self):
-        self._w.setValue(512)
-        self._h.setValue(512)
-        self._ov.setValue(64)
-        return QDialog.Accepted
-
-class FakeRejected(Real):
-    def exec_(self):
-        self._w.setValue(999)
-        return QDialog.Rejected
-
-panel = sp.ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200})
-
-swd.SlidingWindowDialog = FakeAccepted
-before = len(cm.load_crop_templates())
-panel._edit_windows()
-after = len(cm.load_crop_templates())
-print(before, after)
-print(panel._windows)
-
-swd.SlidingWindowDialog = FakeRejected
-before2 = len(cm.load_crop_templates())
-panel._edit_windows()
-after2 = len(cm.load_crop_templates())
-print(before2, after2)
-print(panel._windows)
+ok = cm.add_crop_template({'w': 512, 'h': 512, 'overlap': 64})
+print(ok)
+tpl = cm.load_crop_templates()
+print(len(tpl))
+print(tpl[0]['w'], tpl[0]['h'], tpl[0]['overlap'])
+print(tpl[0]['min_visible'])
 """)
     lines = _lines(out)
-    # 断言「增量」而不是绝对条数：配置路径是本进程共享的，同批其它用例
-    # 可能已经写过模板，硬编码起始条数会变成顺序依赖的假红。
-    accepted_before, accepted_after = (int(v) for v in lines[0].split())
-    assert accepted_after == accepted_before + 1, lines[0]
-    assert lines[1] == "{'w': 512, 'h': 512, 'overlap': 64}", lines[1]
-    rejected_before, rejected_after = (int(v) for v in lines[2].split())
-    assert rejected_after == rejected_before, lines[2]
-    # 取消不该改参数：仍是确定后的值，不是替身设的 999
-    assert lines[3] == "{'w': 512, 'h': 512, 'overlap': 64}", lines[3]
+    assert lines[0] == "[]", lines[0]
+    assert lines[1] == "True", lines[1]
+    assert lines[2] == "1", lines[2]
+    assert lines[3] == "512 512 64", lines[3]
+    # 与数据增强侧输入框默认值一致
+    assert lines[4] == "0.7", lines[4]
 
 
-def test_real_mixin_panel_close_ends_session_and_hides_regions():
-    """关弹窗一定收会话并关掉区域显示：确定/取消/直接关闭三条路径都一样。
+def test_real_mixin_panel_close_ends_session_on_every_path():
+    """关面板一定收会话并关掉区域显示：确定 / 取消 / 直接关闭三条路径都一样。
 
-    用 try/finally 的必要性在这里：`exec_()` 抛异常或被跳过时也必须收干净，
-    否则会话泄漏、标注模式的鼠标行为会被一直劫持。
-
-    这条用替身面板控制 exec_ 的返回值，避免真开模态窗。
+    会话若漏收，标注模式的鼠标行为会被一直劫持，所以三条路径都要钉。
+    用**真的** ScopePanel + 真的 `close()`/`accept()`/`reject()`：非模态后
+    这些调用会立即返回，不再需要替身拦 `exec_()`；替身恰好会把新机制
+    （`finished_ok` 信号回传）整条绕过去，测不到。
     """
     out = _run_real_qt(_MIXIN_HOST + """
-h = _Host()
-h._on_model_loaded(_Detector(), (640, 640), "model")
-h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
+from PyQt5.QtWidgets import QApplication
 
-class _Panel:
-    Accepted = 1
-    def __init__(self, parent=None):
-        self._result = 0
-    def set_windows(self, *a): pass
-    def set_region_count(self, *a): pass
-    def set_reference(self, *a): pass
-    def set_anchor_rect(self, *a): pass
-    def retranslate(self): pass
-    def set_mode(self, *a): pass
-    def selection(self): return ('full', None)
-    def result(self): return self._result
-    def exec_(self):
-        # 模拟「弹窗开着时开了会话」，返回时状态应为已收
-        h._edit_regions_for_scope()
-        print('during-open', h.canvas.region_session_active())
-        print('during-show', getattr(h, '_show_scope_regions', None))
-        return self._result
-
-h._scope_panel = _Panel()
-h._open_scope_panel()
-print('after-close', h.canvas.region_session_active())
-print('after-show', getattr(h, '_show_scope_regions', None))
-print('end_count', h.canvas.end_count)
-""")
-    lines = _lines(out)
-    assert lines[0] == "during-open True", lines[0]
-    # 弹窗开着时也要显示区域轮廓（B）
-    assert lines[1] == "during-show True", lines[1]
-    assert lines[2] == "after-close False", lines[2]
-    # 关闭后是「全图」模式：区域轮廓不再显示（B：关则不显示）
-    assert lines[3] == "after-show False", lines[3]
-    assert lines[4] == "end_count 1", lines[4]
-
-
-def test_real_mixin_panel_exception_still_ends_session():
-    """弹窗 `exec_()` 抛异常时也必须收会话并恢复显示。
-
-    这是 try/finally 唯一的不可替代作用：去掉它，正常路径与取消路径都察觉
-    不到差异（我试过，变异体在其它用例下存活），只有异常路径能暴露泄漏。
-    会话泄漏的后果是标注模式鼠标行为被永久劫持，所以值得单独钉一条。
-    """
-    out = _run_real_qt(_MIXIN_HOST + """
-h = _Host()
-h._on_model_loaded(_Detector(), (640, 640), "model")
-h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
-
-class _Panel:
-    Accepted = 1
-    def __init__(self, parent=None):
-        pass
-    def set_windows(self, *a): pass
-    def set_region_count(self, *a): pass
-    def set_reference(self, *a): pass
-    def set_anchor_rect(self, *a): pass
-    def retranslate(self): pass
-    def set_mode(self, *a): pass
-    def result(self): return 0
-    def exec_(self):
-        h._edit_regions_for_scope()
-        raise RuntimeError('boom')
-
-h._scope_panel = _Panel()
-try:
+def scenario(close_call):
+    h = _Host()
+    h._on_model_loaded(_Detector(), (640, 640), "model")
+    h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
+    h._scope_mode = h._scope_mode  # noqa
     h._open_scope_panel()
-except RuntimeError as exc:
-    print('raised', str(exc))
-print('session', h.canvas.region_session_active())
-print('show', getattr(h, '_show_scope_regions', None))
-print('end_count', h.canvas.end_count)
+    # 面板开着时开一个区域绘制会话，模拟用户点了「编辑区域」
+    h._edit_regions_for_scope()
+    during_session = h.canvas.region_session_active()
+    during_show = h._show_scope_regions
+    getattr(h._scope_panel, close_call)()
+    QApplication.processEvents()
+    return (during_session, during_show, h.canvas.region_session_active(),
+            h._show_scope_regions, h.canvas.end_count)
+
+for call in ('accept', 'reject', 'close'):
+    print(call, scenario(call))
 """)
     lines = _lines(out)
-    assert lines[0] == "raised boom", lines[0]
-    assert lines[1] == "session False", lines[1]
+    for i, call in enumerate(("accept", "reject", "close")):
+        # 开着的会话确实激活、轮廓确实在显示
+        assert lines[i] == (f"{call} (True, True, False, False, 1)"), lines[i]
+
+
+def test_real_mixin_scope_panel_closing_never_leaves_session_open():
+    """无论以哪条路径关闭，都不能留下未收的会话（防鼠标行为被劫持）。"""
+    out = _run_real_qt(_MIXIN_HOST + """
+from PyQt5.QtWidgets import QApplication
+
+h = _Host()
+h._on_model_loaded(_Detector(), (640, 640), "model")
+h._open_scope_panel()
+h._edit_regions_for_scope()
+# 模拟异常路径：宿主在收尾途中抛异常，也必须已经收干净
+panel = h._scope_panel
+try:
+    panel.reject()
+    QApplication.processEvents()
+    raise RuntimeError('boom')
+except RuntimeError:
+    pass
+print("session", h.canvas.region_session_active())
+print("open flag", getattr(h, '_scope_panel_open', None))
+print("show", getattr(h, '_show_scope_regions', None))
+""")
+    lines = _lines(out)
+    assert lines[0] == "session False", lines[0]
+    assert lines[1] == "open flag False", lines[1]
     assert lines[2] == "show False", lines[2]
-    assert lines[3] == "end_count 1", lines[3]
+
+

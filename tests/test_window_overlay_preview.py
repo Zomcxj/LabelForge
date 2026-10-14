@@ -334,6 +334,144 @@ print('rendered ok')
     assert lines[1] == "rendered ok", lines[1]
 
 
+def test_real_preview_paints_the_background_image_not_just_a_fill():
+    """预览画的是**真实原图**，不是纯色占位（复审 B-4）。
+
+    做法：给一张左半绿、右半蓝的图，缩略后两侧都应出现对应色相。若只填
+    `panel_bg` 纯色（改动前的行为），两侧都没有绿色/蓝色像素，这条会红。
+
+    用色相而不是精确 RGB：绘制路径上有缩放与混合，精确值不稳定；色相关系
+    （左偏绿、右偏蓝）才是「图真的画了」的判别量。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+
+app = QApplication([])
+p = WindowOverlayPreview()
+p.resize(200, 200)
+img = QImage(400, 400, QImage.Format_RGB888)
+img.fill(QColor(0, 220, 0))                       # 左半 绿
+for y in range(400):
+    for x in range(200, 400):
+        img.setPixelColor(x, y, QColor(0, 0, 220))  # 右半 蓝
+p.set_pixmap(QPixmap.fromImage(img))
+p.set_spec({'w': 400, 'h': 400, 'overlap': 0})
+
+out = QImage(200, 200, QImage.Format_ARGB32)
+out.fill(QColor('white'))
+painter = QPainter(out)
+p.render(painter)
+painter.end()
+
+def green_ish(c): return c.green() > 120 and c.red() < 100 and c.blue() < 100
+def blue_ish(c): return c.blue() > 120 and c.red() < 100 and c.green() < 100
+
+print('image size synced', p._image_size)
+left = [out.pixelColor(x, 100) for x in range(2, 30)]
+right = [out.pixelColor(x, 100) for x in range(170, 198)]
+print('left is green', any(green_ish(c) for c in left))
+print('right is blue', any(blue_ish(c) for c in right))
+""")
+    lines = _lines(out)
+    # 图比尺寸更权威：设了 pixmap 就用它的尺寸
+    assert lines[0] == "image size synced (400, 400)", lines[0]
+    assert lines[1] == "left is green True", lines[1]
+    assert lines[2] == "right is blue True", lines[2]
+
+
+def test_real_preview_without_pixmap_falls_back_to_placeholder():
+    """没有原图时退回纯色占位并仍画网格：预览是调参参照，缺图不该报错。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtGui import QPainter, QImage, QColor
+from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+
+app = QApplication([])
+host = QWidget()
+p = WindowOverlayPreview(host)
+p.resize(200, 200)
+p.set_image((400, 400))
+p.set_spec({'w': 200, 'h': 200, 'overlap': 0})
+print('no pixmap', p._pixmap is None)
+print('count', p.window_count())
+img = QImage(200, 200, QImage.Format_ARGB32)
+img.fill(QColor('white'))
+painter = QPainter(img)
+p.render(painter)
+painter.end()
+n = sum(1 for y in range(0, 200, 2) for x in range(0, 200, 2)
+        if img.pixelColor(x, y) != QColor('white'))
+print('drew something', n > 0)
+# 传空 pixmap 等于没有：退回占位而不是画一片空白
+from PyQt5.QtGui import QPixmap
+p.set_pixmap(QPixmap())
+print('null pixmap ignored', p._pixmap is None)
+""")
+    lines = _lines(out)
+    assert lines[0] == "no pixmap True", lines[0]
+    assert lines[1] == "count 4", lines[1]
+    assert lines[2] == "drew something True", lines[2]
+    assert lines[3] == "null pixmap ignored True", lines[3]
+
+
+def test_real_params_widget_estimates_and_validates_like_dialog():
+    """参数控件是滑窗弹窗与范围面板的共同内核，口径必须一致。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.widgets.window_params import WindowParamsWidget
+
+app = QApplication([])
+w = WindowParamsWidget(reference_size=(3840, 2160),
+                       spec={'w': 640, 'h': 640, 'overlap': 200})
+print(w.spec())
+print(w.window_count(), w.window_grid(), w.is_valid())
+# 非法参数：超上限时无效
+w._w.setValue(64); w._h.setValue(64); w._ov.setValue(64)
+print(w.window_count(), w.is_valid())
+print('非法' in w.estimate_text())
+# 坏 spec 逐项兜底，不整个崩
+w2 = WindowParamsWidget(reference_size=(100, 100),
+                        spec={'w': 'x', 'h': None, 'overlap': [1]})
+print(w2.spec())
+""")
+    lines = _lines(out)
+    assert lines[0] == "{'w': 640, 'h': 640, 'overlap': 200}", lines[0]
+    assert lines[1] == "45 (5, 9) True", lines[1]
+    assert lines[2] == "None False", lines[2]
+    assert lines[3] == "True", lines[3]
+    # 坏值回退到默认
+    assert lines[4] == "{'w': 640, 'h': 640, 'overlap': 200}", lines[4]
+
+    """参数里混进 None / 字符串 / 列表时：显示不可用，绝不抛异常。
+
+    `iter_windows()` 现在把这些一律归成 ScopeError；这条用例钉的是
+    「预览层面对坏输入不崩」这个承诺本身，而不依赖 iter_windows 具体抛哪种
+    异常——它以后若改成抛 TypeError，这里就该红，逼我们回来收敛。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+
+app = QApplication([])
+p = WindowOverlayPreview()
+p.set_image((500, 500))
+for bad in ({'w': None, 'h': 100, 'overlap': 0},
+            {'w': 'x', 'h': 100, 'overlap': 0},
+            {'w': [1], 'h': 100, 'overlap': 0},
+            {'w': 100, 'h': 100, 'overlap': [1]},
+            {}, {'w': 100}):
+    p.set_spec(bad)
+    print(p.window_count(), p.is_valid())
+p.repaint()
+print('ok')
+""")
+    lines = _lines(out)
+    assert all(ln == "None False" for ln in lines[:-1]), lines
+    assert lines[-1] == "ok", lines[-1]
+
+
 def test_real_preview_survives_malformed_spec_types():
     """参数里混进 None / 字符串 / 列表时：显示不可用，绝不抛异常。
 

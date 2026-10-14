@@ -236,7 +236,13 @@ class InferenceMixin:
     # ---------- 推理范围 ----------
 
     def _open_scope_panel(self):
-        """打开范围面板；确定后更新范围与窗口参数。"""
+        """打开范围面板（非模态）；确定后更新范围与窗口参数。
+
+        非模态是**必需**的：弹窗开着时用户要点画布画区域，而应用级模态会
+        让 Qt 丢弃发往画布的鼠标事件，「点编辑区域直接在图上画」会失效。
+        因此这里用 `show()`，结果由 `finished_ok` 信号回传，不再有 `exec_()`
+        的返回值可看。
+        """
         if getattr(self, '_detector', None) is None:
             self.status_label.setText(tr("请先加载模型"))
             return
@@ -246,37 +252,65 @@ class InferenceMixin:
         if panel is None:
             panel = ScopePanel(parent=self)
             panel.edit_regions_requested.connect(self._edit_regions_for_scope)
+            panel.finished_ok.connect(self._on_scope_panel_closed)
             self._scope_panel = panel
         panel.set_windows(self._effective_window_spec())
         panel.set_region_count(len(self._region_boxes()))
         panel.set_reference(self._reference_image_size())
+        # 预览叠的是**真实原图**：窗口落在画面哪个部分一眼可见。
+        panel.set_background_pixmap(getattr(self, 'current_background', None))
+        panel.refresh_templates()
         # 防御式取侧栏几何：`_side_panel_geometry` 来自 PanelsMixin，本 mixin
         # 不假定宿主一定混入了它（拿不到就退回居中，与改动前一致）。
         geometry_fn = getattr(self, '_side_panel_geometry', None)
         panel.set_anchor_rect(geometry_fn() if callable(geometry_fn) else None)
         panel.retranslate()
         panel.set_mode(getattr(self, '_scope_mode', MODE_FULL))
-        # 弹窗开着 = 显示区域轮廓、允许就地画区域（B：开则显示、关则不显示）。
-        # 用 try/finally 保证「确定/取消/直接关闭」三条路径都会收干净：
+        # 面板开着 = 显示区域轮廓、允许就地画区域（B：开则显示、关则不显示）。
+        # 收尾在 `_on_scope_panel_closed`（确定/取消/直接关闭三条路径都会走），
         # 会话若漏收，标注模式的鼠标行为会被一直劫持。
         self._scope_panel_open = True
         self._sync_scope_region_display()
-        try:
-            panel.exec_()
-        finally:
-            self._scope_panel_open = False
-            canvas = getattr(self, 'canvas', None)
-            if canvas is not None and hasattr(canvas, 'end_region_session'):
-                canvas.end_region_session()
-            self._sync_scope_region_display()
-        if panel.result() != panel.Accepted:
+        panel.show()
+        panel.raise_()
+        panel.activateWindow()
+
+    def _on_scope_panel_closed(self, accepted):
+        """面板关闭（确定/取消/直接关闭都经此）：先收会话，再决定是否生效。"""
+        self._scope_panel_open = False
+        canvas = getattr(self, 'canvas', None)
+        if canvas is not None and hasattr(canvas, 'end_region_session'):
+            canvas.end_region_session()
+        self._sync_scope_region_display()
+        if not accepted:
+            return
+        panel = getattr(self, '_scope_panel', None)
+        if panel is None:
             return
         mode, windows = panel.selection()
         self._scope_mode = mode
         if windows:
             self._window_spec = windows
+            self._record_scope_template(windows)
         self._save_inference_settings()
         self._refresh_scope_button()
+
+    def _record_scope_template(self, windows):
+        """把当前窗口参数记进共用的模板列表；只在**确定**时调用。
+
+        两条讲究（复审 B-3）：
+        - 只有真正**变化**过才写。重复点确定不该反复往列表里塞同一条，
+          那会把数据增强侧真正在用的模板挤出去（列表最多 3 条）。
+        - 不伪造 `min_visible`。早先为了过 `_normalize_crop_template()` 的
+          0.5~1.0 校验硬塞了 `0.5`，那是个凭空的数；现在交给
+          `add_crop_template()` 用它自己的默认值补齐。
+        """
+        from ...core.config_manager import add_crop_template
+
+        if windows == getattr(self, '_last_recorded_template', None):
+            return
+        add_crop_template(dict(windows))
+        self._last_recorded_template = dict(windows)
 
     def _edit_regions_for_scope(self):
         """开区域绘制会话：就地画，不切贴图模式（③）。

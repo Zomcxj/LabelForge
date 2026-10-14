@@ -16,7 +16,7 @@ from PyQt5.QtCore import Qt, QRectF
 from PyQt5.QtGui import QPainter, QColor, QPen
 from PyQt5.QtWidgets import QWidget
 
-from ...engine.augmenter.crop import normalized_window, window_starts
+from ...engine.augmenter.crop import window_starts
 from ...engine.inference_scope import ScopeError, iter_windows
 from ..i18n import t as tr
 from ..theme import ThemeManager
@@ -31,6 +31,7 @@ class WindowOverlayPreview(QWidget):
         super().__init__(parent)
         self._image_size = None
         self._spec = None
+        self._pixmap = None
         self.setMinimumHeight(160)
 
     # ---------- 对外接口 ----------
@@ -38,6 +39,20 @@ class WindowOverlayPreview(QWidget):
     def set_image(self, size):
         """参考图尺寸 (w, h)；None 表示没有图。"""
         self._image_size = tuple(size) if size else None
+        self.update()
+
+    def set_pixmap(self, pixmap):
+        """当前背景图；会在网格底下画出来，让用户看清窗口落在画面哪里。
+
+        传 None 或空 pixmap 时退回纯色占位（仍画网格）——预览是调参参照，
+        缺图不该让面板报错或不显示。
+        """
+        if pixmap is not None and hasattr(pixmap, 'isNull') and pixmap.isNull():
+            pixmap = None
+        self._pixmap = pixmap
+        if pixmap is not None:
+            # 图本身比尺寸更权威：用它同步尺寸，避免「图是 A、网格按 B 算」
+            self._image_size = (pixmap.width(), pixmap.height())
         self.update()
 
     def set_spec(self, spec):
@@ -105,8 +120,13 @@ class WindowOverlayPreview(QWidget):
                 return
             scale, ox, oy = mapping
             iw, ih = int(self._image_size[0]), int(self._image_size[1])
-            painter.fillRect(QRectF(ox, oy, iw * scale, ih * scale),
-                             QColor(theme['panel_bg']))
+            target = QRectF(ox, oy, iw * scale, ih * scale)
+            if self._pixmap is not None:
+                # 先画原图再叠网格：用户要看的正是「窗口落在原图的哪里」，
+                # 只有格子没有画面的话，落在人脸还是天空上完全看不出来。
+                painter.drawPixmap(target, self._pixmap, QRectF(self._pixmap.rect()))
+            else:
+                painter.fillRect(target, QColor(theme['panel_bg']))
             windows = self._window_rects()
             if windows is None:
                 self._draw_center_text(painter, tr("窗口参数非法，请检查尺寸与重叠"))
