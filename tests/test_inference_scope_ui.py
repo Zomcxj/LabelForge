@@ -61,30 +61,150 @@ print(row.scope_btn.isEnabled(), row.scope_btn.text())
     assert lines[2] == "False 推理范围", lines[2]
 
 
-def test_real_row_scope_summary_shows_mode_and_window_params():
-    """真实控件：范围摘要显示模式；滑窗模式带窗口参数。"""
+def test_real_row_scope_summary_shows_mode_next_to_button():
+    """真实控件：摘要写在按钮右侧的常驻 label 上，按钮文字不自带摘要。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.model_row import ModelRow
-from pastelabel.ui.i18n import set_lang
 
 app = QApplication([])
 row = ModelRow()
 row.set_model('m.onnx', 0.25, 0.45, (640, 640), ['CPUExecutionProvider'])
-row.set_scope_summary('全图')
-print(row.scope_btn.text())
-row.set_scope_summary('滑窗', ' 640×640/200')
-print(row.scope_btn.text())
-row.set_scope_summary('区域+滑窗', ' 512×512/100')
-print(row.scope_btn.text())
-row.set_scope_summary('区域')
-print(row.scope_btn.text())
+for name in ('全图', '滑窗', '区域'):
+    row.set_scope_summary(name)
+    print(row.scope_btn.text(), '|', row.scope_summary_label.text())
 """)
     lines = _lines(out)
-    assert lines[0] == "推理范围", lines[0]
-    assert lines[1] == "推理范围: 滑窗 640×640/200", lines[1]
-    assert lines[2] == "推理范围: 区域+滑窗 512×512/100", lines[2]
-    assert lines[3] == "推理范围: 区域", lines[3]
+    assert lines[0] == "推理范围 | 全图", lines[0]
+    assert lines[1] == "推理范围 | 滑窗", lines[1]
+    assert lines[2] == "推理范围 | 区域", lines[2]
+
+
+def test_real_row_scope_summary_sits_right_of_button_in_same_row():
+    """摘要 label 必须在**同一行**且紧贴按钮右侧（不能被 stretch 推到行尾）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.resize(1100, 40)
+row.show()
+app.processEvents()
+btn_tl = row.scope_btn.mapTo(row, row.scope_btn.rect().topLeft())
+lbl_tl = row.scope_summary_label.mapTo(row, row.scope_summary_label.rect().topLeft())
+print(lbl_tl.x() >= btn_tl.x() + row.scope_btn.width())
+# 同一行：纵向中心差不超过按钮高度的一半
+btn_cy = btn_tl.y() + row.scope_btn.height() / 2
+lbl_cy = lbl_tl.y() + row.scope_summary_label.height() / 2
+print(abs(btn_cy - lbl_cy) <= row.scope_btn.height() / 2 + 1)
+# 紧贴按钮：中间只隔布局间距，不能夹着一个 stretch。
+# （只比「在关闭按钮左边」不够——stretch 在按钮与 label 之间时，
+#   两者仍都在关闭按钮左边，得直接量按钮到 label 的间隙。）
+gap = lbl_tl.x() - (btn_tl.x() + row.scope_btn.width())
+print(gap >= 0 and gap <= 20)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", lines[0]
+    assert lines[1] == "True", lines[1]
+    assert lines[2] == "True", lines[2]
+
+
+def test_real_row_scope_summary_label_is_visible_and_nonempty():
+    """摘要标签可见且有文字（不能是个隐藏或空的占位）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.show()
+app.processEvents()
+print(row.scope_summary_label.isVisible())
+print(bool(row.scope_summary_label.text()))
+print(row.scope_summary_label.objectName())
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", lines[0]
+    assert lines[1] == "True", lines[1]
+    assert lines[2] == "modelRowScope", lines[2]
+
+
+def test_real_row_scope_summary_resets_with_model():
+    """真实控件：清掉模型后摘要回到全图。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.set_model('m.onnx', 0.25, 0.45, (640, 640), ['CPUExecutionProvider'])
+row.set_scope_summary('区域')
+row.clear_model()
+print(row.scope_summary_label.text())
+""")
+    assert _lines(out)[0] == "全图", out
+
+
+def test_real_row_scope_summary_ignores_detail_argument():
+    """`detail` 保留但本轮不拼进摘要文字（模式名足够）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.set_scope_summary('滑窗', ' 640×640/200')
+print(row.scope_summary_label.text())
+# 参数应出现在 tooltip 里，仍可见但不占行
+print('640×640' in row.scope_summary_label.toolTip())
+""")
+    lines = _lines(out)
+    assert lines[0] == "滑窗", lines[0]
+    assert lines[1] == "True", lines[1]
+
+
+def test_real_row_scope_summary_treats_empty_name_as_full_image():
+    """空名字（没模型/未初始化）也要落成「全图」，不能把摘要留空。
+
+    摘要 label 是常驻控件，空字符串会让行上出现一块无意义的空白；
+    `scope_summary_text()` 的既有调用方也期望拿到一个真模式名。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+# 刚构造出来、还没设过任何范围时也不该是空的
+print(repr(row.scope_summary_text()))
+row.set_scope_summary('区域')
+row.set_scope_summary('')
+print(repr(row.scope_summary_text()))
+row.set_scope_summary(None)
+print(repr(row.scope_summary_text()))
+""")
+    lines = _lines(out)
+    assert lines[0] == "'全图'", lines[0]
+    assert lines[1] == "'全图'", lines[1]
+    assert lines[2] == "'全图'", lines[2]
+
+
+def test_real_row_scope_summary_text_matches_label():
+    """`scope_summary_text()` 读的必须是 label（它是既有调用方的取值口）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.set_scope_summary('区域')
+print(row.scope_summary_text())
+print(row.scope_summary_text() == row.scope_summary_label.text())
+""")
+    lines = _lines(out)
+    assert lines[0] == "区域", lines[0]
+    assert lines[1] == "True", lines[1]
 
 
 def test_real_row_scope_button_emits_request():
@@ -589,28 +709,29 @@ print(h._reference_image_size())
 h._scope_mode = MODE_WINDOW
 h._window_spec = {'w': 100, 'h': 100, 'overlap': 50}
 h._refresh_scope_button()
-print(h.model_row.scope_btn.text())
+# 摘要读按钮右侧的常驻 label；按钮文字恒为「推理范围」
+print(h.model_row.scope_summary_label.text())
 print(h._scope_for_run())
 
 h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
 h._scope_mode = MODE_ROI
 h._refresh_scope_button()
-print(h.model_row.scope_btn.text())
+print(h.model_row.scope_summary_label.text())
 print(h._scope_for_run())
 
 h._scope_mode = MODE_FULL
 h._refresh_scope_button()
-print(h.model_row.scope_btn.text(), h._scope_for_run())
+print(h.model_row.scope_summary_label.text(), h._scope_for_run())
 """)
     lines = _lines(out)
     assert lines[0] == "请先加载模型", lines[0]
     assert lines[1] == "True 推理范围", lines[1]
     assert lines[2] == "(400, 300)", lines[2]
-    assert lines[3] == "推理范围: 滑窗 100×100/50", lines[3]
+    assert lines[3] == "滑窗", lines[3]
     assert lines[4] == "{'mode': 'window', 'windows': {'w': 100, 'h': 100, 'overlap': 50}}", lines[4]
-    assert lines[5] == "推理范围: 区域", lines[5]
+    assert lines[5] == "区域", lines[5]
     assert "'reference_size': (400, 300)" in lines[6], lines[6]
-    assert lines[7] == "推理范围 None", lines[7]
+    assert lines[7] == "全图 None", lines[7]
 
 
 def test_real_mixin_open_scope_panel_constructs_panel_with_loaded_model():
@@ -828,13 +949,13 @@ h._on_model_loaded(_Detector(), (640, 640), "model")
 h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
 h._scope_mode = MODE_ROI
 h._refresh_scope_button()
-print(h.model_row.scope_btn.text())
+print(h.model_row.scope_summary_label.text())
 h._on_model_loaded(_Detector(), (640, 640), "model")
-print(h.model_row.scope_btn.text(), h._scope_for_run())
+print(h.model_row.scope_summary_label.text(), h._scope_for_run())
 """)
     lines = _lines(out)
-    assert lines[0] == "推理范围: 区域", lines[0]
-    assert lines[1] == "推理范围 None", lines[1]
+    assert lines[0] == "区域", lines[0]
+    assert lines[1] == "全图 None", lines[1]
 
 
 def test_real_mixin_saves_and_restores_window_spec():

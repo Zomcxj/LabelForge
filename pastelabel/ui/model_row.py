@@ -112,6 +112,12 @@ class ModelRow(QWidget):
         self.scope_btn.clicked.connect(self.scope_requested.emit)
         layout.addWidget(self.scope_btn)
 
+        # 摘要放按钮右侧：按钮管「选哪种范围」，这里管「现在是哪种」。
+        # 必须在 stretch 之前紧跟按钮，否则会被推到行尾。
+        self.scope_summary_label = QLabel("")
+        self.scope_summary_label.setObjectName("modelRowScope")
+        layout.addWidget(self.scope_summary_label)
+
         layout.addStretch()
 
         self.close_btn = QToolButton()
@@ -132,6 +138,7 @@ class ModelRow(QWidget):
             }}
             #modelRow QLabel {{ color: {theme['text_secondary']}; }}
             #modelRowName {{ color: {theme['text_primary']}; font-weight: bold; }}
+            #modelRowScope {{ color: {theme['accent']}; font-weight: bold; }}
             #modelRow QDoubleSpinBox, #modelRow QSpinBox {{
                 background-color: {theme['widget_bg']}; color: {theme['text_primary']};
                 border: 1px solid {theme['border_color']}; border-radius: 4px;
@@ -224,14 +231,19 @@ class ModelRow(QWidget):
             self.filter_btn.setText(tr("类别筛选"))
 
     def set_scope_summary(self, name, detail=""):
-        """在按钮上显示当前范围，非全图时带参数摘要。"""
-        if name and name != tr("全图"):
-            self.scope_btn.setText(f"{tr('推理范围')}: {name}{detail}")
-        else:
-            self.scope_btn.setText(tr("推理范围"))
+        """在按钮右侧显示当前范围。
+
+        `detail` 保留给以后放参数摘要：本轮只显示模式名（三种模式的参数在
+        弹窗里都能看到，摘要在行上不必再挤一行数字）。给 detail 时放进
+        tooltip，hover 仍能看到。
+        """
+        text = name if name and name != tr("全图") else tr("全图")
+        self.scope_summary_label.setText(text)
+        self.scope_summary_label.setToolTip(
+            f"{tr('推理范围')}: {text}{detail}" if detail else text)
 
     def scope_summary_text(self):
-        return self.scope_btn.text()
+        return self.scope_summary_label.text()
 
     def retranslate(self):
         """切语言后刷新行内文字。"""
@@ -248,6 +260,9 @@ class ModelRow(QWidget):
         # 筛选按钮的计数文案由主窗口按当前选择重设
         self.filter_btn.setToolTip(tr("保留勾选的类别；没勾选的会被过滤掉"))
         self.scope_btn.setToolTip(tr("全图 / 滑窗 / 区域"))
+        # 摘要文字要由主窗口按当前模式重设（`_refresh_scope_button`），
+        # 这里只把 tooltip 与当前文字对齐，避免切语言后 tooltip 与实际不符。
+        self.scope_summary_label.setToolTip(self.scope_summary_label.text())
 
     def _tooltip(self, name, size, providers):
         parts = [name, f"{tr('输入尺寸')}: {size[0]}x{size[1]}"]
