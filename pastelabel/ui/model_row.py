@@ -12,6 +12,10 @@ from PyQt5.QtWidgets import (
 from .i18n import t as tr
 from .theme import ThemeManager
 
+# 置信度 / NMS 两个输入框的宽度。原来 72px，按「减少 1/5」收到 58px——
+# 两位小数（0.25）在这个宽度里还看得全，参数行则宽松不少。
+_THRESHOLD_SPIN_WIDTH = 58
+
 
 class ModelRow(QWidget):
     """模型信息行；控件改动通过信号交给主窗口写回 detector。"""
@@ -22,6 +26,7 @@ class ModelRow(QWidget):
     load_requested = pyqtSignal()
     filter_requested = pyqtSignal()
     scope_requested = pyqtSignal()
+    batch_to_changed = pyqtSignal(int)
     closed = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -54,9 +59,10 @@ class ModelRow(QWidget):
         layout.addWidget(self.conf_lbl)
         self.conf_spin = QDoubleSpinBox()
         self.conf_spin.setRange(0.01, 1.0)
-        self.conf_spin.setSingleStep(0.05)
+        # 步长 0.01：阈值是逐点精调的旋钮，0.05 跳得太粗，微调时够不着想要的值
+        self.conf_spin.setSingleStep(0.01)
         self.conf_spin.setDecimals(2)
-        self.conf_spin.setFixedWidth(72)
+        self.conf_spin.setFixedWidth(_THRESHOLD_SPIN_WIDTH)
         self.conf_spin.valueChanged.connect(self._emit_thresholds)
         layout.addWidget(self.conf_spin)
 
@@ -64,12 +70,16 @@ class ModelRow(QWidget):
         layout.addWidget(self.iou_lbl)
         self.iou_spin = QDoubleSpinBox()
         self.iou_spin.setRange(0.05, 0.95)
-        self.iou_spin.setSingleStep(0.05)
+        self.iou_spin.setSingleStep(0.01)
         self.iou_spin.setDecimals(2)
-        self.iou_spin.setFixedWidth(72)
+        self.iou_spin.setFixedWidth(_THRESHOLD_SPIN_WIDTH)
         self.iou_spin.valueChanged.connect(self._emit_thresholds)
         layout.addWidget(self.iou_spin)
 
+        # 输入尺寸只对**动态轴**模型有意义（静态轴模型的尺寸由模型自身决定）。
+        # 静态模型下整组控件（标签 + 两个输入框 + "x"）直接不显示，而不是
+        # 「显示但禁用」——用户要求「静态模型直接不加载，动态的才显示」，
+        # 摆一组改不动的控件只会让人反复去点它。
         self.size_lbl = QLabel(tr("输入尺寸"))
         layout.addWidget(self.size_lbl)
         self.size_spin_w = QSpinBox()
@@ -78,7 +88,8 @@ class ModelRow(QWidget):
         self.size_spin_w.setToolTip(tr("动态轴模型需要指定；静态轴模型按模型自身尺寸推理"))
         self.size_spin_w.valueChanged.connect(self._emit_size)
         layout.addWidget(self.size_spin_w)
-        layout.addWidget(QLabel("x"))
+        self.size_sep_label = QLabel("x")
+        layout.addWidget(self.size_sep_label)
         self.size_spin_h = QSpinBox()
         self.size_spin_h.setRange(32, 8192)
         self.size_spin_h.setFixedWidth(72)
@@ -117,6 +128,21 @@ class ModelRow(QWidget):
         self.scope_summary_label = QLabel("")
         self.scope_summary_label.setObjectName("modelRowScope")
         layout.addWidget(self.scope_summary_label)
+
+        # 批量的「张数范围」放在推理范围右侧（用户要求）。语义是**结束张号**：
+        # 当前图是第 200 张时填 300 → 跑 200~300；填 100 → 跑 100~200。所以
+        # 它表达的是「从当前图到第 N 张」这条区间，方向由两边大小自动决定。
+        self.batch_to_spin = QSpinBox()
+        self.batch_to_spin.setObjectName("modelRowBatchTo")
+        self.batch_to_spin.setFixedHeight(24)
+        self.batch_to_spin.setFixedWidth(84)
+        self.batch_to_spin.setRange(0, 999999)
+        self.batch_to_spin.setToolTip(
+            tr("一键推理的目标张号（含）：当前第 200 张时填 300 跑 200~300，"
+               "填 100 跑 100~200；0 表示不限制、跑到末尾"))
+        self.batch_to_spin.setKeyboardTracking(False)
+        self.batch_to_spin.valueChanged.connect(self._emit_batch_to)
+        layout.addWidget(self.batch_to_spin)
 
         layout.addStretch()
 
@@ -161,8 +187,9 @@ class ModelRow(QWidget):
                   end2end=False):
         """加载完成后填入模型信息。
 
-        静态轴模型的尺寸由模型自身决定，输入框只作展示（禁用），避免用户改了
-        却没有任何效果；动态轴模型必须靠它指定，保持可编辑。
+        **动态轴**模型的尺寸必须由用户指定，所以整组「输入尺寸」控件显示且可编辑；
+        **静态轴**模型的尺寸由模型自身决定，整组直接**不显示**（用户要求「静态
+        模型直接不加载，动态的才显示」）——摆一组改不动的输入框只会让人反复去点它。
 
         端到端模型（v26）导出时已内置 NMS，界面上的 NMS 值改了不起作用，
         因此禁用并标注，免得用户以为调了没反应。
@@ -183,11 +210,25 @@ class ModelRow(QWidget):
         for widget, value in ((self.size_spin_w, size[0]), (self.size_spin_h, size[1])):
             widget.blockSignals(True)
             widget.setValue(value)
-            widget.setEnabled(dynamic)
+            widget.setEnabled(bool(dynamic))
             widget.blockSignals(False)
+        self.set_size_fields_visible(bool(dynamic))
         self.replace_btn.setEnabled(True)
         self.filter_btn.setEnabled(True)
         self.scope_btn.setEnabled(True)
+
+    def set_size_fields_visible(self, visible):
+        """整组「输入尺寸」控件的显隐（含标签与 "x"）。
+
+        隐藏而不是禁用：静态模型的尺寸不可改，留着只会误导。
+        """
+        for widget in (self.size_lbl, self.size_spin_w, self.size_sep_label,
+                       self.size_spin_h):
+            widget.setVisible(bool(visible))
+
+    def size_fields_visible(self):
+        """供测试/调用方核对当前是否显示了输入尺寸。"""
+        return bool(self.size_lbl.isVisible())
 
     def clear_model(self):
         """没有模型时的样子：显示引擎默认值，只留加载按钮可点。
@@ -215,6 +256,8 @@ class ModelRow(QWidget):
             widget.setValue(value)
             widget.setEnabled(False)
             widget.blockSignals(False)
+        # 没加载模型时还不知道是静态还是动态，整组先收起；加载后按类型决定。
+        self.set_size_fields_visible(False)
         self.replace_btn.setEnabled(False)
         self.filter_btn.setEnabled(False)
         self.scope_btn.setEnabled(False)
@@ -290,6 +333,28 @@ class ModelRow(QWidget):
     def _emit_size(self, _value=None):
         width, height = self.input_size()
         self.input_size_changed.emit(width, height)
+
+    def _emit_batch_to(self, value=None):
+        self.batch_to_changed.emit(self.batch_to_target())
+
+    def batch_to_target(self):
+        """「一键推理」的目标张号；0 表示不限制。"""
+        return int(self.batch_to_spin.value())
+
+    def set_batch_to(self, value):
+        """外部（切图/换数据集后）同步目标张号，不再回发信号造成循环。"""
+        spin = self.batch_to_spin
+        spin.blockSignals(True)
+        spin.setValue(int(value or 0))
+        spin.blockSignals(False)
+
+    def set_batch_to_range(self, total):
+        # 按数据集张数收窄可选范围，避免填出根本不存在的张号。
+        total = int(total or 0)
+        self.batch_to_spin.setMaximum(max(0, total))
+        self.batch_to_spin.setToolTip(
+            tr("一键推理的目标张号（含）：当前第 200 张时填 300 跑 200~300，"
+               "填 100 跑 100~200；0 表示不限制、跑到末尾"))
 
     def _on_replace_toggled(self):
         self._refresh_replace_text()

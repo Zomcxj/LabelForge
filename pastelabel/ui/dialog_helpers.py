@@ -26,35 +26,66 @@ def center_on_parent(dialog, parent=None):
 
 
 def place_within(dialog, rect):
-    """把对话框摆到 rect（父窗口坐标）那块，并钳到所在屏幕的可用区。
+    """把对话框浮到 rect（父窗口坐标）那块，并钳到所在屏幕的可用区。
 
-    rect 是「背景图列表底边 ~ 标签列表顶边」这条带。**不要求弹窗装进 rect**：
-    范围弹窗最小宽 440px，而侧栏固定 350px，几何上装不下——用户要的是「落在
-    两个列表中间、别盖画布」，不是「塞进侧栏」。
+    rect 是**右侧侧栏那块**（面板要盖在它上面，而不是画布上）。**不要求弹窗
+    装进 rect**：范围弹窗比侧栏宽，几何上装不下——用户要的是「浮在侧栏上层、
+    竖直居中、别盖画布」。
 
-    竖直方向按**居中**摆：只把左上角对齐 rect 顶部的话，弹窗比这条带高时会
-    整块压到下面的标签列表上，就不是「中间」了。
+    竖直方向按 rect 的**中心**居中。
+
+    水平方向：以 rect 的中心线对齐弹窗中心，但**优先保住左边不越过 rect
+    左边界**——用户报过「面板跑到屏幕左边挡住画布」，根因是这里曾经用
+    `rect.left() + 8` 当左上角、而 rect.x 又被上游写死成 0。现在先按居中算，
+    再钳到「不小于 rect.left()」，让弹窗向右溢出（压住侧栏右侧的空白）而不是
+    向左盖画布（画布在主窗左侧）。
     """
     if rect is None or rect.isEmpty():
         center_on_parent(dialog)
         return
-    # 左上角落在 rect 内即可；水平居中到 rect 会因弹窗更宽而反向溢出到画布上
-    x = rect.left() + 8
-    y = rect.center().y() - dialog.height() // 2
-    screen = QApplication.screenAt(dialog.parent().mapToGlobal(rect.center())) \
-        if dialog.parent() is not None else None
-    if screen is None:
-        screen = QApplication.primaryScreen()
+    # 统一到**全局**坐标再算：rect 是父窗口坐标（局部），而屏幕可用区是全局的，
+    # 混着比会把弹窗放到别的地方（实测主窗不在屏幕原点时，面板会整体左移一个
+    # 主窗 x 的量，落到画布上）。算完直接用全局坐标 `move()`。
+    parent = dialog.parent()
+    if parent is not None:
+        origin = parent.mapToGlobal(QPoint(0, 0))
+    else:
+        origin = QPoint(0, 0)
+    left = origin.x() + rect.left()
+    center_x = origin.x() + rect.center().x()
+    center_y = origin.y() + rect.center().y()
+
+    # 用**整窗**尺寸（含窗口边框）而不是客户区宽度：`frameGeometry` 才是屏幕上
+    # 真正占的地方，拿客户区宽度去钳，边框会多探出几像素。
+    frame = dialog.frameGeometry()
+    span_x = max(dialog.width(), frame.width())
+    span_y = max(dialog.height(), frame.height())
+    # 边框相对客户区左上角的偏移；`move()` 定的是客户区左上角，钳制要按整窗算。
+    inset_x = frame.x() - dialog.x()
+    inset_y = frame.y() - dialog.y()
+
+    # 水平：以 rect 中心线对齐弹窗中心，再保证左边不越过 rect 左边界，
+    # 让溢出发生在右侧（侧栏右边是空白）而不是左侧（左侧是画布）。
+    gx = center_x - span_x // 2
+    if gx < left:
+        gx = left
+    gy = center_y - span_y // 2
+
+    screen = QApplication.screenAt(QPoint(center_x, center_y)) \
+        or QApplication.primaryScreen()
     if screen is not None:
         available = screen.availableGeometry()
-        top_left = dialog.parent().mapToGlobal(QPoint(0, 0)) \
-            if dialog.parent() is not None else QPoint(0, 0)
-        gx, gy = top_left.x() + x, top_left.y() + y
-        gx = max(available.left(), min(gx, available.right() - dialog.width()))
-        gy = max(available.top(), min(gy, available.bottom() - dialog.height()))
-        dialog.move(gx - top_left.x(), gy - top_left.y())
-        return
-    dialog.move(x, y)
+        # 按整窗的左右边界钳，再换算回客户区左上角；直接减 span 会因为
+        # 边框偏移而多探出 1~3px。
+        gx = max(available.left() - inset_x,
+                 min(gx, available.right() + 1 - span_x - inset_x))
+        gy = max(available.top() - inset_y,
+                 min(gy, available.bottom() + 1 - span_y - inset_y))
+    # 直接用**全局**坐标 move()：`ScopePanel` 是顶层窗口，`QWidget.move()` 对
+    # 顶层窗口按全局坐标解释（实测 move(1056,323) 后 pos() 就是 1056,323）。
+    # 早先这里减掉了 `origin`，等于把面板整体左移一个主窗 x 的量——主窗不在
+    # 屏幕原点时，面板就跑到画布上去了（用户报的「跑到屏幕左边、遮挡画布」）。
+    dialog.move(gx, gy)
 
 
 class ThemedInputDialog(QInputDialog):

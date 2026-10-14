@@ -998,6 +998,9 @@ from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtGui import QImage
 app = QApplication([])
 from pastelabel.ui.mixins.inference import InferenceMixin
+# 圆点刷新（`_refresh_background_item_status`）在列表 mixin 里；范围刷新用例要
+# 走真实实现，别在替身里重写一遍「刷圆点」的语义。
+from pastelabel.ui.mixins.background_list import BackgroundListMixin as _BackgroundListMixin
 from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 
@@ -1053,7 +1056,7 @@ class _FakeCanvas:
         pass
 
 
-class _Host(InferenceMixin, QWidget):
+class _Host(InferenceMixin, _BackgroundListMixin, QWidget):
     def __init__(self):
         super().__init__()
         self.status_label = _Lbl()
@@ -1073,6 +1076,44 @@ class _Host(InferenceMixin, QWidget):
         self.current_background = None
         self.switched_to = []
         self.canvas = _FakeCanvas()
+        # 圆点刷新要向 `background_list` 写 BG_ROLE_STATUS，`_sync_current_boxes_from_cache`
+        # 还要 `update_label_list`。给真控件（QListWidget）而不是替身：状态图标是
+        # 通过 `setData/setIcon` 落到 item 上的，替身会把断言变成「测替身」。
+        from PyQt5.QtWidgets import QListWidget
+        self.background_list = QListWidget()
+        self.update_label_list = lambda: None
+        self.save_undo_state = lambda: None
+        # 范围面板定位要用：侧栏几何块 + 两个「列表」。锚点按两个列表的
+        # mapTo/width/height 算，所以这里放的是带几何信息的**替身**（不用真
+        # QWidget：在子进程退出阶段销毁宿主子控件会踩访问违例，实测崩）。
+        class _Rect:
+            def __init__(self, x, y, w, h):
+                self._r = (x, y, w, h)
+
+            def rect(self):
+                from PyQt5.QtCore import QRect
+                return QRect(0, 0, self._r[2], self._r[3])
+
+            def mapTo(self, parent, point):
+                from PyQt5.QtCore import QPoint
+                return QPoint(self._r[0] + point.x(), self._r[1] + point.y())
+
+            def width(self):
+                return self._r[2]
+
+        # 侧栏放在屏幕左侧一块，并且让面板宽度塞得进 offscreen 的 800×600 屏幕。
+        # 面板最小宽度 440；若侧栏放 x=700，`place_within` 会把面板拉回屏幕内，
+        # 位置断言就变成「测屏幕钳制」而不是「测锚点」了（实测 frame.x()=263）。
+        #
+        # 侧栏故意给得**够宽**（760）：锚点窄的时候面板居中位置会被
+        # `if gx < left: gx = left` 兜到左边界，此时「把面板左移」这类变异
+        # 看不出差别（实测变异体存活）。
+        self.bg_list_group = _Rect(20, 40, 760, 300)
+        self.label_group = _Rect(20, 350, 760, 300)
+
+    def _side_panel_geometry(self):
+        from PyQt5.QtCore import QRect
+        return QRect(20, 40, 760, 610)
 
     def _set_edit_mode(self, mode, animated=False):
         self.switched_to.append((mode, animated))
@@ -1433,7 +1474,11 @@ panel.close()
 
 
 def test_real_scope_panel_clamps_anchor_to_screen():
-    """锚点超出屏幕可用区时钳回屏内：不能把弹窗推到看不见的地方。"""
+    """锚点超出屏幕可用区时钳回屏内：不能把弹窗推到看不见的地方。
+
+    量的是 `frameGeometry()`（**全局**坐标）：弹窗是顶层窗口，`geometry()`
+    给的是父窗坐标，拿去和屏幕可用区比是两套坐标系，会假红。
+    """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtCore import QRect
@@ -1448,7 +1493,8 @@ panel = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, parent=host)
 # 故意把锚点放到屏幕右边缘之外
 panel.set_anchor_rect(QRect(avail.right() + 50, avail.top(), 400, 400))
 panel.show()
-g = panel.geometry()
+app.processEvents()
+g = panel.frameGeometry()
 print(avail.left() <= g.left() and g.right() <= avail.right())
 print(avail.top() <= g.top() and g.bottom() <= avail.bottom())
 panel.close()
@@ -2168,3 +2214,381 @@ print(after_cancel)
         f"点确定后画布上还留着区域框（{before} → {after_ok}）：用户报的就是这个")
     assert after_cancel == 0, (
         f"点取消后画布上还留着区域框（{before} → {after_cancel}）")
+
+
+def test_real_scope_panel_floats_over_the_side_panel_not_the_canvas():
+    """① 范围面板要浮在**右侧侧栏**上层、竖直居中，不能压到画布上。
+
+    用户报的现象：「推理范围窗口怎么在屏幕左边了？如果我软件移过去不就遮挡
+    画布了」。根因有两个，这里一并钉住：
+      * 锚点曾经是 `QRect(0, ...)`——x 被写死成 0，而画布在主窗左侧，
+        x=0 就是画布左端；
+      * `move()` 对顶层窗口是**全局**坐标，早先在 `place_within` 里又减了一次
+        父窗原点，等于把面板整体左移一个主窗 x 的量。
+
+    量的是 `frameGeometry()`（全局）与侧栏的实际全局位置，两者同构。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtWidgets import QApplication
+
+h = _Host()
+h.resize(1200, 800)
+h.show()
+app.processEvents()
+h.background_images = ["a.jpg"]
+h.current_background_index = 0
+h.current_background = QPixmap.fromImage(QImage(400, 300, QImage.Format_RGB888))
+h.detection_boxes = []
+h.canvas_items = []
+h.detection_boxes_dict = {0: []}
+h._detector = _Detector()
+h._open_scope_panel()
+app.processEvents()
+panel = h._scope_panel
+
+side = h._side_panel_geometry()
+side_left = h.mapToGlobal(side.topLeft()).x()
+side_center_y = h.mapToGlobal(side.center()).y()
+frame = panel.frameGeometry()
+
+# 面板要落在侧栏这块的左边界起、竖直居中；「不压画布」由锚点 x 不是 0 保证
+# （画布在主窗左侧，x=0 就是画布左端）。
+#
+# 水平用「中心线对齐侧栏中心」而不是只判左右边界：锚点够宽时，把 gx 整体
+# 平移某个量后左边界仍可能落在 side_left 右侧（被 `gx = left` 兜住或屏幕钳住），
+# 只判边界的话『面板左移』这类变异会存活（实测）。
+side_center_x = h.mapToGlobal(side.center()).x()
+print(frame.x() >= side_left)
+print(abs(side_left - frame.x()) < side.width())
+print(abs(frame.center().y() - side_center_y) < 40)
+print(abs(frame.center().x() - side_center_x) < 8)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", (
+        f"面板左边缘跑到侧栏左边之外了（{lines}）：用户报的「跑到屏幕左边」")
+    assert lines[1] == "True", (
+        f"面板整个跑出侧栏那一块了（{lines}）")
+    assert lines[2] == "True", (
+        f"面板没有对齐侧栏的竖直中心（{lines}）")
+    assert lines[3] == "True", (
+        f"面板没有对齐侧栏的水平中心（{lines}）：整体平移能被这条抓住")
+
+
+def test_real_scope_panel_anchor_uses_the_real_side_panel_x():
+    """① 的根因回归：锚点必须带侧栏的真实 x，不能再是 0。
+
+    只钉「面板最终位置」的话，换个屏幕尺寸/窗口位置就可能测不出来；这里直接
+    断言锚点矩形与侧栏左边界对齐。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtWidgets import QApplication
+
+h = _Host()
+h.resize(1200, 800)
+h.show()
+app.processEvents()
+h.background_images = ["a.jpg"]
+h.current_background_index = 0
+h.current_background = QPixmap.fromImage(QImage(400, 300, QImage.Format_RGB888))
+h.detection_boxes = []
+h.canvas_items = []
+h.detection_boxes_dict = {0: []}
+h._detector = _Detector()
+
+anchor = h._scope_anchor_rect()
+side = h._side_panel_geometry()
+bg_left = h.bg_list_group.mapTo(h, h.bg_list_group.rect().topLeft()).x()
+
+print(anchor.x() > 0)
+print(abs(anchor.x() - bg_left) <= 12)
+print(anchor.width() > 0)
+# 锚点要覆盖整个侧栏高度（竖直居中的依据），不是两个列表之间那条窄带
+print(anchor.height() >= side.height() - 20)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", (
+        f"锚点 x 还是 0（{lines}）：这正是「面板跑到屏幕左边」的根因")
+    assert lines[1] == "True", f"锚点左边界没和侧栏对齐（{lines}）"
+    assert lines[2] == "True", lines[2]
+    assert lines[3] == "True", (
+        f"锚点高度没覆盖侧栏（{lines}）：竖直居中会偏")
+
+
+def test_real_batch_target_runs_the_span_between_current_and_target():
+    """② 「张数范围」的语义是**结束张号**（1 基，含），方向自动决定。
+
+    用户明确过：「假设当前图是第 200 张，我输入 300 就是 200~300；我输入 100
+    就是 100~200」。填 0 = 不限制、到末尾。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+h = _Host()
+h.background_images = [f"img{i}.jpg" for i in range(400)]
+h.current_background_index = 199          # 第 200 张
+h._detector = _Detector()
+h._on_model_loaded(_Detector(), (640, 640), "model")
+row = h._ensure_model_row()
+row.set_batch_to_range(len(h.background_images))
+
+captured = {}
+def spy(indices, current_only):
+    captured['i'] = list(indices)
+h._start_inference = spy
+
+for value in (300, 100, 0, 200):
+    row.set_batch_to(500 if value == 0 else value)
+    if value == 0:
+        row.set_batch_to(0)
+    h._run_inference_from_here()
+    idx = captured['i']
+    print(value, idx[0] + 1, idx[-1] + 1, len(idx))
+""")
+    lines = _lines(out)
+    assert lines[0] == "300 200 300 101", lines[0]
+    assert lines[1] == "100 100 200 101", lines[1]
+    # 0 = 到末尾：第 200 张 ~ 第 400 张
+    assert lines[2] == "0 200 400 201", lines[2]
+    assert lines[3] == "200 200 200 1", lines[3]
+
+
+def test_real_batch_target_spin_is_spinnable_and_typable():
+    """② 输入框要「可滚动可输入」，并且上限跟着数据集张数收窄。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.set_batch_to_range(350)
+spin = row.batch_to_spin
+print(spin.maximum())
+print(row.batch_to_target())
+# 可滚动：stepUp/stepDown 能改值
+row.set_batch_to(300); spin.stepUp()
+print(spin.value())
+spin.stepDown()
+print(spin.value())
+# 可输入：setValue 走同一条路（键盘输入最终也是 setValue）
+row.set_batch_to(123)
+print(row.batch_to_target())
+# 超出数据集张数的值会被上限挡住
+row.set_batch_to(99999)
+print(spin.value())
+""")
+    lines = _lines(out)
+    assert lines[0] == "350", f"上限没跟着数据集张数走：{lines[0]}"
+    assert lines[1] == "0", lines[1]
+    assert lines[2] == "301", f"不能滚动加一：{lines[2]}"
+    assert lines[3] == "300", f"不能滚动减一：{lines[3]}"
+    assert lines[4] == "123", f"不能直接输入：{lines[4]}"
+    assert lines[5] == "350", f"超出张数的值没被上限挡住：{lines[5]}"
+
+
+def test_real_size_fields_hidden_for_static_shown_for_dynamic():
+    """③ 输入尺寸：静态模型整组不显示，动态模型才显示。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.show()
+app.processEvents()
+# 未加载模型：先收起
+print(row.size_fields_visible())
+
+row.set_model("static.onnx", 0.25, 0.45, (640, 640), dynamic=False)
+app.processEvents()
+print(row.size_fields_visible())
+print(row.size_lbl.isVisible(), row.size_spin_w.isVisible(),
+      row.size_spin_h.isVisible(), row.size_sep_label.isVisible())
+
+row.set_model("dynamic.onnx", 0.25, 0.45, (640, 640), dynamic=True)
+app.processEvents()
+print(row.size_fields_visible())
+print(row.size_spin_w.isEnabled(), row.size_spin_h.isEnabled())
+""")
+    lines = _lines(out)
+    assert lines[0] == "False", f"未加载模型就该收起输入尺寸：{lines[0]}"
+    assert lines[1] == "False", f"静态模型仍显示输入尺寸：{lines[1]}"
+    assert lines[2] == "False False False False", (
+        f"静态模型只藏了一部分控件：{lines[2]}")
+    assert lines[3] == "True", f"动态模型没显示输入尺寸：{lines[3]}"
+    assert lines[4] == "True True", f"动态模型的输入框不可编辑：{lines[4]}"
+
+
+def test_real_threshold_spins_step_by_one_hundredth():
+    """③ 置信度 / NMS 的步长是 0.01，且宽度收窄到 58px。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+print(round(row.conf_spin.singleStep(), 4), round(row.iou_spin.singleStep(), 4))
+row.conf_spin.setValue(0.25)
+row.conf_spin.stepUp()
+print(round(row.conf_spin.value(), 4))
+row.iou_spin.setValue(0.45)
+row.iou_spin.stepDown()
+print(round(row.iou_spin.value(), 4))
+print(row.conf_spin.width(), row.iou_spin.width())
+""")
+    lines = _lines(out)
+    assert lines[0] == "0.01 0.01", f"步长不是 0.01：{lines[0]}"
+    assert lines[1] == "0.26", f"置信度没有按 0.01 步进：{lines[1]}"
+    assert lines[2] == "0.44", f"NMS 没有按 0.01 步进：{lines[2]}"
+    assert lines[3] == "58 58", f"阈值输入框宽度没收到 58：{lines[3]}"
+
+
+def test_real_batch_cancel_refreshes_rows_without_switching_images():
+    """取消后**当场**刷新已跑完的圆点，不必切到那张图才更新。
+
+    用户报的原始现象：「取消后没有刷新新的标签，还有切到那张图才更新圆点」。
+    原因：逐张路径虽然各自写过一次盘，但取消时收尾没有再按最终磁盘状态统一
+    刷一遍，于是这些行的圆点停在跑批前。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+import os
+import tempfile
+
+from PyQt5.QtGui import QImage
+from pastelabel.engine.image_loader.mixin import BG_ROLE_STATUS
+from pastelabel.engine.image_loader.status import (
+    STATUS_ANNOTATED, STATUS_UNANNOTATED)
+
+# `_MIXIN_HOST` 里已经建好 QApplication；这里**不能再建一个**——同进程里
+# 第二个 QApplication 会在构造时把进程 abort 掉（实测 rc=0xC0000409），
+# 表现成「测试没输出、直接崩」。
+tmp = tempfile.mkdtemp()
+paths = []
+for i in range(4):
+    p = os.path.join(tmp, f"img{i}.jpg")
+    QImage(120, 120, QImage.Format_RGB888).save(p)
+    paths.append(p)
+
+h = _Host()
+h.background_images = list(paths)
+h.current_background_index = 0
+h.detection_boxes_dict = {i: [] for i in range(len(paths))}
+h.canvas_items_dict = {i: [] for i in range(len(paths))}
+# 建出列表行（真控件），否则圆点无处可刷
+from pastelabel.engine.image_loader.status import decorate_background_list_item
+from PyQt5.QtWidgets import QListWidgetItem
+for i, p in enumerate(paths):
+    item = QListWidgetItem(os.path.basename(p))
+    decorate_background_list_item(item, p, i)
+    h.background_list.addItem(item)
+app.processEvents()
+
+# 手写两个 sidecar，模拟「本轮已经跑完两张」
+import json
+for i in (0, 1):
+    j = os.path.splitext(paths[i])[0] + ".json"
+    with open(j, "w", encoding="utf-8") as f:
+        json.dump({"version": "1", "shapes": [
+            {"label": "cat", "shape_type": "rectangle", "x": 1, "y": 1,
+             "width": 9, "height": 9, "flags": {"inference": True}}]}, f)
+
+# 刷新前：四行都还是「未标注」
+before = [h.background_list.item(r).data(BG_ROLE_STATUS)
+          for r in range(h.background_list.count())]
+print(before.count(STATUS_ANNOTATED))
+
+# 走**收尾入口**（`_on_batch_finished`）而不是直接调刷新 helper：
+# 用户遇到的是「取消后收尾没刷新」，要钉的是收尾有没有接上这一步，
+# 绕过收尾去调 helper 的话，把收尾里的刷新删掉测试也照样绿。
+from pastelabel.engine.inference_task import ImageResult
+results = {0: ImageResult(0, paths[0], [], None, 120, 120),
+           1: ImageResult(1, paths[1], [], None, 120, 120)}
+h._close_progress_dialog = lambda: None
+h._apply_inference_results = lambda *a, **k: None
+h.update_label_list = lambda: None
+h._batch_handled_keys = {0, 1}
+h._batch_written_keys = set()
+h._batch_write_failed = set()
+h._on_batch_finished(results)
+app.processEvents()
+
+lst = h.background_list
+statuses = []
+for r in range(lst.count()):
+    statuses.append(lst.item(r).data(BG_ROLE_STATUS))
+print(statuses.count(STATUS_ANNOTATED))
+print(statuses[0] == STATUS_ANNOTATED and statuses[1] == STATUS_ANNOTATED)
+print(statuses[2] == STATUS_UNANNOTATED and statuses[3] == STATUS_UNANNOTATED)
+""")
+    lines = _lines(out)
+    assert lines[0] == "0", f"刷新前就已是已标注，用例失去意义：{lines}"
+    assert lines[1] == "2", f"已写盘的两行没有当场刷成已标注：{lines}"
+    assert lines[2] == "True", f"刷新的不是前两行：{lines}"
+    assert lines[3] == "True", (
+        f"没跑的图被误刷成已标注了：{lines}")
+
+
+def test_real_batch_finish_syncs_current_canvas_from_cache():
+    """取消后当前图的画布要从缓存回灌，不能停在旧框上。
+
+    用户报的另一半现象：「要么显示旧的框」。批量跑的是当前图之后的若干张，
+    取消后用户往往还停在当前图，它的内存框与缓存可能已经不一致。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+import os
+import tempfile
+import json
+
+from PyQt5.QtGui import QImage
+from PyQt5.QtWidgets import QListWidgetItem
+from pastelabel.engine.image_loader.status import decorate_background_list_item
+from pastelabel.engine.inference_task import ImageResult
+
+# 同上：不能重复建 QApplication（`_MIXIN_HOST` 已建）。
+tmp = tempfile.mkdtemp()
+paths = []
+for i in range(2):
+    p = os.path.join(tmp, f"img{i}.jpg")
+    QImage(120, 120, QImage.Format_RGB888).save(p)
+    paths.append(p)
+
+h = _Host()
+h.background_images = list(paths)
+h.current_background_index = 0
+h.detection_boxes = [{"x": 1, "y": 1, "width": 5, "height": 5}]   # 旧框
+h.detection_boxes_dict = {0: [
+    {"x": 10, "y": 10, "width": 20, "height": 20},
+    {"x": 40, "y": 40, "width": 20, "height": 20},
+], 1: []}
+h.canvas_items = []
+h._inference_dataset = tuple(paths)
+for i, p in enumerate(paths):
+    item = QListWidgetItem(os.path.basename(p))
+    decorate_background_list_item(item, p, i)
+    h.background_list.addItem(item)
+
+# 直接调 helper：钉「不一致才回灌、一致时不动」这条自身语义
+print(len(h.detection_boxes))
+h._sync_current_boxes_from_cache()
+print(len(h.detection_boxes))
+h._sync_current_boxes_from_cache()
+print(len(h.detection_boxes))
+
+# 再钉**收尾接线**：把内存改回旧值，走 `_on_batch_finished` 也应该被回灌。
+# 只测 helper 的话，把收尾里的调用删掉测试照样绿（变异体存活过）。
+h.detection_boxes = [{"x": 1, "y": 1, "width": 5, "height": 5}]
+h._close_progress_dialog = lambda: None
+h._apply_inference_results = lambda *a, **k: None
+h.update_label_list = lambda: None
+h._batch_handled_keys = {0}
+h._batch_written_keys = set()
+h._batch_write_failed = set()
+results = {0: ImageResult(0, paths[0], [], None, 120, 120)}
+h._on_batch_finished(results)
+print(len(h.detection_boxes))
+""")
+    lines = _lines(out)
+    assert lines[0] == "1", lines[0]
+    assert lines[1] == "2", f"画布没从缓存回灌（还是旧框）：{lines}"
+    assert lines[2] == "2", f"一致时不该重复回灌：{lines}"
+    assert lines[3] == "2", (
+        f"收尾没接上画布回灌：走 `_on_batch_finished` 后画布还是旧框：{lines}")

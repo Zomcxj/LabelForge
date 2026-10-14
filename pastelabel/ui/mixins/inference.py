@@ -151,6 +151,8 @@ class InferenceMixin:
         row.filter_requested.connect(self._open_class_filter)
         row.scope_requested.connect(self._open_scope_panel)
         row.closed.connect(self._update_inference_buttons)
+        # 张数范围只在「从当前图推理」那条路径上有意义；值本身不用再回传宿主，
+        # 运行时直接读 `row.batch_to_target()`，避免多存一份状态而与界面不同步。
         self.model_row = row
         layout = getattr(self, '_canvas_layout', None)
         if layout is not None:
@@ -287,29 +289,45 @@ class InferenceMixin:
         panel.activateWindow()
 
     def _scope_anchor_rect(self):
-        """面板该对齐的那条带：背景图列表底边到标签列表顶边之间。
+        """面板该浮在哪儿：**右侧侧栏那块**（不嵌进去，只是盖在它上面）。
 
-        为什么不用整个侧栏：只对齐侧栏顶部会一直盖住背景图列表，而用户要的
-        位置是「两个列表中间」。拿不到某个列表时退回整个侧栏那块（不至于
-        跑到屏幕正中挡住画布）。
+        用户要的是「放在侧栏高度居中的上层」：面板是独立小窗（非模态），
+        位置对齐**整个侧栏**、竖直居中，正好压住侧栏而不是画布。早先这里
+        只取「背景图列表底边到标签列表顶边」那条窄带、还把 x 硬写成 0，
+        结果面板跑到主窗最左边把画布整个挡住——画布在主窗左侧，x=0 就是
+        画布左端。
+
+        x 必须用侧栏自己的左边界（`bg.x()`），不能再写死 0；拿不到侧栏时
+        退回 `_side_panel_geometry()`；再拿不到返回 None，由调用方居中。
         """
         from PyQt5.QtCore import QRect
 
-        panel_geometry = getattr(self, '_side_panel_geometry', None)
-        fallback = panel_geometry() if callable(panel_geometry) else None
+        left = None
+        top = None
+        height = 0
+        width = 0
         bg = getattr(self, 'bg_list_group', None)
         label = getattr(self, 'label_group', None)
-        if bg is None or label is None:
-            return fallback
-        try:
-            bg_bottom = bg.mapTo(self, bg.rect().bottomLeft()).y()
-            label_top = label.mapTo(self, label.rect().topLeft()).y()
-        except (AttributeError, TypeError):
-            return fallback
-        if label_top <= bg_bottom:
-            return fallback
-        # 这条带的高度可能为 0（两个列表紧邻），给一点高度让「居中」有意义
-        return QRect(0, bg_bottom, max(1, bg.width()), max(1, label_top - bg_bottom))
+        for widget in (bg, label):
+            if widget is None:
+                continue
+            try:
+                widget_top = widget.mapTo(self, widget.rect().topLeft())
+                widget_bottom = widget.mapTo(self, widget.rect().bottomLeft())
+            except (AttributeError, TypeError):
+                continue
+            if left is None:
+                left = widget_top.x()
+                width = widget.width()
+                top = widget_top.y()
+            top = min(top, widget_top.y())
+            height = max(height, widget_bottom.y() - top)
+        if left is not None and height > 0:
+            return QRect(left, top, max(1, width), max(1, height))
+
+        # 两个列表都拿不到：退回整个侧栏那块
+        panel_geometry = getattr(self, '_side_panel_geometry', None)
+        return panel_geometry() if callable(panel_geometry) else None
 
     def _on_scope_overlay_changed(self):
         """面板状态变了 → 重画主画布上的滑窗网格与区域轮廓。
@@ -514,13 +532,41 @@ class InferenceMixin:
         self._start_inference([index], current_only=True)
 
     def _run_inference_from_here(self):
-        """从当前位置推理到列表末尾，弹出进度小窗。"""
+        """从当前位置推理到目标张号（张数范围），弹出进度小窗。
+
+        「目标张号」由参数行「推理范围」右侧的输入框给出，语义是**第几张**
+        （1 基，含），不是「跑多少张」：当前是第 200 张时填 300 → 跑 200~300，
+        填 100 → 跑 100~200。填 0 表示不限制，跑到列表末尾。
+        """
         images = getattr(self, 'background_images', None) or []
         start = max(0, self.current_background_index)
         if not images or start >= len(images):
             self.status_label.setText(tr("请先加载数据集"))
             return
-        self._start_inference(list(range(start, len(images))), current_only=False)
+        target = self._batch_to_index()
+        if target is None:
+            indices = list(range(start, len(images)))
+        else:
+            # 目标是 1 基张号 → 0 基下标；与起点构成闭区间，方向自动决定，
+            # 所以「往回跑」（填比当前小的号）也能用。
+            end = min(max(0, target - 1), len(images) - 1)
+            low, high = (end, start) if end < start else (start, end)
+            indices = list(range(low, high + 1))
+        if not indices:
+            return
+        self._start_inference(indices, current_only=False)
+
+    def _batch_to_index(self):
+        """参数行里的目标张号（1 基）；未填/为 0 时返回 None（表示到末尾）。"""
+        row = getattr(self, 'model_row', None)
+        getter = getattr(row, 'batch_to_target', None)
+        if not callable(getter):
+            return None
+        try:
+            value = int(getter())
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
 
     def _start_inference(self, indices, current_only):
         if getattr(self, '_busy', False):
@@ -563,6 +609,12 @@ class InferenceMixin:
         # 恒为 True，所有结果一进门就被当「过期的」丢掉——现象是日志/进度窗
         # 明明显示检测到框，却一张都没保存（用户报的 bug）。
         self._inference_dataset = tuple(images)
+        # 逐张收尾用的三个集合必须**每轮重置**：上一轮若异常结束（比如加载模型
+        # 失败、或另一个 worker 抢先），收尾没跑到就留下了旧键，新的一轮会把
+        # 这些键当「已处理」跳过，表现成「这几张明明跑了却没应用/没刷新」。
+        self._batch_handled_keys = set()
+        self._batch_written_keys = set()
+        self._batch_write_failed = set()
         worker = InferenceWorker(
             paths, indices, detector, self._filter_for_run(), scope=scope,
             parent=self)
@@ -668,7 +720,65 @@ class InferenceMixin:
                                       skip_indices=handled,
                                       written_indices=written,
                                       failed_indices=failed)
+        # 收尾统一刷新：取消时**已跑完**的图也必须当场变绿，不能等用户切到那张
+        # 才更新（用户报的「取消后没有刷新新的标签，切到那张图才更新圆点」）。
+        #
+        # 逐张路径虽然各自刷过一次，但那几次可能落在盘点之前/被扫描结果覆盖，
+        # 这里按最终磁盘状态再刷一遍是幂等的，成本只是一次 json 解析。
+        self._refresh_batch_rows(results)
         self._update_inference_buttons()
+
+    def _refresh_batch_rows(self, results):
+        """按磁盘最终状态刷新本轮涉及到的行的圆点，并同步当前图画布。
+
+        两件事：
+        - 圆点：对本轮每个 key 重新读盘判定状态。取消时后面那些没跑的图不在
+          `results` 里，自然不会被刷成「已标注」。
+        - 当前图画布：批量跑的是「当前图之后的若干张」，取消后用户往往还停在
+          当前图。`_apply_inference_to_current` 只在当前图是刚跑完那张时才被调到，
+          取消后缓存里有框、画布却还是旧的（用户报的「显示旧的框」）。这里
+          从缓存回灌一次，保证画布与内存一致。
+        """
+        refreshed = False
+        for key in list(results.keys()):
+            path = getattr(results[key], 'path', None)
+            if not path and 0 <= key < len(getattr(self, 'background_images', ()) or ()):
+                path = self.background_images[key]
+            if not path:
+                continue
+            self._refresh_background_item_status(key, path)
+            refreshed = True
+        if refreshed:
+            self._sync_current_boxes_from_cache()
+
+    def _sync_current_boxes_from_cache(self):
+        """把当前图的框从逐图缓存回灌到画布（数据集没换时）。
+
+        只在内存与缓存不一致时动，避免白白压一层撤销快照、也避免把用户
+        正在编辑的框冲掉。
+        """
+        if self._inference_dataset_changed():
+            return
+        if getattr(self, '_is_delete_view', False):
+            return
+        index = getattr(self, 'current_background_index', -1)
+        cache = getattr(self, 'detection_boxes_dict', None) or {}
+        if not (0 <= index < len(getattr(self, 'background_images', ()) or ())):
+            return
+        if index not in cache:
+            return
+        boxes = list(cache.get(index) or [])
+        if len(boxes) == len(self.detection_boxes or []):
+            return
+        self.detection_boxes = boxes
+        canvas = getattr(self, 'canvas', None)
+        if canvas is not None:
+            canvas.selected_box = None
+            canvas.selected_boxes = []
+            if hasattr(canvas, 'update_status_label'):
+                canvas.update_status_label()
+            canvas.update()
+        self.update_label_list()
 
     def _replace_mode(self):
         row = getattr(self, 'model_row', None)
@@ -685,6 +795,10 @@ class InferenceMixin:
             button = getattr(self, name, None)
             if button is not None:
                 button.setEnabled(ready)
+        # 张数范围的上限跟着数据集张数走，免得填出根本不存在的张号
+        sync = getattr(row, 'set_batch_to_range', None)
+        if callable(sync):
+            sync(len(getattr(self, 'background_images', None) or []))
 
     # ---------- 进度小窗 ----------
 

@@ -912,12 +912,21 @@ def test_detector_defaults_come_from_constants():
 
 
 def test_static_model_size_field_is_read_only():
-    """静态轴模型的尺寸由模型决定，输入框禁用，避免改了没效果。"""
+    """静态轴模型的尺寸由模型决定，整组「输入尺寸」直接不显示。
+
+    用户要求「静态模型直接不加载，动态的才显示」。只「禁用」不够：改不动的
+    输入框留在那儿，用户会反复去点它。这里连标签与 "x" 一起收起。
+    """
     src = inspect.getsource(InferenceMixin._on_model_loaded)
     assert "dynamic=" in src
     from pastelabel.ui.model_row import ModelRow
     row_src = inspect.getsource(ModelRow.set_model)
-    assert "setEnabled(dynamic)" in row_src
+    assert "set_size_fields_visible(bool(dynamic))" in row_src
+    # 隐藏必须覆盖标签与两个输入框，不能只藏一个
+    hide_src = inspect.getsource(ModelRow.set_size_fields_visible)
+    for name in ("size_lbl", "size_spin_w", "size_sep_label", "size_spin_h"):
+        assert name in hide_src, name
+    assert "setVisible" in hide_src
 
 
 def test_class_prompt_writes_txt_next_to_model(tmp_path):
