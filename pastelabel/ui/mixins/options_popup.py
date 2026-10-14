@@ -135,7 +135,7 @@ class OptionsPopupMixin:
         self.delete_empty_json_action.triggered.connect(
             self._on_delete_empty_json_menu_changed)
         self._menu_actions.append((self.delete_empty_json_action, None, None,
-                                   "画布清空时删除标注文件"))
+                                   "空标签文件删除"))
 
         self.options_btn.setMenu(self.options_menu)
         layout.addWidget(self.options_btn)
@@ -218,7 +218,7 @@ class OptionsPopupMixin:
             (tr("画布图片复制"), None, None, lambda: self._on_canvas_copy_menu_changed(not getattr(self, '_canvas_image_copy_enabled', False)), lambda: getattr(self, '_canvas_image_copy_enabled', False)),
             (tr("窗口放大器"), None, None, lambda: self._on_magnifier_menu_changed(not getattr(self, '_magnifier_enabled', False)), lambda: getattr(self, '_magnifier_enabled', False)),
             (tr("相对路径显示"), None, None, lambda: self._on_relative_path_menu_changed(not getattr(self, '_relative_path_display', False)), lambda: getattr(self, '_relative_path_display', False)),
-            (tr("画布清空时删除标注文件"), None, None, lambda: self._on_delete_empty_json_menu_changed(not getattr(self, '_delete_empty_json_on_switch', True)), lambda: getattr(self, '_delete_empty_json_on_switch', True)),
+            (tr("空标签文件删除"), None, None, lambda: self._on_delete_empty_json_menu_changed(not getattr(self, '_delete_empty_json_on_switch', True)), lambda: getattr(self, '_delete_empty_json_on_switch', True)),
         ]
         for text, shortcut_action, checkbox, handler, getter in items:
             button = QPushButton()
@@ -290,7 +290,7 @@ class OptionsPopupMixin:
             self._refresh_background_path_texts()
 
     def _on_delete_empty_json_menu_changed(self, checked):
-        """切换「画布清空时删除标注文件」。
+        """切换「空标签文件删除」。
 
         只改标志位，不删也不补任何已存在的 json：这是**切图时**的行为开关，
         下次切图才生效。否则一关掉就得凭空造出一堆空 json 才「一致」。

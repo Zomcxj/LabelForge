@@ -190,6 +190,13 @@ class SaveManager(QObject):
         画布被清空时（默认行为，可在「选项」里关掉）**删除**已存在的
         sidecar JSON：留着空 json 会让「这张图没标过」变成「这张图标过但
         一个标签都没有」，下游训练/统计都得额外分辨这两种情况。
+
+        判空以 **json 原文的 `shapes`** 为准，不看内存里的 `detection_boxes`。
+        内存状态会漏判两类真有内容的文件，而这是**删用户数据**：
+          1. 贴图写在 `canvas_items`，不进 `detection_boxes`；
+          2. 工具解析不出的 shape（如 `points` 为空的多边形）载入后不产生框。
+        两者都会让「非空 json」看起来像空画布。读原文则一律保留。
+        读不出来（损坏）也保留——无法证明为空时不删。
         """
         if self.editor._is_delete_view:
             return
@@ -206,9 +213,15 @@ class SaveManager(QObject):
             json_path = f"{os.path.splitext(orig_path)[0]}.json"
             has_boxes = bool(self.editor.detection_boxes)
             json_exists = os.path.exists(json_path)
-            if not has_boxes and json_exists:
+            if json_exists and not has_boxes and self._json_shapes_empty(json_path):
                 if getattr(self.editor, '_delete_empty_json_on_switch', True):
-                    self._delete_sidecar_json(json_path)
+                    if self._delete_sidecar_json(json_path):
+                        # 图标要跟着改，否则列表行还挂着「空标签」的橙色圆环，
+                        # 用户会以为没删掉。保存路径本来就有这一步。
+                        refresh = getattr(self.editor,
+                                          '_refresh_background_item_status', None)
+                        if callable(refresh):
+                            refresh(idx, orig_path)
                     return
                 # 开关关掉：维持旧行为，写一份空 json 覆盖
             # Has labels → save; never annotated → skip
@@ -230,8 +243,37 @@ class SaveManager(QObject):
             return
         self.save_json(*save_info)
 
+    @staticmethod
+    def _json_shapes_empty(json_path):
+        """sidecar json 的 `shapes` 是否确实为空（可以安全删除）。
+
+        只有**读成功且 `shapes` 是非空列表以外的东西**才算空。以下情况一律
+        返回 False（= 不删），因为无法证明它没有内容：
+        - 文件读不出来 / 不是合法 JSON；
+        - 顶层不是对象，或没有 `shapes` 键；
+        - `shapes` 不是列表。
+
+        注意 `shapes: []`（真正的空标签）返回 True，而 `shapes` 里有任何
+        条目（含贴图、含解析不出的 shape）都返回 False。
+        """
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return False
+        if not isinstance(data, dict):
+            return False
+        if 'shapes' not in data:
+            return False
+        shapes = data['shapes']
+        if not isinstance(shapes, list):
+            return False
+        return len(shapes) == 0
+
     def _delete_sidecar_json(self, json_path):
         """删除空的 sidecar JSON；失败只记日志，不打断切图。
+
+        返回是否真的删掉了（调用方据此决定要不要刷新列表图标）。
 
         切图是高频动作，删不掉（只读盘、被占用）也不该弹窗拦住用户；
         下次切回来若仍是空画布还会再试一次。
@@ -241,6 +283,8 @@ class SaveManager(QObject):
         except OSError as exc:
             from ..core.exception_hook import _write_log
             _write_log(f"删除空标注 JSON 失败：{json_path}：{exc}")
+            return False
+        return True
     
     def save_all_canvas(self):
         """保存所有画布"""
