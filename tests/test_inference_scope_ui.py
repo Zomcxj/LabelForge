@@ -373,10 +373,11 @@ print(p.ok_btn.isEnabled())
 
 
 def test_real_scope_panel_shows_controls_per_mode():
-    """真实控件：滑窗参数控件**始终显示**，区域按钮只在区域模式显示。
+    """真实控件：三段的控件**始终显示**，能不能改由选中哪段决定。
 
-    用户要求「滑窗参数打开窗口就要存在」——参数区不再随模式显隐，一打开面板
-    就能看到当前窗口尺寸与模板。能不能改仍由模式决定（见下一条用例）。
+    用户要求「滑窗参数打开窗口就要存在」+「还在一个窗口，补全内容，分割一下」
+    ——参数区与区域明细都不再随模式显隐，一打开面板就能看到三段各自的内容
+    （当前窗口尺寸/模板、区域条数与明细）。可编辑性仍由模式决定。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -393,15 +394,16 @@ for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
     app.processEvents()
     # 用 isVisible()（会连带看父控件）而不是 isHidden()：子控件没有单独
     # 隐藏过时 isHidden() 恒为 False，断言会变成空转。
-    print(mode, p.window_params.isVisible(), p.region_btn.isVisible())
+    print(mode, p.window_params.isVisible(), p.region_btn.isVisible(),
+          p.region_list.isVisible())
 # 面板本身必须是非模态的：否则弹窗开着时画布收不到鼠标事件，「就地画区域」失效
 print(p.isModal())
 """)
     lines = _lines(out)
-    # 参数区三种模式都在（「打开窗口就要存在」）
-    assert lines[0] == "full True False", lines[0]
-    assert lines[1] == "window True False", lines[1]
-    assert lines[2] == "roi True True", lines[2]
+    # 三段的控件三种模式下都可见（「全部显示各自内容」）
+    assert lines[0] == "full True True True", lines[0]
+    assert lines[1] == "window True True True", lines[1]
+    assert lines[2] == "roi True True True", lines[2]
     assert lines[3] == "False", lines[3]
 
 
@@ -1475,9 +1477,11 @@ from pastelabel.ui.scope_panel import ScopePanel
 
 app = QApplication([])
 avail = app.primaryScreen().availableGeometry()
-# 左侧锚点：给 440px 弹窗留得下，钳制不会介入
+# 左侧锚点：给 440px 弹窗留得下，钳制不会介入。
+# 高度要够：面板分三段后变高了（offscreen 屏只有 800x600），锚点太矮的话
+# 「竖直居中」会把弹窗顶到屏幕外、被钳回顶部，测的就不是居中了。
 anchor = QRect(avail.left() + 10, avail.top() + 30, 350,
-               min(400, avail.height() - 40))
+               max(200, avail.height() - 60))
 host = QWidget()
 host.resize(avail.width(), avail.height())
 host.show()
@@ -2791,3 +2795,149 @@ print(w.spec()["min_visible"])
     lines = _lines(out)
     assert lines[0] == "70", f"旧配置应退回 70%%：{lines[0]}"
     assert lines[1] == "0.7", f"坏值应退回默认而不是崩：{lines[1]}"
+
+
+# ---------- ② 三段分区：各自显示自己的内容 ----------
+
+def test_real_panel_shows_all_three_sections_with_their_contents():
+    """三段（全图/滑窗/区域）在同一个窗口里，且各自的内容都显示。
+
+    用户要求「还在一个窗口，补全内容，分割一下」：不拆成多个弹窗，但要分成
+    三块、每块显示自己的东西。未选中的段**置灰而不是隐藏**，这样用户一眼
+    能看到另外两种模式当前的参数/区域，不用来回切。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_FULL
+
+app = QApplication([])
+p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
+               reference_size=(3840, 2160), region_count=1)
+p.set_regions([{'x': 0, 'y': 0, 'width': 100, 'height': 100}])
+p.set_mode(MODE_FULL)
+p.show()
+app.processEvents()
+print(len(p.sections))
+# 三段各自的内容都要在（不是整块显隐）
+print(p.window_params.isVisibleTo(p))
+print(p.region_btn.isVisibleTo(p))
+print(p.region_list.isVisibleTo(p))
+# 未选中的段置灰
+print(p.window_params.isEnabled())
+print(p.region_btn.isEnabled())
+""")
+    lines = _lines(out)
+    assert lines[0] == "3", f"不是三段：{lines[0]}"
+    assert lines[1:4] == ["True", "True", "True"], (
+        f"未选中段的控件被藏起来了，用户要求「全部显示各自内容」：{lines}")
+    assert lines[4:6] == ["False", "False"], (
+        f"未选中段的控件该置灰：{lines}")
+
+
+def test_real_panel_sections_track_the_selected_mode():
+    """选中哪段，那段就可编辑，其余置灰。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_WINDOW, MODE_ROI
+
+app = QApplication([])
+p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
+               reference_size=(3840, 2160), region_count=1)
+p.set_regions([{'x': 0, 'y': 0, 'width': 100, 'height': 100}])
+p.set_mode(MODE_WINDOW)
+p.show()
+app.processEvents()
+print(p.window_params.isEnabled(), p.region_btn.isEnabled())
+p.set_mode(MODE_ROI)
+app.processEvents()
+print(p.window_params.isEnabled(), p.region_btn.isEnabled())
+""")
+    lines = _lines(out)
+    assert lines[0] == "True False", f"选中滑窗时该只有滑窗可编辑：{lines[0]}"
+    assert lines[1] == "False True", f"选中区域时该只有区域可编辑：{lines[1]}"
+
+
+def test_real_panel_sections_are_grouped_in_three_blocks():
+    """`sections` 给的是三个真实控件，且分别装着各自的内容。
+
+    只判数量会漏掉「三段其实指着同一个控件」这种错，所以顺带核对每段
+    确实包含自己那份内容。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+
+app = QApplication([])
+p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
+               reference_size=(3840, 2160), region_count=1)
+p.set_regions([{'x': 0, 'y': 0, 'width': 100, 'height': 100}])
+p.show()
+app.processEvents()
+secs = p.sections
+ids = sorted(id(w) for w in secs.values())
+print(len(secs), len(set(ids)))
+
+def inside(widget, target):
+    # target 是否在 widget 这棵子树里（用 isAncestorOf，不看名字）
+    return widget is target or widget.isAncestorOf(target)
+
+# 滑窗参数必须在**滑窗**段里；区域按钮必须在**区域**段里。
+# 不能写成 any(...)：那样两样东西挤在同一段也会通过。
+print(inside(secs['window'], p.window_params))
+print(inside(secs['roi'], p.region_btn))
+print(inside(secs['roi'], p.region_list))
+# 并且**不该**跑到别人家里去
+print(inside(secs['window'], p.region_btn))
+print(inside(secs['roi'], p.window_params))
+# 单选项分布在各自段里，但每段的内容体才是可禁用对象
+print(inside(secs['full'], p._buttons['full']))
+print(inside(secs['window'], p._buttons['window']))
+print(inside(secs['roi'], p._buttons['roi']))
+""")
+    lines = _lines(out)
+    assert lines[0] == "3 3", f"三段不是三个不同控件：{lines[0]}"
+    assert lines[1] == "True", "滑窗参数不在「滑窗」段里"
+    assert lines[2] == "True", "编辑区域按钮不在「区域」段里"
+    assert lines[3] == "True", "区域明细不在「区域」段里"
+    assert lines[4] == "False", "编辑区域按钮跑进了「滑窗」段"
+    assert lines[5] == "False", "滑窗参数跑进了「区域」段"
+    assert lines[6:9] == ["True", "True", "True"], (
+        f"三个模式按钮没有分列在各自段里：{lines[6:9]}")
+
+
+def test_real_panel_section_titles_follow_the_language():
+    """切语言后三段的**标题**也要跟着变，不能只换按钮文字。
+
+    段标题是 `QGroupBox.setTitle()` 设的，与 `QRadioButton.setText()` 是两套
+    东西；只改按钮不改标题的话，中文界面里段标题会留着上一门语言。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.ui import i18n
+
+app = QApplication([])
+p = ScopePanel()
+p.show()
+app.processEvents()
+
+i18n.set_lang("zh")
+p.retranslate()
+app.processEvents()
+print([p.sections[m].title() for m in ("full", "window", "roi")])
+
+i18n.set_lang("en")
+p.retranslate()
+app.processEvents()
+print([p.sections[m].title() for m in ("full", "window", "roi")])
+# 标题与按钮文字必须一致（同一门语言）
+print(all(p.sections[m].title() == p._buttons[m].text()
+          for m in ("full", "window", "roi")))
+""")
+    lines = _lines(out)
+    assert lines[0] == "['全图', '滑窗', '区域']", lines[0]
+    assert lines[1] == "['Full image', 'Sliding window', 'Regions']", (
+        f"切到英文后段标题没跟着变：{lines[1]}")
+    assert lines[2] == "True", "段标题与按钮文字不是同一门语言"

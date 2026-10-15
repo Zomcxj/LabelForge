@@ -17,8 +17,8 @@
 """
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
-    QRadioButton, QVBoxLayout, QWidget,
+    QDialog, QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+    QPushButton, QRadioButton, QVBoxLayout, QWidget,
 )
 
 from ..engine.inference_scope import (
@@ -72,8 +72,24 @@ class ScopePanel(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(6)
 
+        # 三段（全图/滑窗/区域）都在**同一个窗口**里，不拆弹窗；但各自有自己
+        # 的分组框，选中的那段可编辑、其余置灰。用户要求「还在一个窗口，补全
+        # 内容，分割一下」+「全部显示各自内容」——所以用置灰而不是隐藏，用户
+        # 一眼能看到另外两种模式当前的参数/区域，不必来回切换核对。
+        #
+        # 每段拆成「标题行 + 内容体」两部分：`setEnabled` 只作用于**内容体**。
+        # 整段禁用会连标题行里的单选按钮一起点不动，用户就切不过去了
+        # （整段禁用时点别的模式没反应）——所以按钮必须一直可点。
         self._buttons = {}
+        self.sections = {}
+        self._section_bodies = {}
+
         for mode, name, hint in _MODE_KEYS:
+            section = QGroupBox(tr(name))
+            section.setObjectName("scopeSection")
+            section_layout = QVBoxLayout(section)
+            section_layout.setSpacing(6)
+
             row = QHBoxLayout()
             button = QRadioButton(tr(name))
             button.setObjectName("scopeMode")
@@ -84,15 +100,23 @@ class ScopePanel(QDialog):
             label.setObjectName("scopeHint")
             row.addWidget(label)
             row.addStretch()
-            layout.addLayout(row)
+            section_layout.addLayout(row)
 
-        layout.addSpacing(4)
+            body = QWidget()
+            body.setObjectName("scopeSectionBody")
+            body_layout = QVBoxLayout(body)
+            body_layout.setContentsMargins(0, 0, 0, 0)
+            body_layout.setSpacing(6)
+            section_layout.addWidget(body)
+            self._section_bodies[mode] = body
 
-        # 滑窗参数内嵌（只有滑窗模式可见）：点「滑窗」就在同一处调参，
-        # 不再弹第二个窗口。
+            self.sections[mode] = section
+            layout.addWidget(section)
+
+        # 滑窗参数内嵌（不再弹第二个窗口）：点「滑窗」就在同一处调参。
         self.window_params = WindowParamsWidget(
             reference_size=self._reference, spec=self._windows)
-        layout.addWidget(self.window_params)
+        self._section_bodies[MODE_WINDOW].layout().addWidget(self.window_params)
 
         row = QHBoxLayout()
         self.region_label = QLabel("")
@@ -104,7 +128,7 @@ class ScopePanel(QDialog):
         self.region_btn.setToolTip(tr("在图上拖动即可添加区域，不切换模式"))
         self.region_btn.clicked.connect(self.edit_regions_requested.emit)
         row.addWidget(self.region_btn)
-        layout.addLayout(row)
+        self._section_bodies[MODE_ROI].layout().addLayout(row)
 
         # 已画区域的明细：每条显示坐标 + 尺寸，右侧带删除按钮。用户要求
         # 「区域画完后在推理范围窗口显示该框的坐标 加一个删除按钮」——
@@ -114,7 +138,7 @@ class ScopePanel(QDialog):
         self.region_list.setMaximumHeight(110)
         self.region_list.setSelectionMode(QListWidget.NoSelection)
         self.region_list.setFocusPolicy(Qt.NoFocus)
-        layout.addWidget(self.region_list)
+        self._section_bodies[MODE_ROI].layout().addWidget(self.region_list)
 
         self.warn_label = QLabel("")
         self.warn_label.setObjectName("scopeWarn")
@@ -148,6 +172,17 @@ class ScopePanel(QDialog):
             QLabel {{ color: {theme['text_primary']}; }}
             QLabel#scopeHint {{ color: {theme['text_secondary']}; }}
             QLabel#scopeWarn {{ color: {theme['accent']}; }}
+            /* 三段分组框：一眼分得清全图/滑窗/区域各自的内容。置灰时
+               Qt 会自动把标题和内容一起变淡，不需要额外的禁用配色。 */
+            QGroupBox#scopeSection {{
+                border: 1px solid {theme['border_color']}; border-radius: 4px;
+                margin-top: 8px; padding: 8px 6px 6px 6px;
+                color: {theme['text_primary']};
+            }}
+            QGroupBox#scopeSection::title {{
+                subcontrol-origin: margin; left: 8px; padding: 0 3px;
+                color: {theme['text_secondary']};
+            }}
             QRadioButton {{ color: {theme['text_primary']}; padding: 2px; }}
             QPushButton {{
                 background-color: {theme['panel_bg']}; color: {theme['text_primary']};
@@ -185,29 +220,51 @@ class ScopePanel(QDialog):
                 return mode
         return MODE_FULL
 
-    def _on_mode_toggled(self, _checked=False):
+    def _on_mode_toggled(self, checked=False):
         """把三个模式按钮维持成「单选」。
 
-        不能依赖 QRadioButton 的自动互斥：它只在**同一个父控件**内生效，而这里
-        每个按钮各自放进一行布局、父控件不同，于是多个按钮能同时选中，
-        `mode()` 只会返回字典序里第一个选中项（永远是「全图」），切到滑窗/区域
-        会静默失效。
+        不能依赖 QRadioButton 的自动互斥：它只在**同一个父控件**内生效。原先
+        三个按钮各占一行、父控件不同就已经不自动互斥了；改成三段分组框后更是
+        各在各自的 `QGroupBox` 里，互斥彻底失效。
 
         也不用 QButtonGroup：本项目的 PyQt5 在某些导入路径下 `QtWidgets` 是
         半初始化模块（`QButtonGroup` 取不到），显式写反而更稳。
+
+        这里**不能**按「保留 checked[0]、清掉其余」来写：`checked` 是按字典序
+        （full, window, roi）收集的，从「滑窗」点「区域」时得到
+        `['window', 'roi']`，清掉 `checked[1:]` 正好把用户刚点的那个清掉，
+        表现为「点了没反应」。所以要以**信号带进来的那个按钮**为准：
+        它 `checked=True` 时就保留它、取消其余；它变回 `False`（用户把当前项
+        又点了一下）时兜底回「全图」，保证任何时候恰好有一个选中项。
         """
-        checked = [m for m, b in self._buttons.items() if b.isChecked()]
-        # 用户可能把当前项再点一次（QRadioButton 默认不允许取消，这里兜底），
-        # 保证任何时候恰好有一个选中项。
-        if not checked:
-            self._buttons[MODE_FULL].setChecked(True)
+        source = self.sender()
+        if checked and source is not None:
+            self._keep_only(source)
             return
-        if len(checked) > 1:
-            for mode in checked[1:]:
-                button = self._buttons[mode]
-                button.blockSignals(True)
-                button.setChecked(False)
-                button.blockSignals(False)
+        # 没有 source（直接调用、测试里模拟）或按钮被取消选中：按字典序兜底
+        if not checked and source is None:
+            self._keep_only(self._buttons.get(self._selected_mode())
+                            or self._buttons[MODE_FULL])
+            return
+        self._keep_only(self._buttons[MODE_FULL])
+
+    def _selected_mode(self):
+        """当前选中的模式（按字典序取第一个选中项）。"""
+        for mode, button in self._buttons.items():
+            if button.isChecked():
+                return mode
+        return None
+
+    def _keep_only(self, button):
+        """只让 `button` 保持选中，其余一律取消。"""
+        for other in self._buttons.values():
+            if other is button or not other.isChecked():
+                continue
+            other.blockSignals(True)
+            other.setChecked(False)
+            other.blockSignals(False)
+        if not button.isChecked():
+            button.setChecked(True)
         self._refresh()
 
     def set_mode(self, mode):
@@ -323,19 +380,14 @@ class ScopePanel(QDialog):
         mode = self.mode()
         needs_window = mode == MODE_WINDOW
         needs_region = mode == MODE_ROI
-        # 参数控件**始终可见**：用户要求「打开窗口它就要存在」，一打开面板就能
-        # 看到这次用的是多大的窗口、有几个模板，不必先切到滑窗再回来核对。
-        self.window_params.setVisible(True)
-        # 但只有选中「滑窗」时才可编辑：用户要求「未选中滑窗就无法编辑」。
-        # 显示但置灰——既能看到当前值，又点不动、改不了。
+        # 三段始终可见、各自显示自己的内容（用户要求「全部显示各自内容」），
+        # 只有选中那段可编辑、其余置灰——置灰既能看到当前值又改不动。
+        for _mode, body in self._section_bodies.items():
+            body.setEnabled(_mode == mode)
+        # 组框的 `setEnabled(False)` 会连带禁用里面的输入框，所以滑窗参数
+        # 不必再单独 `set_editable`：未选中滑窗时那段的内容体就是灰的。
         self.window_params.set_editable(needs_window)
-        self.region_btn.setVisible(needs_region)
-        self.region_label.setVisible(needs_region)
         self.region_label.setText(f"{self._region_count} {tr('个区域')}")
-        # 区域明细只在选中「区域」时显示（与按钮同步）
-        self.region_list.setVisible(needs_region)
-        # 区域按钮也只有在选中「区域」时可用（与滑窗参数对称）
-        self.region_btn.setEnabled(needs_region)
 
         warnings = []
         if needs_region and not self._region_count:
@@ -359,6 +411,8 @@ class ScopePanel(QDialog):
         self.setWindowTitle(tr("推理范围"))
         for mode, name, hint in _MODE_KEYS:
             self._buttons[mode].setText(tr(name))
+            # 段标题也要跟着切，否则中文界面下段标题还是上一门语言
+            self.sections[mode].setTitle(tr(name))
         self.ok_btn.setText(tr("确定"))
         self.cancel_btn.setText(tr("取消"))
         self.region_btn.setText(tr("编辑区域"))
