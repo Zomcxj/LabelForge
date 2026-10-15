@@ -40,16 +40,21 @@ class FakeList:
 
 
 class FakeCanvas:
-    def __init__(self):
-        self.selected_box = 'x'
-        self.selected_boxes = ['x']
-    
+    """画布替身：选中项用**真下标**（旧的那版塞的是字符串 'x'，
+    没法拿来索引 detection_boxes，一测就露馅）。"""
+
+    def __init__(self, selected_box=None, selected_boxes=None):
+        self.selected_box = selected_box
+        self.selected_boxes = list(selected_boxes or [])
+        self.updated = 0
+
     def update(self):
-        pass
+        self.updated += 1
 
 
 class FakeEditor:
-    def __init__(self, selected, boxes, mode='stats'):
+    def __init__(self, selected, boxes, mode='stats',
+                 canvas_selected_box=None, canvas_selected_boxes=None):
         self.label_list = FakeList(selected)
         self.background_list = FakeList([])
         self._bg_label_list_mode = mode
@@ -58,7 +63,7 @@ class FakeEditor:
         self.global_labels = {b['label'] for b in boxes}
         self.background_images = ['a.png']
         self.current_background_index = 0
-        self.canvas = FakeCanvas()
+        self.canvas = FakeCanvas(canvas_selected_box, canvas_selected_boxes)
         self.saved = []
     
     def update_label_list(self):
@@ -178,7 +183,13 @@ def test_all_mode_deletes_only_the_selected_box():
     assert editor.global_labels == {'cat'}
 
 
-def test_no_selection_is_a_noop(monkeypatch):
+def test_no_selection_now_deletes_the_whole_image(monkeypatch):
+    """① 空选区**不再是无操作**：改成删当前图全部标签框。
+
+    这条原先是 `test_no_selection_is_a_noop`，钉的是「没选中就什么都不做」。
+    用户明确要求「支持焦点在画布上就能删除」，所以旧契约被推翻、改成新契约。
+    仍然要保证不弹确认框。
+    """
     import pastelabel.engine.label_manager as lm
     calls = []
     monkeypatch.setattr(lm.dialog_helpers, "question",
@@ -187,8 +198,9 @@ def test_no_selection_is_a_noop(monkeypatch):
     editor = FakeEditor([], [{'label': 'cat', 'x': 0, 'y': 0, 'width': 1, 'height': 1}])
     _manager(editor).delete_selected_label()
 
-    assert calls == []
-    assert len(editor.detection_boxes) == 1
+    assert calls == [], "快捷键删除不该弹确认框"
+    assert editor.detection_boxes == [], (
+        "焦点在画布上却没删掉标签框（用户报的就是这个）")
 
 
 def test_deleted_label_is_written_back_to_json():
@@ -233,3 +245,83 @@ def test_shortcut_and_menu_have_different_scope():
     # 快捷键不调用 _delete_label_from_item（独立实现）
     delete_selected_src = source.split("def delete_selected_label(self)")[1].split("\n    def ")[0]
     assert "_delete_label_from_item" not in delete_selected_src
+
+
+# ---------- ① 焦点在画布上也能删（不再要求先选中侧栏项）----------
+
+def test_canvas_focus_deletes_all_boxes_when_nothing_is_selected():
+    """① 画布上有焦点、侧栏一个都没选中时，Ctrl+Shift+Z 删掉**当前图全部**标签框。
+
+    用户要求「要选中一个才能删除」改成「支持焦点在画布上就能删除」——
+    原判据是 `label_list.selectedItems()` 为空就直接 return，于是焦点明明在
+    画布上、快捷键也照常送达（QShortcut 与焦点无关），却什么都不发生。
+    """
+    editor = FakeEditor([], [
+        {'label': 'cat', 'x': 0, 'y': 0, 'width': 1, 'height': 1},
+        {'label': 'dog', 'x': 5, 'y': 5, 'width': 1, 'height': 1},
+    ])
+    _manager(editor).delete_selected_label()
+
+    assert editor.detection_boxes == [], "画布焦点下没能删掉全部标签框"
+
+
+def test_canvas_focus_writeback_and_selection_reset():
+    """① 画布焦点删除后：缓存同步、清选中态、落盘、发信号——与选中项路径一致。"""
+    editor = FakeEditor([], [
+        {'label': 'cat', 'x': 0, 'y': 0, 'width': 1, 'height': 1},
+    ])
+    _manager(editor).delete_selected_label()
+
+    assert editor.detection_boxes_dict[0] == []
+    assert editor.canvas.selected_box is None
+    assert editor.canvas.selected_boxes == []
+    assert editor.saved == [0], "画布焦点删除也必须落盘"
+    assert editor.global_labels == set(), "没有任何框在用，全局标签应清掉"
+
+
+def test_canvas_selection_takes_precedence_over_sidebar_selection():
+    """① 画布上选中了具体的框时，只删**选中的那些**，不是删全部。
+
+    这是「焦点在画布上就能删」与「先选中一个再删」的合流：画布选中了就用
+    画布的选择（对齐标注员的直觉——选哪删哪），画布没选中才删全部。
+    """
+    editor = FakeEditor(
+        [FakeItem('cat')],   # 侧栏选中的是 cat
+        [{'label': 'cat', 'x': 0, 'y': 0, 'width': 1, 'height': 1},
+         {'label': 'dog', 'x': 5, 'y': 5, 'width': 1, 'height': 1}],
+        canvas_selected_box=1,      # 画布上选中的是第 1 个（dog）
+        canvas_selected_boxes=[1],
+    )
+    _manager(editor).delete_selected_label()
+
+    remaining = [b['label'] for b in editor.detection_boxes]
+    assert remaining == ['cat'], f"应当只删画布选中的那个 dog：{remaining}"
+
+
+def test_multi_canvas_selection_deletes_every_selected_box():
+    """① 画布上多选（框选）时，选中的那几个全删掉，其余保留。"""
+    editor = FakeEditor(
+        [],
+        [{'label': 'a', 'x': 0, 'y': 0, 'width': 1, 'height': 1},
+         {'label': 'b', 'x': 2, 'y': 0, 'width': 1, 'height': 1},
+         {'label': 'c', 'x': 4, 'y': 0, 'width': 1, 'height': 1}],
+        canvas_selected_boxes=[0, 2],
+    )
+    _manager(editor).delete_selected_label()
+
+    remaining = [b['label'] for b in editor.detection_boxes]
+    assert remaining == ['b'], f"应当只留下未选中的 b：{remaining}"
+
+
+def test_out_of_range_canvas_selection_does_not_crash():
+    """① 画布选中项越界（列表刚被换过）时不能崩，也不能误删。
+
+    切图/重新推理会重建 `detection_boxes`，而 `selected_box` 可能还停在旧
+    下标上。这种脏状态下按快捷键必须安静地什么都不做。
+    """
+    editor = FakeEditor([], [
+        {'label': 'cat', 'x': 0, 'y': 0, 'width': 1, 'height': 1},
+    ], canvas_selected_box=99, canvas_selected_boxes=[99])
+    _manager(editor).delete_selected_label()
+
+    assert len(editor.detection_boxes) == 1, "越界的选中项不该删掉任何东西"

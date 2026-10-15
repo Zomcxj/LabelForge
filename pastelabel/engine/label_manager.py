@@ -248,15 +248,47 @@ class LabelManager(QObject):
         self.rename_detection_label(old_label, new_label, rewrite_disk=True)
     
     def delete_selected_label(self):
-        """快捷键删除选中标签（不弹确认框）。all 删单框，stats 只删当前图该标签所有框。"""
+        """快捷键删除标签（不弹确认框）。
+
+        删除范围按「哪儿的选区更具体」决定：
+        - **画布上选中了框** → 只删那几个框（选哪删哪）；
+        - **侧栏标签列表选中了某项** → 沿用原来的语义：`all` 模式删那一行对应
+          的单个框，`stats` 模式删当前图里该标签的全部框；
+        - **都没选**（焦点就在画布上但没点框）→ 删掉**当前图全部**标签框。
+
+        用户要求「要选中一个才能删除」改成「支持焦点在画布上就能删除」：原来
+        一上来就问 `label_list.selectedItems()`、空就直接 return，于是焦点明明
+        在画布上、快捷键也照常送达（`QShortcut` 本来就不受焦点影响），却什么都
+        不发生。
+        """
         selected_items = self.editor.label_list.selectedItems()
-        if not selected_items:
+        canvas_selection = self._canvas_selection_state()
+
+        current_index = self.editor.current_background_index
+
+        if canvas_selection == "valid":
+            keep = [
+                box for index, box in enumerate(self.editor.detection_boxes)
+                if index not in self._canvas_selected_box_indexes()
+            ]
+            self.editor.detection_boxes = keep
+            self._finish_label_delete(current_index)
             return
+        if canvas_selection == "stale":
+            # 画布上「看着像选中了」但下标全是脏的（切图/重推理后残留）：
+            # 这种状态下**什么都不做**，否则会以「没选中」为由删光整图的框。
+            return
+
+        if not selected_items:
+            # 焦点在画布上、什么都没选 → 删当前图全部
+            self.editor.detection_boxes = []
+            self._finish_label_delete(current_index)
+            return
+
         item = selected_items[0]
         label_to_delete = extract_label_name(item.text())
         mode = getattr(self.editor, '_bg_label_list_mode', 'stats')
         box_index = item.data(0x0100) if hasattr(item, 'data') else None
-        current_index = self.editor.current_background_index
 
         if mode == 'all' and isinstance(box_index, int):
             if not (0 <= box_index < len(self.editor.detection_boxes)):
@@ -267,17 +299,66 @@ class LabelManager(QObject):
                 box for box in self.editor.detection_boxes
                 if box.get("label") != label_to_delete
             ]
+        self._finish_label_delete(current_index, label_to_delete)
 
+    def _canvas_selected_box_indexes(self):
+        """画布上选中的框下标集合（只收合法整数下标）。"""
+        canvas = getattr(self.editor, 'canvas', None)
+        if canvas is None:
+            return set()
+        raw = self._canvas_raw_selection()
+        total = len(getattr(self.editor, 'detection_boxes', None) or [])
+        return {i for i in raw if isinstance(i, int) and 0 <= i < total}
+
+    def _canvas_raw_selection(self):
+        """画布上报的选中项**原样**（不筛合法性）。"""
+        canvas = getattr(self.editor, 'canvas', None)
+        if canvas is None:
+            return []
+        raw = list(getattr(canvas, 'selected_boxes', None) or [])
+        single = getattr(canvas, 'selected_box', None)
+        if single is not None and single not in raw:
+            raw.append(single)
+        return raw
+
+    def _canvas_selection_state(self):
+        """画布的选中状况：`none` / `valid` / `stale`。
+
+        - `none`：画布上没有任何选中迹象；
+        - `valid`：至少有**一个合法下标**可用（就按它删）；
+        - `stale`：有选中迹象但一个合法下标都没有（切图/重推理后残留旧下标）。
+          `stale` 必须与 `none` 区分：混为一谈会以「没选中」为由删光整图。
+        """
+        raw = self._canvas_raw_selection()
+        if not raw:
+            return "none"
+        return "valid" if self._canvas_selected_box_indexes() else "stale"
+
+    def _finish_label_delete(self, current_index, label_to_delete=None):
+        """删除后的收尾：缓存同步、清选中态、全局标签清理、落盘、发信号。
+
+        画布焦点与侧栏选中两条路径共用这一段，免得分头维护后行为不一致
+        （尤其「落盘」漏了的话，切图会把删掉的框又读回来）。
+        """
         if current_index >= 0:
             self.editor.detection_boxes_dict[current_index] = \
                 list(self.editor.detection_boxes)
-        still_used = any(
-            box.get("label") == label_to_delete
-            for boxes in self.editor.detection_boxes_dict.values()
-            for box in boxes
-        )
-        if not still_used and label_to_delete in self.editor.global_labels:
-            self.editor.global_labels.discard(label_to_delete)
+        if label_to_delete is not None:
+            still_used = any(
+                box.get("label") == label_to_delete
+                for boxes in self.editor.detection_boxes_dict.values()
+                for box in boxes
+            )
+            if not still_used and label_to_delete in self.editor.global_labels:
+                self.editor.global_labels.discard(label_to_delete)
+        else:
+            # 删了当前图的全部框，但别的图可能还在用，只能按「还在不在用」清
+            used = {
+                box.get("label")
+                for boxes in self.editor.detection_boxes_dict.values()
+                for box in boxes
+            }
+            self.editor.global_labels &= used
         self.editor.canvas.selected_box = None
         self.editor.canvas.selected_boxes = []
         if current_index >= 0:
