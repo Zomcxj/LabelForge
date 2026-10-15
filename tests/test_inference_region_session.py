@@ -240,8 +240,14 @@ print(len(editor.region_boxes))
     assert lines[2] == "0", lines[2]
 
 
-def test_session_right_click_ends_session():
-    """会话内右键：取消当前这一个区域并结束会话。"""
+def test_session_right_click_cancels_current_region_and_keeps_session():
+    """会话内右键：只取消**当前这一个**区域，会话继续（还能接着画）。
+
+    这是 ② 的核心：用户要求「删除编辑区域按钮，直接选中后就编辑」——选中
+    「区域」即进入可编辑态、可连续画多个。原来右键会把整个会话一起收掉
+    （`end_region_session()`），于是「画完一个就再也画不了第二个」，正是用户
+    报的「只能画一个」。
+    """
     out = _run_real_qt(_HOST + """
 canvas.begin_region_session()
 canvas._handle_region_press(img_to_canvas(50, 50))
@@ -250,12 +256,18 @@ press(50, 50, Qt.RightButton)
 print(canvas.region_session_active())
 print(canvas.draw_start_pos is None)
 print(len(editor.region_boxes))
+# 会话还在：接着按下仍能起一个新区域
+canvas._handle_region_press(img_to_canvas(120, 120))
+print(canvas.draw_start_pos is not None)
 """)
     lines = _lines(out)
     assert lines[0] == "True", lines[0]
-    assert lines[1] == "False", lines[1]
+    assert lines[1] == "True", (
+        f"右键把整个会话收掉了——那样就「只能画一个」：{lines[1]}")
     assert lines[2] == "True", lines[2]
     assert lines[3] == "0", lines[3]
+    assert lines[4] == "True", (
+        f"右键之后画不了下一个区域了：{lines[4]}")
 
 
 def test_session_end_resets_drawing_state():

@@ -86,8 +86,10 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             return
 
         if self.region_session_active():
-            # 会话内：左键优先去画区域，包括按在已有检测框/贴图上——否则
-            # 用户想框一块区域时会被「拖走了一个标注框」抢掉。
+            # 会话内：优先**调整已有区域**（顶点/手柄→缩放，内部→拖动），
+            # 没碰到任何已有区域才去画新的。顺序很关键：用户要求「选中区域
+            # 就直接能编辑」，按下时若不去试已有区域，每个左键都会变成
+            # 「再画一个」，已有区域就再也挪不动/改不了大小了。
             self._drag_out_pending = False
             if getattr(self, 'is_drawing_region_polygon', False):
                 if event.button() == Qt.LeftButton:
@@ -96,11 +98,12 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                     self._prompt_finish_region_polygon()
                 return
             if event.button() == Qt.LeftButton:
-                self._handle_region_press(mouse_pos)
+                if not self._handle_region_click(mouse_pos):
+                    # 没抓到已有区域 → 画一个新的（会话可持续画多个）
+                    self._handle_region_press(mouse_pos)
             elif event.button() == Qt.RightButton:
-                # 右键 = 取消当前这一个 + 结束会话
+                # 右键 = 只取消当前这一个（会话继续，接着还能画下一个）
                 self._cancel_region_drawing()
-                self.end_region_session()
             return
 
         if getattr(self, 'is_drawing_region', False):
@@ -811,7 +814,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             self.update()
             return
 
-        if getattr(self, 'is_drawing_region', False):
+        if getattr(self, 'is_drawing_region', False) and not (
+                self.is_dragging_region or self.is_resizing_region
+                or self.is_dragging_region_vertex):
             if self.draw_start_pos is not None:
                 bg_rect = self.get_background_rect()
                 if bg_rect:
