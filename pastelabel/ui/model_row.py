@@ -81,7 +81,7 @@ class ModelRow(QWidget):
         self.iou_spin.valueChanged.connect(self._emit_thresholds)
         layout.addWidget(self.iou_spin)
 
-        self._add_param_separator(layout)
+        self._size_sep_before = self._add_param_separator(layout)
 
         # 输入尺寸只对**动态轴**模型有意义（静态轴模型的尺寸由模型自身决定）。
         # 静态模型下整组控件（标签 + 两个输入框 + "x"）直接不显示，而不是
@@ -103,7 +103,7 @@ class ModelRow(QWidget):
         self.size_spin_h.valueChanged.connect(self._emit_size)
         layout.addWidget(self.size_spin_h)
 
-        self._add_param_separator(layout)
+        self._size_sep_after = self._add_param_separator(layout)
 
         # 与其他工具栏按钮同一套样式（optionsBtn），选中态由主题的 :checked 规则给出
         self.replace_btn = QPushButton()
@@ -253,10 +253,16 @@ class ModelRow(QWidget):
         """整组「输入尺寸」控件的显隐（含标签与 "x"）。
 
         隐藏而不是禁用：静态模型的尺寸不可改，留着只会误导。
+
+        两侧的分隔符跟着一起藏**掉一个**：这组如果看不见，它左右那两条 `-`
+        就会挨在一起，显示成 `NMS [0.45] - - 覆盖`，看着像多打了一个。
+        组收起时只留左边那条，于是读起来仍是「… NMS - 覆盖 …」。
         """
         for widget in (self.size_lbl, self.size_spin_w, self.size_sep_label,
                        self.size_spin_h):
             widget.setVisible(bool(visible))
+        # 组收起时两条分隔符相邻，藏掉前面那条，只留后面那条。
+        self._size_sep_before.setVisible(bool(visible))
 
     def size_fields_visible(self):
         """供测试/调用方核对当前是否显示了输入尺寸。"""

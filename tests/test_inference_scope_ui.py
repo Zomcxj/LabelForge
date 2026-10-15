@@ -3957,6 +3957,69 @@ print(ci, ni)
         f"conf 与 NMS 被拆开了，应当同组：{lines[2]}")
 
 
+def test_real_static_model_hides_input_size_without_doubling_dashes():
+    """静态轴模型收起「输入尺寸」时，不许留下相邻的两条 `-`。
+
+    用户看到 `NMS [0.45] - - 覆盖/补充` 报「NMS 后面有两个 -，删除一个」。
+    病根不是多插了分隔符，而是这组控件收起后，它**左边**那条分隔符还露着，
+    和**右边**那条挨在了一起。所以断言「任何相邻两条分隔符之间都有实际
+    内容」，而不是数分隔符个数——数个数反而会在动态模型下误判。
+    """
+    script = """
+from PyQt5.QtWidgets import QApplication, QLabel
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.resize(1600, 40)
+row.show()
+app.processEvents()
+
+
+def visible_labels():
+    out = []
+    lay = row.layout()
+    for i in range(lay.count()):
+        w = lay.itemAt(i).widget()
+        if w is None or not w.isVisible():
+            continue
+        if isinstance(w, QLabel):
+            out.append(w.text())
+        else:
+            out.append('<widget>')
+    return out
+
+
+# 静态轴模型 / 未加载模型：整组「输入尺寸」是收起的
+row.set_size_fields_visible(False)
+app.processEvents()
+static = visible_labels()
+print(static)
+
+# 动态轴模型：整组「输入尺寸」显示，两条分隔符中间隔着这组控件
+row.set_size_fields_visible(True)
+app.processEvents()
+print(visible_labels())
+"""
+    out = _run_real_qt(script)
+    lines = _lines(out)
+
+    static = ast.literal_eval(lines[0])
+    dynamic = ast.literal_eval(lines[1])
+
+    # 静态模型下看不到「输入尺寸」，而且**没有**任何一对相邻的 `-`
+    assert "输入尺寸" not in static, f"静态模型不该显示输入尺寸：{static}"
+    adjacent = [(a, b) for a, b in zip(static, static[1:])
+                if a.strip() == "-" and b.strip() == "-"]
+    assert not adjacent, f"静态模型下出现了相邻的两条 '-'：{static}"
+
+    # 动态模型下这组要回来，仍不许有相邻的两条 `-`
+    assert "输入尺寸" in dynamic, f"动态模型应当显示输入尺寸：{dynamic}"
+    adjacent = [(a, b) for a, b in zip(dynamic, dynamic[1:])
+                if a.strip() == "-" and b.strip() == "-"]
+    assert not adjacent, f"动态模型下出现了相邻的两条 '-'：{dynamic}"
+
+
 def test_real_conf_label_reads_conf_in_both_languages():
     """⑤ 「置信度」的默认标签中英都显示 `conf`。
 
