@@ -3,6 +3,7 @@
 纯逻辑部分用假控件；真实控件行为（显隐、真实数值、预估文本）走
 `_run_real_qt` 子进程，避免 conftest 的 mock PyQt5 把结论带偏。
 """
+import ast
 import os
 import pathlib
 import subprocess
@@ -37,6 +38,25 @@ def _run_real_qt(script):
 
 def _lines(out):
     return [ln.strip() for ln in out.strip().splitlines() if ln.strip()]
+
+
+def _spec_dict(line):
+    """把 `print(wp.spec())` 的输出解析回字典。
+
+    窗口 spec 随着功能增加会多出键（比如 `min_visible`），所以断言「三个
+    尺寸键对不对」时不该钉死整份字典的字符串，那样每加一个合法参数都要来
+    改一批测试。
+    """
+    import ast
+    value = ast.literal_eval(line)
+    assert isinstance(value, dict), line
+    return value
+
+
+def _spec_size(line):
+    """从 spec 的打印里取出 (w, h, overlap)，供只关心尺寸的断言使用。"""
+    spec = _spec_dict(line)
+    return (spec["w"], spec["h"], spec["overlap"])
 
 
 # ---------- 参数行入口 ----------
@@ -245,7 +265,7 @@ print(d.ok_btn.isEnabled())
 print(d._estimate.text())
 """)
     lines = _lines(out)
-    assert lines[0] == "{'w': 640, 'h': 640, 'overlap': 200}", lines[0]
+    assert _spec_size(lines[0]) == (640, 640, 200), lines[0]
     assert lines[1] == "45 (5, 9)", lines[1]
     assert lines[2] == "True", lines[2]
     assert "5 × 9" in lines[3] and "45" in lines[3], lines[3]
@@ -300,9 +320,9 @@ for bad in ({'w': 'abc', 'h': None, 'overlap': 'x'},
     print(d.spec())
 """)
     lines = _lines(out)
-    assert lines[0] == "{'w': 640, 'h': 640, 'overlap': 200}", lines[0]
-    assert lines[1] == "{'w': 8, 'h': 8, 'overlap': 0}", lines[1]
-    assert lines[2] == "{'w': 8192, 'h': 8, 'overlap': 8192}", lines[2]
+    assert _spec_size(lines[0]) == (640, 640, 200), lines[0]
+    assert _spec_size(lines[1]) == (8, 8, 0), lines[1]
+    assert _spec_size(lines[2]) == (8192, 8, 8192), lines[2]
 
 
 def test_real_window_dialog_roundtrips_spec_through_engine():
@@ -546,8 +566,8 @@ old_btn = [b for b in p.findChildren(type(p.ok_btn))
 print(len(old_btn))
 """)
     lines = _lines(out)
-    assert lines[0] == "3", lines[0]
-    assert lines[1] == "{'w': 640, 'h': 640, 'overlap': 200}", lines[1]
+    assert lines[0] == "4", f"窗口参数现在有四个输入框（含最低可见比例）：{lines[0]}"
+    assert _spec_size(lines[1]) == (640, 640, 200), lines[1]
     assert lines[2] == "True", lines[2]
     assert lines[3] == "0", lines[3]
 
@@ -576,7 +596,9 @@ print(p.selection())
     lines = _lines(out)
     assert lines[0] == "45", lines[0]
     assert lines[1] == "6", lines[1]
-    assert lines[2] == ("('window', {'w': 1280, 'h': 1280, 'overlap': 0})"), lines[2]
+    mode, spec = ast.literal_eval(lines[2])
+    assert mode == "window", lines[2]
+    assert (spec["w"], spec["h"], spec["overlap"]) == (1280, 1280, 0), lines[2]
 
 
 def test_real_scope_panel_asks_the_canvas_to_redraw_on_change():
@@ -754,7 +776,7 @@ app.processEvents()
     lines = _lines(out)
     assert lines[0] == "True", lines
     assert lines[1] == "True", f"改参数后网格没变: {lines}"
-    assert lines[2] == "{'w': 400, 'h': 300, 'overlap': 200}", lines[2]
+    assert _spec_size(lines[2]) == (400, 300, 200), lines[2]
 
 
 def test_real_scope_panel_selection_reports_windows_only_when_needed():
@@ -773,7 +795,9 @@ for mode in (MODE_FULL, MODE_ROI, MODE_WINDOW):
     lines = _lines(out)
     assert lines[0] == "('full', None)", lines[0]
     assert lines[1] == "('roi', None)", lines[1]
-    assert lines[2] == "('window', {'w': 640, 'h': 640, 'overlap': 200})", lines[2]
+    mode, spec = ast.literal_eval(lines[2])
+    assert mode == "window", lines[2]
+    assert (spec["w"], spec["h"], spec["overlap"]) == (640, 640, 200), lines[2]
 
 
 def test_real_scope_panel_window_summary_text():
@@ -1629,7 +1653,7 @@ print(before, after, before != after)
 """)
     lines = _lines(out)
     assert lines[0] == "True", lines[0]
-    assert lines[1] == "{'w': 320, 'h': 320, 'overlap': 100}", lines[1]
+    assert _spec_size(lines[1]) == (320, 320, 100), lines[1]
     # 2000×1000 图上：640/重叠 200 → 10 窗；320/重叠 100 → 45 窗
     assert lines[2] == "10 45 True", lines[2]
 
@@ -1657,7 +1681,7 @@ print(d.spec())
 """)
     lines = _lines(out)
     assert lines[0] == "True True True", lines[0]
-    assert lines[1] == "{'w': 900, 'h': 384, 'overlap': 64}", lines[1]
+    assert _spec_size(lines[1]) == (900, 384, 64), lines[1]
 
 
 def test_real_sliding_dialog_has_no_templates_when_config_empty():
@@ -2694,3 +2718,76 @@ print(row.batch_to_spin.maximum(), row.batch_to_spin.value())
     lines = _lines(out)
     assert lines[0] == "400 400", lines[0]
     assert lines[1] == "30 30", f"上限与默认值没跟着新数据集：{lines[1]}"
+
+
+# ---------- min_visible：窗口参数里的最低可见比例 ----------
+
+def test_real_window_params_carry_min_visible():
+    """窗口参数要带上「最低可见比例」，默认 0.7、按百分比显示。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.widgets.window_params import WindowParamsWidget
+app = QApplication([])
+w = WindowParamsWidget(reference_size=(1000, 1000),
+                       spec={"w": 640, "h": 640, "overlap": 200})
+print(w.spec()["min_visible"])
+w.set_spec({"w": 640, "h": 640, "overlap": 200, "min_visible": 0.9})
+print(w.spec()["min_visible"])
+print(w.min_visible_spin.value())
+""")
+    lines = _lines(out)
+    assert lines[0] == "0.7", f"缺省不是 0.7：{lines[0]}"
+    assert lines[1] == "0.9", f"没读回 spec：{lines[1]}"
+    assert lines[2] == "90", f"百分比没同步：{lines[2]}"
+
+
+def test_real_min_visible_is_locked_when_window_mode_is_not_selected():
+    """未选中滑窗时「最低可见比例」也要禁用（与其他窗口参数一致）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.widgets.window_params import WindowParamsWidget
+app = QApplication([])
+w = WindowParamsWidget(reference_size=(1000, 1000))
+w.set_editable(False)
+print(w.min_visible_spin.isEnabled())
+w.set_editable(True)
+print(w.min_visible_spin.isEnabled())
+""")
+    lines = _lines(out)
+    assert lines[0] == "False", f"未选中滑窗时没禁用：{lines}"
+    assert lines[1] == "True", f"选中滑窗后没启用：{lines}"
+
+
+def test_real_min_visible_comes_from_the_template():
+    """模板补齐：点模板要把最低可见比例一起带过来（数据增强侧同一个字段）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.widgets.window_params import WindowParamsWidget
+app = QApplication([])
+w = WindowParamsWidget(reference_size=(1000, 1000),
+                       spec={"w": 640, "h": 640, "overlap": 200,
+                             "min_visible": 0.7})
+w._apply_template({"w": 512, "h": 512, "overlap": 64, "min_visible": 0.85})
+print(w.min_visible_spin.value())
+print(w.spec()["min_visible"])
+""")
+    lines = _lines(out)
+    assert lines[0] == "85", f"模板里的可见比例没带过来：{lines}"
+    assert lines[1] == "0.85", lines[1]
+
+
+def test_real_min_visible_accepts_a_value_written_by_an_older_version():
+    """旧配置没这个键时退回默认，不能让整个控件崩掉。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.widgets.window_params import WindowParamsWidget
+app = QApplication([])
+w = WindowParamsWidget(reference_size=(1000, 1000),
+                       spec={"w": 640, "h": 640, "overlap": 200})
+print(w.min_visible_spin.value())
+w.set_spec({"w": 640, "h": 640, "overlap": 200, "min_visible": "坏的"})
+print(w.spec()["min_visible"])
+""")
+    lines = _lines(out)
+    assert lines[0] == "70", f"旧配置应退回 70%%：{lines[0]}"
+    assert lines[1] == "0.7", f"坏值应退回默认而不是崩：{lines[1]}"
