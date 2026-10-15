@@ -3893,3 +3893,396 @@ print(w._window_spec['w'], w._window_spec['overlap'])
     assert lines[1] == "0.85", f"min_visible 没即时生效：{lines[1]}"
     assert lines[2] == "1234 88", (
         f"宿主的窗口参数没随面板更新（关面板后会退回旧值）：{lines[2]}")
+
+
+# ---------- 第五轮：参数行宽度 / 分隔符 / conf 标签 ----------
+
+def test_real_batch_target_spin_is_a_quarter_narrower():
+    """① 「目标张号」输入框宽度减到原来的 3/4。
+
+    用户要求「目标张号输入框宽度减少 1/4」：原宽 84 → 63。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+print(row.batch_to_spin.width())
+print(row.batch_to_spin.minimumWidth(), row.batch_to_spin.maximumWidth())
+""")
+    lines = _lines(out)
+    assert lines[0] == "63", (
+        f"目标张号输入框宽度不是 63（84 的 3/4）：{lines[0]}")
+    assert lines[1] == "63 63", (
+        f"宽度没真正钉住，布局还能把它撑开：{lines[1]}")
+
+
+def test_real_param_row_groups_are_separated_by_dashes():
+    """⑤ 参数行各功能之间用 `-` 隔开（共 7 组，置信度与 NMS 同组）。
+
+    组：加载模型+模型名 | 置信度+NMS | 输入尺寸 | 覆盖/补充 | 类别筛选
+        | 推理范围+摘要 | 目标张号
+    所以中间应有 **6** 个分隔符，且「置信度」和「NMS」之间**没有**分隔符。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QLabel
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+
+# 按布局里的实际顺序收集所有 QLabel 的文字
+order = []
+lay = row.layout()
+for i in range(lay.count()):
+    w = lay.itemAt(i).widget()
+    if isinstance(w, QLabel):
+        order.append(w.text())
+print(order)
+print(sum(1 for t in order if t.strip() == '-'))
+# conf 与 NMS 之间只隔一个数字输入框（QDoubleSpinBox），没有分隔符
+ci = order.index('conf')
+ni = order.index('NMS')
+print(ci, ni)
+""")
+    lines = _lines(out)
+    order = lines[0]
+    assert "-" in order, f"参数行里没有 '-' 分隔符：{order}"
+    assert lines[1] == "6", (
+        f"分隔符不是 6 个（7 组之间有 6 个间隔）：{lines[1]}")
+    # conf 与 NMS 之间只有一个控件（conf 的输入框），说明它们同组
+    ci, ni = (int(v) for v in lines[2].split())
+    assert ni - ci == 1, (
+        f"conf 与 NMS 被拆开了，应当同组：{lines[2]}")
+
+
+def test_real_conf_label_reads_conf_in_both_languages():
+    """⑤ 「置信度」的默认标签中英都显示 `conf`。
+
+    用户要求「置信度默认中英都是 conf」。视频弹窗那个同名复选框不受影响
+    （它用的是另一套键），所以这里只钉参数行。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui import i18n
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+i18n.set_lang("zh")
+row.retranslate()
+print(row.conf_lbl.text())
+i18n.set_lang("en")
+row.retranslate()
+print(row.conf_lbl.text())
+""")
+    lines = _lines(out)
+    assert lines[0] == "conf", f"中文下置信度标签不是 conf：{lines[0]}"
+    assert lines[1] == "conf", f"英文下置信度标签不是 conf：{lines[1]}"
+
+
+def test_real_video_overlay_confidence_label_is_untouched():
+    """⑤ 的护栏：视频弹窗的「置信度」复选框**不**跟着变成 conf。
+
+    它和参数行原先共用 `tr("置信度")`。给参数行换成新键之后，这一处必须
+    保持原样，否则就是「改一处坏一处」。只查中文即可——`置信度` 这个键的
+    英文值本来就是 `Confidence`（`i18n` 里另有一条），改键名才不会连累它。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QCheckBox
+from pastelabel.ui import i18n
+from pastelabel.ui.video_dialog import VideoDialog
+
+app = QApplication([])
+i18n.set_lang("zh")
+d = VideoDialog()
+print([cb.text() for cb in d.findChildren(QCheckBox)])
+""")
+    lines = _lines(out)
+    assert "置信度" in lines[0], (
+        f"视频弹窗的「置信度」被连带改掉了：{lines[0]}")
+    assert "conf" not in lines[0], (
+        f"视频弹窗也变成 conf 了：{lines[0]}")
+
+
+def test_real_canvas_grid_labels_each_window_with_row_col():
+    """② 滑窗模式下每个窗口左下角标 `r1c1`（同数据增强的口径）。
+
+    这条直接**数出画的字**而不是数像素：给画布装一个假的 painter，把
+    `drawText` 的调用全记下来，检查标签文字与所在格子对得上。数像素会因为
+    字体/抗锯齿而不稳，数调用才是「真的标了号」。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_WINDOW
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1200, 800)
+w.show()
+app.processEvents()
+
+img = QImage(1600, 1200, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+app.processEvents()
+
+# 1600x1200 配 800x600、重叠 0 → 2 行 x 2 列 = 4 窗
+w._scope_window_spec = {'w': 800, 'h': 600, 'overlap': 0}
+w._scope_mode = MODE_WINDOW
+w._scope_panel_open = True
+
+canvas = w.canvas
+canvas.resize(1000, 700)
+app.processEvents()
+
+texts = []
+class Spy(QPainter):
+    def drawText(self, *args):
+        texts.append(str(args[-1]))
+
+# `_paint_scene` 内部自己 new 了一个 QPainter，外面塞的 painter 拦不到它，
+# 所以这里直接驱动 `_draw_scope_grid`（它就是真正画格子+标号的那一层）。
+im = QImage(canvas.size(), QImage.Format_ARGB32)
+p = Spy(im)
+canvas._draw_scope_grid(p, canvas.get_background_rect())
+p.end()
+grid_texts = sorted(t for t in texts if t.startswith('r') and 'c' in t)
+print(grid_texts)
+""")
+    lines = _lines(out)
+    labels = lines[0]
+    assert "'r1c1'" in labels, (
+        f"画布上没标出 r1c1：{labels}")
+    assert "'r2c2'" in labels, (
+        f"2x2 的网格没标到 r2c2：{labels}")
+    assert lines[0].count("'r") == 4, (
+        f"4 个窗口应该标 4 个号：{lines[0]}")
+
+
+def test_real_canvas_grid_labels_shift_with_window_params():
+    """② 改窗口参数后，标号跟着重排（不是只画一次就定住）。
+
+    1600x1200 配 400x300、重叠 0 → 4 行 x 4 列 = 16 窗，最大号 `r4c4`。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_WINDOW
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1200, 800)
+w.show()
+app.processEvents()
+img = QImage(1600, 1200, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+app.processEvents()
+
+w._scope_mode = MODE_WINDOW
+w._scope_panel_open = True
+# 1600x1200 配 400x300、重叠 0 → 4 行 x 4 列 = 16 窗
+w._scope_window_spec = {'w': 400, 'h': 300, 'overlap': 0}
+canvas = w.canvas
+canvas.resize(1000, 700)
+app.processEvents()
+
+texts = []
+class Spy(QPainter):
+    def drawText(self, *args):
+        texts.append(str(args[-1]))
+
+im = QImage(canvas.size(), QImage.Format_ARGB32)
+p = Spy(im)
+canvas._draw_scope_grid(p, canvas.get_background_rect())
+p.end()
+all_lbl = sorted(t for t in texts if t.startswith('r') and 'c' in t)
+print(all_lbl[0], all_lbl[-1], len(all_lbl))
+""")
+    lines = _lines(out)
+    # 1600x1200 配 400x300、重叠 0 → 4 行 x 4 列 = 16 窗
+    assert lines[0] == "r1c1 r4c4 16", (
+        f"标号没跟着窗口参数重排：{lines[0]}")
+
+
+# ---------- ③ 区域框缩放：四边手柄 + 更大的命中区 ----------
+
+_REGION_RESIZE_HOST = """
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+w.background_images = ['work.png']
+canvas = w.canvas
+canvas.resize(900, 700)
+app.processEvents()
+w.update_label_list = lambda: None
+w._save_current_detection_boxes = lambda *a, **k: None
+w.save_json = lambda *a, **k: None
+w.detection_boxes = []
+w.region_fixed = False
+w.region_boxes = [{'shape_type': 'rectangle', 'x': 300, 'y': 300,
+                   'width': 200, 'height': 200}]
+
+def press(x, y):
+    canvas.mousePressEvent(QMouseEvent(
+        QMouseEvent.MouseButtonPress, QPointF(x, y), Qt.LeftButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def move(x, y):
+    canvas.mouseMoveEvent(QMouseEvent(
+        QMouseEvent.MouseMove, QPointF(x, y), Qt.NoButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def release(x, y):
+    canvas.mouseReleaseEvent(QMouseEvent(
+        QMouseEvent.MouseButtonRelease, QPointF(x, y), Qt.LeftButton,
+        Qt.NoButton, Qt.NoModifier))
+
+rect = canvas.get_background_rect()
+sc = canvas.background_scale
+
+def C(ix, iy):
+    # 图像坐标 -> 画布坐标
+    return int(rect.x() + ix * sc), int(rect.y() + iy * sc)
+
+w._open_scope_panel()
+w._scope_panel.set_mode(MODE_ROI)
+app.processEvents()
+w.edit_mode = 'annotate'
+app.processEvents()
+"""
+
+
+def test_real_region_has_four_edge_handles():
+    """③ 区域框有**四条边**的缩放手柄，不只是四角。
+
+    用户要求「复用检测框的缩放，单边调整和角点拖动」：只拖一条边时，只有
+    那一个方向应该变，另一个方向保持不变。
+    """
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+# 右边中点：只把宽度拖大 60 像素，高度必须纹丝不动
+rx, ry = C(500, 400)
+press(rx, ry)
+print(canvas.is_resizing_region, canvas.is_dragging_region)
+move(rx + 60, ry + 40)
+release(rx + 60, ry + 40)
+r = w.region_boxes[0]
+print(round(r['width']), round(r['height']))
+print(round(r['x']), round(r['y']))
+""")
+    lines = _lines(out)
+    assert lines[0] == "True False", (
+        f"按在区域右边中点没进入缩放（当成拖动了）：{lines[0]}")
+    # 宽度变大了，高度与 x/y 都该保持（单边调整只改一个方向）
+    w0, h0 = (int(v) for v in lines[1].split())
+    x0, y0 = (int(v) for v in lines[2].split())
+    assert w0 > 200, f"拖右边没把宽度拖大：{lines[1]}"
+    assert h0 == 200, f"拖右边不该改高度：{lines[1]}"
+    assert (x0, y0) == (300, 300), f"拖右边不该改 x/y：{lines[2]}"
+
+
+def test_real_region_bottom_edge_resizes_height_only():
+    """③ 下边中点：只改高度，宽度与 x/y 不动。"""
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+bx, by = C(400, 500)
+press(bx, by)
+print(canvas.is_resizing_region)
+move(bx + 50, by + 70)
+release(bx + 50, by + 70)
+r = w.region_boxes[0]
+print(round(r['width']), round(r['height']))
+print(round(r['x']), round(r['y']))
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", f"按在下边中点没进入缩放：{lines[0]}"
+    w0, h0 = (int(v) for v in lines[1].split())
+    x0, y0 = (int(v) for v in lines[2].split())
+    assert h0 > 200, f"拖下边没把高度拖大：{lines[1]}"
+    assert w0 == 200, f"拖下边不该改宽度：{lines[1]}"
+    assert (x0, y0) == (300, 300), f"拖下边不该改 x/y：{lines[2]}"
+
+
+def test_real_region_left_edge_resizes_width_and_x_only():
+    """③ 左边中点：改宽度与 x，高度与 y 不动。"""
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+lx, ly = C(300, 400)
+press(lx, ly)
+print(canvas.is_resizing_region)
+move(lx - 40, ly + 30)
+release(lx - 40, ly + 30)
+r = w.region_boxes[0]
+print(round(r['width']), round(r['height']))
+print(round(r['x']), round(r['y']))
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", f"按在左边中点没进入缩放：{lines[0]}"
+    w0, h0 = (int(v) for v in lines[1].split())
+    x0, y0 = (int(v) for v in lines[2].split())
+    assert w0 > 200, f"拖左边没把宽度拖大：{lines[1]}"
+    assert h0 == 200, f"拖左边不该改高度：{lines[1]}"
+    assert x0 < 300, f"拖左边没跟着改 x：{lines[2]}"
+    assert y0 == 300, f"拖左边不该改 y：{lines[2]}"
+
+
+def test_real_region_handle_hit_area_is_scale_independent():
+    """③ 手柄命中区**随缩放放大**（下限 24px），保证缩小的图上也能抓。
+
+    原来命中边长写死 8 **画布像素**，和 `background_scale` 无关；把图缩到
+    25% 时区域框在屏上只剩 50 像素，8px 的方框几乎点不中——这正是用户说的
+    「没办法调整大小」。
+    """
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+# 命中边长必须随缩放变大，且不超过上限（不能大到把内部拖动吃掉）
+sizes = []
+for sc in (1.0, 0.5, 0.25, 0.1):
+    canvas.background_scale = sc
+    sizes.append(round(canvas._region_handle_hit_size(), 2))
+print(sizes)
+# 绘制尺寸与命中尺寸必须一致：看到的圆就是抓得到的圆
+canvas.background_scale = 0.25
+print(round(canvas._region_handle_hit_size()),
+      round(canvas._region_handle_draw_size()))
+""")
+    lines = _lines(out)
+    assert lines[0] == "[8, 16.0, 24.0, 24.0]", (
+        f"手柄命中区没随缩放放大：{lines[0]}")
+    assert lines[1] == "24 24", (
+        f"手柄「看到的」和「抓得到的」不一致：{lines[1]}")
+
+
+def test_real_region_resize_never_shrinks_below_min_size():
+    """③ 边手柄也要守住最小尺寸，不能把区域拖成 0。"""
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+rx, ry = C(500, 400)
+press(rx, ry)
+move(rx - 500, ry)          # 往左猛拖，想拖成负宽
+release(rx - 500, ry)
+r = w.region_boxes[0]
+print(r['width'] >= 10)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", f"区域被拖到小于最小尺寸了：{lines[0]}"
