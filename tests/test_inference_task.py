@@ -922,3 +922,103 @@ def test_write_results_passes_filter_through(tmp_path):
     from pastelabel.engine.inference_task import read_sidecar_boxes
     boxes = read_sidecar_boxes(str(img)) or []
     assert sorted(b["label"] for b in boxes) == ["car"], boxes
+
+
+
+# ---------- ③ 多个重叠区域：推理框跨区域去重 ----------
+
+def _region(x, y, w, h):
+    return {"x": x, "y": y, "width": w, "height": h}
+
+
+def test_detect_in_scope_dedupes_a_box_found_in_two_overlapping_regions():
+    """两个**重叠**区域盖住同一个目标时，结果里只能留一个框。
+
+    用户要求「多个区域框重叠部分推理框去重」：区域各裁各的，重叠那块被推理
+    两遍，同一个目标就出两份。`detect_in_scope` 的 ROI 分支已经把各区域结果
+    交给 `merge_scope_results` 按 IoU 合并，这里钉住端到端确实生效。
+    """
+    from pastelabel.engine.inference_task import detect_in_scope
+
+    # 区域 A=(0,0,200,200)、B=(100,100,200,200)，重叠区 100..200。
+    # 目标放在重叠区正中：原图 (140,140) 尺寸 40x40 -> 两个区域都看得见。
+    # 两个区域尺寸相同、按形状分不开，所以让 detect 自己数第几次调用，
+    # 把「这次裁剪的左上角」对上去，再把目标换算成裁剪图的**局部**坐标
+    # （detector 只看得到裁剪副本，返回的就是局部坐标）。
+    #
+    # 两次检出**故意差几像素**：真实模型对同一目标的两次推理不会逐像素一致，
+    # 差一点点时 IoU 略小于 1，才真正考验阈值。若两次完全相同（IoU 恰为 1），
+    # 连阈值 1.0 都能合并掉，测不出「IoU 阈值有没有被正确传下去」。
+    calls = {"n": 0}
+    origins = [(0, 0), (100, 100)]
+    jitter = [0.0, 3.0]
+
+    class Detector:
+        def detect(self, rgb, resize_fn):
+            i = min(calls["n"], len(origins) - 1)
+            calls["n"] += 1
+            ox, oy = origins[i]
+            off = jitter[i]
+            return [{"label": "cat", "x": 140.0 - ox + off, "y": 140.0 - oy + off,
+                     "width": 40.0, "height": 40.0, "conf": 0.9}]
+
+    scope = {"mode": "roi",
+             "regions": [_region(0, 0, 200, 200), _region(100, 100, 200, 200)]}
+    boxes = detect_in_scope(np.zeros((400, 400, 3), np.uint8), Detector(),
+                            lambda *a, **k: None, scope)
+
+    assert len(boxes) == 1, (
+        f"重叠区域盖住的同一个目标没去重，出了 {len(boxes)} 个框：{boxes}")
+    assert boxes[0]["label"] == "cat"
+    # 去重后留下的应当是**原图坐标**的那一个
+    assert boxes[0]["x"] == 140.0 and boxes[0]["y"] == 140.0, boxes[0]
+
+
+def test_detect_in_scope_keeps_distinct_targets_in_overlapping_regions():
+    """反向要求：重叠区里**两个不同**目标不能被误合成一个。"""
+    from pastelabel.engine.inference_task import detect_in_scope
+
+    origins = [(0, 0), (100, 100)]
+    calls = {"n": 0}
+
+    class Detector:
+        def detect(self, rgb, resize_fn):
+            ox, oy = origins[min(calls["n"], 1)]
+            calls["n"] += 1
+            # 两个目标都落在两个区域的重叠区里，但彼此相距很远
+            return [{"label": "cat", "x": 120.0 - ox, "y": 120.0 - oy,
+                     "width": 20.0, "height": 20.0, "conf": 0.9},
+                    {"label": "dog", "x": 180.0 - ox, "y": 180.0 - oy,
+                     "width": 20.0, "height": 20.0, "conf": 0.9}]
+
+    scope = {"mode": "roi",
+             "regions": [_region(0, 0, 250, 250), _region(100, 100, 250, 250)]}
+    boxes = detect_in_scope(np.zeros((400, 400, 3), np.uint8), Detector(),
+                            lambda *a, **k: None, scope)
+
+    labels = sorted(b["label"] for b in boxes)
+    assert labels == ["cat", "dog"], (
+        f"两个不同目标应当各留一个（共两个）：{labels}")
+
+
+def test_detect_in_scope_drops_boxes_whose_center_is_outside_every_region():
+    """区域外心的框要丢掉：区域之外是靠掩膜遮住的，那里的框不可信。
+
+    这条与去重合起来才是「重叠区域」的完整语义：**先在各自区域内取框、再去重**。
+    顺序反了（先合并后过滤）会把区域外的框留下来。
+    """
+    from pastelabel.engine.inference_task import detect_in_scope
+
+    class Detector:
+        def detect(self, rgb, resize_fn):
+            return [{"label": "in", "x": 10.0, "y": 10.0,
+                     "width": 20.0, "height": 20.0, "conf": 0.9},
+                    {"label": "out", "x": 300.0, "y": 300.0,
+                     "width": 20.0, "height": 20.0, "conf": 0.9}]
+
+    scope = {"mode": "roi", "regions": [_region(0, 0, 100, 100)]}
+    boxes = detect_in_scope(np.zeros((400, 400, 3), np.uint8), Detector(),
+                            lambda *a, **k: None, scope)
+
+    labels = sorted(b["label"] for b in boxes)
+    assert labels == ["in"], f"区域外的框没被丢掉：{labels}"
