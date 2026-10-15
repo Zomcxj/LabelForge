@@ -553,12 +553,14 @@ def _enable_copy_drag_out(monkeypatch, canvas):
 
 
 def test_canvas_copy_drags_out_without_leaving_the_window(monkeypatch):
-    """在画布上按住左键拖动一段就该拖出文件——不必把光标拖出主窗口。
+    """在图**外**的空白画布上按住拖动一段就该拖出文件——不必把光标拖出主窗口。
 
-    用户报的「画布图片复制打开后按住左键拖动没反应」：原实现只在**光标
-    离开整个主窗口**时才触发拖出，主窗口最大化时光标出不去，于是拖多远都
-    没反应。旁边的背景图列表同款功能是「移动超过 20 像素就触发」，
+    原实现只在**光标离开整个主窗口**时才触发拖出，主窗口最大化时光标出不去，
+    于是拖多远都没反应。旁边的背景图列表同款功能是「移动超过 20 像素就触发」，
     两边行为应当一致。
+
+    注意落点：按在**图上**是拖动画布（见 `test_canvas_pans_even_when_the_image_fits`），
+    按在图外的空白处才是「把这张图拖出去」。
     """
     canvas = _CopyCanvas()
     _enable_copy_drag_out(monkeypatch, canvas)
@@ -566,8 +568,9 @@ def test_canvas_copy_drags_out_without_leaving_the_window(monkeypatch):
     canvas._editor.geometry = lambda: Rect(0, 0, 4000, 4000)
     canvas._editor.mapFromGlobal = lambda p: Point(1, 1)
 
-    canvas.mousePressEvent(_PressEvent(50, 50))
-    canvas.mouseMoveEvent(_MoveEvent(50 + 40, 50 + 40))
+    # 图占 (0,0,100,100)，这里点在图外
+    canvas.mousePressEvent(_PressEvent(400, 400))
+    canvas.mouseMoveEvent(_MoveEvent(400 + 40, 400 + 40))
 
     assert canvas._drag_out_calls == 1, (
         "在窗口内拖了 40 像素却没有触发拖出复制，用户会感觉「拖不动」")
@@ -615,3 +618,49 @@ def test_canvas_copy_drag_out_does_not_fire_while_panning(monkeypatch):
     canvas.mouseMoveEvent(_MoveEvent(90, 90))
 
     assert canvas._drag_out_calls == 0, "平移画布时不该把文件拖出去"
+
+
+def test_canvas_pans_even_when_the_image_fits(monkeypatch):
+    """不放大（图完整显示）时，按住图拖动也应该能挪动画布位置。
+
+    用户报的「在不放大画布下拖动失效」：`_handle_background_click` 原来只在
+    「图比画布大」时才进入背景拖动，图装得下就直接 return——于是按住拖
+    什么都不会动。但 `background_offset` 在非手动缩放下**照样参与渲染**，
+    也就是说这个平移本来就有意义，只是被那个门槛挡住了。
+    """
+    canvas = _CopyCanvas(scale=1.0)      # 图 400x300 装进 800x800
+    canvas.mousePressEvent(_PressEvent(50, 50))
+
+    assert canvas.is_dragging_background is True, (
+        "不放大时按下图内就该能拖动画布，现在没进入拖动状态")
+    canvas.mouseMoveEvent(_MoveEvent(70, 60))
+    assert (canvas.background_offset.x(), canvas.background_offset.y()) != (0, 0), (
+        "拖动后画布偏移没变，用户会感觉「拖不动」")
+
+
+def test_canvas_panning_fitted_image_does_not_also_drag_the_file_out(monkeypatch):
+    """拖动装得下的图是平移画布，不能同时把它当文件拖出去。"""
+    canvas = _CopyCanvas(scale=1.0)
+    _enable_copy_drag_out(monkeypatch, canvas)
+    canvas._editor.geometry = lambda: Rect(0, 0, 4000, 4000)
+    canvas._editor.mapFromGlobal = lambda p: Point(1, 1)
+
+    canvas.mousePressEvent(_PressEvent(50, 50))
+    canvas.mouseMoveEvent(_MoveEvent(90, 90))
+
+    assert canvas._drag_out_calls == 0, "平移时不该触发拖出复制"
+    assert canvas.is_dragging_background is True
+
+
+def test_copy_drag_out_still_works_from_empty_area_outside_the_image(monkeypatch):
+    """落在图**外**的空白画布上按下再拖，仍然能拖出文件（保留原功能）。"""
+    canvas = _CopyCanvas(scale=1.0)
+    _enable_copy_drag_out(monkeypatch, canvas)
+    canvas._editor.geometry = lambda: Rect(0, 0, 4000, 4000)
+    canvas._editor.mapFromGlobal = lambda p: Point(1, 1)
+
+    # 图占的是 (0,0,100,100)，这里点在图外
+    canvas.mousePressEvent(_PressEvent(400, 400))
+    canvas.mouseMoveEvent(_MoveEvent(460, 460))
+
+    assert canvas._drag_out_calls == 1, "图外空白处拖动应当还能拖出文件"

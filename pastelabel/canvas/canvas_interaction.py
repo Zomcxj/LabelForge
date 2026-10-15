@@ -159,11 +159,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         # 「准备拖出复制」只在该次按下**没抓到任何东西**时才挂起：
         # 抓到画布/标注框/贴图说明用户是在拖画布或编辑，不是要往外拖文件。
         # 判据放在点击**之后**：`_handle_background_click` 等要等点击处理完
-        # 才知道有没有真的抓起来（它可能只是清掉选中就 return）。
-        #
-        # 顺带修掉一个漏项：这里原来漏了 `is_dragging_background`，于是
-        # 「图装得下画布」时 `_handle_background_click` 直接 return、标记一直
-        # 挂着，之后每次移动都被拖出逻辑抢走一次——画布上的拖动变得时灵时不灵。
+        # 才知道有没有真的抓起来（按在图上就会进入画布拖动）。
         self._drag_out_pending = False
         self._handle_left_click(mouse_pos)
         grabbed = (self.is_dragging_background or self.is_dragging_box
@@ -174,7 +170,6 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             not grabbed
             and getattr(self._editor, '_canvas_image_copy_enabled', False)
             and not self.is_manual_scale
-            and self.background_scale <= 1.0
             and self.find_item_at_position(mouse_pos) is None
             and self._region_at(mouse_pos) is None
         )
@@ -693,18 +688,13 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if not background_rect.contains(mouse_pos):
             return False
 
-        scaled_width = self._editor.current_background.width() * self.background_scale
-        scaled_height = self._editor.current_background.height() * self.background_scale
-
-        if scaled_width > self.width() or scaled_height > self.height():
-            self._clear_selection()
-            self.drag_start = mouse_pos
-            self.is_dragging_background = True
-            return True
-
+        # 按在图上就是「拖动画布」。**不再要求图比画布大**：图装得下时
+        # `background_offset` 照样参与渲染（`canvas.py` 的 `get_background_rect`
+        # 会把它加进去），所以照样该能挪。原来这里只在大图时才进入拖动，
+        # 用户在不放大时按住拖就完全没反应（用户报的 bug）。
         self._clear_selection()
-        self.update_status_label()
-        self.update()
+        self.drag_start = mouse_pos
+        self.is_dragging_background = True
         return True
 
     def _clear_selection(self):
