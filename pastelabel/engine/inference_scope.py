@@ -63,6 +63,21 @@ def iter_windows(iw, ih, spec):
     重叠不超过 min(cw,ch)-1），再交给 `window_starts()` 排布——数量以实际
     结果为准，不用 `size_for_count()` 反推（那个函数取整后可能多出一窗）。
     """
+    return [t[:4] for t in iter_windows_with_index(iw, ih, spec)]
+
+
+def iter_windows_with_index(iw, ih, spec):
+    """同 `iter_windows()`，但每项多带 `(r, c)` 行列号：`(x, y, w, h, r, c)`。
+
+    行列号都是 **1 基、行优先**，与数据增强预览里标 `r1c1` 的口径完全一致
+    （那边是 `enumerate(window_starts(...), 1)`）。画布上要给窗口标号时用
+    这个函数，别在渲染层另写一份窗口排布——两处算法一旦漂移，同一个窗口
+    在画布和数据增强里就会显示成不同的号。
+
+    这里刻意不复用 `iter_windows()` 的返回值去反推行列：反推依赖「行优先
+    且每行等长」这个隐含约定，而这里 `len(xs)` 是现成的，不必赌。反过来，
+    `iter_windows()` 只是把序号切掉，两边共用同一份校验与排布，不会漂移。
+    """
     try:
         iw, ih = int(iw), int(ih)
     except (TypeError, ValueError):
@@ -104,7 +119,9 @@ def iter_windows(iw, ih, spec):
         raise ScopeError(
             f"窗口数 {len(xs)} × {len(ys)} = {len(xs) * len(ys)} 超过上限 "
             f"{MAX_WINDOWS}，请加大窗口或减小重叠")
-    return [(x, y, cw, ch) for y in ys for x in xs]
+    return [(x, y, cw, ch, r, c)
+            for r, y in enumerate(ys, 1)
+            for c, x in enumerate(xs, 1)]
 
 
 def region_bbox(region):

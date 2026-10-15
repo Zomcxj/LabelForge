@@ -1,16 +1,20 @@
 """
 Canvas 绘制混入 - 负责所有绘制逻辑（背景、贴图、检测框、临时框、网格）
 """
-from PyQt5.QtGui import QPainter, QPixmap, QColor, QPen, QFontMetrics
+from PyQt5.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QFontMetrics
 from PyQt5.QtCore import Qt, QPointF, QRectF
 import numpy as np
 
 from ..core.config import DETECTION_BOX_CONFIG, PASTE_ITEM_CONFIG, GRID_CONFIG, MAGNIFIER_CONFIG, CROSSHAIR_CONFIG
-from ..engine.inference_scope import ScopeError, iter_windows
+from ..engine.inference_scope import ScopeError, iter_windows_with_index
 from ..ui.theme import ThemeManager
 
 class CanvasRendererMixin:
     """Canvas 绘制混入类 - paintEvent 及所有 _draw_* 方法"""
+
+    # 画布上给窗口标 `r1c1` 的可见格子数上限。超过就只画框不标号：逐格
+    # drawText 比 drawRect 贵得多，大图+小窗（上万格）时会把重绘拖慢。
+    _SCOPE_GRID_LABEL_LIMIT = 300
 
     def paintEvent(self, event):
         """绘制事件
@@ -179,9 +183,13 @@ class CanvasRendererMixin:
     def _draw_scope_grid(self, painter, background_rect):
         """把滑窗的窗口网格画在主画布上（换算到背景图坐标）。
 
-        窗口起点复用引擎的 `iter_windows()`，与「每张图 X × Y = N 个窗口」
-        的文字同源，画的格子就是要跑的窗口。参数非法时什么都不画（不是画
-        一半），否则用户会以为「这些窗会跑」。
+        每个窗口的**左下角**标出行列号 `r1c1`，与数据增强预览里标的号
+        同源同格式（用户要求「滑窗在画布上左下显示 r1c1 同数据增强中的」），
+        所以这里用 `iter_windows_with_index()` 而不是自己排行列。
+
+        窗口起点复用引擎的窗口数学，与「每张图 X × Y = N 个窗口」的文字
+        同源，画的格子就是要跑的窗口。参数非法时什么都不画（不是画一半），
+        否则用户会以为「这些窗会跑」。
         """
         spec = getattr(self._editor, '_scope_window_spec', None)
         if not spec:
@@ -190,7 +198,7 @@ class CanvasRendererMixin:
         if iw <= 0 or ih <= 0:
             return
         try:
-            windows = iter_windows(iw, ih, spec)
+            windows = iter_windows_with_index(iw, ih, spec)
         except ScopeError:
             return
 
@@ -202,8 +210,11 @@ class CanvasRendererMixin:
         painter.save()
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
+        # 窗口上万时逐格标字会把重绘拖垮，所以先按视口过滤出要画的格子，
+        # 再决定字要不要标（格子太小/太多时只画框，不标号）。
         visible = QRectF(self.rect())
-        for (x, y, w, h) in windows:
+        to_draw = []
+        for (x, y, w, h, r, c) in windows:
             rect = QRectF(
                 background_rect.left() + x * self.background_scale,
                 background_rect.top() + y * self.background_scale,
@@ -212,7 +223,21 @@ class CanvasRendererMixin:
             # 大图 + 小窗口会有上万格，逐格全画会卡死；视口外的直接跳过
             if not rect.intersects(visible):
                 continue
+            to_draw.append((rect, r, c))
             painter.drawRect(rect)
+
+        # 标号门槛与数据增强预览一致（那边是 44x30 才标）：格子太小标了也
+        # 看不清，只会糊成一片。另外总的可见格子太多时也不标，避免重绘变慢。
+        if len(to_draw) <= self._SCOPE_GRID_LABEL_LIMIT:
+            font = QFont(painter.font())
+            font.setPointSizeF(max(7.0, font.pointSizeF() - 1))
+            painter.setFont(font)
+            painter.setPen(QColor(REGION_CONFIG['border_color']))
+            for rect, r, c in to_draw:
+                if rect.width() < 44 or rect.height() < 30:
+                    continue
+                painter.drawText(rect.adjusted(2, 0, -2, -2),
+                                 Qt.AlignBottom | Qt.AlignLeft, f"r{r}c{c}")
         painter.restore()
 
     def _scope_grid_reference_size(self):
@@ -310,14 +335,29 @@ class CanvasRendererMixin:
                 painter.drawEllipse(p, radius, radius)
 
     def _draw_region_handles(self, painter, x, y, w, h, color):
-        """区域四角缩放手柄（与检测框样式一致）。"""
-        from ..core.config import REGION_CONFIG
-        size = REGION_CONFIG['handle_size']
-        radius = size / 2
+        """区域缩放手柄：四角 + **四边中点**（与检测框样式一致）。
+
+        四边手柄必须画出来，否则它虽然能抓也是隐形的——用户看不到就没法用。
+        半径用 `_region_handle_draw_size()`：与命中判定同一套随缩放放大的
+        口径，保证「看到的圆」就是「抓得到的圆」。
+        """
+        radius = self._region_handle_draw_size() / 2
         painter.setPen(QPen(color, 1))
         painter.setBrush(QColor(255, 255, 255))
-        for cx, cy in ((x, y), (x + w, y), (x, y + h), (x + w, y + h)):
+        centers = [
+            (x, y), (x + w, y), (x, y + h), (x + w, y + h),        # 四角
+            (x + w / 2, y), (x + w / 2, y + h),                    # 上下边
+            (x, y + h / 2), (x + w, y + h / 2),                    # 左右边
+        ]
+        for cx, cy in centers:
             painter.drawEllipse(QPointF(cx, cy), radius, radius)
+
+    def _region_handle_draw_size(self):
+        """手柄的绘制边长，与 `_region_handle_hit_size()` 同口径。"""
+        from ..core.config import REGION_CONFIG
+        base = REGION_CONFIG['handle_size']
+        scale = getattr(self, 'background_scale', 1.0) or 1.0
+        return max(base, min(24.0, base / scale))
 
     def _draw_paste_items(self, painter, background_rect):
         """绘制所有贴图"""

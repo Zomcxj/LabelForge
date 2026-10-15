@@ -502,3 +502,75 @@ def test_normalize_window_spec_still_drops_a_broken_size():
         {"w": 0, "h": 640, "overlap": 200, "min_visible": 0.7}) == {}
     assert _normalize_window_spec(
         {"w": "x", "h": 640, "overlap": 200}) == {}
+
+
+# ---------- ② 带行列号的滑窗枚举（画布左下角要标 r1c1）----------
+
+def test_iter_windows_with_index_matches_iter_windows():
+    """带序号版必须与 `iter_windows()` **逐项同序同值**（只多两个序号）。"""
+    from pastelabel.engine.inference_scope import iter_windows_with_index
+
+    spec = {"w": 300, "h": 300, "overlap": 100}
+    plain = iter_windows(1000, 700, spec)
+    indexed = iter_windows_with_index(1000, 700, spec)
+
+    assert [t[:4] for t in indexed] == plain
+    assert len(indexed) == len(plain)
+
+
+def test_iter_windows_with_index_numbers_rows_and_cols_from_one():
+    """行列号从 1 开始、行优先：`r1c1`、`r1c2`、`r2c1`……
+
+    数据增强里就是这么标的（`enumerate(window_starts(...), 1)`），画布要
+    跟它一致，否则同一个窗口在两处显示不同的号。
+    """
+    from pastelabel.engine.inference_scope import iter_windows_with_index
+
+    # 1000x700、300 窗、100 重叠 → 5 列 x 3 行（共 15 窗）
+    indexed = iter_windows_with_index(1000, 700, {"w": 300, "h": 300,
+                                                  "overlap": 100})
+    labels = [(r, c) for (_x, _y, _w, _h, r, c) in indexed]
+
+    assert len(indexed) == 15, len(indexed)
+    assert labels[0] == (1, 1), labels[0]
+    assert labels[1] == (1, 2), labels[1]
+    # 第 6 个应该换到第二行第一列（每行 5 个）
+    assert labels[5] == (2, 1), labels[5]
+    assert labels[-1] == (3, 5), labels[-1]
+
+
+def test_iter_windows_with_index_single_window_is_r1c1():
+    """窗口比图还大 → 只有一窗，号就是 `r1c1`。"""
+    from pastelabel.engine.inference_scope import iter_windows_with_index
+
+    indexed = iter_windows_with_index(200, 150, {"w": 640, "h": 640,
+                                                 "overlap": 200})
+    assert len(indexed) == 1
+    assert indexed[0][4:] == (1, 1)
+
+
+def test_iter_windows_with_index_propagates_scope_errors():
+    """参数非法时和 `iter_windows()` 一样抛 `ScopeError`，不静默给空表。"""
+    from pastelabel.engine.inference_scope import iter_windows_with_index
+
+    with pytest.raises(ScopeError):
+        iter_windows_with_index(0, 100, {"w": 300, "h": 300, "overlap": 0})
+
+
+def test_window_grid_shape_agrees_with_the_augmenter():
+    """行×列必须等于窗口数，且列数与数据增强的 `window_starts()` 一致。
+
+    这是「画布上的号」与「数据增强里的号」同源的依据。
+    """
+    from pastelabel.engine.augmenter.crop import normalized_window, window_starts
+    from pastelabel.engine.inference_scope import iter_windows_with_index
+
+    iw, ih, spec = 3840, 2160, {"w": 640, "h": 640, "overlap": 200}
+    indexed = iter_windows_with_index(iw, ih, spec)
+    cw, ch, ov = normalized_window(iw, ih, dict(spec))
+    cols = len(window_starts(iw, cw, ov))
+    rows = len(window_starts(ih, ch, ov))
+
+    assert rows * cols == len(indexed)
+    assert max(c for *_r, c in indexed) == cols
+    assert max(r for *_x, r, _c in indexed) == rows

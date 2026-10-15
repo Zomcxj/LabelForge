@@ -465,6 +465,14 @@ qtgui.QFontMetrics = type('QFontMetrics', (), {
     'width': lambda self, *a: 50,
     'height': lambda self: 20,
 })
+# `canvas_renderer` 给滑窗格子标行列号时要 `QFont`（`QFont(painter.font())`
+# 再 setPointSizeF）；桩里缺了它，凡导入 canvas_renderer 的测试都会在收集期
+# 直接 ImportError。
+qtgui.QFont = type('QFont', (), {
+    '__init__': lambda self, *a: None,
+    'pointSizeF': lambda self: 10.0,
+    'setPointSizeF': lambda self, *a: None,
+})
 qtgui.QKeySequence = type('QKeySequence', (), {
     '__init__': lambda self, *a: None,
 })
