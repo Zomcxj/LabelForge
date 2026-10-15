@@ -305,6 +305,9 @@ def test_delete_selected_routes_to_vertex_when_hovering_vertex():
 
         _delete_polygon_vertex = CanvasDrawingMixin._delete_polygon_vertex
         _can_edit_canvas = CanvasDrawingMixin._can_edit_canvas
+        # `_delete_polygon_vertex` 里现在还会问「标签框锁没锁」（范围面板开着
+        # 时锁住标签框）。这个替身只抄了要用的几个方法，所以也得把它带上。
+        _label_editing_locked = CanvasDrawingMixin._label_editing_locked
         _sync_polygon_bbox = CanvasDrawingMixin._sync_polygon_bbox
 
         def _sync_detection_box_to_dict(self, index):

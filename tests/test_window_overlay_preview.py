@@ -39,6 +39,17 @@ def _lines(out):
     return [ln.strip() for ln in out.strip().splitlines() if ln.strip()]
 
 
+def _spec_size(line):
+    """把 `print(w.spec())` 的输出解析回「三个尺寸键」的元组。
+
+    窗口 spec 会随功能增加多出键（比如 `min_visible`），所以断言尺寸时不该
+    钉死整份字典的字符串，否则每加一个合法参数都要来改一批测试。
+    """
+    import ast
+    spec = ast.literal_eval(line)
+    return (spec["w"], spec["h"], spec["overlap"])
+
+
 def test_real_preview_window_count_matches_engine():
     """预览算出的窗口数必须等于 iter_windows() 的长度。"""
     out = _run_real_qt("""
@@ -466,12 +477,16 @@ w2 = WindowParamsWidget(reference_size=(100, 100),
 print(w2.spec())
 """)
     lines = _lines(out)
-    assert lines[0] == "{'w': 640, 'h': 640, 'overlap': 200}", lines[0]
+    # 三个尺寸键照旧，另外必须带上 `min_visible`（跨窗去重要按它过滤低可见框）。
+    # 不整份比较：spec 里的合法键以后还会增加。
+    assert _spec_size(lines[0]) == (640, 640, 200), lines[0]
+    assert "min_visible" in lines[0], lines[0]
     assert lines[1] == "45 (5, 9) True", lines[1]
     assert lines[2] == "None False", lines[2]
     assert lines[3] == "True", lines[3]
     # 坏值回退到默认
-    assert lines[4] == "{'w': 640, 'h': 640, 'overlap': 200}", lines[4]
+    assert _spec_size(lines[4]) == (640, 640, 200), lines[4]
+    assert "min_visible" in lines[4], lines[4]
 
     """参数里混进 None / 字符串 / 列表时：显示不可用，绝不抛异常。
 
