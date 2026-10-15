@@ -550,7 +550,9 @@ class CanvasDrawingMixin:
             self._editor.detection_boxes_dict[idx][box_index] = \
                 self._editor.detection_boxes[box_index].copy()
         if hasattr(self._editor, '_sync_pasted_boxes_to_cache'):
-            self._editor._sync_pasted_boxes_to_cache()
+            # 带上被拖框的下标：缓存回写只认「拖的是不是粘贴副本」，
+            # 不带上就会拖动任何框都回写（用户报的 bug）。
+            self._editor._sync_pasted_boxes_to_cache(box_index=box_index)
 
     def _sync_all_detection_boxes_to_dict(self):
         idx = self._editor.current_background_index
