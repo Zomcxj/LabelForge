@@ -345,30 +345,33 @@ print(len(iter_windows(3840, 2160, ns['windows'])))
 
 # ---------- 范围面板 ----------
 
-def test_real_scope_panel_blocks_region_mode_without_regions():
-    """真实控件：选区域但没画区域时禁用确定。
+def test_real_scope_panel_warns_when_region_mode_has_no_regions():
+    """真实控件：选区域但没画区域时给出警告（不再有按钮可禁用）。
 
-    否则会「成功但 0 框」，默认覆盖模式会因此删掉原有自动标注。
+    否则会「成功但 0 框」，默认覆盖模式会因此删掉原有自动标注。面板现在是
+    实时的、没有确定按钮，所以这条约束的落点变成 `warn_label`：宿主启动前
+    仍会拦，但用户必须先在面板上看到为什么。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_ROI
+from pastelabel.engine.inference_scope import MODE_FULL, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, region_count=0,
                reference_size=(3840, 2160))
-print(p.ok_btn.isEnabled())
+# 全图模式不看区域，没有警告
+print(p.mode() == MODE_FULL, repr(p.warn_label.text()))
 p.set_mode(MODE_ROI)
-print(p.ok_btn.isEnabled())
-print('没有可用区域' in p.warn_label.text())
+print('没有可用区域，请先画好区域' in p.warn_label.text())
 p.set_region_count(2)
-print(p.ok_btn.isEnabled())
+print('没有可用区域，请先画好区域' in p.warn_label.text())
+print(p.mode() == MODE_ROI)
 """)
     lines = _lines(out)
-    assert lines[0] == "True", lines[0]
-    assert lines[1] == "False", lines[1]
-    assert lines[2] == "True", lines[2]
+    assert lines[0] == "True ''", lines[0]
+    assert lines[1] == "True", lines[1]
+    assert lines[2] == "False", lines[2]
     assert lines[3] == "True", lines[3]
 
 
@@ -394,7 +397,7 @@ for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
     app.processEvents()
     # 用 isVisible()（会连带看父控件）而不是 isHidden()：子控件没有单独
     # 隐藏过时 isHidden() 恒为 False，断言会变成空转。
-    print(mode, p.window_params.isVisible(), p.region_btn.isVisible(),
+    print(mode, p.window_params.isVisible(), p.region_label.isVisible(),
           p.region_list.isVisible())
 # 面板本身必须是非模态的：否则弹窗开着时画布收不到鼠标事件，「就地画区域」失效
 print(p.isModal())
@@ -439,8 +442,9 @@ for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
     p.set_mode(mode)
     app.processEvents()
     wp = p.window_params
+    # 区域那一段没有「编辑区域」按钮了，可编辑性看它的区域提示 label
     print(mode, wp.spins_enabled(), wp.templates_enabled(),
-          p.region_btn.isEnabled())
+          p.region_label.isEnabled())
 # 禁用状态下用户**点不动**：这是「不能修改点击」的真实保证。
 # 不断言 setValue() 会失败——那是程序化写入，Qt 有意让它绕过 enabled，
 # 拿它当断言是量的东西与结论不同构。
@@ -450,11 +454,11 @@ print(wp.is_editable(), wp.spins_enabled(), wp._w.isEnabled())
 """)
     lines = _lines(out)
     assert lines[0] == "1", lines[0]
-    # 全图：滑窗参数与模板都禁用、区域按钮也不可用
+    # 全图：滑窗参数与模板禁用、区域那段也置灰
     assert lines[1] == "full False False False", lines[1]
-    # 滑窗：参数可用、模板可用、区域按钮禁用
+    # 滑窗：参数可用、模板可用、区域那段置灰
     assert lines[2] == "window True True False", lines[2]
-    # 区域：参数与模板禁用、区域按钮可用
+    # 区域：参数与模板禁用、区域那段可用
     assert lines[3] == "roi False False True", lines[3]
     assert lines[4] == "False False False", lines[4]
 
@@ -545,8 +549,7 @@ def test_real_scope_panel_embeds_window_params_without_second_dialog():
     宽/高/重叠输入框，而不是一个再弹窗的按钮。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtWidgets import QSpinBox
+from PyQt5.QtWidgets import QApplication, QSpinBox, QPushButton
 from pastelabel.ui.scope_panel import ScopePanel
 from pastelabel.engine.inference_scope import MODE_WINDOW
 
@@ -563,8 +566,7 @@ print(len(spins))
 print(wp.spec())
 print(all(s.isEnabled() for s in spins))
 # 面板里不该再有一个「滑窗参数」按钮（那是旧设计：点它再开窗）
-old_btn = [b for b in p.findChildren(type(p.ok_btn))
-           if "滑窗参数" in b.text()]
+old_btn = [b for b in p.findChildren(QPushButton) if "滑窗参数" in b.text()]
 print(len(old_btn))
 """)
     lines = _lines(out)
@@ -820,43 +822,70 @@ print(repr(ScopePanel().window_summary()))
     assert lines[1] == "'640×640 重叠 200'", lines[1]
 
 
-def test_real_scope_panel_edit_regions_signal():
-    """真实控件：点「编辑区域」发出跳转请求。"""
+def test_real_scope_panel_roi_mode_hints_drawing_directly_on_the_image():
+    """真实控件：选中「区域」即进入可编辑态，不需要再点「编辑区域」按钮。
+
+    用户要求「删除编辑区域按钮，直接选中后就编辑」。面板本身（没有宿主）
+    开不了画布会话——那由宿主的 `_sync_region_session_to_mode()` 负责
+    （见 `test_real_mixin_edit_regions_*`）。这里只钉面板这一侧的契约：
+    `edit_regions_requested` 信号已经不存在，选中区域时给的是「在图上拖动」
+    的提示文字，而全图/滑窗下不给。
+    """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_ROI
+from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(region_count=1)
-p.set_mode(MODE_ROI)
-got = []
-p.edit_regions_requested.connect(lambda: got.append(1))
-p.region_btn.click()
-print(len(got))
+print(hasattr(p, 'edit_regions_requested'), hasattr(p, 'region_btn'))
+for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
+    p.set_mode(mode)
+    print(mode, '在图上拖动即可添加区域' in p.region_label.text())
 """)
-    assert _lines(out)[0] == "1"
+    lines = _lines(out)
+    assert lines[0] == "False False", (
+        f"「编辑区域」按钮/信号还留着：{lines[0]}")
+    assert lines[1] == "full False", lines[1]
+    assert lines[2] == "window False", lines[2]
+    assert lines[3] == "roi True", lines[3]
 
 
 def test_real_scope_panel_retranslates():
-    """真实控件：切语言后按钮文字跟着变。"""
+    """真实控件：切语言后面板上的文字跟着变。
+
+    确定/取消/编辑区域三个按钮都没了，所以钉的是**当前还在屏上的那几处**
+    文案：模式单选按钮、段标题、区域提示。
+    """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.scope_panel import ScopePanel
 from pastelabel.ui import i18n
-from pastelabel.engine.inference_scope import MODE_FULL
+from pastelabel.engine.inference_scope import MODE_FULL, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(region_count=1)
-print(p._buttons[MODE_FULL].text(), p.region_btn.text(), p.ok_btn.text())
+p.set_mode(MODE_ROI)
+print(p._buttons[MODE_FULL].text(), p.sections[MODE_ROI].title(),
+      p.region_label.text())
 i18n.set_lang('en')
 p.retranslate()
-print(p._buttons[MODE_FULL].text(), p.region_btn.text(), p.ok_btn.text())
+print(p._buttons[MODE_FULL].text(), p.sections[MODE_ROI].title(),
+      p.region_label.text())
 i18n.set_lang('zh')
 """)
     lines = _lines(out)
-    assert lines[0] == "全图 编辑区域 确定", lines[0]
-    assert lines[1] == "Full image Edit regions OK", lines[1]
+    assert lines[0] == "全图 区域 1 个区域　在图上拖动即可添加区域", lines[0]
+    # 已知产品侧的缺口（不在本任务的修改范围内）：`在图上拖动即可添加区域`
+    # 在 `pastelabel/ui/i18n.py` 里没有任何条目，所以切到英文后这句仍是中文。
+    # 要修的是 i18n.py，不是本测试；届时把下面两行换成
+    # `assert lines[1] == "Full image Regions 1 regions　Drag on the image to add a region"`
+    if lines[1] == "Full image Regions 1 regions　在图上拖动即可添加区域":
+        pytest.fail(
+            "产品缺口：`在图上拖动即可添加区域` 缺少 i18n 条目（pastelabel/ui/"
+            "i18n.py），切英文后面板仍显示中文；修正后把本用例的断言换成英文串。")
+    assert lines[1] == ("Full image Regions 1 regions　"
+                        "Drag on the image to add a region"), lines[1]
 
 
 # ---------- mixin 快照 ----------
@@ -1127,6 +1156,9 @@ class _Host(InferenceMixin, _BackgroundListMixin, QWidget):
             def width(self):
                 return self._r[2]
 
+            def height(self):
+                return self._r[3]
+
         # 侧栏放在屏幕左侧一块，并且让面板宽度塞得进 offscreen 的 800×600 屏幕。
         # 面板最小宽度 440；若侧栏放 x=700，`place_within` 会把面板拉回屏幕内，
         # 位置断言就变成「测屏幕钳制」而不是「测锚点」了（实测 frame.x()=263）。
@@ -1228,27 +1260,40 @@ print("关闭后会话已收:", h.canvas.region_session_active() is False)
     assert lines[6] == "关闭后会话已收: True", lines
 
 
-def test_real_mixin_edit_regions_starts_session_without_switching_mode():
-    """「编辑区域」就地开绘制会话，**不切贴图模式**（③）。
+def test_real_mixin_selecting_roi_mode_starts_the_session_without_switching_mode():
+    """`_sync_region_session_to_mode()` 在「面板开着 + 选了区域」时开会话，且**不切贴图模式**（③）。
 
     这条是 spec 第 9 条的反向断言：以前这里切 `_set_edit_mode('paste')`，
     现在必须一次都不切。`switched_to` 是宿主上的探针，专门用来抓
     「偷偷切过去又切回来」——只断言 edit_mode 值不变是不够的。
 
     踩过的坑仍保留在本用例的意图里：入口必须真的产生可观察效果
-    （会话激活），否则就是「按钮点了没反应」的旧毛病。
+    （会话激活），否则就是「选中了区域却没反应」的旧毛病。
     """
     out = _run_real_qt(_MIXIN_HOST + """
 h = _Host()
-h._edit_regions_for_scope()
+h._scope_panel_open = True
+h._scope_mode = MODE_ROI
+h._sync_region_session_to_mode()
 print(h.switched_to)
 print(h.canvas.region_session_active())
 print(h.status_label.text_)
+# 面板没开、或选的不是区域：都不该开会话
+h.canvas.end_region_session()
+h._scope_mode = MODE_WINDOW
+h._sync_region_session_to_mode()
+print('window', h.canvas.region_session_active())
+h._scope_mode = MODE_ROI
+h._scope_panel_open = False
+h._sync_region_session_to_mode()
+print('closed', h.canvas.region_session_active())
 """)
     lines = _lines(out)
     assert lines[0] == "[]", lines[0]
     assert lines[1] == "True", lines[1]
     assert "拖动" in lines[2] or "区域" in lines[2], lines[2]
+    assert lines[3] == "window False", lines[3]
+    assert lines[4] == "closed False", lines[4]
 
 
 def test_real_mixin_edit_regions_is_noop_without_canvas():
@@ -1256,7 +1301,9 @@ def test_real_mixin_edit_regions_is_noop_without_canvas():
     out = _run_real_qt(_MIXIN_HOST + """
 h = _Host()
 h.canvas = None
-h._edit_regions_for_scope()
+h._scope_panel_open = True
+h._scope_mode = MODE_ROI
+h._sync_region_session_to_mode()
 print(h.switched_to)
 print('ok')
 """)
@@ -1266,16 +1313,19 @@ print('ok')
 
 
 def test_real_mixin_edit_regions_twice_keeps_one_session():
-    """重复点「编辑区域」不重复开会话：第二次 begin 返回 False。"""
+    """重复联动不重复开会话：会话已激活时第二次是空转。"""
     out = _run_real_qt(_MIXIN_HOST + """
 h = _Host()
-h._edit_regions_for_scope()
-h._edit_regions_for_scope()
+h._scope_panel_open = True
+h._scope_mode = MODE_ROI
+h._sync_region_session_to_mode()
+h._sync_region_session_to_mode()
 print(h.canvas.region_session_active())
 print(h.canvas.begin_count)
 """)
     lines = _lines(out)
     assert lines[0] == "True", lines[0]
+    assert lines[1] == "1", lines[1]
 
 
 def test_real_mixin_region_display_follows_the_roi_mode_only():
@@ -1347,7 +1397,10 @@ def test_scope_modules_have_all_translations():
 
     missing = sorted((key, lang) for key in keys for lang in ("zh", "en")
                      if key not in i18n._strings[lang])
-    assert not missing, missing
+    assert not missing, (
+        f"{missing}\n"
+        "产品代码在 scope_panel.py 里用了这些 tr() 键，但 i18n 里一条都没有；"
+        "要补的是 pastelabel/ui/i18n.py（产品代码），不是本测试。")
 
 
 def test_real_mixin_toggles_scope_region_display():
@@ -1459,14 +1512,12 @@ print('mode' in saved, 'window_spec' in saved)
 
 
 def test_real_scope_panel_positions_on_its_anchor():
-    """真实控件：弹窗**竖直居中**在锚点那块（全局坐标），而不是屏幕正中。
+    """真实控件：弹窗**左上角对齐**锚点的左上角（全局坐标），而不是屏幕正中。
 
-    锚点现在是「背景图列表底边 ~ 标签列表顶边」那条带，所以竖直方向要按
-    带的中心对齐——只把顶边对齐会让弹窗整块压到下面的标签列表上，那就不是
-    用户要的「两个列表中间」了。
+    用户要求「范围推理窗口左上角始终对齐标签管理区域的左上角」——竖直方向
+    也要跟，所以不再是「竖直居中在锚点那块」，而是顶边跟顶边、左边跟左边。
+    锚点由 `_scope_anchor_rect()` 给出，就是「标签管理」区那块。
 
-    水平仍取锚点左侧 +8：不要求装进侧栏（弹窗最小宽 440px、侧栏 350px，
-    装不下），要的是「落在列表中间的层级上、别盖画布」。
     锚点取「屏幕上偏左」是为了避开钳制：贴到中右部会被钳回右边（那是
     `test_real_scope_panel_clamps_anchor_to_screen` 的事）。
     """
@@ -1478,10 +1529,7 @@ from pastelabel.ui.scope_panel import ScopePanel
 app = QApplication([])
 avail = app.primaryScreen().availableGeometry()
 # 左侧锚点：给 440px 弹窗留得下，钳制不会介入。
-# 高度要够：面板分三段后变高了（offscreen 屏只有 800x600），锚点太矮的话
-# 「竖直居中」会把弹窗顶到屏幕外、被钳回顶部，测的就不是居中了。
-anchor = QRect(avail.left() + 10, avail.top() + 30, 350,
-               max(200, avail.height() - 60))
+anchor = QRect(avail.left() + 10, avail.top() + 30, 350, 200)
 host = QWidget()
 host.resize(avail.width(), avail.height())
 host.show()
@@ -1492,20 +1540,15 @@ app.processEvents()
 # 用全局坐标比较：panel.geometry() 是相对父窗口的，边界值易混
 panel_tl = panel.mapToGlobal(panel.rect().topLeft())
 anchor_tl = host.mapToGlobal(anchor.topLeft())
-anchor_center_global_y = host.mapToGlobal(anchor.center()).y()
-panel_center_global_y = panel_tl.y() + panel.height() // 2
-# 水平：贴着锚点左边（+8 左右）
+# 水平：左边不越过锚点左边界（面板比锚点宽，向右溢出，不盖画布）
 print(anchor_tl.x() <= panel_tl.x() <= anchor_tl.x() + 40)
-# 竖直：弹窗中心与锚点中心对齐（允许几像素的取整误差）
-print(abs(panel_center_global_y - anchor_center_global_y) <= 4)
-# 且确实不再贴顶（贴顶就说明居中没生效）
-print(panel_tl.y() != anchor_tl.y())
+# 竖直：顶边与锚点顶边对齐
+print(abs(panel_tl.y() - anchor_tl.y()) <= 2)
 panel.close()
 """)
     lines = _lines(out)
     assert lines[0] == "True", lines[0]
-    assert lines[1] == "True", f"没竖直居中于锚点: {lines}"
-    assert lines[2] == "True", f"仍在贴锚点顶边: {lines}"
+    assert lines[1] == "True", f"没顶对齐到锚点左上角: {lines}"
 
 
 def test_real_scope_panel_clamps_anchor_to_screen():
@@ -1727,76 +1770,65 @@ print(before == after, before > 0)
     assert lines[0] == "True True", lines[0]
 
 
-def test_real_mixin_records_template_only_on_accept():
-    """点「确定」才记模板；「取消」与直接关闭都不记（两者等价）。
+def test_real_mixin_records_template_only_when_window_params_change():
+    """窗口参数**变化时**才记模板；同样的参数反复经过不重复写。
 
-    这是 spec 第 7/8 条的落地断言。参数内嵌进面板后不再有第二个窗口，所以
-    直接驱动 `finished_ok` 走真实路径，而不是拿替身拦 `exec_()`——那样恰好
-    把「非模态 + 信号回传」这条新机制绕过去了。
+    原来是「点确定才记」；③ 之后没有确定按钮了，面板是实时的，所以记录点
+    挪到了「滑窗模式下参数变化」那一刻（`_on_scope_overlay_changed`）。
+    去重逻辑（B-3）保留：不重复写，免得把增强侧真在用的模板挤出去。
     """
     out = _run_real_qt(_MIXIN_HOST + """
 from pastelabel.core import config_manager as cm
-from pastelabel.engine.inference_scope import MODE_WINDOW
+from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW
 
 h = _Host()
 h._on_model_loaded(_Detector(), (640, 640), "model")
 
-# 1) 非滑窗模式下点确定：不该记模板（窗口参数对全图模式没有意义）
-h._scope_mode = MODE_FULL
-before = len(cm.load_crop_templates())
-h._on_scope_panel_closed(True)
-print("full", len(cm.load_crop_templates()) - before)
-
-# 2) 取消：不该记模板，也不该改范围
-h._scope_mode = MODE_FULL
-h._window_spec = {'w': 640, 'h': 640, 'overlap': 200}
-before = len(cm.load_crop_templates())
-h._on_scope_panel_closed(False)
-print("cancel", len(cm.load_crop_templates()) - before)
-print("cancel mode", h._scope_mode)
-
-# 3) 滑窗模式点确定：记一条
-import pastelabel.ui.scope_panel as sp
 
 class _Panel:
-    Accepted = 1
-    def __init__(self):
-        pass
-    def selection(self):
-        return (MODE_WINDOW, {'w': 512, 'h': 512, 'overlap': 64})
-    def set_region_count(self, n):
-        pass
+    def __init__(self, mode, spec):
+        self._mode = mode
+        self._spec = spec
+    def mode(self):
+        return self._mode
+    def window_spec(self):
+        return dict(self._spec)
 
-h._scope_panel = _Panel()
+
+def drive(mode, spec):
+    h._scope_panel = _Panel(mode, spec)
+    h._scope_mode = mode
+    h._on_scope_overlay_changed()
+
+# 1) 全图模式下参数变化：不该记模板（窗口参数对全图模式没有意义）
+h._scope_panel_open = True
 before = len(cm.load_crop_templates())
-h._on_scope_panel_closed(True)
-print("accept", len(cm.load_crop_templates()) - before)
+drive(MODE_FULL, {'w': 640, 'h': 640, 'overlap': 200})
+print("full", len(cm.load_crop_templates()) - before)
+
+# 2) 滑窗模式：记一条
+before = len(cm.load_crop_templates())
+drive(MODE_WINDOW, {'w': 512, 'h': 512, 'overlap': 64})
+print("first", len(cm.load_crop_templates()) - before)
 print("spec", h._window_spec)
 
-# 4) 同样的参数再点一次确定：**不重复写**（防把增强侧真模板挤掉）
+# 3) 同样的参数再来一次：**不重复写**（防把增强侧真模板挤掉）
 before = len(cm.load_crop_templates())
-h._on_scope_panel_closed(True)
+drive(MODE_WINDOW, {'w': 512, 'h': 512, 'overlap': 64})
 print("repeat", len(cm.load_crop_templates()) - before)
 
-# 5) 参数变了再确定：应记一条新的
-class _Panel2(_Panel):
-    def selection(self):
-        return (MODE_WINDOW, {'w': 1024, 'h': 1024, 'overlap': 128})
-
-h._scope_panel = _Panel2()
+# 4) 参数变了：应记一条新的
 before = len(cm.load_crop_templates())
-h._on_scope_panel_closed(True)
+drive(MODE_WINDOW, {'w': 1024, 'h': 1024, 'overlap': 128})
 print("changed", len(cm.load_crop_templates()) - before)
 """)
     lines = _lines(out)
     assert lines[0] == "full 0", lines[0]
-    assert lines[1] == "cancel 0", lines[1]
-    assert lines[2] == "cancel mode full", lines[2]
-    assert lines[3] == "accept 1", lines[3]
-    assert lines[4] == "spec {'w': 512, 'h': 512, 'overlap': 64}", lines[4]
-    # 关键：重复确定不再重复写（B-3）
-    assert lines[5] == "repeat 0", lines[5]
-    assert lines[6] == "changed 1", lines[6]
+    assert lines[1] == "first 1", lines[1]
+    assert lines[2] == "spec {'w': 512, 'h': 512, 'overlap': 64}", lines[2]
+    assert lines[3] == "repeat 0", (
+        f"同样参数被重复记进模板列表了（B-3）：{lines[3]}")
+    assert lines[4] == "changed 1", lines[4]
 
 
 def test_recorded_template_does_not_fabricate_min_visible():
@@ -1855,7 +1887,7 @@ def scenario(close_call):
     h._scope_mode = MODE_ROI
     h._open_scope_panel()
     # 面板开着时开一个区域绘制会话，模拟用户点了「编辑区域」
-    h._edit_regions_for_scope()
+    h._sync_region_session_to_mode()
     during_session = h.canvas.region_session_active()
     during_show = h._show_scope_regions
     getattr(h._scope_panel, close_call)()
@@ -1882,7 +1914,7 @@ from PyQt5.QtWidgets import QApplication
 h = _Host()
 h._on_model_loaded(_Detector(), (640, 640), "model")
 h._open_scope_panel()
-h._edit_regions_for_scope()
+h._sync_region_session_to_mode()
 # 模拟异常路径：宿主在收尾途中抛异常，也必须已经收干净
 panel = h._scope_panel
 try:
@@ -2225,14 +2257,14 @@ w._open_scope_panel()
 w._scope_panel.set_mode(MODE_ROI)
 app.processEvents()
 before = count_edges()
-w._scope_panel.ok_btn.click()
+w._scope_panel.close()
 app.processEvents()
 after_ok = count_edges()
 
 w._open_scope_panel()
 w._scope_panel.set_mode(MODE_ROI)
 app.processEvents()
-w._scope_panel.cancel_btn.click()
+w._scope_panel.close()
 app.processEvents()
 after_cancel = count_edges()
 
@@ -2333,14 +2365,15 @@ h.detection_boxes_dict = {0: []}
 h._detector = _Detector()
 
 anchor = h._scope_anchor_rect()
-side = h._side_panel_geometry()
+label_tl = h.label_group.mapTo(h, h.label_group.rect().topLeft())
 bg_left = h.bg_list_group.mapTo(h, h.bg_list_group.rect().topLeft()).x()
 
 print(anchor.x() > 0)
 print(abs(anchor.x() - bg_left) <= 12)
 print(anchor.width() > 0)
-# 锚点要覆盖整个侧栏高度（竖直居中的依据），不是两个列表之间那条窄带
-print(anchor.height() >= side.height() - 20)
+# ④：锚点就是「标签管理」区那块，**左上角**对齐它（含竖直方向）
+print(abs(anchor.y() - label_tl.y()) <= 12)
+print(anchor.height() <= h.label_group.height() + 20)
 """)
     lines = _lines(out)
     assert lines[0] == "True", (
@@ -2348,7 +2381,9 @@ print(anchor.height() >= side.height() - 20)
     assert lines[1] == "True", f"锚点左边界没和侧栏对齐（{lines}）"
     assert lines[2] == "True", lines[2]
     assert lines[3] == "True", (
-        f"锚点高度没覆盖侧栏（{lines}）：竖直居中会偏")
+        f"锚点顶边没和「标签管理」区对齐（{lines}）：面板左上角对不上")
+    assert lines[4] == "True", (
+        f"锚点高度不是「标签管理」区的高度（{lines}）")
 
 
 def test_real_batch_target_runs_the_span_between_current_and_target():
@@ -2821,11 +2856,11 @@ app.processEvents()
 print(len(p.sections))
 # 三段各自的内容都要在（不是整块显隐）
 print(p.window_params.isVisibleTo(p))
-print(p.region_btn.isVisibleTo(p))
+print(p.region_label.isVisibleTo(p))
 print(p.region_list.isVisibleTo(p))
 # 未选中的段置灰
 print(p.window_params.isEnabled())
-print(p.region_btn.isEnabled())
+print(p.region_label.isEnabled())
 """)
     lines = _lines(out)
     assert lines[0] == "3", f"不是三段：{lines[0]}"
@@ -2849,10 +2884,10 @@ p.set_regions([{'x': 0, 'y': 0, 'width': 100, 'height': 100}])
 p.set_mode(MODE_WINDOW)
 p.show()
 app.processEvents()
-print(p.window_params.isEnabled(), p.region_btn.isEnabled())
+print(p.window_params.isEnabled(), p.region_label.isEnabled())
 p.set_mode(MODE_ROI)
 app.processEvents()
-print(p.window_params.isEnabled(), p.region_btn.isEnabled())
+print(p.window_params.isEnabled(), p.region_label.isEnabled())
 """)
     lines = _lines(out)
     assert lines[0] == "True False", f"选中滑窗时该只有滑窗可编辑：{lines[0]}"
@@ -2883,13 +2918,13 @@ def inside(widget, target):
     # target 是否在 widget 这棵子树里（用 isAncestorOf，不看名字）
     return widget is target or widget.isAncestorOf(target)
 
-# 滑窗参数必须在**滑窗**段里；区域按钮必须在**区域**段里。
+# 滑窗参数必须在**滑窗**段里；区域提示 label 必须在**区域**段里。
 # 不能写成 any(...)：那样两样东西挤在同一段也会通过。
 print(inside(secs['window'], p.window_params))
-print(inside(secs['roi'], p.region_btn))
+print(inside(secs['roi'], p.region_label))
 print(inside(secs['roi'], p.region_list))
 # 并且**不该**跑到别人家里去
-print(inside(secs['window'], p.region_btn))
+print(inside(secs['window'], p.region_label))
 print(inside(secs['roi'], p.window_params))
 # 单选项分布在各自段里，但每段的内容体才是可禁用对象
 print(inside(secs['full'], p._buttons['full']))
@@ -2899,9 +2934,9 @@ print(inside(secs['roi'], p._buttons['roi']))
     lines = _lines(out)
     assert lines[0] == "3 3", f"三段不是三个不同控件：{lines[0]}"
     assert lines[1] == "True", "滑窗参数不在「滑窗」段里"
-    assert lines[2] == "True", "编辑区域按钮不在「区域」段里"
+    assert lines[2] == "True", "区域提示不在「区域」段里"
     assert lines[3] == "True", "区域明细不在「区域」段里"
-    assert lines[4] == "False", "编辑区域按钮跑进了「滑窗」段"
+    assert lines[4] == "False", "区域提示跑进了「滑窗」段"
     assert lines[5] == "False", "滑窗参数跑进了「区域」段"
     assert lines[6:9] == ["True", "True", "True"], (
         f"三个模式按钮没有分列在各自段里：{lines[6:9]}")
@@ -2973,13 +3008,13 @@ w._open_scope_panel()
 app.processEvents()
 print(w._scope_panel_open)
 
-w._scope_panel.ok_btn.click()
+w._scope_panel.close()
 app.processEvents()
 print(w._scope_panel_open)
 
 w._open_scope_panel()
 app.processEvents()
-w._scope_panel.cancel_btn.click()
+w._scope_panel.close()
 app.processEvents()
 print(w._scope_panel_open)
 
@@ -3003,6 +3038,9 @@ def test_real_closing_the_panel_ends_the_region_session():
 
     会话若漏收，关掉面板后标注模式下的拖框/画多边形会被区域绘制抢走，
     表现为「关掉窗口后画不了框」。
+
+    ② 之后进入会话的方式变了：不再点「编辑区域」，而是**选中「区域」**这个
+    推理方式（`set_mode(MODE_ROI)` 会经 `overlay_changed` → 自动开会话）。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -3022,11 +3060,11 @@ w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
 
 w._open_scope_panel()
 app.processEvents()
-w._edit_regions_for_scope()
+w._scope_panel.set_mode(MODE_ROI)
 app.processEvents()
 print(w.canvas.region_session_active())
 
-w._scope_panel.cancel_btn.click()
+w._scope_panel.close()
 app.processEvents()
 print(w.canvas.region_session_active())
 print(w._scope_panel_open)
@@ -3038,10 +3076,16 @@ print(w._scope_panel_open)
 
 
 def test_real_region_session_and_panel_flag_are_independent():
-    """会话可以单独结束（如按 Esc/右键），但面板仍是开着的。
+    """「面板开着」与「区域会话活着」是两个状态，不能互相误清。
 
-    这两件事常被混成一个标记：会话结束 ≠ 面板关闭。若误绑，按 Esc 结束
-    当前区域会把「面板开着」也一起清掉，区域描边和锁标签框就跟着失效。
+    这两件事常被混成一个标记。② 之后它们由 `_sync_region_session_to_mode()`
+    联动（面板开着 + 区域模式 = 会话必须活着），但**方向是单向的**：会话单独
+    结束不该动「面板开着」（否则区域描边和锁标签框会跟着失效），而面板一关则
+    必须连带把会话收掉。
+
+    这里先钉住「结束会话不会误清面板标记」——结束之后因为仍在区域模式，会话会
+    被立刻重建（这正是 ② 要的「一直可编辑」），但 `_scope_panel_open` 必须
+    始终为真。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -3062,19 +3106,25 @@ w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
 w._open_scope_panel()
 w._scope_panel.set_mode(MODE_ROI)
 app.processEvents()
-w._edit_regions_for_scope()
-app.processEvents()
 print(w.canvas.region_session_active(), w._scope_panel_open)
 
-# 单独结束会话（等价于用户按 Esc / 右键收尾）
+# 手动结束会话（等价于用户按 Esc 收尾当前这一个）
 w.canvas.end_region_session()
+app.processEvents()
+# 面板标记不受影响；仍在区域模式，所以会话会被立刻重建
+print(w._scope_panel_open, w._scope_mode)
+
+# 关掉面板：会话必须被收掉，标记也必须清
+w._scope_panel.close()
 app.processEvents()
 print(w.canvas.region_session_active(), w._scope_panel_open)
 """)
     lines = _lines(out)
     assert lines[0] == "True True", f"开面板+进会话后状态不对：{lines[0]}"
-    assert lines[1] == "False True", (
+    assert lines[1] == "True roi", (
         f"会话结束后把「面板开着」一起清掉了——两者必须独立：{lines[1]}")
+    assert lines[2] == "False False", (
+        f"关面板没收掉会话/标记：{lines[2]}")
 
 
 # ---------- ④ 范围面板开着时锁住标签框编辑 ----------
@@ -3161,7 +3211,7 @@ release(px + 80, py + 80)
 print(w.detection_boxes[0] != before)
 
 # --- 关掉面板：同一操作必须照常生效（锁不能锁死）---
-w._scope_panel.cancel_btn.click()
+w._scope_panel.close()
 app.processEvents()
 print(not canvas._label_editing_locked())
 press(px, py)
@@ -3257,7 +3307,7 @@ drag_to_draw()
 print(len(w.detection_boxes) == 0)
 
 # --- 关掉面板：同样的拖动必须画出框（锁不能锁死）---
-w._scope_panel.cancel_btn.click()
+w._scope_panel.close()
 app.processEvents()
 drag_to_draw()
 print(len(w.detection_boxes) == 1)
@@ -3318,7 +3368,7 @@ print(not canvas.is_drawing_box)
 # 面板开着 + 进区域会话：鼠标归区域绘制
 w._scope_panel.set_mode(MODE_ROI)
 app.processEvents()
-w._edit_regions_for_scope()
+w._sync_region_session_to_mode()
 app.processEvents()
 print(canvas.region_session_active())
 press(400, 350)
@@ -3628,7 +3678,7 @@ app.processEvents()
 press(cx, cy)
 move(cx + 60, cy + 40)
 # 拖动中途关面板（模拟用户按 Esc / 点 X）
-w._scope_panel.cancel_btn.click()
+w._scope_panel.close()
 app.processEvents()
 print(w._scope_panel_open)
 # 再继续移动并松手：不应该抛异常
@@ -3723,3 +3773,123 @@ print(DEFAULT_MIN_VISIBLE)
     assert lines[0] == "True", "默认窗口表没带 min_visible"
     assert lines[1] == lines[2], (
         f"默认表里的 min_visible（{lines[1]}）与界面默认（{lines[2]}）不一致")
+
+
+# ---------- ③ 面板改动即时生效（无确定/取消）----------
+
+def test_real_scope_panel_has_no_ok_or_cancel_button():
+    """③ 面板不再有「确定/取消」：改了就是改了，不需要点按钮确认。
+
+    用户要求「选中某推理方式立马刷新不需要点击确定，可以把确定取消按钮删除」。
+    按钮删掉后，唯一剩下的关闭方式是右上角 X（`close()`）。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+
+app = QApplication([])
+p = ScopePanel()
+p.show()
+app.processEvents()
+print(hasattr(p, 'ok_btn'), hasattr(p, 'cancel_btn'))
+# 按钮文字也不该还留在任何子控件上
+texts = [w.text() for w in p.findChildren(type(p.findChild(
+    __import__('PyQt5.QtWidgets', fromlist=['QPushButton']).QPushButton)))]
+print('确定' in texts, '取消' in texts)
+""")
+    lines = _lines(out)
+    assert lines[0] == "False False", (
+        f"面板上还留着确定/取消按钮：{lines[0]}")
+    assert lines[1] == "False False", (
+        f"按钮控件删了但文字还在：{lines[1]}")
+
+
+def test_real_switching_mode_applies_without_confirming():
+    """③ 换推理方式立刻写入宿主状态，不必点确定。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_WINDOW, MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+w._on_model_loaded(w._detector, (640, 640), 'model')
+w.resize(900, 700)
+w.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
+w.region_fixed = False
+# 默认（还没开过面板）是「全图」；`_scope_mode` 要等模型加载才建，用 getattr
+print(getattr(w, '_scope_mode', 'full'))
+
+w._open_scope_panel()
+app.processEvents()
+print(w._scope_mode)
+
+w._scope_panel.set_mode(MODE_WINDOW)
+app.processEvents()
+print(w._scope_mode)
+
+w._scope_panel.set_mode(MODE_ROI)
+app.processEvents()
+print(w._scope_mode)
+
+# 不关面板，直接问「跑的时候用哪个范围」
+print(w._scope_for_run()['mode'])
+""")
+    lines = _lines(out)
+    assert lines[0] == "full", lines
+    assert lines[1] == "full", f"开面板不该改动状态：{lines}"
+    assert lines[2] == "window", (
+        f"切到滑窗没立刻生效（还要点确定）：{lines[2]}")
+    assert lines[3] == "roi", f"切到区域没立刻生效：{lines[3]}"
+    assert lines[4] == "roi", f"跑起来没用刚选的模式：{lines[4]}"
+
+
+def test_real_window_edits_apply_without_confirming():
+    """③ 滑窗参数改了立刻生效：不点确定，`_scope_for_run()` 就用新值。
+
+    这条把上一轮「面板参数要进到任务范围」（`_window_spec_for_run`）从
+    「面板开着」升级为「面板开着且即时」——不再依赖任何确认动作。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_WINDOW
+
+app = QApplication([])
+w = ImageEditor()
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+w._open_scope_panel()
+w._scope_panel.set_mode(MODE_WINDOW)
+app.processEvents()
+
+wp = w._scope_panel.window_params
+wp._w.setValue(1234)
+wp._h.setValue(567)
+wp._ov.setValue(88)
+wp.min_visible_spin.setValue(85)
+app.processEvents()
+
+spec = w._scope_for_run()['windows']
+print(spec['w'], spec['h'], spec['overlap'])
+print(spec['min_visible'])
+# 宿主侧的窗口参数也要跟着更新（关掉面板后仍要用这份）
+print(w._window_spec['w'], w._window_spec['overlap'])
+""")
+    lines = _lines(out)
+    assert lines[0] == "1234 567 88", f"改的参数没即时生效：{lines[0]}"
+    assert lines[1] == "0.85", f"min_visible 没即时生效：{lines[1]}"
+    assert lines[2] == "1234 88", (
+        f"宿主的窗口参数没随面板更新（关面板后会退回旧值）：{lines[2]}")

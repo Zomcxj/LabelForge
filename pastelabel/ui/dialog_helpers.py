@@ -25,14 +25,17 @@ def center_on_parent(dialog, parent=None):
     dialog.move(x, y)
 
 
-def place_within(dialog, rect):
+def place_within(dialog, rect, align="center"):
     """把对话框浮到 rect（父窗口坐标）那块，并钳到所在屏幕的可用区。
 
     rect 是**右侧侧栏那块**（面板要盖在它上面，而不是画布上）。**不要求弹窗
     装进 rect**：范围弹窗比侧栏宽，几何上装不下——用户要的是「浮在侧栏上层、
-    竖直居中、别盖画布」。
+    别盖画布」。
 
-    竖直方向按 rect 的**中心**居中。
+    竖直方向：
+    - `align="center"`（默认）：按 rect 的**中心**居中。范围弹窗原来用这个。
+    - `align="top-left"`：弹窗左上角对齐 rect 左上角（范围弹窗现在用这个，
+      用户要求「左上角始终对齐标签管理区域的左上角」）。
 
     水平方向：以 rect 的中心线对齐弹窗中心，但**优先保住左边不越过 rect
     左边界**——用户报过「面板跑到屏幕左边挡住画布」，根因是这里曾经用
@@ -69,7 +72,10 @@ def place_within(dialog, rect):
     gx = center_x - span_x // 2
     if gx < left:
         gx = left
-    gy = center_y - span_y // 2
+    if align == "top-left":
+        gy = origin.y() + rect.top()
+    else:
+        gy = center_y - span_y // 2
 
     screen = QApplication.screenAt(QPoint(center_x, center_y)) \
         or QApplication.primaryScreen()
