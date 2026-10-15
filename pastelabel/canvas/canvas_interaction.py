@@ -192,6 +192,13 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             if item_at_pos is not None:
                 self._handle_item_click(item_at_pos, mouse_pos)
                 return
+            # 范围面板开着时，标注模式也要能调区域框（用户要求「只在范围面板
+            # 开着时允许」）。顺序放在**标签框之后**：面板开着时标签框已被锁
+            # （`_label_editing_locked` 让它返回 False），所以实际不会被抢；
+            # 万一将来锁松了，也不会出现「点框先动了区域」的怪事。
+            if self._region_editing_allowed():
+                if self._handle_region_click(mouse_pos):
+                    return
         else:
             item_at_pos = self.find_item_at_position(mouse_pos)
             if item_at_pos is not None:
@@ -210,8 +217,11 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self._clear_selection()
 
     def _handle_region_click(self, mouse_pos):
-        """贴图模式下区域编辑入口：顶点/手柄→缩放，边上→插点，内部→拖动。"""
-        if not self._is_paste_mode():
+        """区域编辑入口：顶点/手柄→缩放，边上→插点，内部→拖动。"""
+        # 平时只在贴图模式编辑区域；但**范围面板开着**时例外：用户要求
+        # 「区域框可以调整大小和位置，只在范围面板开着时允许」，而面板开着时
+        # 画布通常停在标注模式（正在审标注）。所以面板开着就允许调区域。
+        if not self._is_paste_mode() and not self._region_editing_allowed():
             return False
         if getattr(self._editor, 'region_fixed', False):
             return False

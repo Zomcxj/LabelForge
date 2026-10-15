@@ -3330,3 +3330,319 @@ print(canvas.is_drawing_region)
     assert lines[2] == "True", f"没能进入区域会话：{lines[2]}"
     assert lines[3] == "True", (
         "会话内应当去画区域，却被标签框锁拦下了")
+
+
+# ---------- ③ 面板开着时允许调整区域框 ----------
+
+def test_real_panel_open_allows_dragging_a_region_box():
+    """③ 面板开着时，区域框必须能拖动改位置。
+
+    用户要求「区域框可以调整大小和位置，只在范围面板开着时允许」——面板正是
+    调区域的时候，此时框不能拖就完全没法用。注意这与「锁标签框」（Task 8）
+    方向相反：同一时刻标签框锁住、区域框可动。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+w.background_images = ['work.png']
+canvas = w.canvas
+canvas.resize(900, 700)
+app.processEvents()
+w.update_label_list = lambda: None
+w._save_current_detection_boxes = lambda *a, **k: None
+w.save_json = lambda *a, **k: None
+w.detection_boxes = []
+w.region_fixed = False
+w.region_boxes = [{'x': 300, 'y': 300, 'width': 200, 'height': 200}]
+
+def press(x, y):
+    canvas.mousePressEvent(QMouseEvent(
+        QMouseEvent.MouseButtonPress, QPointF(x, y), Qt.LeftButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def move(x, y):
+    canvas.mouseMoveEvent(QMouseEvent(
+        QMouseEvent.MouseMove, QPointF(x, y), Qt.NoButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def release(x, y):
+    canvas.mouseReleaseEvent(QMouseEvent(
+        QMouseEvent.MouseButtonRelease, QPointF(x, y), Qt.LeftButton,
+        Qt.NoButton, Qt.NoModifier))
+
+# 区域中心在画布上的位置（图像坐标 -> 画布坐标）
+rect = canvas.get_background_rect()
+sc = canvas.background_scale
+cx = int(rect.x() + 400 * sc)
+cy = int(rect.y() + 400 * sc)
+
+w._open_scope_panel()
+w._scope_panel.set_mode(MODE_ROI)
+app.processEvents()
+w.edit_mode = 'annotate'          # 面板开着时通常是标注模式
+app.processEvents()
+
+before = dict(w.region_boxes[0])
+press(cx, cy)
+print(canvas.is_dragging_region)
+move(cx + 60, cy + 40)
+release(cx + 60, cy + 40)
+print(w.region_boxes[0] != before)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", (
+        "面板开着时按在区域框上没进入拖动，用户没法调整区域位置")
+    assert lines[1] == "True", "面板开着时拖动区域框没有生效"
+
+
+def test_real_panel_open_allows_resizing_a_region_box():
+    """③ 区域框还要能**改大小**（拖右下角手柄）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+w.background_images = ['work.png']
+canvas = w.canvas
+canvas.resize(900, 700)
+app.processEvents()
+w.update_label_list = lambda: None
+w._save_current_detection_boxes = lambda *a, **k: None
+w.save_json = lambda *a, **k: None
+w.detection_boxes = []
+w.region_fixed = False
+w.region_boxes = [{'x': 300, 'y': 300, 'width': 200, 'height': 200}]
+
+def press(x, y):
+    canvas.mousePressEvent(QMouseEvent(
+        QMouseEvent.MouseButtonPress, QPointF(x, y), Qt.LeftButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def move(x, y):
+    canvas.mouseMoveEvent(QMouseEvent(
+        QMouseEvent.MouseMove, QPointF(x, y), Qt.NoButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def release(x, y):
+    canvas.mouseReleaseEvent(QMouseEvent(
+        QMouseEvent.MouseButtonRelease, QPointF(x, y), Qt.LeftButton,
+        Qt.NoButton, Qt.NoModifier))
+
+rect = canvas.get_background_rect()
+sc = canvas.background_scale
+# 区域右下角 (500,500) 的手柄
+hx = int(rect.x() + 500 * sc)
+hy = int(rect.y() + 500 * sc)
+
+w._open_scope_panel()
+w._scope_panel.set_mode(MODE_ROI)
+app.processEvents()
+w.edit_mode = 'annotate'
+app.processEvents()
+
+before = dict(w.region_boxes[0])
+press(hx, hy)
+print(canvas.is_resizing_region)
+move(hx + 50, hy + 50)
+release(hx + 50, hy + 50)
+after = w.region_boxes[0]
+print(after['width'] > before['width'] and after['height'] > before['height'])
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", "面板开着时按区域右下角没进入缩放"
+    assert lines[1] == "True", "面板开着时区域框尺寸没被改大"
+
+
+def test_real_region_is_not_editable_when_the_panel_is_closed():
+    """对照：面板关着、且是标注模式时，区域框不该被动（别锁反了）。
+
+    用户明说「只在范围面板开着时允许」——关掉面板后标注模式下点区域框，
+    不能把它拖走（那会误改用户画好的区域）。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+w.background_images = ['work.png']
+canvas = w.canvas
+canvas.resize(900, 700)
+app.processEvents()
+w.update_label_list = lambda: None
+w._save_current_detection_boxes = lambda *a, **k: None
+w.save_json = lambda *a, **k: None
+w.detection_boxes = []
+w.region_fixed = False
+w.region_boxes = [{'x': 300, 'y': 300, 'width': 200, 'height': 200}]
+
+def press(x, y):
+    canvas.mousePressEvent(QMouseEvent(
+        QMouseEvent.MouseButtonPress, QPointF(x, y), Qt.LeftButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def move(x, y):
+    canvas.mouseMoveEvent(QMouseEvent(
+        QMouseEvent.MouseMove, QPointF(x, y), Qt.NoButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def release(x, y):
+    canvas.mouseReleaseEvent(QMouseEvent(
+        QMouseEvent.MouseButtonRelease, QPointF(x, y), Qt.LeftButton,
+        Qt.NoButton, Qt.NoModifier))
+
+rect = canvas.get_background_rect()
+sc = canvas.background_scale
+cx = int(rect.x() + 400 * sc)
+cy = int(rect.y() + 400 * sc)
+
+w.edit_mode = 'annotate'          # 标注模式，面板**没开**
+app.processEvents()
+print(w._scope_panel_open)
+
+before = dict(w.region_boxes[0])
+press(cx, cy)
+move(cx + 60, cy + 40)
+release(cx + 60, cy + 40)
+print(w.region_boxes[0] == before)
+""")
+    lines = _lines(out)
+    assert lines[0] == "False", f"前置不成立，面板不该是开着的：{lines[0]}"
+    assert lines[1] == "True", (
+        "面板关着时标注模式下竟然把区域框拖走了（应当不允许）")
+
+
+def test_real_closing_the_panel_mid_drag_does_not_corrupt_the_region():
+    """拖动区域框中途关掉面板：不能崩，也不能把区域搞成半截状态。
+
+    面板是可以用快捷键/X 随时关掉的，拖动过程中关掉属于正常操作。这里只要求
+    「不崩 + 区域还是个合法框」，不要求把拖动结果回滚——用户可能正是想边看
+    边调。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+w.background_images = ['work.png']
+canvas = w.canvas
+canvas.resize(900, 700)
+app.processEvents()
+w.update_label_list = lambda: None
+w._save_current_detection_boxes = lambda *a, **k: None
+w.save_json = lambda *a, **k: None
+w.detection_boxes = []
+w.region_fixed = False
+w.region_boxes = [{'x': 300, 'y': 300, 'width': 200, 'height': 200}]
+
+def press(x, y):
+    canvas.mousePressEvent(QMouseEvent(
+        QMouseEvent.MouseButtonPress, QPointF(x, y), Qt.LeftButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def move(x, y):
+    canvas.mouseMoveEvent(QMouseEvent(
+        QMouseEvent.MouseMove, QPointF(x, y), Qt.NoButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def release(x, y):
+    canvas.mouseReleaseEvent(QMouseEvent(
+        QMouseEvent.MouseButtonRelease, QPointF(x, y), Qt.LeftButton,
+        Qt.NoButton, Qt.NoModifier))
+
+rect = canvas.get_background_rect()
+sc = canvas.background_scale
+cx = int(rect.x() + 400 * sc)
+cy = int(rect.y() + 400 * sc)
+
+w._open_scope_panel()
+w._scope_panel.set_mode(MODE_ROI)
+app.processEvents()
+w.edit_mode = 'annotate'
+app.processEvents()
+
+press(cx, cy)
+move(cx + 60, cy + 40)
+# 拖动中途关面板（模拟用户按 Esc / 点 X）
+w._scope_panel.cancel_btn.click()
+app.processEvents()
+print(w._scope_panel_open)
+# 再继续移动并松手：不应该抛异常
+move(cx + 90, cy + 70)
+release(cx + 90, cy + 70)
+app.processEvents()
+print(w.canvas.is_dragging_region)
+
+region = w.region_boxes[0]
+print(region['width'] > 0 and region['height'] > 0)
+print(set(region) >= {'x', 'y', 'width', 'height'})
+""")
+    lines = _lines(out)
+    assert lines[0] == "False", f"关面板没生效：{lines[0]}"
+    assert lines[1] == "False", f"关面板后拖动状态没收干净：{lines[1]}"
+    assert lines[2] == "True", f"区域尺寸被搞坏了：{lines}"
+    assert lines[3] == "True", f"区域字段缺失：{lines}"

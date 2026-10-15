@@ -25,6 +25,18 @@ class CanvasDrawingMixin:
         """
         return bool(getattr(self._editor, '_scope_panel_open', False))
 
+    def _region_editing_allowed(self):
+        """现在允许编辑区域框吗（面板开着就行，与编辑模式无关）。
+
+        用户要求「区域框可以调整大小和位置，只在范围面板开着时允许」——面板
+        正是调区域的地方，此时画布常停在标注模式，光靠 `_is_paste_mode()` 会
+        让区域框完全拖不动。
+
+        与 `_label_editing_locked()` 方向相反：同一时刻标签框锁住、区域框可动，
+        免得调区域时顺手改坏标注。
+        """
+        return bool(getattr(self._editor, '_scope_panel_open', False))
+
     def _handle_region_press(self, mouse_pos):
         """语义区域绘制：左键按下定起点，拖动预览，松开完成。"""
         if not self._can_edit_canvas():
