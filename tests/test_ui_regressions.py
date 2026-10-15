@@ -8,8 +8,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_canvas_imports_qpixmap_for_brightness_contrast_updates():
     source = (ROOT / "pastelabel" / "canvas" / "canvas_renderer.py").read_text(encoding="utf-8")
-
-    assert "from PyQt5.QtGui import QPainter, QPixmap, QColor, QPen, QFontMetrics" in source
+    tree = ast.parse(source)
+    # 断言「这些名字都被导入」而不是钉死整行：之前钉字符串，加一个 QFont
+    # 就假红（那是给滑窗格子标号用的，与亮度对比度无关）。
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "PyQt5.QtGui":
+            imported.update(a.name for a in node.names)
+    for name in ("QPainter", "QPixmap", "QColor", "QPen", "QFontMetrics"):
+        assert name in imported, f"canvas_renderer 没导入 {name}"
 
 
 def test_brightness_contrast_uses_vectorized_pixel_processing():

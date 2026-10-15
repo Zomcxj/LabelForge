@@ -481,10 +481,14 @@ class SettingsDialog(QDialog):
 
     @staticmethod
     def _version_text():
-        """左下角版本串；取不到 `__version__` 时不显示假版本号。"""
+        """左下角版本串；取不到 `__version__` 时不显示假版本号。
+
+        只显示 `v1.5.3`，不带 "PasteLabel" 前缀（用户要求「设置中删除
+        PasteLabel 只要版本」）——对话框标题里已经有应用名了，重复。
+        """
         from .. import __version__
 
-        return f"PasteLabel v{__version__}" if __version__ else "PasteLabel"
+        return f"v{__version__}" if __version__ else ""
 
     def _reset_all_settings(self):
         """恢复出厂设置（需二次确认）。"""

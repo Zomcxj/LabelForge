@@ -335,8 +335,8 @@ d.show()
 app.processEvents()
 label = d.version_label
 # 不比对具体版本号（发版时会变），只比对「格式」与「取自包常量」
-print(label.text().startswith("PasteLabel v"))
-print(label.text() == f"PasteLabel v{__version__}")
+print(label.text().startswith("v"))
+print(label.text() == f"v{__version__}")
 # 版本号贴对话框左边缘（仍在左下角，没被挪走）
 label_tl = label.mapTo(d, label.rect().topLeft())
 print(label_tl.x() <= 12)
@@ -372,4 +372,4 @@ try:
 finally:
     pastelabel.__version__ = original
 """)
-    assert _lines(out)[0] == "PasteLabel v9.9.9-test", out
+    assert _lines(out)[0] == "v9.9.9-test", out
