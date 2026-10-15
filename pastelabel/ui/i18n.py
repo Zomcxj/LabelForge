@@ -308,6 +308,9 @@ _strings = {
         "从当前图片推理到末尾": "从当前图片推理到末尾",
         "选择 ONNX 模型": "选择 ONNX 模型",
         "置信度": "置信度",
+        # 「conf」只给模型参数行用（用户要求中英都显示 conf）。视频弹窗的
+        # 「叠加标签框」复选框仍用 "置信度"，所以是**另一个键**而不是改值。
+        "conf": "conf",
         "NMS": "NMS",
         "覆盖": "覆盖",
         "补充": "补充",
@@ -1035,6 +1038,7 @@ _strings = {
         "从当前图片推理到末尾": "Run inference from here to the end",
         "选择 ONNX 模型": "Select ONNX Model",
         "置信度": "Confidence",
+        "conf": "conf",
         "NMS": "NMS",
         "覆盖": "Replace",
         "补充": "Append",

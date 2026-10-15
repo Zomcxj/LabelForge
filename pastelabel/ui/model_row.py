@@ -55,7 +55,12 @@ class ModelRow(QWidget):
         self._model_name = ""
         layout.addWidget(self.name_label)
 
-        self.conf_lbl = QLabel(tr("置信度"))
+        # 功能之间用 '-' 隔开（用户要求）：7 组 = 加载模型+模型名 | 置信度+NMS
+        # | 输入尺寸 | 覆盖/补充 | 类别筛选 | 推理范围+摘要 | 目标张号。
+        # 置信度与 NMS 同组，中间**不**隔。
+        self._add_param_separator(layout)
+
+        self.conf_lbl = QLabel(tr("conf"))
         layout.addWidget(self.conf_lbl)
         self.conf_spin = QDoubleSpinBox()
         self.conf_spin.setRange(0.01, 1.0)
@@ -75,6 +80,8 @@ class ModelRow(QWidget):
         self.iou_spin.setFixedWidth(_THRESHOLD_SPIN_WIDTH)
         self.iou_spin.valueChanged.connect(self._emit_thresholds)
         layout.addWidget(self.iou_spin)
+
+        self._add_param_separator(layout)
 
         # 输入尺寸只对**动态轴**模型有意义（静态轴模型的尺寸由模型自身决定）。
         # 静态模型下整组控件（标签 + 两个输入框 + "x"）直接不显示，而不是
@@ -96,6 +103,8 @@ class ModelRow(QWidget):
         self.size_spin_h.valueChanged.connect(self._emit_size)
         layout.addWidget(self.size_spin_h)
 
+        self._add_param_separator(layout)
+
         # 与其他工具栏按钮同一套样式（optionsBtn），选中态由主题的 :checked 规则给出
         self.replace_btn = QPushButton()
         self.replace_btn.setObjectName("optionsBtn")
@@ -108,12 +117,16 @@ class ModelRow(QWidget):
         self.replace_btn.clicked.connect(self._on_replace_toggled)
         layout.addWidget(self.replace_btn)
 
+        self._add_param_separator(layout)
+
         self.filter_btn = QPushButton(tr("类别筛选"))
         self.filter_btn.setObjectName("optionsBtn")
         self.filter_btn.setFixedHeight(24)
         self.filter_btn.setEnabled(False)
         self.filter_btn.clicked.connect(self.filter_requested.emit)
         layout.addWidget(self.filter_btn)
+
+        self._add_param_separator(layout)
 
         self.scope_btn = QPushButton(tr("推理范围"))
         self.scope_btn.setObjectName("optionsBtn")
@@ -135,12 +148,13 @@ class ModelRow(QWidget):
         #
         # 前缀名加在输入框**自己左边**：用户说的是「范围推理右侧的序号加一个
         # 前缀名」——即推理范围按钮右侧那个序号，光一个数字看不出是什么。
+        self._add_param_separator(layout)
         self.batch_to_label = QLabel(tr("目标张号"))
         layout.addWidget(self.batch_to_label)
         self.batch_to_spin = QSpinBox()
         self.batch_to_spin.setObjectName("modelRowBatchTo")
         self.batch_to_spin.setFixedHeight(24)
-        self.batch_to_spin.setFixedWidth(84)
+        self.batch_to_spin.setFixedWidth(63)
         self.batch_to_spin.setRange(0, 999999)
         self.batch_to_spin.setToolTip(
             tr("一键推理的目标张号（含）：当前第 200 张时填 300 跑 200~300，"
@@ -161,6 +175,17 @@ class ModelRow(QWidget):
         layout.addWidget(self.close_btn)
 
         self._refresh_replace_text()
+
+    def _add_param_separator(self, layout):
+        """插入一个 `-` 分隔符（参数行各功能组之间用）。
+
+        用 QLabel 而不是 `addSpacing`：分隔符要**看得见**，纯间距只是空白。
+        颜色由 `#modelRow QLabel` 的 `text_secondary` 给出，明暗主题都可读。
+        """
+        sep = QLabel("-")
+        sep.setObjectName("modelRowSep")
+        layout.addWidget(sep)
+        return sep
 
     def _apply_style(self):
         theme = ThemeManager.get_theme()
@@ -302,7 +327,7 @@ class ModelRow(QWidget):
         self.close_btn.setToolTip(tr("关闭参数行（关闭后不能推理）"))
         self.replace_btn.setToolTip(tr("覆盖：替换上一轮推理框；补充：保留并追加"))
         self.size_spin_w.setToolTip(tr("动态轴模型需要指定；静态轴模型按模型自身尺寸推理"))
-        self.conf_lbl.setText(tr("置信度"))
+        self.conf_lbl.setText(tr("conf"))
         self.iou_lbl.setText(tr("NMS"))
         self.size_lbl.setText(tr("输入尺寸"))
         self.batch_to_label.setText(tr("目标张号"))
