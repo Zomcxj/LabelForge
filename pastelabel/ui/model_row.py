@@ -91,7 +91,9 @@ class ModelRow(QWidget):
         layout.addWidget(self.size_lbl)
         self.size_spin_w = QSpinBox()
         self.size_spin_w.setRange(32, 8192)
-        self.size_spin_w.setFixedWidth(72)
+        # 与 conf / NMS 用同一个宽度常量：它们在同一行里并排，宽度不一会显得
+        # 参差不齐（用户要求「输入尺寸的按钮宽度和 conf、NMS 保持一致」）。
+        self.size_spin_w.setFixedWidth(_THRESHOLD_SPIN_WIDTH)
         self.size_spin_w.setToolTip(tr("动态轴模型需要指定；静态轴模型按模型自身尺寸推理"))
         self.size_spin_w.valueChanged.connect(self._emit_size)
         layout.addWidget(self.size_spin_w)
@@ -99,7 +101,7 @@ class ModelRow(QWidget):
         layout.addWidget(self.size_sep_label)
         self.size_spin_h = QSpinBox()
         self.size_spin_h.setRange(32, 8192)
-        self.size_spin_h.setFixedWidth(72)
+        self.size_spin_h.setFixedWidth(_THRESHOLD_SPIN_WIDTH)
         self.size_spin_h.valueChanged.connect(self._emit_size)
         layout.addWidget(self.size_spin_h)
 

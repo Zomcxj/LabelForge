@@ -3918,6 +3918,46 @@ print(row.batch_to_spin.minimumWidth(), row.batch_to_spin.maximumWidth())
         f"宽度没真正钉住，布局还能把它撑开：{lines[1]}")
 
 
+def test_real_input_size_spins_match_threshold_width():
+    """输入尺寸的两个输入框与 conf / NMS **等宽**。
+
+    用户要求「输入尺寸的按钮宽度和 conf、NMS 保持一致」。原来是写死的 72px，
+    同一行里并排就参差不齐；现在四者共用 `_THRESHOLD_SPIN_WIDTH`。
+
+    同时钉住**最长的值还看得全**：8192 是范围上限（4 位数），收窄到 58px
+    之后不能把它截断成省略号——那样就成「改了宽度、坏了读数」。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+
+app = QApplication([])
+row = ModelRow()
+row.resize(1600, 40)
+row.show()
+app.processEvents()
+row.set_size_fields_visible(True)
+app.processEvents()
+
+print(row.conf_spin.width(), row.iou_spin.width())
+print(row.size_spin_w.width(), row.size_spin_h.width())
+row.size_spin_w.setValue(1280)
+row.size_spin_h.setValue(8192)
+app.processEvents()
+print(row.size_spin_w.text())
+print(row.size_spin_h.text())
+""")
+    lines = _lines(out)
+    conf, iou = (int(v) for v in lines[0].split())
+    size_w, size_h = (int(v) for v in lines[1].split())
+    assert conf == iou, f"conf 与 NMS 本身就不等宽：{lines[0]}"
+    assert (size_w, size_h) == (conf, iou), (
+        f"输入尺寸没和 conf/NMS 对齐：{lines[1]} vs {lines[0]}")
+    # 收窄不能把值截掉（Qt 在放不下时会显示成省略/截断的文本）
+    assert lines[2] == "1280", f"输入尺寸显示被截断了：{lines[2]}"
+    assert lines[3] == "8192", f"上限值显示被截断了：{lines[3]}"
+
+
 def test_real_param_row_groups_are_separated_by_dashes():
     """⑤ 参数行各功能之间用 `-` 隔开（共 7 组，置信度与 NMS 同组）。
 
