@@ -438,36 +438,49 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.update()
 
     def _compute_region_resize_box(self, x, y, w, h, dx, dy, min_size):
-        """按当前拖拽手柄计算新的 bbox（夹紧背景与最小尺寸）。"""
+        """按当前拖拽手柄计算新的 bbox（夹紧背景与最小尺寸）。
+
+        四角 `tl/tr/bl/br` 改两个方向，四边 `t/b/l/r` 只改一个方向——与
+        检测框的 `_resize_box` 同构，差别只在最小尺寸取自
+        `REGION_CONFIG['min_size']` 而不是写死的 10。
+        """
         bg = self._editor.current_background
         max_w = max(min_size, bg.width() - x) if bg else None
         max_h = max(min_size, bg.height() - y) if bg else None
 
         nx, ny, nw, nh = x, y, w, h
-        if self.region_resize_handle == "br":
-            nw = max(min_size, w + dx)
-            nh = max(min_size, h + dy)
-            if max_w is not None:
-                nw = min(nw, max_w)
-            if max_h is not None:
-                nh = min(nh, max_h)
-        elif self.region_resize_handle == "tl":
-            nx = max(0, min(x + dx, x + w - min_size))
-            ny = max(0, min(y + dy, y + h - min_size))
-            nw = w + x - nx
-            nh = h + y - ny
-        elif self.region_resize_handle == "tr":
-            nw = max(min_size, w + dx)
-            if max_w is not None:
-                nw = min(nw, max_w)
-            ny = max(0, min(y + dy, y + h - min_size))
-            nh = h + y - ny
-        elif self.region_resize_handle == "bl":
-            nx = max(0, min(x + dx, x + w - min_size))
-            nw = w + x - nx
-            nh = max(min_size, h + dy)
-            if max_h is not None:
-                nh = min(nh, max_h)
+        handle = self.region_resize_handle
+        if handle in ("br", "r", "b"):
+            # 右下方向：只往右下长，左上角不动
+            if handle in ("br", "r"):
+                nw = max(min_size, w + dx)
+                if max_w is not None:
+                    nw = min(nw, max_w)
+            if handle in ("br", "b"):
+                nh = max(min_size, h + dy)
+                if max_h is not None:
+                    nh = min(nh, max_h)
+        elif handle in ("tl", "l", "t"):
+            # 左上方向：改左/上边，右下角不动
+            if handle in ("tl", "l"):
+                nx = max(0, min(x + dx, x + w - min_size))
+                nw = w + x - nx
+            if handle in ("tl", "t"):
+                ny = max(0, min(y + dy, y + h - min_size))
+                nh = h + y - ny
+        elif handle in ("tr", "bl"):
+            if handle == "tr":
+                nw = max(min_size, w + dx)
+                if max_w is not None:
+                    nw = min(nw, max_w)
+                ny = max(0, min(y + dy, y + h - min_size))
+                nh = h + y - ny
+            else:  # bl
+                nx = max(0, min(x + dx, x + w - min_size))
+                nw = w + x - nx
+                nh = max(min_size, h + dy)
+                if max_h is not None:
+                    nh = min(nh, max_h)
         return nx, ny, nw, nh
 
     def _handle_item_click(self, item_index, mouse_pos):

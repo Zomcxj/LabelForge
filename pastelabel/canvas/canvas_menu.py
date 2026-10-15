@@ -165,31 +165,59 @@ class CanvasMenuMixin:
         region['height'] = float(max(ys) - region['y'])
 
     def _region_handle_at(self, mouse_pos, index):
-        """返回区域四角缩放手柄名称。"""
+        """返回区域缩放手柄名称：**四角 + 四边**都算。
+
+        四角 `tl/tr/bl/br` 改两个方向，四边 `t/b/l/r` 只改一个方向
+        （用户要求「复用检测框的缩放，单边调整和角点拖动」）。
+
+        命中容差**不写死像素**：`handle_size` 是设计尺寸（8），实际比较用
+        `_region_handle_hit_size()`，它会随 `background_scale` 放大——图缩小
+        后区域框在屏上只有几十像素，固定 8px 的方框基本点不中，那正是用户
+        看到的「没办法调整大小」。四角优先于四边：角上同时落在两条边的
+        判定里，取角才能一次改两个方向。
+        """
         regions = getattr(self._editor, 'region_boxes', None)
         if not regions or not (0 <= index < len(regions)):
             return None
         background_rect = self.get_background_rect()
         if background_rect is None:
             return None
-        from ..core.config import REGION_CONFIG
         r = regions[index]
         x = r['x'] * self.background_scale + background_rect.left()
         y = r['y'] * self.background_scale + background_rect.top()
         w = r['width'] * self.background_scale
         h = r['height'] * self.background_scale
-        size = REGION_CONFIG['handle_size']
-        half = size / 2
-        handles = {
-            "tl": (x, y),
-            "tr": (x + w, y),
-            "bl": (x, y + h),
-            "br": (x + w, y + h),
-        }
-        for name, (hx, hy) in handles.items():
-            if hx - half <= mouse_pos.x() <= hx + half and hy - half <= mouse_pos.y() <= hy + half:
+        half = self._region_handle_hit_size() / 2
+        mx, my = mouse_pos.x(), mouse_pos.y()
+
+        def near(hx, hy):
+            return hx - half <= mx <= hx + half and hy - half <= my <= hy + half
+
+        # 四角优先
+        for name, (hx, hy) in (
+                ("tl", (x, y)), ("tr", (x + w, y)),
+                ("bl", (x, y + h)), ("br", (x + w, y + h))):
+            if near(hx, hy):
+                return name
+        # 再四边（中点）
+        for name, (hx, hy) in (
+                ("t", (x + w / 2, y)), ("b", (x + w / 2, y + h)),
+                ("l", (x, y + h / 2)), ("r", (x + w, y + h / 2))):
+            if near(hx, hy):
                 return name
         return None
+
+    def _region_handle_hit_size(self):
+        """区域手柄的命中边长（画布像素），**随缩放放大**、并留一个下限。
+
+        图缩小时区域框在屏上变小，若命中区固定 8px 就会「看着在角上却点不
+        中」。这里取「设计尺寸 / 缩放」并夹一个合理区间：放太大（比如缩到
+        10%）会让整条边都变成手柄、想拖动内部也拖不动，所以上限 24px。
+        """
+        from ..core.config import REGION_CONFIG
+        base = REGION_CONFIG['handle_size']
+        scale = getattr(self, 'background_scale', 1.0) or 1.0
+        return max(base, min(24.0, base / scale))
 
     def _show_region_context_menu(self, mouse_pos):
         index = self._region_at(mouse_pos)
