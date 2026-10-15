@@ -255,7 +255,6 @@ class InferenceMixin:
         panel = getattr(self, '_scope_panel', None)
         if panel is None:
             panel = ScopePanel(parent=self)
-            panel.edit_regions_requested.connect(self._edit_regions_for_scope)
             panel.region_delete_requested.connect(self._delete_scope_region)
             panel.finished_ok.connect(self._on_scope_panel_closed)
             panel.overlay_changed.connect(self._on_scope_overlay_changed)
@@ -266,68 +265,67 @@ class InferenceMixin:
         # （全图），于是「上次选了区域 → 再开面板」会被静默重置成全图。
         # 抓成局部量、最后再落回去，面板一开就跟宿主状态一致。
         wanted_mode = getattr(self, '_scope_mode', MODE_FULL)
-        panel.set_windows(self._effective_window_spec())
-        panel.set_regions(self._region_boxes())
-        panel.set_reference(self._reference_image_size())
-        # 面板竖直位置落在「背景图列表」与「标签列表」中间（用户澄清：
-        # 「上面」指的是层级/顺序，不是贴着列表顶端的像素位置）。
-        panel.set_anchor_rect(self._scope_anchor_rect())
-        panel.retranslate()
-        panel.set_mode(wanted_mode)
-        # set_mode 会 `_refresh` 并发 `overlay_changed`；再按局部量校准一次，
-        # 保证宿主与面板一致（即使中途有回调把 `_scope_mode` 改回旧值）。
-        self._scope_mode = panel.mode()
-        # 面板开着 = 显示区域轮廓、允许就地画区域（B：开则显示、关则不显示）。
-        # 收尾在 `_on_scope_panel_closed`（确定/取消/直接关闭三条路径都会走），
-        # 会话若漏收，标注模式的鼠标行为会被一直劫持。
+        # 装配期间 `overlay_changed` 会连发多次（`set_windows`/`set_regions`/
+        # `set_mode` 各一次），而那时面板还停在构造默认值、宿主的
+        # `_scope_mode` 也可能还没落定。这个标记让 `_on_scope_overlay_changed`
+        # 在装配期间只重画画布、不写宿主状态也不开区域会话；装配结束再手动
+        # 同步一次（见方法末尾）。
+        self._scope_panel_configuring = True
         self._scope_panel_open = True
+        try:
+            panel.set_windows(self._effective_window_spec())
+            panel.set_regions(self._region_boxes())
+            panel.set_reference(self._reference_image_size())
+            panel.set_anchor_rect(self._scope_anchor_rect())
+            panel.retranslate()
+            panel.set_mode(wanted_mode)
+        finally:
+            self._scope_panel_configuring = False
+        # 装配完再按最终状态同步一次：模式、窗口参数、区域编辑态、画布提示。
+        self._scope_mode = panel.mode()
         self._scope_window_spec = panel.window_spec()
+        self._window_spec = panel.window_spec()
         self._scope_reference_size = self._reference_image_size()
+        self._sync_region_session_to_mode()
         self._sync_scope_region_display()
         panel.show()
         panel.raise_()
         panel.activateWindow()
 
     def _scope_anchor_rect(self):
-        """面板该浮在哪儿：**右侧侧栏那块**（不嵌进去，只是盖在它上面）。
+        """面板左上角该对齐的那块：**「标签管理」区**（用户明确要求）。
 
-        用户要的是「放在侧栏高度居中的上层」：面板是独立小窗（非模态），
-        位置对齐**整个侧栏**、竖直居中，正好压住侧栏而不是画布。早先这里
-        只取「背景图列表底边到标签列表顶边」那条窄带、还把 x 硬写成 0，
-        结果面板跑到主窗最左边把画布整个挡住——画布在主窗左侧，x=0 就是
-        画布左端。
+        「范围推理窗口左上角始终对齐标签管理区域的左上角」——所以锚点就是
+        `label_group` 自己那块（含竖直方向：面板顶边 = 标签管理区顶边）。
 
-        x 必须用侧栏自己的左边界（`bg.x()`），不能再写死 0；拿不到侧栏时
-        退回 `_side_panel_geometry()`；再拿不到返回 None，由调用方居中。
+        早先这里返回的是「背景图列表 ∪ 标签管理」合并出来的整条侧栏带、由
+        `place_within` 竖直居中；现在改成左上角对齐，竖直居中那套不适用了。
+
+        x 用侧栏的左边界（`bg.x()`），不能用 0：画布在主窗左侧，x=0 会把面板
+        推到画布上（用户报过）。拿不到 `label_group` 时退回整条侧栏带；
+        再拿不到返回 None，由调用方居中。
         """
         from PyQt5.QtCore import QRect
 
-        left = None
-        top = None
-        height = 0
-        width = 0
-        bg = getattr(self, 'bg_list_group', None)
         label = getattr(self, 'label_group', None)
-        for widget in (bg, label):
-            if widget is None:
-                continue
+        bg = getattr(self, 'bg_list_group', None)
+        if label is not None:
             try:
-                widget_top = widget.mapTo(self, widget.rect().topLeft())
-                widget_bottom = widget.mapTo(self, widget.rect().bottomLeft())
+                top_left = label.mapTo(self, label.rect().topLeft())
             except (AttributeError, TypeError):
-                continue
-            if left is None:
-                left = widget_top.x()
-                width = widget.width()
-                top = widget_top.y()
-            top = min(top, widget_top.y())
-            height = max(height, widget_bottom.y() - top)
-        if left is not None and height > 0:
-            return QRect(left, top, max(1, width), max(1, height))
+                top_left = None
+            if top_left is not None:
+                # 宽度取侧栏的（面板比标签区宽，反正要溢出到右边空白）；
+                # 其实就是给 place_within 一个「左上角在哪」的锚，宽度只用于
+                # 算水平中心线，取侧栏宽度更稳。
+                width = bg.width() if bg is not None else label.width()
+                height = label.height()
+                return QRect(top_left.x(), top_left.y(),
+                             max(1, width), max(1, height))
 
-        # 两个列表都拿不到：退回整个侧栏那块
-        panel_geometry = getattr(self, '_side_panel_geometry', None)
-        return panel_geometry() if callable(panel_geometry) else None
+        # 拿不到标签管理区：退回整条侧栏，至少别盖画布
+        side = getattr(self, '_side_panel_geometry', None)
+        return side() if callable(side) else None
 
     def _on_scope_overlay_changed(self):
         """面板状态变了 → 重画主画布上的滑窗网格与区域轮廓。
@@ -335,39 +333,75 @@ class InferenceMixin:
         网格不再有面板内的小预览，只能靠这条路径刷新。同时把当前窗口参数
         快照到宿主上，画布绘制时不依赖面板还活着（面板关掉后画布可能仍要
         重绘一帧）。
+
+        **这条也是「面板改动即时生效」的唯一通道**：面板没有确定按钮了，
+        所以「模式」「窗口参数」「区域编辑态」都在这儿落地。
         """
         panel = getattr(self, '_scope_panel', None)
         if panel is not None:
-            self._scope_window_spec = panel.window_spec()
-            self._scope_mode = panel.mode()
+            # 装配期间面板停在构造默认值，写回宿主会把「上次选的模式」冲掉；
+            # 那时只重画画布，状态由 `_open_scope_panel` 装配完统一落。
+            if not getattr(self, '_scope_panel_configuring', False):
+                from ...engine.inference_scope import MODE_WINDOW
+
+                self._scope_window_spec = panel.window_spec()
+                self._scope_mode = panel.mode()
+                # 宿主的窗口参数也跟着走：关掉面板后 `_effective_window_spec()`
+                # 读的就是它，不更新会让「面板里改的参数」在关窗后失效。
+                self._window_spec = panel.window_spec()
+                if self._scope_mode == MODE_WINDOW:
+                    self._record_scope_template(self._window_spec)
+        if not getattr(self, '_scope_panel_configuring', False):
+            self._sync_region_session_to_mode()
         self._sync_scope_region_display()
 
+    def _sync_region_session_to_mode(self):
+        """区域编辑态跟着「区域」这个推理方式走（②）。
+
+        用户要求「删除编辑区域按钮，直接选中后就编辑」：选中「区域」即进入可
+        编辑态（图上拖动就能画区域，画完可以接着画下一个）；切到全图/滑窗就
+        自动退出——不用再点任何按钮，也不会有「开着会话但忘了退出」把鼠标一
+        直劫持在区域绘制上的状态。
+
+        只在**面板开着**时联动：面板关了区域编辑态也该收掉，由
+        `_on_scope_panel_closed` 负责。
+        """
+        canvas = getattr(self, 'canvas', None)
+        if canvas is None or not hasattr(canvas, 'begin_region_session'):
+            return
+        from ...engine.inference_scope import MODE_ROI
+
+        want = (getattr(self, '_scope_panel_open', False)
+                and getattr(self, '_scope_mode', None) == MODE_ROI)
+        if want and not canvas.region_session_active():
+            # `region_fixed` 时 `begin_region_session()` 会失败——这是用户
+            # 主动锁定的，尊重它，不要强行改 `region_fixed`。
+            if canvas.begin_region_session():
+                self.status_label.setText(tr("在图上拖动即可添加区域"))
+        elif not want and canvas.region_session_active():
+            canvas.end_region_session()
+
     def _on_scope_panel_closed(self, accepted):
-        """面板关闭（确定/取消/直接关闭都经此）：先收会话，再决定是否生效。"""
+        """面板关闭（只剩右上角 X 这一条路径）：收区域会话，撤掉画布上的提示。
+
+        **没有「取消」了，所以关窗不回滚**：面板上所有的改动在改的那一刻就已
+        经经 `overlay_changed` 写回宿主，这里不再做「确定才生效」那套搬运。
+        """
         self._scope_panel_open = False
         canvas = getattr(self, 'canvas', None)
         if canvas is not None and hasattr(canvas, 'end_region_session'):
             canvas.end_region_session()
         self._sync_scope_region_display()
-        if not accepted:
-            return
-        panel = getattr(self, '_scope_panel', None)
-        if panel is None:
-            return
-        mode, windows = panel.selection()
-        self._scope_mode = mode
-        if windows:
-            self._window_spec = windows
-            self._record_scope_template(windows)
+        # 面板里可能刚改过滑窗参数，落一次盘记住它。
         self._save_inference_settings()
         self._refresh_scope_button()
 
     def _record_scope_template(self, windows):
-        """把当前窗口参数记进共用的模板列表；只在**确定**时调用。
+        """把当前窗口参数记进共用的模板列表（面板滑窗段改了就记）。
 
         两条讲究（复审 B-3）：
-        - 只有真正**变化**过才写。重复点确定不该反复往列表里塞同一条，
-          那会把数据增强侧真正在用的模板挤出去（列表最多 3 条）。
+        - 只有真正**变化**过才写。面板是实时的，`overlay_changed` 会频繁触发，
+          反复往列表里塞同一条会把数据增强侧真正在用的模板挤出去（最多 3 条）。
         - 不伪造 `min_visible`。早先为了过 `_normalize_crop_template()` 的
           0.5~1.0 校验硬塞了 `0.5`，那是个凭空的数；现在交给
           `add_crop_template()` 用它自己的默认值补齐。
@@ -378,19 +412,6 @@ class InferenceMixin:
             return
         add_crop_template(dict(windows))
         self._last_recorded_template = dict(windows)
-
-    def _edit_regions_for_scope(self):
-        """开区域绘制会话：就地画，不切贴图模式（③）。
-
-        会话把鼠标重定向到区域绘制，标注模式的拖框/画多边形在会话期间让位；
-        关掉范围弹窗（或右键）即恢复。所以这里**不调用** `_set_edit_mode`。
-        """
-        canvas = getattr(self, 'canvas', None)
-        if canvas is None or not hasattr(canvas, 'begin_region_session'):
-            return
-        if not canvas.begin_region_session():
-            return
-        self.status_label.setText(tr("在图上拖动即可添加区域；Esc 取消当前这一个"))
 
     def _on_region_session_changed(self):
         """会话起止回调：刷新状态栏、区域明细与范围摘要。"""

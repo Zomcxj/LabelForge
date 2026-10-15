@@ -714,6 +714,8 @@ _strings = {
         "全图 / 滑窗 / 区域": "全图 / 滑窗 / 区域",
         "重叠": "重叠",
         "在图上拖动即可添加区域；Esc 取消当前这一个": "在图上拖动即可添加区域；Esc 取消当前这一个",
+        "在图上拖动即可添加区域": "在图上拖动即可添加区域",
+        "窗口参数非法，请调整": "窗口参数非法，请调整",
         "区域绘制结束": "区域绘制结束",
         "在图上拖动即可添加区域，不切换模式": "在图上拖动即可添加区域，不切换模式",
     },
@@ -1438,6 +1440,8 @@ _strings = {
         "全图 / 滑窗 / 区域": "Full image / Sliding window / Regions",
         "重叠": "overlap",
         "在图上拖动即可添加区域；Esc 取消当前这一个": "Drag on the image to add a region; Esc cancels the current one",
+        "在图上拖动即可添加区域": "Drag on the image to add a region",
+        "窗口参数非法，请调整": "Invalid window parameters; please adjust them",
         "区域绘制结束": "Region drawing finished",
         "在图上拖动即可添加区域，不切换模式": "Drag on the image to add a region without switching mode",
     }

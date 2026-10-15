@@ -190,6 +190,9 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         # 「第一次开面板时赋值」会让开面板之前的状态是「属性不存在」，
         # `getattr(..., False)` 虽然兜住了，但直接读就会 AttributeError。
         self._scope_panel_open = False
+        # 面板正在装配（`_open_scope_panel` 里那串 set_*）时置真：期间
+        # `overlay_changed` 只重画画布，不写宿主状态也不开区域会话。
+        self._scope_panel_configuring = False
         self._last_paste_count = 0
         self.global_labels = set()
         self.background_dataset_labels = set()

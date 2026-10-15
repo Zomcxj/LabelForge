@@ -37,11 +37,14 @@ _MODE_KEYS = (
 
 
 class ScopePanel(QDialog):
-    """范围选择；确定后 `selection()` 返回 (mode, windows)。"""
+    """范围选择；`selection()` 返回 (mode, windows)。
 
-    edit_regions_requested = pyqtSignal()
-    # 确定/取消/直接关闭都要让宿主收尾（结束区域绘制会话）。非模态后不再有
-    # `exec_()` 的返回值可看，改由信号通知，每条关闭路径都会发。
+    面板是**实时**的：没有确定/取消按钮，任何改动都立刻经 `overlay_changed`
+    写回宿主；关窗（右上角 X）不回滚，只通知宿主收尾。
+    """
+
+    # 关闭（只剩直接关这一条路径）时让宿主收尾：结束区域绘制会话、撤掉画布
+    # 上的范围提示。非模态后不再有 `exec_()` 的返回值可看，改由信号通知。
     finished_ok = pyqtSignal(bool)
     # 面板状态变了（切模式/改窗口参数/区域数变化）→ 宿主重画主画布上的
     # 网格与区域轮廓。网格不再有面板内的小预览图，只能靠这条信号驱动。
@@ -83,6 +86,7 @@ class ScopePanel(QDialog):
         self._buttons = {}
         self.sections = {}
         self._section_bodies = {}
+        self._hints = {}
 
         for mode, name, hint in _MODE_KEYS:
             section = QGroupBox(tr(name))
@@ -98,6 +102,7 @@ class ScopePanel(QDialog):
             row.addWidget(button)
             label = QLabel(tr(hint))
             label.setObjectName("scopeHint")
+            self._hints[mode] = label
             row.addWidget(label)
             row.addStretch()
             section_layout.addLayout(row)
@@ -118,16 +123,14 @@ class ScopePanel(QDialog):
             reference_size=self._reference, spec=self._windows)
         self._section_bodies[MODE_WINDOW].layout().addWidget(self.window_params)
 
+        # 区域段不再有「编辑区域」按钮：用户要求「删除编辑区域按钮，直接选中
+        # 后就编辑」——选中「区域」即进入可编辑态（见 `_refresh` 里与宿主的
+        # 联动）。这里只留一行提示，告诉用户当前就是能画的。
         row = QHBoxLayout()
         self.region_label = QLabel("")
         self.region_label.setObjectName("scopeHint")
         row.addWidget(self.region_label)
         row.addStretch()
-        self.region_btn = QPushButton(tr("编辑区域"))
-        self.region_btn.setObjectName("optionsBtn")
-        self.region_btn.setToolTip(tr("在图上拖动即可添加区域，不切换模式"))
-        self.region_btn.clicked.connect(self.edit_regions_requested.emit)
-        row.addWidget(self.region_btn)
         self._section_bodies[MODE_ROI].layout().addLayout(row)
 
         # 已画区域的明细：每条显示坐标 + 尺寸，右侧带删除按钮。用户要求
@@ -145,23 +148,21 @@ class ScopePanel(QDialog):
         self.warn_label.setWordWrap(True)
         layout.addWidget(self.warn_label)
 
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        self.ok_btn = QPushButton(tr("确定"))
-        self.ok_btn.setObjectName("successBtn")
-        self.cancel_btn = QPushButton(tr("取消"))
-        self.cancel_btn.setObjectName("accentBtn")
-        self.ok_btn.clicked.connect(self.accept)
-        self.cancel_btn.clicked.connect(self.reject)
-        buttons.addWidget(self.ok_btn)
-        buttons.addWidget(self.cancel_btn)
-        layout.addLayout(buttons)
+        # 用户要求「选中某推理方式立马刷新不需要点击确定，可以把确定取消
+        # 按钮删除」：面板不再是「编辑-确认」的两段式，改成纯实时面板。
+        # 关窗只剩右上角 X，且**关窗不回滚**——所有改动都已在 `_refresh`
+        # 里经 `overlay_changed` 即时写回宿主。
 
-        # 参数变化要重算「窗口数非法就禁用确定」
+        # 参数变化要重算窗口数与提示，并把新值即时写回宿主
         self.window_params.changed.connect(self._refresh)
 
     def done(self, result):
-        """所有关闭路径（确定/取消/直接关闭）都经此：先收尾再发信号。"""
+        """关闭面板（只剩右上角 X 这条路径）时收尾并发信号。
+
+        没有「确定/取消」了，`result` 只可能是 `QDialog.Rejected`；保留这个
+        覆写是因为 `QDialog.close()` 也走 `done()`，宿主靠 `finished_ok` 得知
+        面板没了（要收区域会话、撤掉画布上的范围提示）。
+        """
         super().done(result)
         self.finished_ok.emit(result == QDialog.Accepted)
 
@@ -209,7 +210,8 @@ class ScopePanel(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
-        place_within(self, self._anchor_rect)
+        # 左上角对齐锚点（=「标签管理」区左上角），用户要求「始终对齐」。
+        place_within(self, self._anchor_rect, align="top-left")
         sync_titlebar(self)
 
     # ---------- 对外接口 ----------
@@ -387,23 +389,23 @@ class ScopePanel(QDialog):
         # 组框的 `setEnabled(False)` 会连带禁用里面的输入框，所以滑窗参数
         # 不必再单独 `set_editable`：未选中滑窗时那段的内容体就是灰的。
         self.window_params.set_editable(needs_window)
-        self.region_label.setText(f"{self._region_count} {tr('个区域')}")
+        self.region_label.setText(
+            f"{self._region_count} {tr('个区域')}　"
+            + (tr("在图上拖动即可添加区域") if needs_region else ""))
 
         warnings = []
         if needs_region and not self._region_count:
             warnings.append(tr("没有可用区域，请先画好区域"))
+        if needs_window and not self.window_params.is_valid():
+            warnings.append(tr("窗口参数非法，请调整"))
         if needs_region:
             warnings.append(tr("区域推理只保留框中心落在区域内的结果"))
         self.warn_label.setText("\n".join(warnings))
-        # 没有区域、或滑窗参数非法时不让确定：否则会「成功但 0 框」，
-        # 覆盖模式会删掉原有自动标注。
-        valid = True
-        if needs_region and not self._region_count:
-            valid = False
-        if needs_window and not self.window_params.is_valid():
-            valid = False
-        self.ok_btn.setEnabled(valid)
-        # 网格/区域画在主画布上，由宿主监听这个信号重画
+
+        # 网格/区域画在主画布上，由宿主监听这个信号重画。**这条信号也是
+        # 「即时生效」的唯一通道**：宿主在 `_on_scope_overlay_changed` 里把
+        # 模式与窗口参数写回自己的属性（原来这些只在点「确定」时发生）。
+        # 所以它必须在每次状态变化后都发出去，不能只在参数变化时发。
         self.overlay_changed.emit()
 
     def retranslate(self):
@@ -411,12 +413,9 @@ class ScopePanel(QDialog):
         self.setWindowTitle(tr("推理范围"))
         for mode, name, hint in _MODE_KEYS:
             self._buttons[mode].setText(tr(name))
+            self._hints[mode].setText(tr(hint))
             # 段标题也要跟着切，否则中文界面下段标题还是上一门语言
             self.sections[mode].setTitle(tr(name))
-        self.ok_btn.setText(tr("确定"))
-        self.cancel_btn.setText(tr("取消"))
-        self.region_btn.setText(tr("编辑区域"))
-        self.region_btn.setToolTip(tr("在图上拖动即可添加区域，不切换模式"))
         self.window_params.retranslate()
         # 明细行里的「删除」也是 tr() 出来的，切语言要重建才跟着变
         self._rebuild_region_list()
