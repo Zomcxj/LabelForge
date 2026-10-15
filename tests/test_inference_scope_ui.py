@@ -2378,7 +2378,9 @@ print(spin.value())
 """)
     lines = _lines(out)
     assert lines[0] == "350", f"上限没跟着数据集张数走：{lines[0]}"
-    assert lines[1] == "0", lines[1]
+    # 默认值 = 最后一张（① 的要求）。这条断言原先钉的是旧默认值 0，
+    # 现在的需求恰好把「默认末张」定为新行为，所以跟着改；其余断言不动。
+    assert lines[1] == "350", f"默认值不是最后一张：{lines[1]}"
     assert lines[2] == "301", f"不能滚动加一：{lines[2]}"
     assert lines[3] == "300", f"不能滚动减一：{lines[3]}"
     assert lines[4] == "123", f"不能直接输入：{lines[4]}"
@@ -2633,3 +2635,55 @@ i18n.set_lang('zh')
     lines = _lines(out)
     assert lines[0] == "目标张号", lines[0]
     assert lines[1] == "Target image", f"切语言后前缀名没跟着变：{lines[1]}"
+
+
+def test_real_batch_target_defaults_to_the_last_image():
+    """① 默认值 = 数据集最后一张的张号（用户明确要求）。
+
+    换数据集后上限与默认值都要跟着走，否则会留一个指向旧数据集的张号。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+app = QApplication([])
+row = ModelRow()
+row.set_batch_to_range(400)
+print(row.batch_to_spin.value())
+row.set_batch_to_range(50)
+print(row.batch_to_spin.value())
+""")
+    lines = _lines(out)
+    assert lines[0] == "400", f"默认值不是最后一张：{lines[0]}"
+    assert lines[1] == "50", f"换数据集后没跟着走：{lines[1]}"
+
+
+def test_real_batch_target_keeps_a_user_edited_value():
+    """用户手动改过就不该被默认值覆盖——否则改完一换数据集就被抹掉。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+app = QApplication([])
+row = ModelRow()
+row.set_batch_to_range(400)
+row.batch_to_spin.setValue(123)   # 模拟用户真手输
+row.set_batch_to_range(400)
+print(row.batch_to_spin.value())
+""")
+    assert _lines(out)[0] == "123", "用户改过的值被默认值覆盖了"
+
+
+def test_real_batch_target_ceiling_and_default_track_a_new_dataset():
+    """换数据集：上限与默认值同时跟着新数据集走。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+app = QApplication([])
+row = ModelRow()
+row.set_batch_to_range(400)
+print(row.batch_to_spin.maximum(), row.batch_to_spin.value())
+row.set_batch_to_range(30)
+print(row.batch_to_spin.maximum(), row.batch_to_spin.value())
+""")
+    lines = _lines(out)
+    assert lines[0] == "400 400", lines[0]
+    assert lines[1] == "30 30", f"上限与默认值没跟着新数据集：{lines[1]}"

@@ -147,6 +147,8 @@ class ModelRow(QWidget):
                "填 100 跑 100~200；0 表示不限制、跑到末尾"))
         self.batch_to_spin.setKeyboardTracking(False)
         self.batch_to_spin.valueChanged.connect(self._emit_batch_to)
+        # 用户是否手动填过张号；填过就不再被「默认末张」覆盖。
+        self._batch_to_user_set = False
         layout.addWidget(self.batch_to_spin)
 
         layout.addStretch()
@@ -341,6 +343,9 @@ class ModelRow(QWidget):
         self.input_size_changed.emit(width, height)
 
     def _emit_batch_to(self, value=None):
+        # 只有**用户真手输**才会走到这里（`set_batch_to` 屏蔽信号，程序化设置
+        # 不算）。标记下来，后续换数据集时不再用默认值覆盖用户的意图。
+        self._batch_to_user_set = True
         self.batch_to_changed.emit(self.batch_to_target())
 
     def batch_to_target(self):
@@ -357,8 +362,15 @@ class ModelRow(QWidget):
     def set_batch_to_range(self, total):
         # 按数据集张数收窄可选范围，避免填出根本不存在的张号。
         total = int(total or 0)
-        self.batch_to_spin.setMaximum(max(0, total))
-        self.batch_to_spin.setToolTip(
+        spin = self.batch_to_spin
+        spin.setMaximum(max(0, total))
+        # 默认值 = 最后一张（用户要求）。用户改过就不再覆盖，否则他一填完
+        # 换数据集，输入的意图就被抹掉了。
+        if not self._batch_to_user_set:
+            spin.blockSignals(True)
+            spin.setValue(max(0, total))
+            spin.blockSignals(False)
+        spin.setToolTip(
             tr("一键推理的目标张号（含）：当前第 200 张时填 300 跑 200~300，"
                "填 100 跑 100~200；0 表示不限制、跑到末尾"))
 
