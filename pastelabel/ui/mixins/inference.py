@@ -350,8 +350,6 @@ class InferenceMixin:
                 # 宿主的窗口参数也跟着走：关掉面板后 `_effective_window_spec()`
                 # 读的就是它，不更新会让「面板里改的参数」在关窗后失效。
                 self._window_spec = panel.window_spec()
-                if self._scope_mode == MODE_WINDOW:
-                    self._record_scope_template(self._window_spec)
         self._sync_scope_region_display()
 
     def _on_add_region_requested(self):
@@ -405,23 +403,6 @@ class InferenceMixin:
         # 面板里可能刚改过滑窗参数，落一次盘记住它。
         self._save_inference_settings()
         self._refresh_scope_button()
-
-    def _record_scope_template(self, windows):
-        """把当前窗口参数记进共用的模板列表（面板滑窗段改了就记）。
-
-        两条讲究（复审 B-3）：
-        - 只有真正**变化**过才写。面板是实时的，`overlay_changed` 会频繁触发，
-          反复往列表里塞同一条会把数据增强侧真正在用的模板挤出去（最多 3 条）。
-        - 不伪造 `min_visible`。早先为了过 `_normalize_crop_template()` 的
-          0.5~1.0 校验硬塞了 `0.5`，那是个凭空的数；现在交给
-          `add_crop_template()` 用它自己的默认值补齐。
-        """
-        from ...core.config_manager import add_crop_template
-
-        if windows == getattr(self, '_last_recorded_template', None):
-            return
-        add_crop_template(dict(windows))
-        self._last_recorded_template = dict(windows)
 
     def _on_region_changed(self):
         """区域增删/落笔后回调：刷新状态栏、区域明细与范围摘要。"""

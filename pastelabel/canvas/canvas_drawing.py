@@ -25,6 +25,25 @@ class CanvasDrawingMixin:
         """
         return bool(getattr(self._editor, '_scope_panel_open', False))
 
+    def _region_editable(self, index=None):
+        """区域现在可编辑吗——**点击与滚轮共用同一把尺子**。
+
+        用户要求「区域的编辑应该和标签一致：滚动缩放、单边调整、四个角拖动」。
+        平移/缩放/手柄这三件事在有 `_region_editing_allowed()` 之前就都实现了，
+        但滚轮那条分支当时只认 `_is_paste_mode()`，于是面板开着（画布停在标注
+        模式）时滚轮静默失效，看起来就像「区域不能像标签那样缩放」。
+
+        所以把判据收拢到这一处：贴图模式**或**面板开着都能编辑。锁定的区域不算
+        （`index` 给定时顺带查一下）。
+        """
+        if not (self._is_paste_mode() or self._region_editing_allowed()):
+            return False
+        if getattr(self._editor, 'region_fixed', False):
+            return False
+        if index is not None and self.region_locked_at(index):
+            return False
+        return True
+
     def _handle_region_press(self, mouse_pos):
         """语义区域绘制：左键按下定起点，拖动预览，松开完成。"""
         if not self._can_edit_canvas():

@@ -100,10 +100,6 @@ class SlidingWindowDialog(QDialog):
         """(行数, 列数)；与 `iter_windows()` 用同一份窗口数学。"""
         return self.params.window_grid()
 
-    def template_buttons(self):
-        """模板按钮列表（无模板时为空表）；点击即回填参数并刷预览。"""
-        return self.params.template_buttons()
-
     # 预览与输入框直接暴露出去，既有测试与调用方按这些名字取用
     @property
     def preview(self):

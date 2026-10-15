@@ -134,23 +134,51 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         # 抓到画布/标注框/贴图说明用户是在拖画布或编辑，不是要往外拖文件。
         # 判据放在点击**之后**：`_handle_background_click` 等要等点击处理完
         # 才知道有没有真的抓起来（按在图上就会进入画布拖动）。
+        #
+        # **例外：画布图片复制开着、且按在图上时，拖出优先于平移**。用户报的
+        # 「开启时拖动到桌面松开没有复制一份」就是撞在这里：按在图上会先被判成
+        # 平移（`is_dragging_background`），于是拖出永远挂不起来，只有点在图外
+        # 的空白才拖得出去。平移仍是兜底——复制关掉时行为与以前完全一样。
+        copy_on = bool(getattr(self._editor, '_canvas_image_copy_enabled', False))
+        press_on_image = self._press_is_on_background(mouse_pos)
+
         self._drag_out_pending = False
         self._handle_left_click(mouse_pos)
-        grabbed = (self.is_dragging_background or self.is_dragging_box
+        grabbed = (self.is_dragging_box
                    or self.is_resizing_box or self.is_rotating_box
                    or self.is_dragging_item or self.is_dragging_region
                    or self.is_resizing_region or self.is_dragging_region_vertex)
-        self._drag_out_pending = (
-            not grabbed
-            and getattr(self._editor, '_canvas_image_copy_enabled', False)
-            and not self.is_manual_scale
-            and self.find_item_at_position(mouse_pos) is None
-            # 这里问的是「有没有东西挡着」，与能否编辑无关，所以**要**算上
-            # 已锁定的区域：锁定的区域也是区域，压在它上面往外拖不该弹文件。
-            and self._region_at(mouse_pos, include_locked=True) is None
-        )
+        if grabbed:
+            self._drag_out_pending = False
+        elif copy_on and press_on_image:
+            # 复制开着 = 用户的意图是「把这张图拖出去」，平移让位。
+            self.is_dragging_background = False
+            self._drag_out_pending = True
+        else:
+            self._drag_out_pending = (
+                not self.is_dragging_background
+                and copy_on
+                and not self.is_manual_scale
+                and self.find_item_at_position(mouse_pos) is None
+                # 这里问的是「有没有东西挡着」，与能否编辑无关，所以**要**算上
+                # 已锁定的区域：锁定的区域也是区域，压在它上面往外拖不该弹文件。
+                and self._region_at(mouse_pos, include_locked=True) is None
+            )
         # 记下起点：`mouseMoveEvent` 靠与它的距离判断该不该拖出。
         self._drag_out_start = mouse_pos if self._drag_out_pending else None
+
+    def _press_is_on_background(self, mouse_pos):
+        """这次按下是否落在**图片本身**上（而不是图外的空白）。
+
+        拖出复制只对「拖这张图」有意义；点在图外空白处（画布的留白）仍按老
+        规矩处理，免得在空白处拖动也弹出一个文件。
+        """
+        if self._editor.current_background is None:
+            return False
+        rect = self.get_background_rect()
+        if rect is None:
+            return False
+        return rect.contains(mouse_pos)
 
     def _handle_left_click(self, mouse_pos):
         if (getattr(self, 'is_drawing_box', False)
@@ -197,9 +225,8 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         # 平时只在贴图模式编辑区域；但**范围面板开着**时例外：用户要求
         # 「区域框可以调整大小和位置，只在范围面板开着时允许」，而面板开着时
         # 画布通常停在标注模式（正在审标注）。所以面板开着就允许调区域。
-        if not self._is_paste_mode() and not self._region_editing_allowed():
-            return False
-        if getattr(self._editor, 'region_fixed', False):
+        # 判据与滚轮缩放共用 `_region_editable()`，保证两处不会各说各话。
+        if not self._region_editable():
             return False
 
         # 多边形顶点优先
@@ -1306,7 +1333,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
 
         if event.modifiers() & Qt.ControlModifier:
             self._scale_background(event)
-        elif (self._is_paste_mode() and
+        elif (self._region_editable() and
               self._region_at(self.mouse_pos) is not None and
               self.find_item_at_position(self.mouse_pos) is None):
             self._scale_hovered_region(event)

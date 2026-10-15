@@ -18,14 +18,17 @@
 ——写模板由调用方在确定之后做。
 
 **只有选中「滑窗」时才可编辑**（用户要求）：`set_editable(False)` 会把输入框
-与模板按钮一并禁用，既点不动也改不动。
+一并禁用，既点不动也改不动。
+
+**没有模板**：早先这里有一排「模板」按钮，与数据增强共用 `crop_templates`
+（双向同步）。用户要求「推理滑窗不要模板了，也不与数据增强同步模板」，那排
+按钮与同步逻辑都已删除；滑窗参数只认当前输入框里的值。
 """
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
-    QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QSpinBox, QVBoxLayout, QWidget,
 )
 
-from ...core.config_manager import load_crop_templates
 from ...engine.augmenter.crop import MAX_WINDOW
 from ...engine.inference_scope import ScopeError, iter_windows
 from ..i18n import t as tr
@@ -35,10 +38,11 @@ DEFAULT_WINDOW = 640
 DEFAULT_OVERLAP = 200
 MIN_WINDOW = 8                  # 与 crop_dialog 的窗口下限一致
 MANY_WINDOWS = 1000             # 超过就提醒一句：每张图要跑这么多窗
-# 最低可见比例：与数据增强侧的 `DEFAULT_CROP_MIN_VISIBLE` / 模板校验区间一致
-# （0.5~1.0），两边共用同一个语义，改一边要同步改另一边。
+# 最低可见比例：数据增强侧也有同名概念，但**推理侧不再跟它同步**（用户
+# 明确「推理滑窗不要模板了，也不与数据增强同步模板」），所以这个默认值只
+# 服务推理侧自己的输入框。0.8 是用户指定的默认值。
 MIN_VISIBLE = 0.5
-DEFAULT_MIN_VISIBLE = 0.7
+DEFAULT_MIN_VISIBLE = 0.8
 
 
 class WindowParamsWidget(QWidget):
@@ -50,7 +54,6 @@ class WindowParamsWidget(QWidget):
     def __init__(self, reference_size=None, spec=None, parent=None):
         super().__init__(parent)
         self._reference = reference_size
-        self._template_buttons = []
         spec = dict(spec or {})
         self._build_ui()
         self._apply_style()
@@ -109,7 +112,7 @@ class WindowParamsWidget(QWidget):
         self.min_visible_spin.setRange(int(MIN_VISIBLE * 100), 100)
         self.min_visible_spin.setSuffix("%")
         self.min_visible_spin.setFixedWidth(84)
-        self.min_visible_spin.setValue(int(DEFAULT_MIN_VISIBLE * 100))
+        self.min_visible_spin.setValue(int(round(DEFAULT_MIN_VISIBLE * 100)))
         self.min_visible_spin.setToolTip(
             tr("跨窗去重前丢弃可见比例低于此值的框；只影响滑窗模式"))
         vis_row.addWidget(self.min_visible_spin)
@@ -129,9 +132,9 @@ class WindowParamsWidget(QWidget):
         body.addLayout(params, 1)
 
         # 曾经这里有个缩略预览小图，已删除：网格改画在主画布上。
-        self._templates = QVBoxLayout()
-        body.addLayout(self._templates, 0)
-        self._rebuild_templates()
+        # 曾经这里还有一排「模板」按钮（与数据增强共用 `crop_templates`），
+        # 也已删除：用户要求「推理滑窗不要模板了，也不与数据增强同步模板」。
+        # 滑窗参数就是当前输入框里的值，不再被另一处的模板列表影响。
 
         root.addLayout(body)
 
@@ -149,38 +152,6 @@ class WindowParamsWidget(QWidget):
                 padding: 1px 4px;
             }}
         """)
-
-    def _rebuild_templates(self):
-        """按当前配置重建模板按钮（配置在别处被改过时也要能刷到）。"""
-        while self._templates.count():
-            item = self._templates.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-        self._template_buttons = []
-        records = load_crop_templates()
-        if records:
-            self.templates_label = QLabel(tr("模板"))
-            self._templates.addWidget(self.templates_label)
-        else:
-            self.templates_label = None
-        for item in records:
-            # 与 crop_dialog 用同一个 `template_fmt`：两份模板列表是同一份
-            # 数据，标签格式该一致，也省得再添一条中英词条。
-            txt = tr("template_fmt").format(
-                w=item["w"], h=item["h"], ov=item["overlap"],
-                vis=int(round(item["min_visible"] * 100)))
-            btn = QPushButton(txt)
-            btn.setObjectName("templateBtn")
-            btn.clicked.connect(
-                lambda _c=False, spec=item: self._apply_template(spec))
-            self._template_buttons.append(btn)
-            self._templates.addWidget(btn)
-        self._templates.addStretch()
-        # 重建会造出新的按钮，它们默认是可用的——把当前的可编辑状态重新套上，
-        # 否则「未选中滑窗」时刷一次模板就把禁用以外的按钮放出来了。
-        for btn in self._template_buttons:
-            btn.setEnabled(getattr(self, '_editable', True))
 
     # ---------- 对外接口 ----------
 
@@ -229,15 +200,8 @@ class WindowParamsWidget(QWidget):
                    for spin in (self._w, self._h, self._ov,
                                 self.min_visible_spin))
 
-    def templates_enabled(self):
-        """模板按钮是否实际可用（无模板时返回 None，表示无从谈起）。"""
-        if not self._template_buttons:
-            return None
-        return all(btn.isEnabled() for btn in self._template_buttons)
-
     def _editable_widgets(self):
-        return [self._w, self._h, self._ov, self.min_visible_spin] + \
-            list(self._template_buttons)
+        return [self._w, self._h, self._ov, self.min_visible_spin]
 
     def window_count(self):
         """按参考图算出的实际窗口数；没有参考图或参数非法时返回 None。"""
@@ -264,13 +228,6 @@ class WindowParamsWidget(QWidget):
     def estimate_text(self):
         return self._estimate.text()
 
-    def template_buttons(self):
-        """模板按钮列表（无模板时为空表）；点击即回填参数并刷预览。"""
-        return list(self._template_buttons)
-
-    def refresh_templates(self):
-        self._rebuild_templates()
-
     def retranslate(self):
         self.size_label.setText(tr("裁剪尺寸（像素）"))
         self.overlap_label.setText(tr("重叠长度（像素）"))
@@ -278,8 +235,6 @@ class WindowParamsWidget(QWidget):
         self.min_visible_spin.setToolTip(
             tr("跨窗去重前丢弃可见比例低于此值的框；只影响滑窗模式"))
         self._hint.setText(tr("窗口尺寸与模型输入尺寸独立：窗口是原图上的裁剪范围"))
-        if self.templates_label is not None:
-            self.templates_label.setText(tr("模板"))
         self._refresh_estimate()
 
     # ---------- 内部 ----------
@@ -305,28 +260,6 @@ class WindowParamsWidget(QWidget):
             text += "\n" + tr("窗口数很多，耗时约为全图的 {n} 倍").format(n=count)
         self._estimate.setText(text)
         self.changed.emit()
-
-    def _apply_template(self, spec):
-        """回填模板的 w/h/重叠到输入框并刷新预览；不改变确定/取消语义。
-
-        只搬三个推理用得到的字段：`crop_templates` 里还有 `min_visible` /
-        `square` / `fill` / `fill_rgb`，那些是数据增强侧的口径，推理侧不读。
-        回填后输入框仍可编辑——模板只是起点，不是锁。
-        """
-        for spin, key, fallback in ((self._w, "w", DEFAULT_WINDOW),
-                                    (self._h, "h", DEFAULT_WINDOW),
-                                    (self._ov, "overlap", DEFAULT_OVERLAP)):
-            spin.blockSignals(True)
-            spin.setValue(_as_int(spec.get(key), fallback))
-            spin.blockSignals(False)
-        # 最低可见比例也从模板带过来：数据增强侧模板里就有这个字段，
-        # 「模板补齐」指的就是这个（原先只搬了 w/h/重叠）。
-        self.min_visible_spin.blockSignals(True)
-        self.min_visible_spin.setValue(
-            _as_visible_percent(spec.get("min_visible")))
-        self.min_visible_spin.blockSignals(False)
-        self._refresh_estimate()
-
 
 def _as_int(value, fallback):
     """配置里的整数；坏值（None/字符串/超范围）回退到默认。"""

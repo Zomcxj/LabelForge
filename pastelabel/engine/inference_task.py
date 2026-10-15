@@ -217,23 +217,39 @@ def is_auto_box(box):
     return isinstance(flags, dict) and bool(flags.get(SOURCE_KEY))
 
 
+def is_paste_box(box):
+    """是否为贴图。贴图单独存进 json，**不属于「检测框」**，覆盖时不动它。"""
+    flags = box.get("flags")
+    return isinstance(flags, dict) and bool(flags.get("paste"))
+
+
 def merge_boxes(existing, detected, replace_auto=False, class_filter=None):
     """把推理结果并入现有标注。
 
-    默认保留人工标注；replace_auto=True 时先移除上一轮推理结果再并入，
-    人工标注在任何情况下都不被删除。
+    `replace_auto=True`（界面上的「覆盖」）时**先清掉这一图现有的所有检测框**
+    ——人工画的也清——再并入本次结果。用户明确要求「手动绘制的没有覆盖，应该
+    都覆盖」：覆盖的语义是「本图检测框完全重来」。早先只清上一轮推理框，手工
+    框与本轮结果叠在一起，看着像框重复了。
 
-    class_filter 给定时做严格筛选：上一轮推理留下的、类别不在白名单里的框
-    也要一并丢掉。否则筛选只能「加」不能「减」——上一次没筛跑出的类别会
-    一直留在画布上，看起来就像筛选没生效。人工标注不受影响。
+    **贴图一律保留**（用户明确「只清检测框，贴图保留」）。`existing` 来自
+    sidecar，里面混着贴图条目；贴图是另一条存储线，丢了就是丢用户的素材。
+
+    class_filter 给定时做严格筛选：覆盖没开时，上一轮推理留下的、类别不在
+    白名单里的框也要一并丢掉。否则筛选只能「加」不能「减」——上一次没筛跑出
+    的类别会一直留在画布上，看起来就像筛选没生效。
 
     None 表示不过滤（界面默认全选），空集合表示全不选、清掉所有旧推理框。
     """
     kept = []
     for box in existing or []:
-        if replace_auto and is_auto_box(box):
+        if is_paste_box(box):
+            # 贴图不是检测框：覆盖与类别筛选都不该动它
+            kept.append(box)
             continue
-        # 严格筛选：只清推理框，人工框无论类别都保留
+        if replace_auto:
+            # 覆盖 = 本图检测框完全重来，人工框与上一轮推理框一起清
+            continue
+        # 未覆盖时只做严格筛选：只清推理框，人工框无论类别都保留
         if (class_filter is not None and is_auto_box(box)
                 and box.get("label") not in class_filter):
             continue

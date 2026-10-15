@@ -163,10 +163,14 @@ print('推理后 shapes 为空或文件已删',
         f"无检出后磁盘仍留着旧自动框（{lines}）")
 
 
-def test_inference_keeps_manual_annotations_when_nothing_is_detected():
-    """人工标注不能被「无检出」顺手清掉——两条路径都要保住用户的工作。
+def test_inference_replace_mode_clears_manual_annotations_too():
+    """勾了覆盖时，无检出也会把这一图**所有检测框**清掉（含手工画的）。
 
-    这条是上面那些用例的反向约束：清空旧自动框不能扩大成「清空一切」。
+    这条原先叫 `test_inference_keeps_manual_annotations_when_nothing_is_detected`，
+    断言的是「人工标注不能被无检出清掉」。用户明确要求「手动绘制的没有覆盖，
+    应该都覆盖」，所以覆盖模式下这条反转：清理是本意，不是事故。
+
+    **贴图不在其中**：贴图是单独存进 json 的素材，不属于检测框，见下一条。
     """
     out = _run_real_qt("""
 import json, os, tempfile
@@ -207,8 +211,45 @@ if os.path.exists(sidecar_path(img_path)):
     data = json.load(open(sidecar_path(img_path), encoding="utf-8"))
     kept = [s for s in (data.get("shapes") or [])
             if s.get("label") == "hand"]
-print('人工标注还在', len(kept) == 1)
+print('手工框已被覆盖清掉', len(kept) == 0)
+print('画布上也清了', [b['label'] for b in w.detection_boxes])
 """)
     lines = _lines(out)
-    assert lines[0] == "人工标注还在 True", (
-        f"无检出把人工标注也清了（{lines}）")
+    assert lines[0] == "手工框已被覆盖清掉 True", (
+        f"覆盖模式下无检出没清掉手工框（{lines}）")
+    assert lines[1] == "画布上也清了 []", lines[1]
+
+
+def test_inference_never_deletes_paste_shapes():
+    """贴图绝不能因为推理被删掉——它单独存 json，是用户的素材。
+
+    这条是上一条的反向约束：清检测框不能扩大成「清空一切」，贴图必须原样在。
+    """
+    out = _run_real_qt("""
+import json, os, tempfile
+from PyQt5.QtWidgets import QApplication
+from pastelabel.engine.inference_task import ImageResult, write_one_result
+
+tmp = tempfile.mkdtemp(prefix="pl-paste-")
+img_path = os.path.join(tmp, "p.jpg")
+open(img_path, "wb").close()
+
+existing = [
+    {"label": "hand", "x": 1, "y": 1, "width": 5, "height": 5, "flags": {}},
+    {"label": "logo", "x": 2, "y": 2, "width": 5, "height": 5,
+     "flags": {"paste": True}},
+]
+write_one_result(
+    ImageResult(index=0, path=img_path, boxes=[
+        {"label": "new", "x": 3, "y": 3, "width": 2, "height": 2}],
+        width=80, height=60),
+    existing=existing, replace_auto=True)
+
+from pastelabel.engine.inference_task import sidecar_path
+data = json.load(open(sidecar_path(img_path), encoding="utf-8"))
+labels = sorted(s["label"] for s in data["shapes"])
+print(labels)
+""")
+    lines = _lines(out)
+    assert lines[0] == "['logo', 'new']", (
+        f"覆盖时贴图被删了或手工框没清：{lines[0]}")

@@ -196,7 +196,12 @@ def test_merge_boxes_preserves_existing_flags_and_group_id():
     assert merged[0]["group_id"] == 7
 
 
-def test_merge_boxes_replace_auto_removes_previous_inference_only():
+def test_merge_boxes_replace_auto_removes_all_detection_boxes():
+    """覆盖 = 本图检测框完全重来：人工框与上一轮推理框一起清。
+
+    用户报的是「手动绘制的没有覆盖，应该都覆盖」——早先只清推理框，
+    手工框会与本轮结果叠在一起，看着像框重复。
+    """
     manual = [{"label": "cat", "x": 0, "y": 0, "width": 5, "height": 5}]
     old_auto = [{"label": "dog", "x": 9, "y": 9, "width": 5, "height": 5}]
     existing = merge_boxes(manual, old_auto)
@@ -204,8 +209,28 @@ def test_merge_boxes_replace_auto_removes_previous_inference_only():
     merged = merge_boxes(existing, [{"label": "car", "x": 2, "y": 2, "width": 5, "height": 5}],
                          replace_auto=True)
 
-    assert [b["label"] for b in merged] == ["cat", "car"]
+    assert [b["label"] for b in merged] == ["car"], (
+        "覆盖后应只剩本轮结果")
     assert all(b["label"] != "dog" for b in merged)
+
+
+def test_merge_boxes_replace_auto_leaves_paste_shapes_alone():
+    """贴图不是检测框：覆盖不清它（用户明确「只清检测框，贴图保留」）。
+
+    贴图单独存进 json，丢了就是丢用户的素材。`existing` 来自 sidecar，里面
+    混着贴图条目，覆盖时它要原样留回来。
+    """
+    merged = merge_boxes(
+        [{"label": "logo", "x": 1, "y": 1, "width": 3, "height": 3,
+          "flags": {"paste": True}},
+         {"label": "cat", "x": 4, "y": 4, "width": 3, "height": 3}],
+        [{"label": "car", "x": 2, "y": 2, "width": 5, "height": 5}],
+        replace_auto=True)
+
+    labels = [b["label"] for b in merged]
+    assert "logo" in labels, "覆盖把贴图删掉了"
+    assert "cat" not in labels, "覆盖没清掉人工检测框"
+    assert "car" in labels, "覆盖后缺少本轮结果"
 
 
 def test_merge_boxes_without_replace_keeps_previous_inference():
@@ -650,6 +675,7 @@ def test_write_results_reports_failure_paths(tmp_path, monkeypatch):
 
 
 def test_write_results_replace_auto_drops_previous_inference(tmp_path):
+    """覆盖：上一轮推理框与人工框都清掉，只留本轮结果。"""
     from pastelabel.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "repl", [
         {"label": "old", "points": [[0, 0], [5, 0], [5, 5], [0, 5]],
@@ -665,7 +691,7 @@ def test_write_results_replace_auto_drops_previous_inference(tmp_path):
     import json
     labels = [s["label"] for s in
               json.loads((tmp_path / "repl.json").read_text(encoding="utf-8"))["shapes"]]
-    assert labels == ["manual", "new"]
+    assert labels == ["new"], labels
 
 
 def test_write_results_preserves_paste_shapes(tmp_path):
@@ -751,8 +777,14 @@ def test_replace_auto_clears_previous_inference_boxes_and_drops_file(tmp_path):
     assert not (tmp_path / "old.json").exists()
 
 
-def test_replace_auto_keeps_manual_and_drops_only_inference(tmp_path):
-    """勾选替换：只清上一轮推理框，人工标注留下，文件保留。"""
+def test_replace_auto_also_clears_manual_boxes(tmp_path):
+    """勾选替换：人工标注也被清掉，只剩本轮结果（用户明确要求「都覆盖」）。
+
+    早先这里叫 `..._keeps_manual_and_drops_only_inference`，断言的是「人工框
+    保留」。用户报的正是那条语义不合预期：「手动绘制的没有覆盖，应该都覆盖」
+    ——手工框与本轮结果叠在一起看着像框重复。贴图不在检测框这层，见下一条
+    贴图用例。
+    """
     from pastelabel.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "mix", [
         {"label": "oldauto", "points": [[1, 1], [5, 1], [5, 5], [1, 5]],
@@ -765,8 +797,9 @@ def test_replace_auto_keeps_manual_and_drops_only_inference(tmp_path):
         {0: ImageResult(0, img, [], None, 100, 80)},
         memory_boxes={}, replace_auto=True)
 
-    assert (written, failed) == (1, [])
-    assert _labels_of(img) == ["manual"]
+    # 全部被清、又没有新检出 → 连 json 一起删（与纯推理框那条一致）
+    assert (written, failed) == (0, [])
+    assert not (tmp_path / "mix.json").exists()
 
 
 def test_paste_shapes_survive_inference_write(tmp_path):
@@ -897,14 +930,14 @@ def test_merge_empty_filter_still_keeps_manual_boxes():
 
 
 def test_merge_replace_auto_still_works_with_filter():
-    """replace_auto 与严格筛选同时给出时，语义叠加：先清掉全部旧推理框，
-    再并入本轮结果，人工框照常保留。"""
+    """replace_auto 与严格筛选同时给出时，语义叠加：先清掉本图全部检测框
+    （人工的也清），再并入本轮结果。"""
     existing = [_auto("person"), _auto("car", 1),
                 {"label": "hand", "x": 5, "y": 5, "width": 4, "height": 4}]
     out = merge_boxes(existing, [_auto("car", 9)], replace_auto=True,
                       class_filter={"car"})
     labels = sorted(b["label"] for b in out)
-    assert labels == ["car", "hand"], labels
+    assert labels == ["car"], labels
 
 
 def test_write_results_passes_filter_through(tmp_path):

@@ -414,7 +414,13 @@ def test_apply_results_clears_canvas_selection():
     assert editor.canvas.updates >= 1
 
 
-def test_apply_results_replaces_previous_inference_only():
+def test_apply_results_replaces_all_detection_boxes():
+    """覆盖模式：本图检测框全清（含人工框），只留本轮结果。
+
+    用户明确要求「手动绘制的没有覆盖，应该都覆盖」。早先这条叫
+    `..._replaces_previous_inference_only`，断言人工框保留——那正是用户
+    报的「看着像框重复」的来源。
+    """
     editor = _FakeEditor()
     editor._apply_inference_results({0: _result(0, "a.png", [
         {"label": "old", "x": 1, "y": 1, "width": 2, "height": 2}])}, False)
@@ -423,7 +429,7 @@ def test_apply_results_replaces_previous_inference_only():
         {"label": "new", "x": 3, "y": 3, "width": 2, "height": 2}])}, True)
 
     labels = [b["label"] for b in editor.detection_boxes]
-    assert labels == ["manual", "new"]
+    assert labels == ["new"], labels
 
 
 def test_apply_results_appends_when_not_replacing():
@@ -1994,8 +2000,8 @@ def test_write_one_result_keeps_existing_manual_annotations(tmp_path):
     assert sorted(s["label"] for s in data["shapes"]) == ["cat", "manual"]
 
 
-def test_write_one_result_replaces_previous_inference_only(tmp_path):
-    """覆盖模式：旧推理框删掉、人工框留下。"""
+def test_write_one_result_replace_clears_all_detection_boxes(tmp_path):
+    """覆盖模式：本图检测框全清（含人工框），贴图保留。"""
     import json
 
     from pastelabel.engine import inference_task
@@ -2007,6 +2013,8 @@ def test_write_one_result_replaces_previous_inference_only(tmp_path):
          "flags": {"inference": True}},
         {"label": "manual", "x": 0, "y": 0, "width": 5, "height": 5,
          "flags": {}},
+        {"label": "logo", "x": 0, "y": 0, "width": 5, "height": 5,
+         "flags": {"paste": True}},
     ]
     inference_task.write_one_result(
         _result(0, str(path), [{"label": "new", "x": 1, "y": 1,
@@ -2014,7 +2022,7 @@ def test_write_one_result_replaces_previous_inference_only(tmp_path):
         existing=existing, replace_auto=True)
 
     data = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
-    assert sorted(s["label"] for s in data["shapes"]) == ["manual", "new"]
+    assert sorted(s["label"] for s in data["shapes"]) == ["logo", "new"]
 
 
 def test_write_one_result_raises_on_unwritable_path(tmp_path):

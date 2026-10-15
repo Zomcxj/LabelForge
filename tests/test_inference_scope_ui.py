@@ -411,12 +411,15 @@ print(p.isModal())
 
 
 def test_real_scope_params_are_disabled_unless_window_mode_selected():
-    """只有选中「滑窗」时宽/高/重叠与模板按钮才**可点**，否则禁用。
+    """只有选中「滑窗」时宽/高/重叠与可见比例才**可点**，否则禁用。
 
     用户要求「未选中滑窗时不能修改点击」。只隐藏是不够的：隐藏的控件
     在某些布局路径下仍会被键盘焦点/程序化调用改到，而且用户看不到
     当前值就没法核对「这次要跑多大窗口」。所以分别断言 disabled（可见
     或不可见都好，但一定不能可用）。
+
+    模板那一排已经删掉了（用户要求「推理滑窗不要模板了」），所以这里只
+    钉输入框。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -424,7 +427,7 @@ from pastelabel.ui.scope_panel import ScopePanel
 from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
-# 造出模板按钮：先写一条共用模板
+# 数据增强侧即使有模板，推理面板也不该再显示出模板按钮
 from pastelabel.core import config_manager as cm
 cfg = cm.load_config()
 cfg['crop_templates'] = [{'w': 512, 'h': 512, 'overlap': 64,
@@ -436,15 +439,13 @@ p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, region_count=2,
                reference_size=(3840, 2160))
 p.show()
 app.processEvents()
-btns = p.window_params.template_buttons()
-print(len(btns))
+print(p.window_params.spec()['w'])
 for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
     p.set_mode(mode)
     app.processEvents()
     wp = p.window_params
     # 区域那一段没有「编辑区域」按钮了，可编辑性看它的区域提示 label
-    print(mode, wp.spins_enabled(), wp.templates_enabled(),
-          p.region_label.isEnabled())
+    print(mode, wp.spins_enabled(), p.region_label.isEnabled())
 # 禁用状态下用户**点不动**：这是「不能修改点击」的真实保证。
 # 不断言 setValue() 会失败——那是程序化写入，Qt 有意让它绕过 enabled，
 # 拿它当断言是量的东西与结论不同构。
@@ -453,13 +454,13 @@ app.processEvents()
 print(wp.is_editable(), wp.spins_enabled(), wp._w.isEnabled())
 """)
     lines = _lines(out)
-    assert lines[0] == "1", lines[0]
-    # 全图：滑窗参数与模板禁用、区域那段也置灰
-    assert lines[1] == "full False False False", lines[1]
-    # 滑窗：参数可用、模板可用、区域那段置灰
-    assert lines[2] == "window True True False", lines[2]
-    # 区域：参数与模板禁用、区域那段可用
-    assert lines[3] == "roi False False True", lines[3]
+    assert lines[0] == "640", lines[0]
+    # 全图：滑窗参数禁用、区域那段也置灰
+    assert lines[1] == "full False False", lines[1]
+    # 滑窗：参数可用、区域那段置灰
+    assert lines[2] == "window True False", lines[2]
+    # 区域：参数禁用、区域那段可用
+    assert lines[3] == "roi False True", lines[3]
     assert lines[4] == "False False False", lines[4]
 
 
@@ -1756,12 +1757,12 @@ print('ok')
     assert lines[1] == "ok", lines[1]
 
 
-def test_real_sliding_dialog_template_fills_and_updates_count():
-    """真实控件：点模板 → 回填输入框 + 窗口数**确实变了**。
+def test_real_sliding_dialog_has_no_template_buttons():
+    """滑窗弹窗里**没有**模板按钮：用户要求「推理滑窗不要模板了」。
 
-    断言「变了」而不是「不为 None」：后者在完全不重算的情况下也会过
-    （旧 spec 还在，仍算得出窗口数）——变异验证时发现该断言杀不死
-    「点击不回填/不重算」这个变异体。
+    早先这里有一排「模板」按钮，与数据增强共用 `crop_templates`。现在两边
+    脱钩——推理侧只认输入框里的值，数据增强侧的模板列表不该出现在这里，也不
+    该被这里的操作写坏。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -1769,31 +1770,28 @@ from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
 from pastelabel.core import config_manager
 
 app = QApplication([])
+# 数据增强侧**有**模板：推理面板仍不该显示
 config_manager.add_crop_template({'w': 320, 'h': 320, 'overlap': 100,
                                   'min_visible': 0.5})
 d = SlidingWindowDialog(reference_size=(2000, 1000),
                         spec={'w': 640, 'h': 640, 'overlap': 200})
-before = d.window_count()
-print(len(d.template_buttons()) > 0)
-d.template_buttons()[0].click()
+print(hasattr(d, 'template_buttons'))
+print(hasattr(d.params, 'template_buttons'))
+print(len(d.params.template_buttons()) if hasattr(d.params, 'template_buttons') else 0)
 print(d.spec())
-after = d.window_count()
-print(before, after, before != after)
 """)
     lines = _lines(out)
-    assert lines[0] == "True", lines[0]
-    assert _spec_size(lines[1]) == (320, 320, 100), lines[1]
-    # 2000×1000 图上：640/重叠 200 → 10 窗；320/重叠 100 → 45 窗
-    assert lines[2] == "10 45 True", lines[2]
+    assert lines[0] == "False", (
+        f"滑窗弹窗还有 template_buttons API，容易再被接回模板：{lines[0]}")
+    assert lines[1] == "False", (
+        f"参数控件还有 template_buttons API：{lines[1]}")
+    assert lines[2] == "0", f"还显示出模板了：{lines[2]}"
+    # 参数是调用方传进来的那份，不受数据增强模板影响
+    assert _spec_size(lines[3]) == (640, 640, 200), lines[3]
 
 
-def test_real_sliding_dialog_template_still_editable_after_click():
-    """点模板后仍可继续改宽高：不被模板值锁死，也不禁用输入框。
-
-    断言 disabled 状态是必要的：只断言 setValue 生效的话，
-    「点模板后 disable 掉输入框」这个变异体杀不死——程序化 setValue
-    在 disabled 控件上一样能改值（变异验证时证实过）。
-    """
+def test_real_sliding_dialog_does_not_write_the_shared_template_list():
+    """弹窗的操作**绝不**改数据增强的模板列表（两边已脱钩）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
@@ -1802,148 +1800,92 @@ from pastelabel.core import config_manager
 app = QApplication([])
 config_manager.add_crop_template({'w': 384, 'h': 384, 'overlap': 64,
                                   'min_visible': 0.5})
-d = SlidingWindowDialog(reference_size=(2000, 1000))
-d.template_buttons()[0].click()
-print(d._w.isEnabled(), d._h.isEnabled(), d._ov.isEnabled())
-d._w.setValue(900)
-print(d.spec())
-""")
-    lines = _lines(out)
-    assert lines[0] == "True True True", lines[0]
-    assert _spec_size(lines[1]) == (900, 384, 64), lines[1]
-
-
-def test_real_sliding_dialog_has_no_templates_when_config_empty():
-    """配置里没有模板时不显示模板按钮（也不崩）。"""
-    out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
-from pastelabel.core import config_manager
-
-app = QApplication([])
-cfg = config_manager.load_config()
-cfg['crop_templates'] = []
-config_manager.save_config(cfg)
-d = SlidingWindowDialog(reference_size=(2000, 1000))
-print(len(d.template_buttons()))
-""")
-    assert _lines(out)[0] == "0", out
-
-
-def test_real_sliding_dialog_does_not_write_template_by_itself():
-    """弹窗自身只读不写：操作后配置里的模板数不变（写模板由调用方在确定后做）。"""
-    out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
-from pastelabel.core import config_manager
-
-app = QApplication([])
-config_manager.add_crop_template({'w': 384, 'h': 384, 'overlap': 64,
-                                  'min_visible': 0.5})
-before = len(config_manager.load_crop_templates())
+before = [tuple(sorted(t.items(), key=lambda kv: kv[0]))
+          for t in config_manager.load_crop_templates()]
 d = SlidingWindowDialog(reference_size=(2000, 1000))
 d._w.setValue(777)
 d.window_count()
-d.template_buttons()[0].click() if d.template_buttons() else None
-after = len(config_manager.load_crop_templates())
-print(before == after, before > 0)
+after = [tuple(sorted(t.items(), key=lambda kv: kv[0]))
+         for t in config_manager.load_crop_templates()]
+print(before == after, len(before) > 0)
 """)
     lines = _lines(out)
     assert lines[0] == "True True", lines[0]
 
 
-def test_real_mixin_records_template_only_when_window_params_change():
-    """窗口参数**变化时**才记模板；同样的参数反复经过不重复写。
+def test_real_window_params_defaults_are_640_visible_80_no_fill():
+    """默认值：640×640、最低可见比例 80%；**填充不开**。
 
-    原来是「点确定才记」；③ 之后没有确定按钮了，面板是实时的，所以记录点
-    挪到了「滑窗模式下参数变化」那一刻（`_on_scope_overlay_changed`）。
-    去重逻辑（B-3）保留：不重复写，免得把增强侧真在用的模板挤出去。
-    """
-    out = _run_real_qt(_MIXIN_HOST + """
-from pastelabel.core import config_manager as cm
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW
-
-h = _Host()
-h._on_model_loaded(_Detector(), (640, 640), "model")
-
-
-class _Panel:
-    def __init__(self, mode, spec):
-        self._mode = mode
-        self._spec = spec
-    def mode(self):
-        return self._mode
-    def window_spec(self):
-        return dict(self._spec)
-
-
-def drive(mode, spec):
-    h._scope_panel = _Panel(mode, spec)
-    h._scope_mode = mode
-    h._on_scope_overlay_changed()
-
-# 1) 全图模式下参数变化：不该记模板（窗口参数对全图模式没有意义）
-h._scope_panel_open = True
-before = len(cm.load_crop_templates())
-drive(MODE_FULL, {'w': 640, 'h': 640, 'overlap': 200})
-print("full", len(cm.load_crop_templates()) - before)
-
-# 2) 滑窗模式：记一条
-before = len(cm.load_crop_templates())
-drive(MODE_WINDOW, {'w': 512, 'h': 512, 'overlap': 64})
-print("first", len(cm.load_crop_templates()) - before)
-print("spec", h._window_spec)
-
-# 3) 同样的参数再来一次：**不重复写**（防把增强侧真模板挤掉）
-before = len(cm.load_crop_templates())
-drive(MODE_WINDOW, {'w': 512, 'h': 512, 'overlap': 64})
-print("repeat", len(cm.load_crop_templates()) - before)
-
-# 4) 参数变了：应记一条新的
-before = len(cm.load_crop_templates())
-drive(MODE_WINDOW, {'w': 1024, 'h': 1024, 'overlap': 128})
-print("changed", len(cm.load_crop_templates()) - before)
-""")
-    lines = _lines(out)
-    assert lines[0] == "full 0", lines[0]
-    assert lines[1] == "first 1", lines[1]
-    assert lines[2] == "spec {'w': 512, 'h': 512, 'overlap': 64}", lines[2]
-    assert lines[3] == "repeat 0", (
-        f"同样参数被重复记进模板列表了（B-3）：{lines[3]}")
-    assert lines[4] == "changed 1", lines[4]
-
-
-def test_recorded_template_does_not_fabricate_min_visible():
-    """记进共享模板时**不伪造** `min_visible`（复审 B-3）。
-
-    早先硬塞 `min_visible=0.5` 只为过校验，那是凭空的数。现在缺该字段时由
-    `_normalize_crop_template` 用与数据增强默认一致的 0.7 补齐。
+    用户明确「不开 fill」，也明确可见比例默认 80%。这三个数一起钉：只钉一个
+    的话，另两个改回旧值照样绿。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.core import config_manager as cm
+from pastelabel.ui.widgets.window_params import (
+    WindowParamsWidget, DEFAULT_WINDOW, DEFAULT_OVERLAP, DEFAULT_MIN_VISIBLE)
 
 app = QApplication([])
-# 清空模板列表：直接写配置文件，避免受同一进程里别的用例影响
-cfg = cm.load_config()
-cfg['crop_templates'] = []
-cm.save_config(cfg)
-print(cm.load_crop_templates())
-
-ok = cm.add_crop_template({'w': 512, 'h': 512, 'overlap': 64})
-print(ok)
-tpl = cm.load_crop_templates()
-print(len(tpl))
-print(tpl[0]['w'], tpl[0]['h'], tpl[0]['overlap'])
-print(tpl[0]['min_visible'])
+w = WindowParamsWidget()
+s = w.spec()
+print(DEFAULT_WINDOW, DEFAULT_OVERLAP, DEFAULT_MIN_VISIBLE)
+print(s['w'], s['h'], s['overlap'], s['min_visible'])
+print(w.min_visible_spin.value())
 """)
     lines = _lines(out)
-    assert lines[0] == "[]", lines[0]
-    assert lines[1] == "True", lines[1]
-    assert lines[2] == "1", lines[2]
-    assert lines[3] == "512 512 64", lines[3]
-    # 与数据增强侧输入框默认值一致
-    assert lines[4] == "0.7", lines[4]
+    assert lines[0] == "640 200 0.8", f"常量不对：{lines[0]}"
+    assert lines[1] == "640 640 200 0.8", f"默认值不对：{lines[1]}"
+    assert lines[2] == "80", f"输入框没按 80% 显示：{lines[2]}"
+
+
+def test_real_window_params_reads_a_stale_min_visible_from_old_config():
+    """旧配置里存着 0.7 时按 0.7 显示：只改**默认值**，不篡改用户已存的值。
+
+    用户的旧配置是他自己的选择，换默认值不该把已有配置一起改掉；而坏值
+    （字符串/越界）仍要退回新默认 0.8。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.widgets.window_params import WindowParamsWidget
+
+app = QApplication([])
+w = WindowParamsWidget(spec={'min_visible': 0.7})
+print(w.min_visible_spin.value())
+print(w.spec()['min_visible'])
+
+bad = WindowParamsWidget(spec={'min_visible': 'oops'})
+print(bad.min_visible_spin.value())
+
+out_of_range = WindowParamsWidget(spec={'min_visible': 0.2})
+print(out_of_range.min_visible_spin.value())
+""")
+    lines = _lines(out)
+    assert lines[0] == "70", f"旧配置的 0.7 被改了：{lines[0]}"
+    assert lines[1] == "0.7", lines[1]
+    assert lines[2] == "80", f"坏值没退回新默认 0.8：{lines[2]}"
+    assert lines[3] == "50", f"越界值应被输入框夹到下限 50：{lines[3]}"
+
+
+def test_real_window_params_never_reads_the_shared_templates():
+    """推理侧参数不再从 `crop_templates` 读任何东西。
+
+    写一条数据增强模板（w/h 与推理默认都不同），新建的参数控件必须还是
+    默认值——否则「模板同步」就又从别处溜回来了。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.widgets.window_params import WindowParamsWidget
+from pastelabel.core import config_manager
+
+app = QApplication([])
+config_manager.add_crop_template({'w': 320, 'h': 320, 'overlap': 100,
+                                  'min_visible': 0.5})
+w = WindowParamsWidget()
+s = w.spec()
+print(s['w'], s['h'], s['overlap'], s['min_visible'])
+""")
+    lines = _lines(out)
+    assert lines[0] == "640 640 200 0.8", (
+        f"推理默认被数据增强模板带跑了：{lines[0]}")
 
 
 def test_real_mixin_panel_close_drops_pending_region_draw_on_every_path():
@@ -2839,7 +2781,7 @@ print(row.batch_to_spin.maximum(), row.batch_to_spin.value())
 # ---------- min_visible：窗口参数里的最低可见比例 ----------
 
 def test_real_window_params_carry_min_visible():
-    """窗口参数要带上「最低可见比例」，默认 0.7、按百分比显示。"""
+    """窗口参数要带上「最低可见比例」，默认 0.8、按百分比显示。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.widgets.window_params import WindowParamsWidget
@@ -2852,7 +2794,7 @@ print(w.spec()["min_visible"])
 print(w.min_visible_spin.value())
 """)
     lines = _lines(out)
-    assert lines[0] == "0.7", f"缺省不是 0.7：{lines[0]}"
+    assert lines[0] == "0.8", f"缺省不是 0.8：{lines[0]}"
     assert lines[1] == "0.9", f"没读回 spec：{lines[1]}"
     assert lines[2] == "90", f"百分比没同步：{lines[2]}"
 
@@ -2874,22 +2816,32 @@ print(w.min_visible_spin.isEnabled())
     assert lines[1] == "True", f"选中滑窗后没启用：{lines}"
 
 
-def test_real_min_visible_comes_from_the_template():
-    """模板补齐：点模板要把最低可见比例一起带过来（数据增强侧同一个字段）。"""
+def test_real_min_visible_is_never_overwritten_by_the_augment_templates():
+    """数据增强的模板**不再**影响推理侧的最低可见比例（两边已脱钩）。
+
+    早先这里叫 `test_real_min_visible_comes_from_the_template`，断言点模板会
+    把 `min_visible` 一起带过来。用户要求「不与数据增强同步模板」，所以这条
+    反转：共用模板里有一条 0.85 的，推理侧的默认仍必须是 0.8。
+    """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from pastelabel.ui.widgets.window_params import WindowParamsWidget
+from pastelabel.core import config_manager
+
 app = QApplication([])
+config_manager.add_crop_template({'w': 512, 'h': 512, 'overlap': 64,
+                                  'min_visible': 0.85})
 w = WindowParamsWidget(reference_size=(1000, 1000),
-                       spec={"w": 640, "h": 640, "overlap": 200,
-                             "min_visible": 0.7})
-w._apply_template({"w": 512, "h": 512, "overlap": 64, "min_visible": 0.85})
+                       spec={"w": 640, "h": 640, "overlap": 200})
 print(w.min_visible_spin.value())
 print(w.spec()["min_visible"])
+print(hasattr(w, '_apply_template'))
 """)
     lines = _lines(out)
-    assert lines[0] == "85", f"模板里的可见比例没带过来：{lines}"
-    assert lines[1] == "0.85", lines[1]
+    assert lines[0] == "80", f"可见比例被数据增强模板带跑了：{lines}"
+    assert lines[1] == "0.8", lines[1]
+    assert lines[2] == "False", (
+        f"`_apply_template` 还在，模板同步容易再溜回来：{lines[2]}")
 
 
 def test_real_min_visible_accepts_a_value_written_by_an_older_version():
@@ -2905,8 +2857,8 @@ w.set_spec({"w": 640, "h": 640, "overlap": 200, "min_visible": "坏的"})
 print(w.spec()["min_visible"])
 """)
     lines = _lines(out)
-    assert lines[0] == "70", f"旧配置应退回 70%%：{lines[0]}"
-    assert lines[1] == "0.7", f"坏值应退回默认而不是崩：{lines[1]}"
+    assert lines[0] == "80", f"旧配置应退回 80%%：{lines[0]}"
+    assert lines[1] == "0.8", f"坏值应退回默认而不是崩：{lines[1]}"
 
 
 # ---------- ② 三段分区：各自显示自己的内容 ----------
@@ -4684,3 +4636,171 @@ print(locks)
     lines = _lines(out)
     assert lines[0] == "[True, False]", (
         f"第一趟应当是锁定的那趟（最底层）：{lines[0]}")
+
+
+# ---------- 第七轮：区域编辑与标签一致 + 覆盖清手画框 ----------
+
+def test_real_region_wheel_scale_works_while_scope_panel_is_open():
+    """② 面板开着（画布停在标注模式）时，悬停区域滚轮照样能缩放。
+
+    平移/缩放/手柄三件事本来就都实现了，但滚轮那条分支当时只认
+    `_is_paste_mode()`，面板一开（标注模式）就静默失效——用户看到的正是
+    「区域不能像标签那样缩放」。
+    """
+    out = _run_real_qt(_REGION_LOCK_HOST + """
+from PyQt5.QtGui import QWheelEvent
+from PyQt5.QtCore import QPointF, QPoint
+
+def wheel(x, y, up=True):
+    canvas.mouse_pos = QPointF(x, y)
+    delta = 120 if up else -120
+    canvas.wheelEvent(QWheelEvent(QPointF(x, y), QPointF(x, y),
+                                  QPoint(0, 0), QPoint(0, delta),
+                                  Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase,
+                                  False))
+
+# 面板开着 + 标注模式：滚轮应当能缩放区域
+w._open_scope_panel()
+canvas.is_manual_scale = True          # 免得缩放被「自适应」重置
+w.edit_mode = 'annotate'
+app.processEvents()
+before = (w.region_boxes[0]['x'], w.region_boxes[0]['y'],
+          w.region_boxes[0]['width'], w.region_boxes[0]['height'])
+cx, cy = region_center()
+wheel(cx, cy, up=True)
+after = (w.region_boxes[0]['x'], w.region_boxes[0]['y'],
+         w.region_boxes[0]['width'], w.region_boxes[0]['height'])
+print('面开标注模式 区域变了吗 ->', before != after)
+print('编辑模式 ->', w.edit_mode)
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("True"), (
+        f"面板开着时滚轮缩放区域无效：{lines[0]}")
+    assert lines[1].endswith("annotate"), lines[1]
+
+
+def test_real_region_lock_keeps_wheel_scale_inert():
+    """② 的边界：锁定的区域滚轮也不该缩放（锁 = 不可修改）。"""
+    out = _run_real_qt(_REGION_LOCK_HOST + """
+from PyQt5.QtGui import QWheelEvent
+from PyQt5.QtCore import QPointF, QPoint
+
+def wheel(x, y):
+    canvas.mouse_pos = QPointF(x, y)
+    canvas.wheelEvent(QWheelEvent(QPointF(x, y), QPointF(x, y),
+                                  QPoint(0, 0), QPoint(0, 120),
+                                  Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase,
+                                  False))
+
+w._open_scope_panel()
+canvas.is_manual_scale = True
+app.processEvents()
+canvas.set_region_locked(0, True)
+before = (w.region_boxes[0]['width'], w.region_boxes[0]['height'])
+cx, cy = region_center()
+wheel(cx, cy)
+after = (w.region_boxes[0]['width'], w.region_boxes[0]['height'])
+print('锁定后滚轮缩放了吗 ->', before != after)
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("False"), (
+        f"锁定的区域被滚轮缩放了：{lines[0]}")
+
+
+def test_real_region_corner_and_edge_handles_work_while_panel_is_open():
+    """② 四个角 + 四条边在面板开着时都能拖（单边调整也要真的有效）。"""
+    out = _run_real_qt(_REGION_LOCK_HOST + """
+w._open_scope_panel()
+canvas.is_manual_scale = True
+app.processEvents()
+
+def bbox():
+    r = w.region_boxes[0]
+    return (round(r['x']), round(r['y']), round(r['width']), round(r['height']))
+
+# 拖右下角：宽高一起变，左上角不动
+brx, bry = C(w.region_boxes[0]['x'] + w.region_boxes[0]['width'],
+             w.region_boxes[0]['y'] + w.region_boxes[0]['height'])
+before = bbox()
+press(brx, bry)
+move(brx + 60, bry + 60)
+release(brx + 60, bry + 60)
+corner = bbox()
+print('角点拖后 (x,y 不变, w/h 变大) ->',
+      corner[0] == before[0] and corner[1] == before[1],
+      corner[2] > before[2] and corner[3] > before[3])
+
+# 拖右边中点：只宽变，高与左上角都不动
+before2 = bbox()
+rmx, rmy = C(w.region_boxes[0]['x'] + w.region_boxes[0]['width'],
+             w.region_boxes[0]['y'] + w.region_boxes[0]['height'] / 2)
+press(rmx, rmy)
+move(rmx + 50, rmy)
+release(rmx + 50, rmy)
+edge = bbox()
+print('单边拖后 (只有 w 变大) ->',
+      edge[2] > before2[2], edge[3] == before2[3],
+      edge[0] == before2[0], edge[1] == before2[1])
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("True True"), (
+        f"角点拖拽不对：{lines[0]}")
+    assert lines[1].endswith("True True True True"), (
+        f"单边调整不对（应只有宽度变）：{lines[1]}")
+
+
+def test_real_replace_mode_clears_hand_drawn_boxes_too():
+    """③ 覆盖：手画的检测框也被清掉，只剩本轮推理结果（用户明确要求）。
+
+    用真 `ImageEditor` 走一遍 `_apply_inference_to_current`，钉住端到端行为
+    ——只测 `merge_boxes()` 的话，中间任何一层把 `replace_auto` 丢了都测不到。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_task import ImageResult
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+w.background_images = ['work.png']
+app.processEvents()
+w.update_label_list = lambda: None
+w._save_current_detection_boxes = lambda *a, **k: None
+w.save_json = lambda *a, **k: None
+w.update_inference_menu = lambda *a, **k: None
+
+# 手画的框
+w.detection_boxes = [
+    {'label': 'hand', 'x': 10, 'y': 10, 'width': 40, 'height': 40},
+]
+# `_replace_mode()` 读的是参数行上的按钮，所以必须把它真的建出来：
+# 只传 replace_auto=True 给函数的话，测不到「界面默认就是覆盖」这件事。
+row = w._ensure_model_row()
+row.show()
+app.processEvents()
+print('replace_mode ->', w._replace_mode())
+
+result = ImageResult(0, 'work.png',
+                     [{'label': 'new', 'x': 200, 'y': 200,
+                       'width': 30, 'height': 30}], None, 1000, 800)
+w._apply_inference_to_current(result, True)
+app.processEvents()
+print('labels ->', sorted(b['label'] for b in w.detection_boxes))
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("True"), f"默认应是覆盖模式：{lines[0]}"
+    assert lines[1] == "labels -> ['new']", (
+        f"覆盖后手画框没被清掉：{lines[1]}")
