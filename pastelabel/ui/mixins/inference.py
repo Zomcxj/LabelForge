@@ -459,8 +459,8 @@ class InferenceMixin:
             return None
         scope = {"mode": mode}
         if mode == MODE_WINDOW:
-            windows = self._effective_window_spec()
-            # 目前不可达：`_effective_window_spec()` 三条分支都回非空表。
+            windows = self._window_spec_for_run()
+            # 目前不可达：`_window_spec_for_run()` 三条分支都回非空表。
             # 保留是为了以后改默认值（比如允许「不设参数」）时有个兜底，
             # 不然会带着空窗口表进后台。
             if not windows:
@@ -976,6 +976,27 @@ class InferenceMixin:
         spec = settings.get("window_spec")
         return dict(spec) if isinstance(spec, dict) else {}
 
+    def _window_spec_for_run(self):
+        """跑任务时该用的窗口参数：**面板当下的输入**优先。
+
+        面板里的宽/高/重叠/最低可见比例是用户按这一眼要用的值，跑之前最后一刻
+        改的那些必须生效。原先这里读 `_effective_window_spec()`（本次会话设过的
+        /配置里存的/默认值），跟面板当下的输入是两回事——于是「改了参数，
+        跑起来还是老样子」，界面显示新值、实际用旧值。
+
+        面板没开着（比如程序启动后直接用存下来的参数跑）才回退到
+        `_effective_window_spec()`。
+        """
+        panel = getattr(self, '_scope_panel', None)
+        if panel is not None and getattr(self, '_scope_panel_open', False):
+            try:
+                spec = panel.window_spec()
+            except Exception:
+                spec = None
+            if spec:
+                return dict(spec)
+        return self._effective_window_spec()
+
     def _effective_window_spec(self):
         """实际要用的窗口参数：本次会话设过的优先，其次配置里存的，最后默认值。
 
@@ -992,5 +1013,7 @@ class InferenceMixin:
         saved = self._saved_window_spec()
         if saved:
             return saved
+        from ..widgets.window_params import DEFAULT_MIN_VISIBLE
         return {"w": DEFAULT_WINDOW, "h": DEFAULT_WINDOW,
-                "overlap": DEFAULT_OVERLAP}
+                "overlap": DEFAULT_OVERLAP,
+                "min_visible": DEFAULT_MIN_VISIBLE}

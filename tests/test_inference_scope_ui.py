@@ -3646,3 +3646,80 @@ print(set(region) >= {'x', 'y', 'width', 'height'})
     assert lines[1] == "False", f"关面板后拖动状态没收干净：{lines[1]}"
     assert lines[2] == "True", f"区域尺寸被搞坏了：{lines}"
     assert lines[3] == "True", f"区域字段缺失：{lines}"
+
+
+def test_real_panel_window_edits_reach_the_run_scope():
+    """面板里改的窗口参数必须真的进到本次任务的范围里。
+
+    用户报过「面板里改了参数，跑起来还是老样子」这类问题的根因就在这：`_scope_for_run`
+    读的是「本次会话设过的 / 配置里存的 / 默认值」（`_effective_window_spec`），
+    而面板里**当下**的输入是记在 `_scope_window_spec`——两者没关系，于是用户在
+    面板里改了宽/高/重叠/最低可见比例，任务仍然用旧值，界面上却显示新值。
+
+    这条把面板 → 范围快照这条链接上（含 `min_visible`，它是新加的一项）。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_WINDOW
+
+app = QApplication([])
+w = ImageEditor()
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+w._open_scope_panel()
+w._scope_panel.set_mode(MODE_WINDOW)
+app.processEvents()
+wp = w._scope_panel.window_params
+wp._w.setValue(1234)
+wp._h.setValue(567)
+wp._ov.setValue(88)
+wp.min_visible_spin.setValue(85)
+app.processEvents()
+
+spec = w._scope_for_run()['windows']
+print(spec['w'], spec['h'], spec['overlap'])
+print(spec.get('min_visible'))
+""")
+    lines = _lines(out)
+    assert lines[0] == "1234 567 88", (
+        f"面板里改的窗口尺寸没进到任务范围里（跑起来还是旧值）：{lines[0]}")
+    assert lines[1] == "0.85", (
+        f"面板里改的最低可见比例没进到任务范围里：{lines[1]}")
+
+
+def test_real_default_window_spec_carries_min_visible():
+    """没有任何已存参数时，兜底的默认窗口表也必须带 `min_visible`。
+
+    默认表少了这一项，`_normalize_window_spec` 只好补默认值——今天恰好也是
+    0.7 所以看不出问题，但一旦两处默认值分家，用户会莫名其妙拿到另一个值。
+    这里钉住「默认表与界面默认一致」。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.ui.widgets.window_params import DEFAULT_MIN_VISIBLE
+
+app = QApplication([])
+w = ImageEditor()
+w.show()
+app.processEvents()
+# 清掉「本次会话设过」与配置里存的，逼它走默认分支
+w._window_spec = None
+w._saved_window_spec = lambda: None
+app.processEvents()
+
+spec = w._effective_window_spec()
+print('min_visible' in spec)
+print(spec.get('min_visible'))
+print(DEFAULT_MIN_VISIBLE)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", "默认窗口表没带 min_visible"
+    assert lines[1] == lines[2], (
+        f"默认表里的 min_visible（{lines[1]}）与界面默认（{lines[2]}）不一致")
