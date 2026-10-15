@@ -2592,3 +2592,44 @@ print(len(h.detection_boxes))
     assert lines[2] == "2", f"一致时不该重复回灌：{lines}"
     assert lines[3] == "2", (
         f"收尾没接上画布回灌：走 `_on_batch_finished` 后画布还是旧框：{lines}")
+
+
+def test_real_batch_target_has_a_prefix_label():
+    """① 张数输入框要有前缀名，不能光秃秃一个数字。
+
+    用户要求「范围推理右侧的序号加一个前缀名」——指的是「推理范围」按钮右侧
+    那个序号输入框，前缀加在它自己左边。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+app = QApplication([])
+row = ModelRow()
+print(row.batch_to_label.text())
+# 前缀要真的在行里显示，而不是造了个看不见的控件
+print(row.batch_to_label.isVisibleTo(row))
+print(row.batch_to_label.parent() is row)
+""")
+    lines = _lines(out)
+    assert lines[0] == "目标张号", f"前缀名不对：{lines[0]}"
+    assert lines[1] == "True", f"前缀控件没加入行布局：{lines}"
+    assert lines[2] == "True", lines[2]
+
+
+def test_real_batch_target_label_retranslates():
+    """切语言后前缀名要跟着变，不能留在旧语言。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.model_row import ModelRow
+from pastelabel.ui import i18n
+app = QApplication([])
+row = ModelRow()
+print(row.batch_to_label.text())
+i18n.set_lang('en')
+row.retranslate()
+print(row.batch_to_label.text())
+i18n.set_lang('zh')
+""")
+    lines = _lines(out)
+    assert lines[0] == "目标张号", lines[0]
+    assert lines[1] == "Target image", f"切语言后前缀名没跟着变：{lines[1]}"

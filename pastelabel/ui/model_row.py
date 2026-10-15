@@ -132,6 +132,11 @@ class ModelRow(QWidget):
         # 批量的「张数范围」放在推理范围右侧（用户要求）。语义是**结束张号**：
         # 当前图是第 200 张时填 300 → 跑 200~300；填 100 → 跑 100~200。所以
         # 它表达的是「从当前图到第 N 张」这条区间，方向由两边大小自动决定。
+        #
+        # 前缀名加在输入框**自己左边**：用户说的是「范围推理右侧的序号加一个
+        # 前缀名」——即推理范围按钮右侧那个序号，光一个数字看不出是什么。
+        self.batch_to_label = QLabel(tr("目标张号"))
+        layout.addWidget(self.batch_to_label)
         self.batch_to_spin = QSpinBox()
         self.batch_to_spin.setObjectName("modelRowBatchTo")
         self.batch_to_spin.setFixedHeight(24)
@@ -298,6 +303,7 @@ class ModelRow(QWidget):
         self.conf_lbl.setText(tr("置信度"))
         self.iou_lbl.setText(tr("NMS"))
         self.size_lbl.setText(tr("输入尺寸"))
+        self.batch_to_label.setText(tr("目标张号"))
         self.name_label.setText(self._model_name or tr("尚未加载模型"))
         self._refresh_replace_text()
         # 筛选按钮的计数文案由主窗口按当前选择重设
