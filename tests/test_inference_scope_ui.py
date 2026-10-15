@@ -822,14 +822,12 @@ print(repr(ScopePanel().window_summary()))
     assert lines[1] == "'640×640 重叠 200'", lines[1]
 
 
-def test_real_scope_panel_roi_mode_hints_drawing_directly_on_the_image():
-    """真实控件：选中「区域」即进入可编辑态，不需要再点「编辑区域」按钮。
+def test_real_scope_panel_roi_mode_offers_the_add_region_button():
+    """真实控件：「添加区域」按钮取代了自动进入编辑态。
 
-    用户要求「删除编辑区域按钮，直接选中后就编辑」。面板本身（没有宿主）
-    开不了画布会话——那由宿主的 `_sync_region_session_to_mode()` 负责
-    （见 `test_real_mixin_edit_regions_*`）。这里只钉面板这一侧的契约：
-    `edit_regions_requested` 信号已经不存在，选中区域时给的是「在图上拖动」
-    的提示文字，而全图/滑窗下不给。
+    用户要求「画区域也加一个按钮啊 点一下画一个」——所以面板这侧的契约变成：
+    区域段有个按钮，点它发 `add_region_requested`；画布上就不再自动进入绘制
+    态（会独占左键，标签框点不到）。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -838,24 +836,39 @@ from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(region_count=1)
+fired = []
+p.add_region_requested.connect(lambda: fired.append(1))
+
+# 旧的「编辑区域」按钮与它的信号必须都不在了
 print(hasattr(p, 'edit_regions_requested'), hasattr(p, 'region_btn'))
-for mode in (MODE_FULL, MODE_WINDOW, MODE_ROI):
-    p.set_mode(mode)
-    print(mode, '在图上拖动即可添加区域' in p.region_label.text())
+
+p.set_mode(MODE_FULL)
+print(p.add_region_btn.isEnabled())
+p.set_mode(MODE_WINDOW)
+print(p.add_region_btn.isEnabled())
+p.set_mode(MODE_ROI)
+print(p.add_region_btn.isEnabled())
+p.add_region_btn.click()
+print(len(fired))
+print(p.region_label.text())
 """)
     lines = _lines(out)
     assert lines[0] == "False False", (
-        f"「编辑区域」按钮/信号还留着：{lines[0]}")
-    assert lines[1] == "full False", lines[1]
-    assert lines[2] == "window False", lines[2]
-    assert lines[3] == "roi True", lines[3]
+        f"旧的「编辑区域」按钮/信号没拆干净：{lines[0]}")
+    # 只有选中「区域」时那段内容体才可编辑（其余置灰）
+    assert lines[1] == "False", f"全图下按钮不该可点：{lines[1]}"
+    assert lines[2] == "False", f"滑窗下按钮不该可点：{lines[2]}"
+    assert lines[3] == "True", f"区域下按钮应当可点：{lines[3]}"
+    assert lines[4] == "1", f"点按钮没发出 add_region_requested：{lines[4]}"
+    assert lines[5] == "1 个区域", (
+        f"区域计数没显示对（且不该再挂「在图上拖动」提示）：{lines[5]}")
 
 
 def test_real_scope_panel_retranslates():
     """真实控件：切语言后面板上的文字跟着变。
 
     确定/取消/编辑区域三个按钮都没了，所以钉的是**当前还在屏上的那几处**
-    文案：模式单选按钮、段标题、区域提示。
+    文案：模式单选按钮、段标题、区域计数与「添加区域」按钮。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -868,24 +881,80 @@ p = ScopePanel(region_count=1)
 p.set_mode(MODE_ROI)
 print(p._buttons[MODE_FULL].text(), p.sections[MODE_ROI].title(),
       p.region_label.text())
+print(p.add_region_btn.text())
 i18n.set_lang('en')
 p.retranslate()
 print(p._buttons[MODE_FULL].text(), p.sections[MODE_ROI].title(),
       p.region_label.text())
+print(p.add_region_btn.text())
 i18n.set_lang('zh')
 """)
     lines = _lines(out)
-    assert lines[0] == "全图 区域 1 个区域　在图上拖动即可添加区域", lines[0]
-    # 已知产品侧的缺口（不在本任务的修改范围内）：`在图上拖动即可添加区域`
-    # 在 `pastelabel/ui/i18n.py` 里没有任何条目，所以切到英文后这句仍是中文。
-    # 要修的是 i18n.py，不是本测试；届时把下面两行换成
-    # `assert lines[1] == "Full image Regions 1 regions　Drag on the image to add a region"`
-    if lines[1] == "Full image Regions 1 regions　在图上拖动即可添加区域":
-        pytest.fail(
-            "产品缺口：`在图上拖动即可添加区域` 缺少 i18n 条目（pastelabel/ui/"
-            "i18n.py），切英文后面板仍显示中文；修正后把本用例的断言换成英文串。")
-    assert lines[1] == ("Full image Regions 1 regions　"
-                        "Drag on the image to add a region"), lines[1]
+    assert lines[0] == "全图 区域 1 个区域", lines[0]
+    assert lines[1] == "添加区域", lines[1]
+    assert lines[2] == "Full image Regions 1 regions", lines[2]
+    assert lines[3] == "Add Region", lines[3]
+
+
+def test_real_scope_panel_region_row_has_lock_button_in_both_languages():
+    """区域列表每行都有锁定按钮，文案跟随语言与当前锁状态。
+
+    用户要求「区域列表增加锁定按钮」。按钮显示的是**下一步动作**：未锁时写
+    「锁定」，已锁时写「解锁」，切语言两边都要跟着变。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.ui import i18n
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+p = ScopePanel()
+p.set_mode(MODE_ROI)
+p.set_regions([
+    {'shape_type': 'rectangle', 'x': 10, 'y': 10, 'width': 40, 'height': 40},
+    {'shape_type': 'rectangle', 'x': 50, 'y': 50, 'width': 40, 'height': 40,
+     'locked': True},
+])
+print([b.text() for b in p.findChildren(type(p.add_region_btn))
+       if b.objectName() == 'scopeRegionLock'])
+i18n.set_lang('en')
+p.retranslate()
+print([b.text() for b in p.findChildren(type(p.add_region_btn))
+       if b.objectName() == 'scopeRegionLock'])
+i18n.set_lang('zh')
+""")
+    lines = _lines(out)
+    assert lines[0] == "['锁定', '解锁']", (
+        f"锁定按钮文案没反映当前状态：{lines[0]}")
+    assert lines[1] == "['Lock', 'Unlock']", (
+        f"锁定按钮没跟着切语言：{lines[1]}")
+
+
+def test_real_scope_panel_lock_button_emits_index_and_target_state():
+    """点某行的锁按钮 → 发出 (该行下标, 目标状态)，不是别的行、也不是空信号。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.scope_panel import ScopePanel
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+p = ScopePanel()
+p.set_mode(MODE_ROI)
+p.set_regions([
+    {'shape_type': 'rectangle', 'x': 10, 'y': 10, 'width': 40, 'height': 40},
+    {'shape_type': 'rectangle', 'x': 50, 'y': 50, 'width': 40, 'height': 40},
+])
+fired = []
+p.region_lock_toggled.connect(lambda i, v: fired.append((i, v)))
+btns = [b for b in p.findChildren(type(p.add_region_btn))
+        if b.objectName() == 'scopeRegionLock']
+btns[1].click()
+print(fired)
+""")
+    lines = _lines(out)
+    assert lines[0] == "[(1, True)]", (
+        f"锁按钮没把「第几条、锁成什么」报对：{lines[0]}")
 
 
 # ---------- mixin 快照 ----------
@@ -1082,30 +1151,30 @@ class _Detector:
 
 
 class _FakeCanvas:
-    # 范围接线用的画布替身：只暴露会话接口。
-    # 「会话内交互到底怎么变」由 tests/test_inference_region_session.py 用真
-    # Canvas 钉；这里只验 mixin 有没有正确开/收会话。
+    # 范围接线用的画布替身：只暴露「画一个区域」与「逐条锁定」这两个入口。
+    # 真实交互（一次性绘制、层级命中）由 tests/test_inference_region_session.py
+    # 和 tests/test_inference_scope_ui.py 里的真 Canvas 用例钉；
+    # 这里只验 mixin 有没有把信号正确落到画布上。
 
     def __init__(self):
-        self._active = False
-        self.begin_count = 0
-        self.end_count = 0
+        self.is_drawing_region = False
+        self.add_count = 0
+        self.set_locked_calls = []
 
-    def region_session_active(self):
-        return self._active
+    def _start_add_region(self):
+        self.is_drawing_region = True
+        self.add_count += 1
 
-    def begin_region_session(self):
-        if self._active:
+    def _cancel_region_drawing(self):
+        self.is_drawing_region = False
+
+    def set_region_locked(self, index, locked):
+        regions = getattr(self._editor_ref, 'region_boxes', None) or []
+        if not (0 <= index < len(regions)):
             return False
-        self._active = True
-        self.begin_count += 1
+        regions[index]['locked'] = bool(locked)
+        self.set_locked_calls.append((index, bool(locked)))
         return True
-
-    def end_region_session(self):
-        if not self._active:
-            return
-        self._active = False
-        self.end_count += 1
 
     def update(self):
         pass
@@ -1131,6 +1200,8 @@ class _Host(InferenceMixin, _BackgroundListMixin, QWidget):
         self.current_background = None
         self.switched_to = []
         self.canvas = _FakeCanvas()
+        # 替身要能拿到宿主真身去改 `region_boxes`（与真裁布一个口径）
+        self.canvas._editor_ref = self
         # 圆点刷新要向 `background_list` 写 BG_ROLE_STATUS，`_sync_current_boxes_from_cache`
         # 还要 `update_label_list`。给真控件（QListWidget）而不是替身：状态图标是
         # 通过 `setData/setIcon` 落到 item 上的，替身会把断言变成「测替身」。
@@ -1248,7 +1319,7 @@ print("可见:", panel.isVisible())
 # 关键：没有 activeModalWidget 拦截输入，画布才能收到鼠标事件
 print("无模态窗:", QApplication.activeModalWidget() is None)
 panel.close()
-print("关闭后会话已收:", h.canvas.region_session_active() is False)
+print("关闭后待画态已收:", h.canvas.is_drawing_region is False)
 """)
     lines = _lines(out)
     assert lines[0] == "面板已建: True", lines
@@ -1257,54 +1328,41 @@ print("关闭后会话已收:", h.canvas.region_session_active() is False)
     assert lines[3] == "非模态: True", lines
     assert lines[4] == "可见: True", lines
     assert lines[5] == "无模态窗: True", lines
-    assert lines[6] == "关闭后会话已收: True", lines
+    assert lines[6] == "关闭后待画态已收: True", lines
 
 
-def test_real_mixin_selecting_roi_mode_starts_the_session_without_switching_mode():
-    """`_sync_region_session_to_mode()` 在「面板开着 + 选了区域」时开会话，且**不切贴图模式**（③）。
+def test_real_mixin_add_region_arms_drawing_without_switching_mode():
+    """`_on_add_region_requested()` 点了「添加区域」后：画布进入一次性绘制态，且**不切贴图模式**。
 
-    这条是 spec 第 9 条的反向断言：以前这里切 `_set_edit_mode('paste')`，
-    现在必须一次都不切。`switched_to` 是宿主上的探针，专门用来抓
-    「偷偷切过去又切回来」——只断言 edit_mode 值不变是不够的。
-
-    踩过的坑仍保留在本用例的意图里：入口必须真的产生可观察效果
-    （会话激活），否则就是「选中了区域却没反应」的旧毛病。
+    取代原先「选中『区域』就自动开会话」的联动。原先那条入口要真的产生可观察
+    效果（否则就是「点了没反应」），现在这个效果是 `is_drawing_region`。
+    `switched_to` 探针专门抓「偷偷切过去又切回来」——只断言 edit_mode 值不变
+    是不够的。
     """
     out = _run_real_qt(_MIXIN_HOST + """
 h = _Host()
-h._scope_panel_open = True
-h._scope_mode = MODE_ROI
-h._sync_region_session_to_mode()
+h._on_add_region_requested()
 print(h.switched_to)
-print(h.canvas.region_session_active())
+print(h.canvas.is_drawing_region)
 print(h.status_label.text_)
-# 面板没开、或选的不是区域：都不该开会话
-h.canvas.end_region_session()
-h._scope_mode = MODE_WINDOW
-h._sync_region_session_to_mode()
-print('window', h.canvas.region_session_active())
-h._scope_mode = MODE_ROI
-h._scope_panel_open = False
-h._sync_region_session_to_mode()
-print('closed', h.canvas.region_session_active())
 """)
     lines = _lines(out)
-    assert lines[0] == "[]", lines[0]
-    assert lines[1] == "True", lines[1]
+    assert lines[0] == "[]", f"画区域时切了模式：{lines[0]}"
+    assert lines[1] == "True", (
+        f"点了「添加区域」没进入绘制态：{lines[1]}")
     assert "拖动" in lines[2] or "区域" in lines[2], lines[2]
-    assert lines[3] == "window False", lines[3]
-    assert lines[4] == "closed False", lines[4]
 
 
-def test_real_mixin_edit_regions_is_noop_without_canvas():
-    """宿主没有 canvas 时不炸：防御式取属性，静默返回。"""
+def test_real_mixin_add_region_is_noop_without_canvas():
+    """宿主没有 canvas（或画布没有该方法）时不炸：防御式取属性，静默返回。"""
     out = _run_real_qt(_MIXIN_HOST + """
 h = _Host()
 h.canvas = None
-h._scope_panel_open = True
-h._scope_mode = MODE_ROI
-h._sync_region_session_to_mode()
+h._on_add_region_requested()
 print(h.switched_to)
+h2 = _Host()
+h2.canvas = type('C', (), {})()
+h2._on_add_region_requested()
 print('ok')
 """)
     lines = _lines(out)
@@ -1312,20 +1370,44 @@ print('ok')
     assert lines[1] == "ok", lines[1]
 
 
-def test_real_mixin_edit_regions_twice_keeps_one_session():
-    """重复联动不重复开会话：会话已激活时第二次是空转。"""
+def test_real_mixin_add_region_respects_region_fixed():
+    """`region_fixed`（贴图模式那个全局固定）开着时不进入绘制态，只提示。"""
     out = _run_real_qt(_MIXIN_HOST + """
 h = _Host()
-h._scope_panel_open = True
-h._scope_mode = MODE_ROI
-h._sync_region_session_to_mode()
-h._sync_region_session_to_mode()
-print(h.canvas.region_session_active())
-print(h.canvas.begin_count)
+h.region_fixed = True
+h._on_add_region_requested()
+print(h.canvas.is_drawing_region)
+print(h.status_label.text_)
 """)
     lines = _lines(out)
-    assert lines[0] == "True", lines[0]
-    assert lines[1] == "1", lines[1]
+    assert lines[0] == "False", (
+        f"区域被固定时不该进入绘制态：{lines[0]}")
+    assert "固定" in lines[1] or "解锁" in lines[1], (
+        f"没提示为什么不能加：{lines[1]}")
+
+
+def test_real_mixin_region_lock_toggles_and_refreshes_the_panel():
+    """宿主收到锁定信号后：写到画布真身上，并让面板按最新状态重建列表。
+
+    面板拿到的只是快照，所以宿主必须回推一次 `set_regions()`，否则按钮文案
+    会停在旧状态（锁完还是写着「锁定」）。
+    """
+    out = _run_real_qt(_MIXIN_HOST + """
+h = _Host()
+h.region_boxes = [{'shape_type': 'rectangle', 'x': 10, 'y': 10,
+                   'width': 40, 'height': 40}]
+h._on_region_lock_toggled(0, True)
+print(h.region_boxes[0].get('locked'))
+print(h.canvas.set_locked_calls)
+# 越界下标是空操作，不该炸
+h._on_region_lock_toggled(9, True)
+print('ok')
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", f"锁定没写到画布真身上：{lines[0]}"
+    assert lines[1] == "[(0, True)]", (
+        f"没落到画布那块区域上：{lines[1]}")
+    assert lines[2] == "ok", lines[2]
 
 
 def test_real_mixin_region_display_follows_the_roi_mode_only():
@@ -1864,58 +1946,53 @@ print(tpl[0]['min_visible'])
     assert lines[4] == "0.7", lines[4]
 
 
-def test_real_mixin_panel_close_ends_session_on_every_path():
-    """关面板一定收会话并关掉区域显示：确定 / 取消 / 直接关闭三条路径都一样。
+def test_real_mixin_panel_close_drops_pending_region_draw_on_every_path():
+    """关面板一定收掉待画的区域并关掉区域显示：确定 / 取消 / 直接关闭都一样。
 
-    会话若漏收，标注模式的鼠标行为会被一直劫持，所以三条路径都要钉。
+    绘制态是面板按钮开的（「点一下画一个」），面板都没了就不该还挂着「下一次
+    在图上拖动会画出一个区域」——那正是旧会话劫持鼠标的老毛病换个壳。
     用**真的** ScopePanel + 真的 `close()`/`accept()`/`reject()`：非模态后
     这些调用会立即返回，不再需要替身拦 `exec_()`；替身恰好会把新机制
     （`finished_ok` 信号回传）整条绕过去，测不到。
 
     场景取「区域」范围：这里要验的正是「面板开着 → 轮廓在显示 → 关掉 →
-    会话收了、轮廓也收起」。轮廓的收起对应用户报的「点确认后画布上的区域框
+    待画态收了、轮廓也收起」。轮廓的收起对应用户报的「点确认后画布上的区域框
     还在」——面板只是调范围时的参照，关掉就不该继续叠加在画布上。
     """
     out = _run_real_qt(_MIXIN_HOST + """
 from PyQt5.QtWidgets import QApplication
 from pastelabel.engine.inference_scope import MODE_ROI
 
-def scenario(close_call):
+for call in ('accept', 'reject', 'close'):
     h = _Host()
     h._on_model_loaded(_Detector(), (640, 640), "model")
     h.region_boxes = [{'x': 0, 'y': 0, 'width': 100, 'height': 100}]
     h._scope_mode = MODE_ROI
     h._open_scope_panel()
-    # 面板开着时开一个区域绘制会话，模拟用户点了「编辑区域」
-    h._sync_region_session_to_mode()
-    during_session = h.canvas.region_session_active()
+    # 面板开着时点一下「添加区域」，模拟用户正要画一个
+    h._on_add_region_requested()
+    during_draw = h.canvas.is_drawing_region
     during_show = h._show_scope_regions
-    getattr(h._scope_panel, close_call)()
+    getattr(h._scope_panel, call)()
     QApplication.processEvents()
-    # 关掉后：会话收了、面板标记清了、区域轮廓也收起（三条路径都一样）
-    return (during_session, during_show, h.canvas.region_session_active(),
-            h._scope_panel_open, h._show_scope_regions, h.canvas.end_count)
-
-for call in ('accept', 'reject', 'close'):
-    print(call, scenario(call))
+    print(call, during_draw, during_show, h.canvas.is_drawing_region,
+          h._scope_panel_open, h._show_scope_regions)
 """)
     lines = _lines(out)
     for i, call in enumerate(("accept", "reject", "close")):
-        # 开着的会话确实激活、轮廓确实在显示；关掉后会话收了、面板标记清了、
-        # 轮廓收起（用户报的「点确认后区域框还在」）
-        assert lines[i] == (f"{call} (True, True, False, False, False, 1)"), lines[i]
+        assert lines[i] == f"{call} True True False False False", lines[i]
 
 
-def test_real_mixin_scope_panel_closing_never_leaves_session_open():
-    """无论以哪条路径关闭，都不能留下未收的会话（防鼠标行为被劫持）。"""
+def test_real_mixin_scope_panel_closing_never_leaves_a_pending_draw():
+    """无论以哪条路径关闭，都不能留下「下次拖动画区域」的待命态。"""
     out = _run_real_qt(_MIXIN_HOST + """
 from PyQt5.QtWidgets import QApplication
 
 h = _Host()
 h._on_model_loaded(_Detector(), (640, 640), "model")
 h._open_scope_panel()
-h._sync_region_session_to_mode()
-# 模拟异常路径：宿主在收尾途中抛异常，也必须已经收干净
+h._on_add_region_requested()
+# 模拟异常路径：宿主在收尾途中抛异常，也必须已经清干净
 panel = h._scope_panel
 try:
     panel.reject()
@@ -1923,12 +2000,12 @@ try:
     raise RuntimeError('boom')
 except RuntimeError:
     pass
-print("session", h.canvas.region_session_active())
+print("drawing", h.canvas.is_drawing_region)
 print("open flag", getattr(h, '_scope_panel_open', None))
 print("show", getattr(h, '_show_scope_regions', None))
 """)
     lines = _lines(out)
-    assert lines[0] == "session False", lines[0]
+    assert lines[0] == "drawing False", lines[0]
     assert lines[1] == "open flag False", lines[1]
     assert lines[2] == "show False", lines[2]
 
@@ -3033,14 +3110,14 @@ print(w._scope_panel_open)
     assert lines[4] == "False", f"直接关闭后标记没清：{lines[4]}"
 
 
-def test_real_closing_the_panel_ends_the_region_session():
-    """④ 的关联：关掉面板必须收掉区域绘制会话，别一直劫持鼠标。
+def test_real_closing_the_panel_drops_a_pending_region_draw():
+    """关掉面板必须收掉「待画区域」，别一直劫持鼠标。
 
-    会话若漏收，关掉面板后标注模式下的拖框/画多边形会被区域绘制抢走，
-    表现为「关掉窗口后画不了框」。
+    待命态若漏收，关掉面板后标注模式下的拖框会被当成画区域抢走，表现为
+    「关掉窗口后画不了框」。
 
-    ② 之后进入会话的方式变了：不再点「编辑区域」，而是**选中「区域」**这个
-    推理方式（`set_mode(MODE_ROI)` 会经 `overlay_changed` → 自动开会话）。
+    ⑥ 之后进入待命态的方式是**点面板上的「添加区域」**（不再是选中「区域」
+    就自动进入）。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -3062,30 +3139,32 @@ w._open_scope_panel()
 app.processEvents()
 w._scope_panel.set_mode(MODE_ROI)
 app.processEvents()
-print(w.canvas.region_session_active())
+# 选中「区域」本身不该进入待画态（那会独占左键，标签框就点不到了）
+print(w.canvas.is_drawing_region)
+
+w._scope_panel.add_region_btn.click()
+app.processEvents()
+print(w.canvas.is_drawing_region)
 
 w._scope_panel.close()
 app.processEvents()
-print(w.canvas.region_session_active())
+print(w.canvas.is_drawing_region)
 print(w._scope_panel_open)
 """)
     lines = _lines(out)
-    assert lines[0] == "True", f"点了「编辑区域」却没有进入会话：{lines[0]}"
-    assert lines[1] == "False", f"关掉面板后区域会话还在跑：{lines[1]}"
-    assert lines[2] == "False", lines[2]
+    assert lines[0] == "False", (
+        f"选中「区域」就自动进入待画态了（会独占左键）：{lines[0]}")
+    assert lines[1] == "True", f"点了「添加区域」却没进入待画态：{lines[1]}"
+    assert lines[2] == "False", f"关掉面板后待画态还在：{lines[2]}"
+    assert lines[3] == "False", lines[3]
 
 
-def test_real_region_session_and_panel_flag_are_independent():
-    """「面板开着」与「区域会话活着」是两个状态，不能互相误清。
+def test_real_panel_flag_is_independent_of_region_drawing_state():
+    """「面板开着」与「正在等画区域」是两个状态，不能互相误清。
 
-    这两件事常被混成一个标记。② 之后它们由 `_sync_region_session_to_mode()`
-    联动（面板开着 + 区域模式 = 会话必须活着），但**方向是单向的**：会话单独
-    结束不该动「面板开着」（否则区域描边和锁标签框会跟着失效），而面板一关则
-    必须连带把会话收掉。
-
-    这里先钉住「结束会话不会误清面板标记」——结束之后因为仍在区域模式，会话会
-    被立刻重建（这正是 ② 要的「一直可编辑」），但 `_scope_panel_open` 必须
-    始终为真。
+    这两件事常被混成一个标记。方向是单向的：取消一次绘制不该动「面板开着」
+    （否则区域描边会跟着失效、面板也像被关了），而面板一关则必须连带把待画
+    态收掉。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -3105,38 +3184,36 @@ w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
 
 w._open_scope_panel()
 w._scope_panel.set_mode(MODE_ROI)
+w._scope_panel.add_region_btn.click()
 app.processEvents()
-print(w.canvas.region_session_active(), w._scope_panel_open)
+print(w.canvas.is_drawing_region, w._scope_panel_open)
 
-# 手动结束会话（等价于用户按 Esc 收尾当前这一个）
-w.canvas.end_region_session()
+# 取消这一次绘制（等价于用户按 Esc / 右键放弃这一笔）
+w.canvas._cancel_region_drawing()
 app.processEvents()
-# 面板标记不受影响；仍在区域模式，所以会话会被立刻重建
-print(w._scope_panel_open, w._scope_mode)
+# 面板标记不受影响；待画态收掉了
+print(w.canvas.is_drawing_region, w._scope_panel_open)
 
-# 关掉面板：会话必须被收掉，标记也必须清
+# 关掉面板：标记也必须清
 w._scope_panel.close()
 app.processEvents()
-print(w.canvas.region_session_active(), w._scope_panel_open)
+print(w._scope_panel_open)
 """)
     lines = _lines(out)
-    assert lines[0] == "True True", f"开面板+进会话后状态不对：{lines[0]}"
-    assert lines[1] == "True roi", (
-        f"会话结束后把「面板开着」一起清掉了——两者必须独立：{lines[1]}")
-    assert lines[2] == "False False", (
-        f"关面板没收掉会话/标记：{lines[2]}")
+    assert lines[0] == "True True", lines[0]
+    assert lines[1] == "False True", (
+        f"取消绘制时误清了「面板开着」：{lines[1]}")
+    assert lines[2] == "False", lines[2]
 
 
-# ---------- ④ 范围面板开着时锁住标签框编辑 ----------
+# ---------- ⑥ 面板开着时**恢复**标签框编辑（推翻第四轮的锁） ----------
 
-def test_real_scope_panel_open_blocks_label_box_editing():
-    """④ 面板开着时，画布上的标签框不能选中/拖动/缩放（真 `ImageEditor`）。
+def test_real_scope_panel_open_allows_label_box_editing():
+    """⑥ 面板开着时，画布上的标签框照常能选中/拖动（真 `ImageEditor`）。
 
-    用户要求「打开范围推理窗口时不能编辑标签框，不管是旧的还是新推理的」——
-    面板是调参参照，此时在画布上挪框会同时改到待推理的标注，属于误操作。
-
-    关门在 `_can_edit_canvas()` 之外单独做（`_label_editing_locked`），
-    因为 `_can_edit_canvas()` 还被区域绘制共用，改它会连累画区域。
+    用户要求「推理范围打开时恢复标签绘制」——第四轮那句「面板开着时不能编辑
+    标签框」已被推翻。保护改由**每条区域自己的锁**承担（锁定的区域挡在下面
+    且不可改），面板本身不再拦标签框。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -3198,10 +3275,9 @@ def release(x, y):
         QMouseEvent.MouseButtonRelease, QPointF(x, y), Qt.LeftButton,
         Qt.NoButton, Qt.NoModifier))
 
-# --- 面板开着：按框不该选中、不该进入拖动 ---
+# --- 面板开着：按框照样选中、照样能拖 ---
 w._open_scope_panel()
 app.processEvents()
-print(canvas._label_editing_locked())
 before = dict(w.detection_boxes[0])
 press(px, py)
 print(canvas.selected_box)
@@ -3210,32 +3286,32 @@ move(px + 80, py + 80)
 release(px + 80, py + 80)
 print(w.detection_boxes[0] != before)
 
-# --- 关掉面板：同一操作必须照常生效（锁不能锁死）---
+# --- 关掉面板：同一操作结果一致（开关面板不该改变标签框的编辑能力）---
 w._scope_panel.close()
 app.processEvents()
-print(not canvas._label_editing_locked())
+after_open = dict(w.detection_boxes[0])
 press(px, py)
 print(canvas.selected_box)
 print(canvas.is_dragging_box)
 move(px + 80, py + 80)
 release(px + 80, py + 80)
-print(w.detection_boxes[0] != before)
+print(w.detection_boxes[0] != after_open)
 """)
     lines = _lines(out)
-    assert lines[0] == "True", f"面板开着时没判定为「锁标签框」：{lines[0]}"
-    assert lines[1] == "None", (
-        f"面板开着时按标签框竟然选中了它（{lines[1]}），接下来就能拖动/缩放")
-    assert lines[2] == "False", "面板开着时不该进入标签框拖动"
-    assert lines[3] == "False", (
-        "面板开着时标签框被拖动了：用户要求此时锁住标签框编辑")
-    assert lines[4] == "True", f"面板关掉后没解除锁：{lines[4]}"
-    assert lines[5] != "None", "面板关着时按标签框应当能选中它"
-    assert lines[6] == "True", f"面板关着时应当能进入拖动：{lines[6]}"
-    assert lines[7] == "True", "面板关着时拖动没生效，锁锁死了"
+    assert lines[0] == "0", (
+        f"面板开着时按标签框没选中它：{lines[0]}")
+    assert lines[1] == "True", (
+        f"面板开着时没能进入标签框拖动：{lines[1]}")
+    assert lines[2] == "True", (
+        "面板开着时标签框拖不动，没做到「和面板没开时一样」")
+    assert lines[3] == "0", (
+        f"面板关着时按标签框没选中它：{lines[3]}")
+    assert lines[4] == "True", f"面板关着时没能进入拖动：{lines[4]}"
+    assert lines[5] == "True", "面板关着时拖动没生效"
 
 
-def test_real_scope_panel_open_blocks_drawing_a_new_label_box():
-    """④ 面板开着时也不能**新画**标签框（用户说「不管是旧的还是新推理的」）。
+def test_real_scope_panel_open_allows_drawing_a_new_label_box():
+    """⑥ 面板开着时也**能新画**标签框（恢复「标签绘制」）。
 
     判据是「拖完有没有多出一个框」，不是看 `is_drawing_box` 标记：标注模式下
     本来就不是靠那个标记画矩形的，盯它等于空转（变异体会活下来）。
@@ -3300,29 +3376,29 @@ def drag_to_draw():
     press(500, 400)
     app.processEvents()
 
-# --- 面板开着：在空白处拖一下不该画出框 ---
+# --- 面板开着：在空白处拖一下就该画出框 ---
 w._open_scope_panel()
 app.processEvents()
 drag_to_draw()
-print(len(w.detection_boxes) == 0)
+print(len(w.detection_boxes) == 1)
 
-# --- 关掉面板：同样的拖动必须画出框（锁不能锁死）---
+# --- 关掉面板：同样的拖动结果一致 ---
 w._scope_panel.close()
 app.processEvents()
 drag_to_draw()
-print(len(w.detection_boxes) == 1)
+print(len(w.detection_boxes) == 2)
 """)
     lines = _lines(out)
     assert lines[0] == "True", (
-        f"面板开着时拖动画出了新标签框（用户要求此时锁住）")
-    assert lines[1] == "True", "面板关着时画不出框，锁锁死了"
+        "面板开着时画不出新标签框（用户要求恢复标签绘制）")
+    assert lines[1] == "True", "面板关着时画不出框"
 
 
-def test_real_scope_panel_open_still_allows_panning_and_regions():
-    """例外两条：面板开着时**平移画布**照旧可用；会话内照旧能画区域。
+def test_real_panel_open_still_allows_panning():
+    """例外：面板开着时**平移画布**照旧可用。
 
-    锁的是标签框，不是整个画布——面板常浮在侧栏上，用户仍要拖动底图看位置；
-    而「编辑区域」进去后鼠标本就归区域绘制，不该被标签框锁拦下。
+    恢复的是标签框编辑，不是把整个画布交出去——面板常浮在侧栏上，用户仍要
+    拖动底图看位置；点在空白处应当进入平移。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
@@ -3364,22 +3440,10 @@ app.processEvents()
 press(400, 350)
 print(canvas.is_dragging_background)
 print(not canvas.is_drawing_box)
-
-# 面板开着 + 进区域会话：鼠标归区域绘制
-w._scope_panel.set_mode(MODE_ROI)
-app.processEvents()
-w._sync_region_session_to_mode()
-app.processEvents()
-print(canvas.region_session_active())
-press(400, 350)
-print(canvas.is_drawing_region)
 """)
     lines = _lines(out)
     assert lines[0] == "True", "面板开着时连平移画布都被锁死了"
     assert lines[1] == "True", lines[1]
-    assert lines[2] == "True", f"没能进入区域会话：{lines[2]}"
-    assert lines[3] == "True", (
-        "会话内应当去画区域，却被标签框锁拦下了")
 
 
 # ---------- ③ 面板开着时允许调整区域框 ----------
@@ -4389,3 +4453,234 @@ print(r['width'] >= 10)
 """)
     lines = _lines(out)
     assert lines[0] == "True", f"区域被拖到小于最小尺寸了：{lines[0]}"
+
+
+# ---------- 第六轮：区域逐条锁定 + 面板开着时恢复标签绘制 ----------
+
+_REGION_LOCK_HOST = _REGION_RESIZE_HOST + """
+def region_center(index=0):
+    r = w.region_boxes[index]
+    return C(r['x'] + r['width'] / 2, r['y'] + r['height'] / 2)
+"""
+
+
+def test_real_region_lock_round_trip_and_default():
+    """区域默认不锁；锁上/解开能往返，且只动被点名的那一条。"""
+    out = _run_real_qt(_REGION_LOCK_HOST + """
+w.region_boxes.append({'shape_type': 'rectangle', 'x': 100, 'y': 100,
+                       'width': 50, 'height': 50})
+print(canvas.region_locked(w.region_boxes[0]), canvas.region_locked(w.region_boxes[1]))
+print(canvas.set_region_locked(0, True))
+print(canvas.region_locked_at(0), canvas.region_locked_at(1))
+print(w.region_boxes[0].get('locked'), w.region_boxes[1].get('locked'))
+print(canvas.set_region_locked(0, True))   # 已经是锁的，不算改
+print(canvas.set_region_locked(0, False))
+print(canvas.region_locked_at(0))
+print(canvas.set_region_locked(99, True))  # 越界是空操作
+""")
+    lines = _lines(out)
+    assert lines[0] == "False False", f"区域默认应当是不锁的：{lines[0]}"
+    assert lines[1] == "True", f"锁上没报告「改了」：{lines[1]}"
+    assert lines[2] == "True False", (
+        f"锁定串到了别的区域上：{lines[2]}")
+    assert lines[3] == "True None", (
+        f"锁只该写在被点名那条身上：{lines[3]}")
+    assert lines[4] == "False", f"重复锁定不该再报「改了」：{lines[4]}"
+    assert lines[5] == "True", f"没能解锁：{lines[5]}"
+    assert lines[6] == "False", f"解锁后 region_locked_at 没跟上：{lines[6]}"
+    assert lines[7] == "False", f"越界下标应当返回 False：{lines[7]}"
+
+
+def test_real_locked_region_yields_clicks_to_the_box_below():
+    """锁定的区域「最底层、不可修改」：点上去要穿透，落到下面的检测框。
+
+    用户要求「不锁定默认最上层与检测框一样可修改，锁定后最底层不可修改」。
+    所以锁定后 `_region_at` 要够不着它，而它下面那张检测框要被选中。
+    """
+    out = _run_real_qt(_REGION_LOCK_HOST + """
+# 区域在 (300,300)-(500,500)；叠一张检测框压住同一块地方
+w.detection_boxes = [{'label': 'cat', 'x': 320, 'y': 320,
+                      'width': 160, 'height': 160}]
+w.update_label_list = lambda: None
+canvas._after_detection_boxes_changed() if hasattr(
+    canvas, '_after_detection_boxes_changed') else None
+app.processEvents()
+
+cx, cy = region_center()
+print(canvas._region_at(QPointF(cx, cy)))
+
+canvas.set_region_locked(0, True)
+app.processEvents()
+print(canvas._region_at(QPointF(cx, cy)))
+# 纯几何查询（拖出文件的守卫）仍然要看得见它，与能否编辑无关
+print(canvas._region_at(QPointF(cx, cy), include_locked=True))
+
+# 点一下：应当选中下面那张检测框，而不是区域
+press(cx, cy)
+app.processEvents()
+print(canvas.selected_box)
+print(canvas.selected_region)
+release(cx, cy)
+""")
+    lines = _lines(out)
+    assert lines[0] == "0", f"未锁定的区域应当能被命中：{lines[0]}"
+    assert lines[1] == "None", (
+        f"锁定的区域还能被点中（应当穿透到下面的框）：{lines[1]}")
+    assert lines[2] == "0", (
+        f"纯几何查询被锁挡住了，往外拖会被误判成空白：{lines[2]}")
+    assert lines[3] == "0", (
+        f"锁定的区域没把点击让给下面的检测框：{lines[3]}")
+    assert lines[4] == "None", (
+        f"锁定的区域仍被选中了：{lines[4]}")
+
+
+def test_real_unlocked_region_wins_over_the_box_it_covers():
+    """未锁区域在检测框**之上**，重叠处点击归区域（与上一条互为对照）。"""
+    out = _run_real_qt(_REGION_LOCK_HOST + """
+w.detection_boxes = [{'label': 'cat', 'x': 320, 'y': 320,
+                      'width': 160, 'height': 160}]
+w.update_label_list = lambda: None
+app.processEvents()
+
+cx, cy = region_center()
+press(cx, cy)
+app.processEvents()
+print(canvas.selected_region)
+print(canvas.selected_box)
+release(cx, cy)
+""")
+    lines = _lines(out)
+    assert lines[0] == "0", (
+        f"未锁定的区域没能优先于检测框拿到点击：{lines[0]}")
+    assert lines[1] == "None", (
+        f"重叠时检测框也被选中了，两个不该同时动：{lines[1]}")
+
+
+_LAYER_ORDER_HOST = """
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel
+from PyQt5.QtCore import QPoint, Qt
+from PyQt5.QtGui import QPixmap
+from pastelabel.canvas import Canvas
+from pastelabel.canvas import canvas_renderer as _cr
+
+class Editor(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.edit_mode = 'annotate'
+        self._is_delete_view = False
+        self.region_boxes = []
+        self.region_fixed = False
+        self.background_images = ['a.png']
+        self.current_background_index = 0
+        self.detection_boxes = []
+        self.current_background = None
+        self.selected_item = None
+        self.status_label = QLabel()
+        self.canvas_items = []
+        self._max_labels = 3
+        self.show_labels_checkbox = type('C', (), {'isChecked': lambda self: True})()
+        self.show_grid_checkbox = type('C', (), {'isChecked': lambda self: False})()
+        self.show_paste_names_checkbox = type('C', (), {'isChecked': lambda self: False})()
+        self.shape_opacity = 1.0
+        self.mouse_inside = False
+        self.is_drawing_box = False
+        self.is_drawing_region = False
+        self.is_drawing_region_polygon = False
+        self.is_drawing_polygon = False
+        self.selected_region = None
+        self.selected_box = None
+        self.selected_boxes = []
+        # 区域轮廓要画出来：标注模式下靠这个开关（面板开着时的提示层）
+        self._show_scope_regions = True
+    def save_undo_state(self):
+        pass
+    def get_image_info(self):
+        return {'box_count': 0, 'paste_count': 0, 'width': 400, 'height': 300}
+    def get_label_stats(self):
+        return {}
+    def get_label_color(self, label):
+        return '#ff0000'
+
+app = QApplication([])
+editor = Editor()
+canvas = Canvas(editor)
+canvas.resize(400, 300)
+editor.current_background = QPixmap(400, 300)
+
+# 记下三个绘制步骤的调用顺序：`_paint_scene` 内部自己 new 一个 QPainter，
+# 外层塞进去的假 painter 拦不到任何东西，所以只能换成给**方法**打桩。
+order = []
+for name in ('_draw_regions', '_draw_paste_items', '_draw_detection_boxes'):
+    def make(name):
+        orig = getattr(canvas, name)
+        def spy(self, painter, rect, *a, **k):
+            order.append(name)
+            return orig(painter, rect, *a, **k)
+        return spy
+    setattr(canvas, name, make(name).__get__(canvas, type(canvas)))
+
+def draw():
+    order.clear()
+    canvas._paint_scene(None)
+"""
+
+
+def test_real_locked_regions_draw_below_boxes_and_unlocked_above():
+    """未锁区域画在检测框**之上**，锁定的画在**之下**。
+
+    用户要求「不锁定默认最上层与检测框一样可修改，锁定后最底层不可修改」。
+    层级必须与点击优先级一致（未锁优先拿到点击），否则会出现「看着在上面、
+    点下去却选中了别的框」。
+
+    这里数的是三个绘制步骤的**调用顺序**，不是像素：叠在同一个位置的两条
+    区域/框，靠像素颜色分不出谁压谁，方法顺序才是「先画谁」的直接证据。
+    """
+    out = _run_real_qt(_LAYER_ORDER_HOST + """
+editor.region_boxes = [
+    {'shape_type': 'rectangle', 'x': 10, 'y': 10, 'width': 50, 'height': 50},
+    {'shape_type': 'rectangle', 'x': 20, 'y': 20, 'width': 50, 'height': 50,
+     'locked': True},
+]
+editor.detection_boxes = [{'label': 'a', 'x': 15, 'y': 15,
+                           'width': 40, 'height': 40,
+                           'shape_type': 'rectangle'}]
+draw()
+# 简化成「区域标记」列表：两次 _draw_regions 中间夹着框和贴图
+print([n.replace('_draw_', '') for n in order])
+print(order.index('_draw_detection_boxes'))
+""")
+    lines = _lines(out)
+    names = [n.strip().strip("'") for n in lines[0].strip("[]").split(",")]
+    assert names.count("regions") == 2, (
+        f"区域没有分两趟画：{lines[0]}")
+    first_regions = names.index("regions")
+    second_regions = names.index("regions", first_regions + 1)
+    box_at = names.index("detection_boxes")
+    assert first_regions < box_at < second_regions, (
+        f"层级不对，应当「锁定区域 → 检测框 → 未锁区域」：{lines[0]}")
+
+
+def test_real_locked_region_is_the_one_drawn_first():
+    """两次 `_draw_regions` 的先后不能颠倒：先画的是**锁定**的那趟。
+
+    上一条只证明「夹着框」，这条钉住夹的顺序（否则第一趟画未锁的也能满足
+    `first < box < second`，层级就反了）。
+    """
+    out = _run_real_qt(_LAYER_ORDER_HOST + """
+locks = []
+orig = canvas._draw_regions
+def spy(painter, rect, locked_only=None):
+    locks.append(locked_only)
+    return orig(painter, rect, locked_only)
+canvas._draw_regions = spy
+
+editor.region_boxes = [{'shape_type': 'rectangle', 'x': 10, 'y': 10,
+                        'width': 50, 'height': 50}]
+editor.detection_boxes = [{'label': 'a', 'x': 15, 'y': 15, 'width': 40,
+                           'height': 40, 'shape_type': 'rectangle'}]
+draw()
+print(locks)
+""")
+    lines = _lines(out)
+    assert lines[0] == "[True, False]", (
+        f"第一趟应当是锁定的那趟（最底层）：{lines[0]}")

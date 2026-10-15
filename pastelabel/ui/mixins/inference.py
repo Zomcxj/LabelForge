@@ -256,6 +256,8 @@ class InferenceMixin:
         if panel is None:
             panel = ScopePanel(parent=self)
             panel.region_delete_requested.connect(self._delete_scope_region)
+            panel.add_region_requested.connect(self._on_add_region_requested)
+            panel.region_lock_toggled.connect(self._on_region_lock_toggled)
             panel.finished_ok.connect(self._on_scope_panel_closed)
             panel.overlay_changed.connect(self._on_scope_overlay_changed)
             self._scope_panel = panel
@@ -286,7 +288,6 @@ class InferenceMixin:
         self._scope_window_spec = panel.window_spec()
         self._window_spec = panel.window_spec()
         self._scope_reference_size = self._reference_image_size()
-        self._sync_region_session_to_mode()
         self._sync_scope_region_display()
         panel.show()
         panel.raise_()
@@ -351,46 +352,55 @@ class InferenceMixin:
                 self._window_spec = panel.window_spec()
                 if self._scope_mode == MODE_WINDOW:
                     self._record_scope_template(self._window_spec)
-        if not getattr(self, '_scope_panel_configuring', False):
-            self._sync_region_session_to_mode()
         self._sync_scope_region_display()
 
-    def _sync_region_session_to_mode(self):
-        """区域编辑态跟着「区域」这个推理方式走（②）。
+    def _on_add_region_requested(self):
+        """面板「画一个区域」按钮：点一下，下一次在图上拖就画出一个区域。
 
-        用户要求「删除编辑区域按钮，直接选中后就编辑」：选中「区域」即进入可
-        编辑态（图上拖动就能画区域，画完可以接着画下一个）；切到全图/滑窗就
-        自动退出——不用再点任何按钮，也不会有「开着会话但忘了退出」把鼠标一
-        直劫持在区域绘制上的状态。
+        用户要求「画区域也加一个按钮啊 点一下画一个」——取代原先「选中区域
+        就自动进入绘制会话」的模型。会话每个左键都被区域吃掉，标签框就再也
+        点不到；换成按需的一次性按钮之后，画布其余时间和平时完全一样。
 
-        只在**面板开着**时联动：面板关了区域编辑态也该收掉，由
-        `_on_scope_panel_closed` 负责。
+        画布没有 `_start_add_region`（测试替身/其它宿主）时安全退化。
         """
         canvas = getattr(self, 'canvas', None)
-        if canvas is None or not hasattr(canvas, 'begin_region_session'):
+        if canvas is None or not hasattr(canvas, '_start_add_region'):
             return
-        from ...engine.inference_scope import MODE_ROI
+        if getattr(self, 'region_fixed', False):
+            self.status_label.setText(tr("区域已固定，先解锁再添加"))
+            return
+        canvas._start_add_region()
+        self.status_label.setText(tr("在图上拖动即可添加区域"))
 
-        want = (getattr(self, '_scope_panel_open', False)
-                and getattr(self, '_scope_mode', None) == MODE_ROI)
-        if want and not canvas.region_session_active():
-            # `region_fixed` 时 `begin_region_session()` 会失败——这是用户
-            # 主动锁定的，尊重它，不要强行改 `region_fixed`。
-            if canvas.begin_region_session():
-                self.status_label.setText(tr("在图上拖动即可添加区域"))
-        elif not want and canvas.region_session_active():
-            canvas.end_region_session()
+    def _on_region_lock_toggled(self, index, locked):
+        """面板某条区域的锁按钮被切换：写到画布那条区域上并刷新。
+
+        锁定的含义见 `canvas_menu.set_region_locked()`：不锁 → 画在检测框之上
+        且可改；锁上 → 落到检测框之下且不可改。**锁只是不许在画布上改，区域
+        照常参与推理**，所以这里不碰 `_scope_for_run()` 取的那份区域列表。
+        """
+        canvas = getattr(self, 'canvas', None)
+        if canvas is None or not hasattr(canvas, 'set_region_locked'):
+            return
+        if not canvas.set_region_locked(index, locked):
+            return
+        panel = getattr(self, '_scope_panel', None)
+        if panel is not None:
+            panel.set_regions(self._region_boxes())
+        self._refresh_scope_button()
 
     def _on_scope_panel_closed(self, accepted):
-        """面板关闭（只剩右上角 X 这一条路径）：收区域会话，撤掉画布上的提示。
+        """面板关闭（只剩右上角 X 这一条路径）：撤掉画布上的范围提示。
 
         **没有「取消」了，所以关窗不回滚**：面板上所有的改动在改的那一刻就已
         经经 `overlay_changed` 写回宿主，这里不再做「确定才生效」那套搬运。
         """
         self._scope_panel_open = False
         canvas = getattr(self, 'canvas', None)
-        if canvas is not None and hasattr(canvas, 'end_region_session'):
-            canvas.end_region_session()
+        if canvas is not None and hasattr(canvas, '_cancel_region_drawing'):
+            # 面板关掉时若正等着画区域，把它收掉：绘制态是面板按钮开的，
+            # 面板没了就不该还挂着「下一次拖动会画区域」。
+            canvas._cancel_region_drawing()
         self._sync_scope_region_display()
         # 面板里可能刚改过滑窗参数，落一次盘记住它。
         self._save_inference_settings()
@@ -413,17 +423,15 @@ class InferenceMixin:
         add_crop_template(dict(windows))
         self._last_recorded_template = dict(windows)
 
-    def _on_region_session_changed(self):
-        """会话起止回调：刷新状态栏、区域明细与范围摘要。"""
+    def _on_region_changed(self):
+        """区域增删/落笔后回调：刷新状态栏、区域明细与范围摘要。"""
         self._refresh_scope_button()
         panel = getattr(self, '_scope_panel', None)
         if panel is not None:
             # 用 set_regions（而不是只报个数）：面板要显示每条区域的坐标，
             # 画完一个就该在列表里出现一行。
             panel.set_regions(self._region_boxes())
-        canvas = getattr(self, 'canvas', None)
-        if canvas is not None and not canvas.region_session_active():
-            self.status_label.setText(tr("区域绘制结束"))
+        self.status_label.setText(tr("区域绘制结束"))
 
     def _delete_scope_region(self, index):
         """删除面板里第 index 条区域，并同步画布与列表。

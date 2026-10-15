@@ -492,7 +492,7 @@ class _CopyCanvas(Canvas):
     def find_item_at_position(self, point):
         return None
 
-    def _region_at(self, point):
+    def _region_at(self, point, include_locked=False):
         return None
 
     def _do_canvas_drag_out(self):

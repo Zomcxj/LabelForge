@@ -13,18 +13,6 @@ class CanvasDrawingMixin:
     def _can_edit_canvas(self):
         return not getattr(self._editor, '_is_delete_view', False)
 
-    def _label_editing_locked(self):
-        """标注框是否被锁住（用户要求：范围面板开着时不能编辑标签框）。
-
-        「打开范围推理窗口时不能编辑标签框，不管是旧的还是新推理的」——面板
-        是调参参照，此时在画布上挪框/新画框会顺手改到待推理的标注。
-
-        **不并进 `_can_edit_canvas()`**：那个判据还被区域绘制共用，并进去会
-        让面板开着时连区域都画不了，正好和「就地在图上画区域」冲突。
-        锁的只是标签框，所以由各标签框入口单独问这一句。
-        """
-        return bool(getattr(self._editor, '_scope_panel_open', False))
-
     def _region_editing_allowed(self):
         """现在允许编辑区域框吗（面板开着就行，与编辑模式无关）。
 
@@ -32,8 +20,8 @@ class CanvasDrawingMixin:
         正是调区域的地方，此时画布常停在标注模式，光靠 `_is_paste_mode()` 会
         让区域框完全拖不动。
 
-        与 `_label_editing_locked()` 方向相反：同一时刻标签框锁住、区域框可动，
-        免得调区域时顺手改坏标注。
+        只放行**未锁定**的区域：锁定的区域要「最底层、不可修改」，由
+        `_region_at()` 跳过它，这里不必再判一次。
         """
         return bool(getattr(self._editor, '_scope_panel_open', False))
 
@@ -98,26 +86,21 @@ class CanvasDrawingMixin:
         self._after_region_committed()
 
     def _after_region_committed(self):
-        """落笔后：会话内继续留在绘制态（允许连续画），会话外照旧复位。
+        """落笔后复位绘制态（一个按钮只画一个区域），并让宿主刷新区域明细。
 
-        `_reset_region_drawing_state()` 会把 `is_drawing_region` 置 False 并
-        把 `draw_start_pos` 置 None；会话内若照做，用户画完一个区域就退出了
-        绘制态，第二个区域画不出来（`_handle_region_press` 只在绘制态生效）。
-        会话由面板「确定」收尾，所以这里只清掉这一次的临时状态。
+        用户要求「画区域也加一个面板按钮，点一下画一个」——所以画完就退出绘制
+        态，不会再连着画下一个；要再画就再点一次按钮。宿主那侧要靠回调把新
+        区域刷进面板列表，所以复位前后都要通知一声。
         """
-        if self.region_session_active():
-            self.draw_start_pos = None
-            self.temp_draw_box = None
-            self.temp_region_points = []
-            self.setCursor(Qt.CrossCursor)
-            self._notify_region_session_changed()
-            self.update()
-            return
+        self._notify_region_changed()
         self._reset_region_drawing_state()
 
     def _reset_region_drawing_state(self):
         self.is_drawing_region = False
         self.is_drawing_region_polygon = False
+        # 连同「被 arm 过」一起清掉：画完/取消之后就不该再收左键了
+        # （「点一下画一个」），也防住模式切换后的残留绘制态。
+        self._region_draw_armed_flag = False
         self.temp_region_points = []
         self.draw_start_pos = None
         self.temp_draw_box = None
@@ -211,10 +194,6 @@ class CanvasDrawingMixin:
         self._finish_region_polygon(pop_duplicate=pop_duplicate)
 
     def _handle_drawing_press(self, mouse_pos):
-        # 范围面板开着时锁住标签框。`_can_edit_canvas` 还被区域绘制共用，
-        # 不能并进去，否则面板开着时连区域都画不了。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return True
         if (not self._editor.background_images or
@@ -300,10 +279,6 @@ class CanvasDrawingMixin:
         return [float(x), float(y)]
 
     def _handle_polygon_press(self, mouse_pos):
-        # 范围面板开着时锁住标签框。`_can_edit_canvas` 还被区域绘制共用，
-        # 不能并进去，否则面板开着时连区域都画不了。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return True
         if (not self._editor.background_images or
@@ -347,10 +322,6 @@ class CanvasDrawingMixin:
         box["height"] = max(ys) - box["y"]
 
     def _delete_polygon_vertex(self, box_index, vertex_index):
-        # 范围面板开着时锁住标签框。`_can_edit_canvas` 还被区域绘制共用，
-        # 不能并进去，否则面板开着时连区域都画不了。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return False
         boxes = self._editor.detection_boxes
@@ -426,10 +397,6 @@ class CanvasDrawingMixin:
 
     def _handle_point_press(self, mouse_pos):
         from ..ui.dialogs import LabelSelectionDialog
-        # 范围面板开着时锁住标签框。`_can_edit_canvas` 还被区域绘制共用，
-        # 不能并进去，否则面板开着时连区域都画不了。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return True
         if (not self._editor.background_images or
@@ -523,10 +490,6 @@ class CanvasDrawingMixin:
 
     def _create_detection_box(self, x, y, width, height, label, shape_type="rectangle",
                               points=None, group_id=None, visible=None):
-        # 范围面板开着时锁住标签框。`_can_edit_canvas` 还被区域绘制共用，
-        # 不能并进去，否则面板开着时连区域都画不了。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return
         x = max(0, x)
@@ -604,10 +567,6 @@ class CanvasDrawingMixin:
             self._editor.detection_boxes_dict[idx] = self._editor.detection_boxes.copy()
 
     def _drag_box(self):
-        # 范围面板开着时锁住标签框。`_can_edit_canvas` 还被区域绘制共用，
-        # 不能并进去，否则面板开着时连区域都画不了。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return
         delta = self.mouse_pos - self.box_drag_start
@@ -643,10 +602,6 @@ class CanvasDrawingMixin:
             self.update()
 
     def _resize_box(self):
-        # 范围面板开着时锁住标签框。`_can_edit_canvas` 还被区域绘制共用，
-        # 不能并进去，否则面板开着时连区域都画不了。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return
         delta = self.mouse_pos - self.box_resize_start
@@ -788,10 +743,6 @@ class CanvasDrawingMixin:
         self.update()
 
     def _check_box_handle(self, mouse_pos, x, y, width, height, box_index):
-        # 范围面板开着时锁住标签框。`_can_edit_canvas` 还被区域绘制共用，
-        # 不能并进去，否则面板开着时连区域都画不了。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return False
         handle_name = self._box_handle_at_pos(mouse_pos, box_index, x, y, width, height)

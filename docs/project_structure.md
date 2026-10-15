@@ -166,7 +166,7 @@ PasteLabel/
 │   ├── test_inference_scope.py       # 滑窗/语义区域范围枚举与跨窗去重
 │   ├── test_inference_scope_wiring.py # 推理范围接入任务层：三模式偏移/参考图尺寸/合并阈值跟随/取消
 │   ├── test_inference_scope_ui.py    # 推理范围界面接线（真实 Qt 子进程）
-│   ├── test_inference_region_session.py # 区域就地绘制会话：不切模式、不进撤销、随弹窗开关
+│   ├── test_inference_region_session.py # 区域绘制（「添加区域」按钮点一下画一个、不切模式、不进撤销）
 │   ├── test_save_dedup_regressions.py  # 保存前同类框去重；画布清空时切图删除 sidecar
 │   ├── test_theme_text_palette_regressions.py # 主题文字色与右键悬浮菜单圆角（真实 Qt 渲染像素）
 │   └── ...                     # 其他领域回归测试

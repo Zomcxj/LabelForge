@@ -53,6 +53,11 @@ class ScopePanel(QDialog):
     # 面板不直接改 `region_boxes`——它拿到的只是一份用于显示的拷贝，
     # 自己删改会和画布上的真身脱节。
     region_delete_requested = pyqtSignal(int)
+    # 点了「添加区域」：请宿主在画布上进入一次性绘制态（点一下画一个）。
+    # 面板自己不画——绘制要拿画布坐标、还要临时框预览，只有画布能做。
+    add_region_requested = pyqtSignal()
+    # 某条区域的锁被切换：(区域下标, 是否锁定)。同样回宿主落到真身上。
+    region_lock_toggled = pyqtSignal(int, bool)
 
     def __init__(self, windows=None, mode=MODE_FULL, region_count=0,
                  reference_size=None, parent=None):
@@ -123,10 +128,16 @@ class ScopePanel(QDialog):
             reference_size=self._reference, spec=self._windows)
         self._section_bodies[MODE_WINDOW].layout().addWidget(self.window_params)
 
-        # 区域段不再有「编辑区域」按钮：用户要求「删除编辑区域按钮，直接选中
-        # 后就编辑」——选中「区域」即进入可编辑态（见 `_refresh` 里与宿主的
-        # 联动）。这里只留一行提示，告诉用户当前就是能画的。
+        # 区域段改成**按钮驱动**：用户要求「画区域也加一个按钮啊 点一下画一个」。
+        # 原先的「选中『区域』就自动进入可编辑态」要拆掉——那个自动进入的会话
+        # 会独占左键，标签框就再也点不到了；现在只有点了这个按钮，下一次在图上
+        # 拖动才画区域，画完立刻退出，其余时间画布与平时完全一样。
         row = QHBoxLayout()
+        self.add_region_btn = QPushButton(tr("添加区域"))
+        self.add_region_btn.setObjectName("scopeAddRegion")
+        self.add_region_btn.setToolTip(tr("在图上拖动即可添加区域"))
+        self.add_region_btn.clicked.connect(self.add_region_requested.emit)
+        row.addWidget(self.add_region_btn)
         self.region_label = QLabel("")
         self.region_label.setObjectName("scopeHint")
         row.addWidget(self.region_label)
@@ -198,9 +209,12 @@ class ScopePanel(QDialog):
                 border-radius: 4px;
             }}
             QLabel#scopeRegionText {{ color: {theme['text_primary']}; }}
-            /* 每条区域右侧的删除按钮：做小一点，别和底部的确定/取消抢视觉 */
-            QPushButton#scopeRegionDelete {{
+            /* 每条区域右侧的锁定/删除按钮：做小一点，别抢视觉 */
+            QPushButton#scopeRegionDelete, QPushButton#scopeRegionLock {{
                 padding: 1px 8px; font-size: 11px;
+            }}
+            QPushButton#scopeAddRegion {{
+                padding: 2px 10px;
             }}
         """)
 
@@ -310,6 +324,14 @@ class ScopePanel(QDialog):
         self._refresh()
 
     def _rebuild_region_list(self):
+        # 行控件是 `setItemWidget` 挂上去的，`clear()` **不会**回收它：不显式
+        # 收走的话旧行会一直挂在面板上（切语言重建几轮就攒一堆，而且它们还能
+        # 被 findChildren 找到、文本停在上一门语言）。所以先把旧行摘下来。
+        for index in range(self.region_list.count()):
+            old = self.region_list.itemWidget(self.region_list.item(index))
+            if old is not None:
+                old.setParent(None)
+                old.deleteLater()
         self.region_list.clear()
         for index, region in enumerate(getattr(self, '_regions', [])):
             item = QListWidgetItem()
@@ -319,16 +341,32 @@ class ScopePanel(QDialog):
             self.region_list.setItemWidget(item, widget)
 
     def _build_region_row(self, index, region):
-        """单条区域：`#N  (x, y) 宽×高` + 删除按钮。"""
+        """单条区域：`#N  (x, y) 宽×高` + 锁按钮 + 删除按钮。
+
+        锁按钮是**每条各自**的（用户要求「区域列表增加锁定按钮，不锁定默认
+        最上层与检测框一样可修改，锁定后最底层不可修改」）。按钮文字直接显示
+        当前状态的反操作，比一个勾选框更直白：写着「锁定」就是还能锁。
+        """
         row = QWidget()
         line = QHBoxLayout(row)
         line.setContentsMargins(2, 1, 2, 1)
         line.setSpacing(6)
 
+        locked = bool(region.get('locked', False))
         text = QLabel(f"#{index + 1}  {_region_text(region)}")
         text.setObjectName("scopeRegionText")
         line.addWidget(text)
         line.addStretch()
+
+        lock_btn = QPushButton(tr("解锁") if locked else tr("锁定"))
+        lock_btn.setObjectName("scopeRegionLock")
+        lock_btn.setToolTip(tr("解锁这个区域（放回检测框上层，可以修改）") if locked
+                            else tr("锁定这个区域（放到检测框下层，不能修改）"))
+        # 用默认参数绑住 index：闭包直接引用循环变量的话，所有按钮都会改最后一条。
+        lock_btn.clicked.connect(
+            lambda _checked=False, i=index, want=not locked:
+            self.region_lock_toggled.emit(i, want))
+        line.addWidget(lock_btn)
 
         delete_btn = QPushButton(tr("删除"))
         delete_btn.setObjectName("scopeRegionDelete")
@@ -389,9 +427,7 @@ class ScopePanel(QDialog):
         # 组框的 `setEnabled(False)` 会连带禁用里面的输入框，所以滑窗参数
         # 不必再单独 `set_editable`：未选中滑窗时那段的内容体就是灰的。
         self.window_params.set_editable(needs_window)
-        self.region_label.setText(
-            f"{self._region_count} {tr('个区域')}　"
-            + (tr("在图上拖动即可添加区域") if needs_region else ""))
+        self.region_label.setText(f"{self._region_count} {tr('个区域')}")
 
         warnings = []
         if needs_region and not self._region_count:
@@ -417,7 +453,9 @@ class ScopePanel(QDialog):
             # 段标题也要跟着切，否则中文界面下段标题还是上一门语言
             self.sections[mode].setTitle(tr(name))
         self.window_params.retranslate()
-        # 明细行里的「删除」也是 tr() 出来的，切语言要重建才跟着变
+        self.add_region_btn.setText(tr("添加区域"))
+        self.add_region_btn.setToolTip(tr("在图上拖动即可添加区域"))
+        # 明细行里的「锁定/解锁」「删除」也是 tr() 出来的，切语言要重建才跟着变
         self._rebuild_region_list()
         self._refresh()
 

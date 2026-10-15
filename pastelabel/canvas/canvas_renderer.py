@@ -67,8 +67,13 @@ class CanvasRendererMixin:
 
             sp.setOpacity(self.shape_opacity)
 
+            # 区域分**两趟**画，检测框夹在中间（用户要求：未锁区域在「最上层」、
+            # 锁定的在「最底层」）：
+            #   锁定的区域  → 检测框 → 贴图项 → 未锁定的区域
+            # 这样未锁区域压住框、锁定的被框压住，与点击优先级一一对应
+            # （见 `canvas_menu._region_at()` 跳过锁定的区域）。
             if background_rect and self._show_regions():
-                self._draw_regions(sp, background_rect)
+                self._draw_regions(sp, background_rect, locked_only=True)
 
             if background_rect:
                 self._draw_paste_items(sp, background_rect)
@@ -76,6 +81,9 @@ class CanvasRendererMixin:
             if (self._editor.show_labels_checkbox.isChecked() and
                 background_rect and self._editor.detection_boxes):
                 self._draw_detection_boxes(sp, background_rect)
+
+            if background_rect and self._show_regions():
+                self._draw_regions(sp, background_rect, locked_only=False)
 
             if self.is_drawing_box:
                 self._draw_temp_box(sp)
@@ -260,13 +268,14 @@ class CanvasRendererMixin:
                 and not getattr(self._editor, '_is_delete_view', False))
 
     def _region_draw_visible(self):
-        """临时区域框是否该画：贴图模式，或区域绘制会话中。
+        """临时区域框是否该画：贴图模式，或**区域绘制态**中（含面板开着时）。
 
-        会话内标注模式也要看得见——否则用户在标注模式画区域时看不到自己在
-        画什么。只影响「画不画临时框」，不改交互。
+        面板开着时在标注模式画区域也要看得见，否则用户看不到自己在画什么。
+        只影响「画不画临时框」，不改交互。
         """
         return self._is_paste_mode() or bool(
-            getattr(self, '_region_session', False))
+            getattr(self, 'is_drawing_region', False)
+            or getattr(self, 'is_drawing_region_polygon', False))
 
     def _show_regions(self):
         """是否画区域轮廓：贴图模式，或推理范围选了区域。
@@ -278,8 +287,14 @@ class CanvasRendererMixin:
         return self._is_paste_mode() or bool(
             getattr(self._editor, '_show_scope_regions', False))
 
-    def _draw_regions(self, painter, background_rect):
-        """绘制语义区域（在贴图下方），支持矩形与多边形。"""
+    def _draw_regions(self, painter, background_rect, locked_only=None):
+        """绘制语义区域，支持矩形与多边形。
+
+        `locked_only`：`True` 只画**已锁定**的、`False` 只画**未锁定**的、
+        `None` 两趟都画（老调用方/测试用）。分两趟是为了让锁定的区域落在
+        检测框之下、未锁定的压在其上——层级要和点击优先级一致，否则「看着
+        在上面、点下去却是别的框」。
+        """
         regions = getattr(self._editor, 'region_boxes', None)
         if not regions:
             return
@@ -289,6 +304,8 @@ class CanvasRendererMixin:
 
         painter.save()
         for i, region in enumerate(regions):
+            if locked_only is not None and bool(region.get('locked')) != bool(locked_only):
+                continue
             is_selected = (i == self.selected_region and not fixed)
             pen = QPen(color, REGION_CONFIG['border_width'] * (2 if is_selected else 1))
             pen.setStyle(Qt.DashLine)

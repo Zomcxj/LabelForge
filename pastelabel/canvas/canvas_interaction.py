@@ -18,40 +18,32 @@ _DRAG_OUT_THRESHOLD = 20
 class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
     """Canvas 交互混入类 - 事件入口 + 通用操作"""
 
-    # ---------- 区域绘制会话（推理范围用，不切模式） ----------
+    # ---------- 区域绘制 ----------
 
-    def region_session_active(self):
-        """是否处于「画推理区域」会话：会话内标注模式也放行区域绘制。"""
-        return bool(getattr(self, '_region_session', False))
-
-    def begin_region_session(self):
-        """开启区域绘制会话；已在会话中返回 False。
-
-        会话只切换绘制入口，**不改 edit_mode**：标注模式下拖框/画多边形等
-        行为必须保持原样，所以靠 mousePressEvent 里的优先级重定向来隔离，
-        而不是切到贴图模式再切回来。
-        """
-        if self.region_session_active():
-            return False
-        self._region_session = True
-        self._start_add_region()
-        self._notify_region_session_changed()
-        return True
-
-    def end_region_session(self):
-        """收会话并复位绘制态；没有会话时是空操作。"""
-        if not self.region_session_active():
-            return
-        self._region_session = False
-        self._reset_region_drawing_state()
-        self._notify_region_session_changed()
-
-    def _notify_region_session_changed(self):
-        """会话起止时通知编辑器（状态栏与区域计数要跟着刷）。"""
+    def _notify_region_changed(self):
+        """区域增删/落笔后通知编辑器（状态栏、面板区域列表要跟着刷）。"""
         editor = getattr(self, '_editor', None)
-        handler = getattr(editor, '_on_region_session_changed', None)
+        handler = getattr(editor, '_on_region_changed', None)
         if callable(handler):
             handler()
+
+    def _region_draw_armed(self):
+        """当前的「区域绘制态」还算数吗。
+
+        判据是**有没有被入口 arm 过**：右键菜单的「添加区域（矩形/多边形）」、
+        或范围面板上的「添加区域」按钮，都会经 `_start_add_region*()` 打个
+        `_region_draw_armed_flag`。
+
+        这样判而不是「模式对不对」，因为绘制态的残留和模式切换**无关**：从贴图
+        模式切到标注模式、或面板关掉时忘了复位，`is_drawing_region` 都会留在
+        True。那时若照旧放行，之后每一个左键都被当成「继续画区域」，用户会看到
+        「切到标注模式后画不了标注框，反而冒出一个区域」。
+
+        在 `_reset_region_drawing_state()` / `_cancel_region_drawing()` 里清标记，
+        所以画完一个就自动失效（「点一下画一个」）。
+        """
+        return bool(getattr(self, '_region_draw_armed_flag', False)
+                    or self._is_paste_mode())
 
     def _box_visible(self, box):
         """框是否通过任务/分组筛选（未启用筛选则全部可见）。"""
@@ -85,31 +77,10 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 self._handle_background_click(mouse_pos)
             return
 
-        if self.region_session_active():
-            # 会话内：优先**调整已有区域**（顶点/手柄→缩放，内部→拖动），
-            # 没碰到任何已有区域才去画新的。顺序很关键：用户要求「选中区域
-            # 就直接能编辑」，按下时若不去试已有区域，每个左键都会变成
-            # 「再画一个」，已有区域就再也挪不动/改不了大小了。
-            self._drag_out_pending = False
-            if getattr(self, 'is_drawing_region_polygon', False):
-                if event.button() == Qt.LeftButton:
-                    self._handle_region_polygon_press(mouse_pos)
-                elif event.button() == Qt.RightButton:
-                    self._prompt_finish_region_polygon()
-                return
-            if event.button() == Qt.LeftButton:
-                if not self._handle_region_click(mouse_pos):
-                    # 没抓到已有区域 → 画一个新的（会话可持续画多个）
-                    self._handle_region_press(mouse_pos)
-            elif event.button() == Qt.RightButton:
-                # 右键 = 只取消当前这一个（会话继续，接着还能画下一个）
-                self._cancel_region_drawing()
-            return
-
         if getattr(self, 'is_drawing_region', False):
             # 区域绘制模式：左键画矩形，右键取消
             self._drag_out_pending = False
-            if not self._is_paste_mode():
+            if not self._region_draw_armed():
                 self._reset_region_drawing_state()
                 return
             if event.button() == Qt.LeftButton:
@@ -121,7 +92,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if getattr(self, 'is_drawing_region_polygon', False):
             # 多边形区域绘制：左键逐点添加，右键完成
             self._drag_out_pending = False
-            if not self._is_paste_mode() and not self.region_session_active():
+            if not self._region_draw_armed():
                 self._reset_region_drawing_state()
                 return
             if event.button() == Qt.LeftButton:
@@ -174,7 +145,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             and getattr(self._editor, '_canvas_image_copy_enabled', False)
             and not self.is_manual_scale
             and self.find_item_at_position(mouse_pos) is None
-            and self._region_at(mouse_pos) is None
+            # 这里问的是「有没有东西挡着」，与能否编辑无关，所以**要**算上
+            # 已锁定的区域：锁定的区域也是区域，压在它上面往外拖不该弹文件。
+            and self._region_at(mouse_pos, include_locked=True) is None
         )
         # 记下起点：`mouseMoveEvent` 靠与它的距离判断该不该拖出。
         self._drag_out_start = mouse_pos if self._drag_out_pending else None
@@ -188,6 +161,13 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         is_annotate = getattr(self._editor, 'edit_mode', 'paste') == 'annotate'
 
         if is_annotate:
+            # **未锁定的区域优先于标签框**（用户要求：「不锁定默认最上层与
+            # 检测框一样可修改，锁定后最底层不可修改」）——未锁区域画在框
+            # 之上，重叠处点击就该归它；想让下面的框拿到点击，先把区域锁上，
+            # 锁定的区域在 `_region_at()` 里已被跳过。
+            if self._region_editing_allowed():
+                if self._handle_region_click(mouse_pos):
+                    return
             if self._editor.show_labels_checkbox.isChecked() and self._editor.current_background:
                 if self._handle_detection_box_click(mouse_pos):
                     return
@@ -195,13 +175,6 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             if item_at_pos is not None:
                 self._handle_item_click(item_at_pos, mouse_pos)
                 return
-            # 范围面板开着时，标注模式也要能调区域框（用户要求「只在范围面板
-            # 开着时允许」）。顺序放在**标签框之后**：面板开着时标签框已被锁
-            # （`_label_editing_locked` 让它返回 False），所以实际不会被抢；
-            # 万一将来锁松了，也不会出现「点框先动了区域」的怪事。
-            if self._region_editing_allowed():
-                if self._handle_region_click(mouse_pos):
-                    return
         else:
             item_at_pos = self.find_item_at_position(mouse_pos)
             if item_at_pos is not None:
@@ -608,11 +581,6 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
 
     def _handle_detection_box_click(self, mouse_pos):
         if self.is_drawing_box or getattr(self, 'is_drawing_polygon', False):
-            return False
-        # 范围面板开着时锁住标签框（面板是调参参照，不该顺手改标注）。
-        # 返回 **False**（「我没处理」）而不是 True：让点击继续落到后面的
-        # 「按在图上 = 平移画布」，否则面板开着时连拖动画布都一并失效。
-        if self._label_editing_locked():
             return False
         if not self._can_edit_canvas():
             return False
@@ -1480,9 +1448,6 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.selected_item_size = (new_width, new_height)
 
     def _scale_selected_box(self, event):
-        # 范围面板开着时锁住标签框（面板是调参参照，不该顺手改标注）。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return
         if (self.selected_box is None or
@@ -1563,9 +1528,6 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         return min(distances, key=distances.get)
 
     def _adjust_selected_box_edge(self, event, edge=None):
-        # 范围面板开着时锁住标签框（面板是调参参照，不该顺手改标注）。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return
         if (self.selected_box is None or
@@ -1616,9 +1578,6 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.is_manual_scale = True
 
     def _nudge_selected(self, dx, dy):
-        # 范围面板开着时锁住标签框（面板是调参参照，不该顺手改标注）。
-        if self._label_editing_locked():
-            return True
         if not self._can_edit_canvas():
             return
         if self.selected_box is not None and 0 <= self.selected_box < len(self._editor.detection_boxes):

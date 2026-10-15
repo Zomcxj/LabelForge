@@ -186,12 +186,12 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self.region_boxes = []
         self.region_fixed = False
         # 范围面板是否开着。**在这里就初始化**：画布在鼠标事件里会读它
-        # （`_label_editing_locked` / `_region_editing_allowed`），只靠
-        # 「第一次开面板时赋值」会让开面板之前的状态是「属性不存在」，
-        # `getattr(..., False)` 虽然兜住了，但直接读就会 AttributeError。
+        # （`_region_editing_allowed`），只靠「第一次开面板时赋值」会让开面板
+        # 之前的状态是「属性不存在」，`getattr(..., False)` 虽然兜住了，但
+        # 直接读就会 AttributeError。
         self._scope_panel_open = False
         # 面板正在装配（`_open_scope_panel` 里那串 set_*）时置真：期间
-        # `overlay_changed` 只重画画布，不写宿主状态也不开区域会话。
+        # `overlay_changed` 只重画画布，不写宿主状态。
         self._scope_panel_configuring = False
         self._last_paste_count = 0
         self.global_labels = set()

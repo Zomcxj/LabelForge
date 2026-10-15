@@ -73,8 +73,15 @@ class CanvasMenuMixin:
         return (getattr(self._editor, 'edit_mode', 'paste') == 'paste'
                 and not getattr(self._editor, '_is_delete_view', False))
 
-    def _region_at(self, mouse_pos):
-        """返回鼠标位置下的区域索引（画布坐标转图像坐标判断）。"""
+    def _region_at(self, mouse_pos, include_locked=False):
+        """返回鼠标位置下的区域索引（画布坐标转图像坐标判断）。
+
+        `include_locked=False`（默认）跳过**已锁定**的区域：锁定 = 「最底层、
+        不可修改」（用户要求），所以它必须从交互里彻底消失，点上去直接落到
+        它下面的检测框或画布。只有「这里有没有区域」这类纯几何查询才传
+        `True`（比如往外拖文件的守卫，那里关心的是有没有东西挡着，与能否
+        编辑无关）。
+        """
         regions = getattr(self._editor, 'region_boxes', None)
         if not regions:
             return None
@@ -86,6 +93,8 @@ class CanvasMenuMixin:
         from ..engine.shape_io import point_in_polygon
         for i in range(len(regions) - 1, -1, -1):
             r = regions[i]
+            if not include_locked and r.get('locked'):
+                continue
             if (r.get('shape_type') or 'rectangle') == 'polygon' and r.get('points'):
                 if point_in_polygon(ix, iy, r['points']):
                     return i
@@ -94,6 +103,51 @@ class CanvasMenuMixin:
                     r['y'] <= iy <= r['y'] + r['height']):
                 return i
         return None
+
+    # ---------- 每条区域的锁定（用户要求：区域列表里每条各自锁） ----------
+
+    @staticmethod
+    def region_locked(region):
+        """这条区域是否被锁定。缺键视为未锁（老数据/新画的区域都是未锁）。"""
+        return bool((region or {}).get('locked', False))
+
+    def region_locked_at(self, index):
+        """第 index 条区域是否被锁定；越界或没有区域时返回 False。"""
+        regions = getattr(self._editor, 'region_boxes', None)
+        if not regions or not (0 <= index < len(regions)):
+            return False
+        return self.region_locked(regions[index])
+
+    def set_region_locked(self, index, locked):
+        """锁定/解锁第 index 条区域；返回是否真的改了。
+
+        锁定的语义（用户要求）：
+        - **不锁定**：画在检测框**之上**，和检测框一样可拖动/缩放/改顶点；
+        - **锁定**：落到检测框**之下**，不可修改，点击也穿透到下面的框；
+        - 只是「不许在画布上改」，**区域照常参与推理**——锁不等于禁用。
+
+        锁只写在区域字典自己身上。`region_fixed`（右键菜单里的「固定区域」）
+        是**贴图模式**的全局开关，两者互不相干，不去动它。
+        """
+        regions = getattr(self._editor, 'region_boxes', None)
+        if not regions or not (0 <= index < len(regions)):
+            return False
+        region = regions[index]
+        if not isinstance(region, dict):
+            return False
+        if bool(region.get('locked', False)) == bool(locked):
+            return False
+        region['locked'] = bool(locked)
+        # 锁上时若正抓着这条（拖动/缩放/顶点），必须立刻松手：锁上还继续改
+        # 就自相矛盾，而且松手前那次拖动会把刚锁的状态又写一遍。
+        if locked and getattr(self, 'selected_region', None) == index:
+            self.selected_region = None
+            self.selected_region_vertex = None
+            self.is_dragging_region = False
+            self.is_resizing_region = False
+            self.is_dragging_region_vertex = False
+        self.update()
+        return True
 
     def _region_vertex_at(self, mouse_pos):
         """返回鼠标位置下的区域多边形顶点 (index, vertex_index)。"""
@@ -265,6 +319,8 @@ class CanvasMenuMixin:
         if getattr(self._editor, 'region_fixed', False):
             return
         self.is_drawing_region = True
+        # 记下「这一次绘制是刚被 arm 的」：见 `_region_draw_armed()`。
+        self._region_draw_armed_flag = True
         self.is_drawing_region_polygon = False
         self.temp_region_points = []
         self.selected_region = None
@@ -280,6 +336,7 @@ class CanvasMenuMixin:
         if getattr(self._editor, 'region_fixed', False):
             return
         self.is_drawing_region = False
+        self._region_draw_armed_flag = True
         self.is_drawing_region_polygon = True
         self.temp_region_points = []
         self.selected_region = None
