@@ -1421,7 +1421,14 @@ saved = config_manager.load_all()['inference_settings']
 print('mode' in saved, 'window_spec' in saved)
 """)
     lines = _lines(out)
-    assert lines[0] == "{'w': 512, 'h': 512, 'overlap': 64}", lines[0]
+    # 窗口参数现在还会带上 `min_visible`（跨窗去重的最低可见比例），所以
+    # 这里按「三个尺寸键要原样存取回来」断言，而不是钉死整份字典——否则
+    # 每加一个合法的窗口参数都要来改这条测试。
+    saved_spec = lines[0]
+    assert "'w': 512" in saved_spec, saved_spec
+    assert "'h': 512" in saved_spec, saved_spec
+    assert "'overlap': 64" in saved_spec, saved_spec
+    assert "'min_visible'" in saved_spec, saved_spec
     assert lines[1] == "False True", lines[1]
 
 

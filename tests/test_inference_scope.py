@@ -441,3 +441,64 @@ def test_merge_respects_iou_threshold():
     ]
     assert len(merge_scope_results(boxes, iou_threshold=0.99)) == 2
     assert len(merge_scope_results(boxes, iou_threshold=0.45)) == 1
+
+
+# ---------- min_visible 随窗口参数传递 ----------
+
+def test_iter_windows_accepts_min_visible_in_the_spec():
+    """③ 加了 min_visible 的 window_spec 不能被当成未知字段拒掉。
+
+    `_WINDOW_KEYS` 是白名单，漏加会让界面「点确定」后直接报错，
+    所以这条测试同时钉住白名单与真正枚举两条路。
+    """
+    windows = iter_windows(1000, 1000, {"w": 640, "h": 640, "overlap": 200,
+                                        "min_visible": 0.7})
+    assert windows
+
+
+def test_iter_windows_still_rejects_a_genuinely_unknown_key():
+    """白名单不能因为要放行 min_visible 就整块放开。"""
+    with pytest.raises(ScopeError):
+        iter_windows(1000, 1000, {"w": 640, "h": 640, "overlap": 200,
+                                  "bogus": 1})
+
+
+def test_normalize_window_spec_keeps_min_visible():
+    from pastelabel.engine.inference_task import _normalize_window_spec
+    assert _normalize_window_spec(
+        {"w": 640, "h": 640, "overlap": 200, "min_visible": 0.8}
+    )["min_visible"] == 0.8
+
+
+def test_normalize_window_spec_clamps_out_of_range_min_visible():
+    """越界钳到合法区间，而不是整份丢弃。
+
+    与模板侧（越界即丢）策略不同：模板是用户手填的一条记录，丢了没损失；
+    这里是「上次用过的参数」，丢了会让上次的设置莫名其妙消失。
+    """
+    from pastelabel.engine.inference_task import _normalize_window_spec
+    assert _normalize_window_spec(
+        {"w": 640, "h": 640, "overlap": 200, "min_visible": 5}
+    )["min_visible"] == 1.0
+    assert _normalize_window_spec(
+        {"w": 640, "h": 640, "overlap": 200, "min_visible": 0}
+    )["min_visible"] == 0.5
+
+
+def test_normalize_window_spec_defaults_missing_min_visible():
+    """旧版本存的 spec 没有这个键 → 补默认值，不能让整份 spec 失效。"""
+    from pastelabel.core.config_manager import DEFAULT_CROP_MIN_VISIBLE
+    from pastelabel.engine.inference_task import _normalize_window_spec
+    spec = _normalize_window_spec({"w": 640, "h": 640, "overlap": 200})
+    assert spec.get("min_visible") == DEFAULT_CROP_MIN_VISIBLE
+    # 其余三个键仍要在，别把整份丢弃了
+    assert (spec["w"], spec["h"], spec["overlap"]) == (640, 640, 200)
+
+
+def test_normalize_window_spec_still_drops_a_broken_size():
+    """min_visible 的宽容不能顺带让坏尺寸蒙混过关。"""
+    from pastelabel.engine.inference_task import _normalize_window_spec
+    assert _normalize_window_spec(
+        {"w": 0, "h": 640, "overlap": 200, "min_visible": 0.7}) == {}
+    assert _normalize_window_spec(
+        {"w": "x", "h": 640, "overlap": 200}) == {}

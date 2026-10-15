@@ -22,7 +22,7 @@ MODE_ROI = "roi"
 MODES = (MODE_FULL, MODE_WINDOW, MODE_ROI)
 
 _SCOPE_KEYS = {"mode", "windows", "regions", "reference_size"}
-_WINDOW_KEYS = {"w", "h", "overlap"}
+_WINDOW_KEYS = {"w", "h", "overlap", "min_visible"}
 _EDGE_EPS = 1e-6            # 顶点/边命中容差（原图像素坐标）
 # 窗口数上限。重叠逼近窗口尺寸时步长退化为 1，窗口数变成图面积量级：
 # 20000² 配 640 窗口会排出 3.7 亿个窗口，列表没建完就把内存吃光。

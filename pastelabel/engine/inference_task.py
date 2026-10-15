@@ -32,10 +32,16 @@ class ImageResult(NamedTuple):
 
 
 def _normalize_window_spec(raw):
-    """窗口参数：只留 w/h/overlap 三个整数，坏值整份丢弃。
+    """窗口参数：w/h/overlap 三个整数 + min_visible，坏尺寸整份丢弃。
 
     保存的是「上次用过的参数」，不校验图尺寸——图尺寸随数据集变，
     校验留给 `normalize_scope()` 在真正跑任务时做。
+
+    `min_visible`（跨窗去重的最低可见比例）与模板侧的策略**故意不同**：
+    模板侧越界即丢（用户手填的一条记录，丢了没损失），这里则钳到合法
+    区间。理由是这份 spec 存的是「上次用过的参数」——因为它越界就整份
+    丢弃，会让用户上次设的窗口尺寸莫名其妙消失，且失败是静默的。
+    缺字段时补 `DEFAULT_CROP_MIN_VISIBLE`，好让旧版本存的 spec 仍能加载。
     """
     if not isinstance(raw, dict) or not raw:
         return {}
@@ -50,7 +56,22 @@ def _normalize_window_spec(raw):
         if value < 0 or (key != "overlap" and value <= 0):
             return {}
         out[key] = value
+    out["min_visible"] = _clamp_min_visible(raw.get("min_visible"))
     return out
+
+
+def _clamp_min_visible(raw):
+    """把 min_visible 钳到 [0.5, 1.0]；缺值/坏值退回默认。"""
+    from ..core.config_manager import DEFAULT_CROP_MIN_VISIBLE
+    if raw is None:
+        return DEFAULT_CROP_MIN_VISIBLE
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_CROP_MIN_VISIBLE
+    if value != value:  # NaN
+        return DEFAULT_CROP_MIN_VISIBLE
+    return round(min(1.0, max(0.5, value)), 4)
 
 
 def normalize_settings(settings):
