@@ -88,6 +88,8 @@ class Canvas(CanvasRendererMixin, CanvasInteractionMixin, QWidget):
         self.mouse_inside = False
         self.mouse_pos = QPoint(0, 0)
         self._drag_out_pending = False
+        # 按下时记下的起点，用来判断「拖出复制」的位移是否够阈值
+        self._drag_out_start = None
 
         # 设置焦点策略和鼠标追踪
         self.setFocusPolicy(Qt.StrongFocus)

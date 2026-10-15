@@ -9,6 +9,11 @@ from ..core.config import BACKGROUND_SCALE_CONFIG, PASTE_ITEM_CONFIG, NUDGE_CONF
 from .canvas_drawing import CanvasDrawingMixin
 from .canvas_menu import CanvasMenuMixin
 
+# 画布上「按住拖动 = 把当前图拖出去」的触发阈值（像素）。
+# 与背景图列表 `DragOutListWidget` 的 20px 一致：两边是同一个功能，
+# 用户不该感觉画布上更难拖出来。留点余量是为了避开手抖与单击。
+_DRAG_OUT_THRESHOLD = 20
+
 
 class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
     """Canvas 交互混入类 - 事件入口 + 通用操作"""
@@ -151,24 +156,30 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             self._drag_out_pending = False
             return
 
+        # 「准备拖出复制」只在该次按下**没抓到任何东西**时才挂起：
+        # 抓到画布/标注框/贴图说明用户是在拖画布或编辑，不是要往外拖文件。
+        # 判据放在点击**之后**：`_handle_background_click` 等要等点击处理完
+        # 才知道有没有真的抓起来（它可能只是清掉选中就 return）。
+        #
+        # 顺带修掉一个漏项：这里原来漏了 `is_dragging_background`，于是
+        # 「图装得下画布」时 `_handle_background_click` 直接 return、标记一直
+        # 挂着，之后每次移动都被拖出逻辑抢走一次——画布上的拖动变得时灵时不灵。
+        self._drag_out_pending = False
+        self._handle_left_click(mouse_pos)
+        grabbed = (self.is_dragging_background or self.is_dragging_box
+                   or self.is_resizing_box or self.is_rotating_box
+                   or self.is_dragging_item or self.is_dragging_region
+                   or self.is_resizing_region or self.is_dragging_region_vertex)
         self._drag_out_pending = (
-            getattr(self._editor, '_canvas_image_copy_enabled', False)
-            and not self.is_drawing_box
-            and not getattr(self, 'is_drawing_polygon', False)
-            and not getattr(self, 'is_drawing_region', False)
-            and not getattr(self, 'is_drawing_region_polygon', False)
-            and not self.is_dragging_background
-            and not self.is_dragging_box
-            and not self.is_dragging_item
+            not grabbed
+            and getattr(self._editor, '_canvas_image_copy_enabled', False)
             and not self.is_manual_scale
             and self.background_scale <= 1.0
             and self.find_item_at_position(mouse_pos) is None
             and self._region_at(mouse_pos) is None
         )
-        self._handle_left_click(mouse_pos)
-        if (self.is_dragging_box or self.is_resizing_box or self.is_dragging_region
-                or self.is_resizing_region or self.is_dragging_region_vertex):
-            self._drag_out_pending = False
+        # 记下起点：`mouseMoveEvent` 靠与它的距离判断该不该拖出。
+        self._drag_out_start = mouse_pos if self._drag_out_pending else None
 
     def _handle_left_click(self, mouse_pos):
         if (getattr(self, 'is_drawing_box', False)
@@ -743,26 +754,30 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         return QApplication.keyboardModifiers()
 
     def _do_canvas_drag_out(self):
-        """检测鼠标是否离开窗口，触发拖出复制"""
+        """把当前图作为文件拖出（Qt 拖放），交给系统/其他程序接收。
+
+        触发时机由 `mousePressEvent`（挂起）与 `mouseMoveEvent`（位移够阈值）
+        共同决定，**这里不再自己判窗口内外**：原来那句「光标离开主窗口才算」
+        让主窗口最大化时永远拖不出去。
+        """
         if not getattr(self._editor, '_canvas_image_copy_enabled', False):
             self._drag_out_pending = False
             return
-        from PyQt5.QtGui import QCursor
-        global_pos = QCursor.pos()
-        main_win = self._editor
-        if not main_win.geometry().contains(main_win.mapFromGlobal(global_pos)):
-            idx = self._editor.current_background_index
-            if idx >= 0 and idx < len(self._editor.background_images):
-                file_path = self._editor.background_images[idx]
-                if os.path.isfile(file_path):
-                    self._editor._canvas_drag_active = True
-                    drag = QDrag(self)
-                    mime = QMimeData()
-                    mime.setUrls([QUrl.fromLocalFile(file_path)])
-                    drag.setMimeData(mime)
-                    self._drag_out_pending = False
-                    drag.exec_(Qt.CopyAction)
-                    self._editor._canvas_drag_active = False
+        idx = self._editor.current_background_index
+        if 0 <= idx < len(self._editor.background_images):
+            file_path = self._editor.background_images[idx]
+            if os.path.isfile(file_path):
+                self._editor._canvas_drag_active = True
+                drag = QDrag(self)
+                mime = QMimeData()
+                mime.setUrls([QUrl.fromLocalFile(file_path)])
+                drag.setMimeData(mime)
+                self._drag_out_pending = False
+                self._drag_out_start = None
+                drag.exec_(Qt.CopyAction)
+                self._editor._canvas_drag_active = False
+        self._drag_out_pending = False
+        self._drag_out_start = None
 
     def mouseMoveEvent(self, event):
         self.mouse_pos = event.pos()
@@ -770,12 +785,18 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.update_status_label()
 
         if self._drag_out_pending:
-            from PyQt5.QtGui import QCursor
-            global_pos = QCursor.pos()
-            main_win = self._editor
-            if not main_win.geometry().contains(main_win.mapFromGlobal(global_pos)):
-                self._do_canvas_drag_out()
-                return
+            # 阈值触发，与背景图列表（`DragOutListWidget` 的 20px）保持一致。
+            #
+            # 原来判的是「光标离开了整个主窗口」：主窗口最大化时光标出不去，
+            # 于是按住左键拖多远都没反应（用户报的「画布图片复制打开后按住
+            # 左键拖动没反应」）。改成移动够一段距离就触发，两边功能行为一致。
+            start = getattr(self, '_drag_out_start', None)
+            if start is not None:
+                delta = event.pos() - start
+                if (abs(delta.x()) > _DRAG_OUT_THRESHOLD
+                        or abs(delta.y()) > _DRAG_OUT_THRESHOLD):
+                    self._do_canvas_drag_out()
+                    return
 
         if getattr(self, 'is_drawing_polygon', False):
             self.update()

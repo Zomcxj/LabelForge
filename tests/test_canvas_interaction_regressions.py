@@ -16,6 +16,12 @@ class Point:
     def x(self): return self._x
     def y(self): return self._y
 
+    def __sub__(self, other):
+        return Point(self._x - other.x(), self._y - other.y())
+
+    def __add__(self, other):
+        return Point(self._x + other.x(), self._y + other.y())
+
 
 class Rect:
     def __init__(self, x=0, y=0, w=10, h=10):
@@ -415,3 +421,197 @@ def test_delete_view_release_does_not_save_removed_image_labels_to_work_path(mon
 
     assert canvas.saved_detection_boxes == 0
     assert canvas._editor.detection_boxes_dict[0] == work_boxes
+
+
+# ---------- 画布图片复制：画布上按住拖动应该能拖出文件 ----------
+
+class _CopyEditor(Editor):
+    """开了「画布图片复制」的 editor。"""
+
+    def __init__(self, mode="paste"):
+        super().__init__(mode)
+        self._canvas_image_copy_enabled = True
+        self.current_background_path = "work.png"
+
+
+class _CopyCanvas(Canvas):
+    """点数够用的假画布：只要事件路径，不要真 Qt 控件。"""
+
+    def __init__(self, mode="paste", scale=1.0):
+        super().__init__(mode)
+        self._editor = _CopyEditor(mode)
+        self._drag_out_pending = False
+        self.is_dragging_background = False
+        self.is_dragging_item = False
+        self.is_manual_scale = False
+        self.background_scale = scale
+        self.background_offset = Point(0, 0)
+        self.drag_start = Point(0, 0)
+        self._drag_out_calls = 0
+        self._drag_out_mime = None
+        # `mousePressEvent` 尾部会读的拖动状态
+        self.is_dragging_box = False
+        self.is_resizing_box = False
+        self.is_rotating_box = False
+        self.is_dragging_region = False
+        self.is_resizing_region = False
+        self.is_dragging_region_vertex = False
+        self.is_drawing_box = False
+        self.is_drawing_polygon = False
+        self.is_drawing_region = False
+        self.is_drawing_region_polygon = False
+        self.is_drawing_point = False
+        self.selected_item_size = None
+        self.draw_start_pos = None
+        self.temp_draw_box = None
+        self._editor.detection_boxes = []
+        self._editor.canvas_items = []
+
+    def width(self):
+        return 800
+
+    def height(self):
+        return 800
+
+    def setFocus(self):
+        pass
+
+    def update(self):
+        pass
+
+    def update_status_label(self):
+        pass
+
+    def setCursor(self, *a):
+        pass
+
+    def get_background_rect(self):
+        # 图铺满整块画布（图比画布小 → 不进入背景拖动，只能靠「拖出复制」）
+        return Rect(0, 0, 100, 100)
+
+    def find_item_at_position(self, point):
+        return None
+
+    def _region_at(self, point):
+        return None
+
+    def _do_canvas_drag_out(self):
+        self._drag_out_calls += 1
+        self._drag_out_pending = False
+
+
+class _PanningCopyCanvas(_CopyCanvas):
+    """放大到超出画布的那种画布：按下会进入平移。"""
+
+    def width(self):
+        return 100
+
+    def height(self):
+        return 100
+
+    def get_background_rect(self):
+        return Rect(0, 0, 100, 100)
+
+
+class _PressEvent:
+    def __init__(self, x, y, button=Qt.LeftButton):
+        self._pos = Point(x, y)
+        self._button = button
+
+    def pos(self): return self._pos
+    def button(self): return self._button
+    def modifiers(self): return 0
+
+
+class _MoveEvent:
+    """只带位置与按住左键的移动事件（不带 modifiers，走不到就退）。"""
+
+    def __init__(self, x, y, buttons=Qt.LeftButton):
+        self._pos = Point(x, y)
+        self._buttons = buttons
+
+    def pos(self): return self._pos
+    def buttons(self): return self._buttons
+
+
+def _enable_copy_drag_out(monkeypatch, canvas):
+    """把拖出复制里那几样真 Qt 依赖换成假的，只观察有没有触发。"""
+    import types
+    monkeypatch.setitem(
+        __import__("sys").modules, "PyQt5.QtGui",
+        types.SimpleNamespace(QCursor=types.SimpleNamespace(
+            pos=lambda: Point(10, 10))))
+    monkeypatch.setattr(canvas_interaction, "QDrag",
+                        lambda *a, **k: type("D", (), {
+                            "setMimeData": lambda s, m: None,
+                            "exec_": lambda s, a: None})())
+    monkeypatch.setattr(canvas_interaction, "QMimeData",
+                        lambda: type("M", (), {"setUrls": lambda s, u: None})())
+    monkeypatch.setattr(canvas_interaction, "QUrl", type(
+        "U", (), {"fromLocalFile": staticmethod(lambda p: p)}))
+    monkeypatch.setattr(canvas_interaction.os.path, "isfile", lambda p: True)
+
+
+def test_canvas_copy_drags_out_without_leaving_the_window(monkeypatch):
+    """在画布上按住左键拖动一段就该拖出文件——不必把光标拖出主窗口。
+
+    用户报的「画布图片复制打开后按住左键拖动没反应」：原实现只在**光标
+    离开整个主窗口**时才触发拖出，主窗口最大化时光标出不去，于是拖多远都
+    没反应。旁边的背景图列表同款功能是「移动超过 20 像素就触发」，
+    两边行为应当一致。
+    """
+    canvas = _CopyCanvas()
+    _enable_copy_drag_out(monkeypatch, canvas)
+    # 主窗口很大，光标整段拖动都在窗口内
+    canvas._editor.geometry = lambda: Rect(0, 0, 4000, 4000)
+    canvas._editor.mapFromGlobal = lambda p: Point(1, 1)
+
+    canvas.mousePressEvent(_PressEvent(50, 50))
+    canvas.mouseMoveEvent(_MoveEvent(50 + 40, 50 + 40))
+
+    assert canvas._drag_out_calls == 1, (
+        "在窗口内拖了 40 像素却没有触发拖出复制，用户会感觉「拖不动」")
+
+
+def test_canvas_copy_small_jitter_does_not_drag_out(monkeypatch):
+    """手抖几个像素不该触发拖出——否则单击/微调都会误拖出文件。"""
+    canvas = _CopyCanvas()
+    _enable_copy_drag_out(monkeypatch, canvas)
+    canvas._editor.geometry = lambda: Rect(0, 0, 4000, 4000)
+    canvas._editor.mapFromGlobal = lambda p: Point(1, 1)
+
+    canvas.mousePressEvent(_PressEvent(50, 50))
+    canvas.mouseMoveEvent(_MoveEvent(52, 51))
+
+    assert canvas._drag_out_calls == 0, "轻微抖动就拖出文件，太容易误触"
+
+
+def test_canvas_copy_drag_out_needs_the_copy_feature_enabled(monkeypatch):
+    """没开这个功能时，拖动不该拖出文件。"""
+    canvas = _CopyCanvas()
+    canvas._editor._canvas_image_copy_enabled = False
+    _enable_copy_drag_out(monkeypatch, canvas)
+    canvas._editor.geometry = lambda: Rect(0, 0, 4000, 4000)
+    canvas._editor.mapFromGlobal = lambda p: Point(1, 1)
+
+    canvas.mousePressEvent(_PressEvent(50, 50))
+    canvas.mouseMoveEvent(_MoveEvent(90, 90))
+
+    assert canvas._drag_out_calls == 0
+
+
+def test_canvas_copy_drag_out_does_not_fire_while_panning(monkeypatch):
+    """图放大到超出画布时，按住拖是**平移画布**，不能顺手拖出文件。"""
+    pan = _CopyCanvas(scale=3.0)
+    pan.width = lambda: 100
+    pan.height = lambda: 100
+    canvas = pan
+    _enable_copy_drag_out(monkeypatch, canvas)
+    canvas._editor.geometry = lambda: Rect(0, 0, 4000, 4000)
+    canvas._editor.mapFromGlobal = lambda p: Point(1, 1)
+
+    canvas.mousePressEvent(_PressEvent(50, 50))
+    assert canvas.is_dragging_background is True, "放大后按下应进入平移"
+    canvas.mouseMoveEvent(_MoveEvent(90, 90))
+
+    assert canvas._drag_out_calls == 0, "平移画布时不该把文件拖出去"
