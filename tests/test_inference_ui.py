@@ -2182,3 +2182,79 @@ def test_current_image_is_not_applied_twice_at_batch_end(monkeypatch):
     editor._on_batch_finished({0: _result(0, "a.png", []),
                                1: _result(1, "b.png", [])})
     assert applied == [0], f"收尾又处理了一次当前图: {applied}"
+
+
+def test_result_ready_updates_memory_cache_for_non_current_image(monkeypatch):
+    """非当前图写盘后，内存缓存也要跟着更新。
+
+    用户报的 bug：一键推理中途取消，圆点变绿了（盘上真有框），但切到那张
+    图却还是旧标注。原因是逐张写盘只动了磁盘与圆点，`detection_boxes_dict`
+    里仍是跑批之前的旧框；而切图时的 `_load_detection_boxes_for_index`
+    只要发现缓存非空就直接用缓存，于是盘上的新结果永远看不到。
+    """
+    from pastelabel.engine import inference_task
+
+    monkeypatch.setattr(inference_task, "write_one_result",
+                        lambda *a, **kw: True)
+
+    editor = _FakeEditor(images=("a.png", "b.png"))
+    # 第 1 张缓存里有旧框（非空 → 会盖过盘上的新内容，正是 bug 的前提）
+    editor.detection_boxes_dict = {
+        1: [{"label": "旧的", "x": 1, "y": 1, "width": 5, "height": 5}]
+    }
+
+    editor._on_result_ready(1, _result(
+        1, "b.png", [{"label": "新", "x": 10, "y": 10, "width": 20,
+                      "height": 20}]))
+
+    cached = editor.detection_boxes_dict[1]
+    labels = sorted(b["label"] for b in cached)
+    assert labels == ["新", "旧的"], f"缓存没并进新结果：{labels}"
+
+
+def test_result_ready_cache_sync_honours_replace_mode(monkeypatch):
+    """覆盖模式下缓存要与盘上一致：旧推理框该删就删。"""
+    from pastelabel.engine import inference_task
+
+    monkeypatch.setattr(inference_task, "write_one_result",
+                        lambda *a, **kw: True)
+
+    editor = _FakeEditor(images=("a.png", "b.png"))
+    editor._is_delete_view = False
+    # 旧框是上一轮推理留下的（flags.inference），覆盖模式应清掉
+    editor.detection_boxes_dict = {
+        1: [{"label": "旧推理", "x": 1, "y": 1, "width": 5, "height": 5,
+             "flags": {"inference": True}}]
+    }
+    # 生产代码读的是 `_replace_mode()`（它再去问 model_row），所以这里
+    # 换掉 `_replace_mode` 本身，而不是它下游的 `replace_mode`。
+    editor._replace_mode = lambda: True
+
+    editor._on_result_ready(1, _result(
+        1, "b.png", [{"label": "新", "x": 10, "y": 10, "width": 20,
+                      "height": 20}]))
+
+    labels = sorted(b["label"] for b in editor.detection_boxes_dict[1])
+    assert labels == ["新"], f"覆盖模式没清掉旧推理框：{labels}"
+
+
+def test_result_ready_cache_sync_honours_class_filter(monkeypatch):
+    """类别筛选也要作用到缓存，否则切回去会看到被筛掉的类别。"""
+    from pastelabel.engine import inference_task
+
+    monkeypatch.setattr(inference_task, "write_one_result",
+                        lambda *a, **kw: True)
+
+    editor = _FakeEditor(images=("a.png", "b.png"))
+    editor.detection_boxes_dict = {
+        1: [{"label": "不要的", "x": 1, "y": 1, "width": 5, "height": 5,
+             "flags": {"inference": True}}]
+    }
+    editor._filter_for_run = lambda: {"新"}
+
+    editor._on_result_ready(1, _result(
+        1, "b.png", [{"label": "新", "x": 10, "y": 10, "width": 20,
+                      "height": 20}]))
+
+    labels = sorted(b["label"] for b in editor.detection_boxes_dict[1])
+    assert labels == ["新"], f"缓存没按类别筛选：{labels}"

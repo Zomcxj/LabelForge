@@ -662,15 +662,23 @@ class InferenceMixin:
                 self._batch_written_keys = set(
                     getattr(self, '_batch_written_keys', ())) | {key}
             return
-        from ...engine.inference_task import InferenceError, write_one_result
+        from ...engine.inference_task import (InferenceError, merge_boxes,
+                                             write_one_result)
 
         memory = getattr(self, 'detection_boxes_dict', None) or {}
         self._batch_handled_keys = set(
             getattr(self, '_batch_handled_keys', ())) | {key}
+        replace_auto = self._replace_mode()
+        class_filter = self._filter_for_run()
+        # 合并一次，**磁盘与内存用同一份结果**：`write_one_result` 内部也按
+        # 同样的参数合并，所以两者不会分叉。
+        merged = merge_boxes(memory.get(key), result.boxes,
+                             replace_auto=replace_auto,
+                             class_filter=class_filter)
         try:
             wrote = write_one_result(result, existing=memory.get(key),
-                                     replace_auto=self._replace_mode(),
-                                     class_filter=self._filter_for_run())
+                                     replace_auto=replace_auto,
+                                     class_filter=class_filter)
         except InferenceError:
             # 单张写失败不影响其他图；整批结束的汇总里会算进「写入失败」
             self._batch_write_failed = set(
@@ -679,6 +687,12 @@ class InferenceMixin:
             if wrote:
                 self._batch_written_keys = set(
                     getattr(self, '_batch_written_keys', ())) | {key}
+            # 内存缓存同步：切图时的 `_load_detection_boxes_for_index` 只要
+            # 发现缓存非空就直接用缓存、不读盘，所以这里不更新的话，用户切回
+            # 这张图看到的还是跑批之前的旧框（圆点却是绿的）——用户报的
+            # 「取消后切到那张图又恢复原来的状态」。
+            if self.detection_boxes_dict is not None:
+                self.detection_boxes_dict[key] = list(merged)
         self._refresh_background_item_status(key, result.path)
 
     def _note_scope_replace(self, scope):
