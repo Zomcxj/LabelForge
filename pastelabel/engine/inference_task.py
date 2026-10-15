@@ -293,10 +293,28 @@ def detect_in_scope(rgb, detector, resize_fn, scope):
                 if any(region_contains_box_center(r, b) for r in regions)]
 
     if mode == MODE_WINDOW:
+        from .augmenter.crop import keep_by_min_visible
+        win = scope.get("windows") or {}
+        min_visible = float(win.get("min_visible", 0.0) or 0.0)
         chunks = []
         for wx, wy, ww, wh in windows:
             crop = rgb[wy:wy + wh, wx:wx + ww]
             boxes = detector.detect(crop, resize_fn)
+            # 跨窗去重前先丢掉「只露一角」的框：模型在裁剪图里检出的框可能
+            # 大半来自窗口之外的部分（裁剪图边界上的目标），这种框在相邻窗
+            # 会各出一份，合并时既容易重复又容易留下半个目标。
+            #
+            # 可见比例要在**原图坐标**下算：detector 返回的是裁剪图坐标，
+            # 所以先加回窗口偏移，再用窗口矩形量。
+            if min_visible > 0.0:
+                kept = []
+                for b in boxes:
+                    orig = dict(b)
+                    orig["x"] = float(b.get("x", 0.0)) + wx
+                    orig["y"] = float(b.get("y", 0.0)) + wy
+                    if keep_by_min_visible(orig, (wx, wy, ww, wh), min_visible):
+                        kept.append(b)
+                boxes = kept
             chunks.append((wx, wy, boxes))
         return merge_scope_results(chunks, _scope_iou(detector),
                                    image_size=(width, height))

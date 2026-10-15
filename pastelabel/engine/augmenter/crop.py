@@ -352,6 +352,43 @@ def normalized_window(iw: int, ih: int, spec: dict) -> tuple:
     return cw, ch, ov
 
 
+def visible_ratio(box, window):
+    """框在窗口内的可见比例 = 交集面积 / 框自身面积。
+
+    `window` 是 `(x, y, w, h)`，`box` 是 `{x, y, width, height}`（原图坐标）。
+    零交集返回 0.0；退化框（宽或高为 0）按点处理：落在窗内（含边界）算 1.0，
+    否则 0.0——与 `crop_boxes` 对退化框的处理保持一致。
+
+    抽出来是为了让**推理侧**也能用同一条判据：滑窗推理按窗口裁图后，模型的框
+    会被钳进裁剪图，跨窗去重前先按「它在原图窗口里露了多少」过滤掉只露一角的
+    框。原来这段判定内联在 `crop_boxes` 里，推理侧无从复用。
+    """
+    x0, y0, cw, ch = window
+    wx1, wy1 = x0 + cw, y0 + ch
+    bx1 = float(box.get("x", 0.0))
+    by1 = float(box.get("y", 0.0))
+    bw = float(box.get("width", 0.0))
+    bh = float(box.get("height", 0.0))
+    if bw <= 0 or bh <= 0:
+        cx, cy = bx1 + bw / 2.0, by1 + bh / 2.0
+        inside = (x0 <= cx <= wx1 and y0 <= cy <= wy1)
+        return 1.0 if inside else 0.0
+    bx2, by2 = bx1 + bw, by1 + bh
+    ix1, iy1 = max(bx1, float(x0)), max(by1, float(y0))
+    ix2, iy2 = min(bx2, float(wx1)), min(by2, float(wy1))
+    if ix2 <= ix1 or iy2 <= iy1:
+        return 0.0
+    return (ix2 - ix1) * (iy2 - iy1) / (bw * bh)
+
+
+def keep_by_min_visible(box, window, min_visible):
+    """该框是否通过最低可见比例。零交集无条件丢弃（min_visible=0 也不例外）。"""
+    ratio = visible_ratio(box, window)
+    if ratio <= 0.0:
+        return False
+    return ratio >= float(min_visible)
+
+
 def crop_boxes(boxes: List[dict], x0: int, y0: int, cw: int, ch: int,
                min_visible: float) -> List[dict]:
     """把标注过滤/平移到窗口 (x0,y0,cw,ch) 坐标系；不修改入参 box。"""
@@ -381,11 +418,8 @@ def crop_boxes(boxes: List[dict], x0: int, y0: int, cw: int, ch: int,
             if x0 <= cx <= wx1 and y0 <= cy <= wy1:
                 out.append(map_box_points(b, lambda x, y: (x - x0, y - y0)))
             continue
-        ix1, iy1 = max(bx1, x0), max(by1, y0)
-        ix2, iy2 = min(bx2, wx1), min(by2, wy1)
-        if ix2 <= ix1 or iy2 <= iy1:  # 零交集无条件丢弃（min_visible=0 也不例外）
-            continue
-        if (ix2 - ix1) * (iy2 - iy1) / (bw * bh) < min_visible:
+        # 用共享判据：推理侧的跨窗去重走同一套公式，两边口径不会分叉
+        if not keep_by_min_visible(b, (x0, y0, cw, ch), min_visible):
             continue
         if st == "rectangle" and not pts:
             nx1, ny1 = max(b["x"], x0), max(b["y"], y0)

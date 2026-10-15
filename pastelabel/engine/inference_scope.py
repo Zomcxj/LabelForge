@@ -5,8 +5,13 @@
 「加原图像素偏移 + 按类别 NMS」，不能在除以 scale 前加偏移。
 
 复用 `augmenter/crop.py` 的窗口数学（`normalized_window` / `window_starts`），
-不另写一套；不复用 `crop_boxes()`——那是为数据集增强的**已有标注**写的，
-按 `min_visible` 比例截断/丢弃框，套到 detector 的预测上会丢掉边缘目标。
+不另写一套。
+
+`crop_boxes()` 本身仍然**不复用**——那是为数据集增强的**已有标注**写的，
+会把框按 `min_visible` 截断到窗口内（改坐标、改尺寸），套到 detector 的预测
+上会把边缘目标削掉半个。但两边**共用同一条可见比例判据**
+（`augmenter/crop.py` 的 `visible_ratio` / `keep_by_min_visible`）：推理侧
+只在跨窗合并**之前**用它丢掉「只露一角」的框，不截断、不改坐标。
 """
 import copy
 import math
