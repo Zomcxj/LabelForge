@@ -583,6 +583,11 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
     def _handle_detection_box_click(self, mouse_pos):
         if self.is_drawing_box or getattr(self, 'is_drawing_polygon', False):
             return False
+        # 范围面板开着时锁住标签框（面板是调参参照，不该顺手改标注）。
+        # 返回 **False**（「我没处理」）而不是 True：让点击继续落到后面的
+        # 「按在图上 = 平移画布」，否则面板开着时连拖动画布都一并失效。
+        if self._label_editing_locked():
+            return False
         if not self._can_edit_canvas():
             return False
         background_rect = self.get_background_rect()
@@ -1447,6 +1452,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.selected_item_size = (new_width, new_height)
 
     def _scale_selected_box(self, event):
+        # 范围面板开着时锁住标签框（面板是调参参照，不该顺手改标注）。
+        if self._label_editing_locked():
+            return True
         if not self._can_edit_canvas():
             return
         if (self.selected_box is None or
@@ -1527,6 +1535,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         return min(distances, key=distances.get)
 
     def _adjust_selected_box_edge(self, event, edge=None):
+        # 范围面板开着时锁住标签框（面板是调参参照，不该顺手改标注）。
+        if self._label_editing_locked():
+            return True
         if not self._can_edit_canvas():
             return
         if (self.selected_box is None or
@@ -1577,6 +1588,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.is_manual_scale = True
 
     def _nudge_selected(self, dx, dy):
+        # 范围面板开着时锁住标签框（面板是调参参照，不该顺手改标注）。
+        if self._label_editing_locked():
+            return True
         if not self._can_edit_canvas():
             return
         if self.selected_box is not None and 0 <= self.selected_box < len(self._editor.detection_boxes):

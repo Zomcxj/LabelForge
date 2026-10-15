@@ -2941,3 +2941,392 @@ print(all(p.sections[m].title() == p._buttons[m].text()
     assert lines[1] == "['Full image', 'Sliding window', 'Regions']", (
         f"切到英文后段标题没跟着变：{lines[1]}")
     assert lines[2] == "True", "段标题与按钮文字不是同一门语言"
+
+
+def test_real_panel_open_flag_tracks_the_panel_lifetime():
+    """④ 的前提：`_scope_panel_open` 必须准确跟着面板起落（真 `ImageEditor`）。
+
+    这个标记是「面板开着时锁标签框」（Task 8）和「只在面板开着时画区域描边」
+    的唯一依据：漏置/漏清会让标签框该锁的时候能编辑、或关掉面板后画布还留着
+    区域框。三条关闭路径（确定 / 取消 / 直接 close）都要清干净。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(900, 700)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+
+# 开面板前：必须是关的（否则「锁标签框」会一开始就误锁）
+print(getattr(w, '_scope_panel_open', False))
+
+w._open_scope_panel()
+app.processEvents()
+print(w._scope_panel_open)
+
+w._scope_panel.ok_btn.click()
+app.processEvents()
+print(w._scope_panel_open)
+
+w._open_scope_panel()
+app.processEvents()
+w._scope_panel.cancel_btn.click()
+app.processEvents()
+print(w._scope_panel_open)
+
+# 第三条：直接关闭（点右上角 X / close()），不经确定/取消
+w._open_scope_panel()
+app.processEvents()
+w._scope_panel.close()
+app.processEvents()
+print(w._scope_panel_open)
+""")
+    lines = _lines(out)
+    assert lines[0] == "False", f"面板还没开就已经是「开着」：{lines[0]}"
+    assert lines[1] == "True", f"开面板后标记没置起来：{lines[1]}"
+    assert lines[2] == "False", f"点确定后标记没清：{lines[2]}"
+    assert lines[3] == "False", f"点取消后标记没清：{lines[3]}"
+    assert lines[4] == "False", f"直接关闭后标记没清：{lines[4]}"
+
+
+def test_real_closing_the_panel_ends_the_region_session():
+    """④ 的关联：关掉面板必须收掉区域绘制会话，别一直劫持鼠标。
+
+    会话若漏收，关掉面板后标注模式下的拖框/画多边形会被区域绘制抢走，
+    表现为「关掉窗口后画不了框」。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(900, 700)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+
+w._open_scope_panel()
+app.processEvents()
+w._edit_regions_for_scope()
+app.processEvents()
+print(w.canvas.region_session_active())
+
+w._scope_panel.cancel_btn.click()
+app.processEvents()
+print(w.canvas.region_session_active())
+print(w._scope_panel_open)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", f"点了「编辑区域」却没有进入会话：{lines[0]}"
+    assert lines[1] == "False", f"关掉面板后区域会话还在跑：{lines[1]}"
+    assert lines[2] == "False", lines[2]
+
+
+def test_real_region_session_and_panel_flag_are_independent():
+    """会话可以单独结束（如按 Esc/右键），但面板仍是开着的。
+
+    这两件事常被混成一个标记：会话结束 ≠ 面板关闭。若误绑，按 Esc 结束
+    当前区域会把「面板开着」也一起清掉，区域描边和锁标签框就跟着失效。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(900, 700)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+
+w._open_scope_panel()
+w._scope_panel.set_mode(MODE_ROI)
+app.processEvents()
+w._edit_regions_for_scope()
+app.processEvents()
+print(w.canvas.region_session_active(), w._scope_panel_open)
+
+# 单独结束会话（等价于用户按 Esc / 右键收尾）
+w.canvas.end_region_session()
+app.processEvents()
+print(w.canvas.region_session_active(), w._scope_panel_open)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True True", f"开面板+进会话后状态不对：{lines[0]}"
+    assert lines[1] == "False True", (
+        f"会话结束后把「面板开着」一起清掉了——两者必须独立：{lines[1]}")
+
+
+# ---------- ④ 范围面板开着时锁住标签框编辑 ----------
+
+def test_real_scope_panel_open_blocks_label_box_editing():
+    """④ 面板开着时，画布上的标签框不能选中/拖动/缩放（真 `ImageEditor`）。
+
+    用户要求「打开范围推理窗口时不能编辑标签框，不管是旧的还是新推理的」——
+    面板是调参参照，此时在画布上挪框会同时改到待推理的标注，属于误操作。
+
+    关门在 `_can_edit_canvas()` 之外单独做（`_label_editing_locked`），
+    因为 `_can_edit_canvas()` 还被区域绘制共用，改它会连累画区域。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import QPoint, Qt, QPointF
+from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+# 要有真背景图，`get_background_rect()` 才有意义（否则命中点算不准）
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+# 状态栏/信息面板会读它，缺了会 IndexError
+w.background_images = ['work.png']
+canvas = w.canvas
+canvas.resize(900, 700)
+app.processEvents()
+
+w.detection_boxes = [{'label': 'cat', 'x': 200, 'y': 200,
+                      'width': 200, 'height': 200}]
+w.selected_box = None
+canvas.selected_box = None
+canvas.selected_boxes = []
+w.update_label_list = lambda: None
+# 这个用例只关心「框有没有被改」，不该真去写盘（后台图是内存里造的，
+# 没有真实路径）。存盘是另一条链，已有专门用例覆盖。
+w._save_current_detection_boxes = lambda *a, **k: None
+w.save_json = lambda *a, **k: None
+
+# 框在画布上的中心点（背景图坐标 -> 画布坐标）
+from PyQt5.QtCore import QRectF
+rect = canvas.get_background_rect()
+scale = canvas.background_scale
+px = int(rect.x() + 300 * scale)
+py = int(rect.y() + 300 * scale)
+
+def press(x, y):
+    canvas.mousePressEvent(QMouseEvent(
+        QMouseEvent.MouseButtonPress, QPointF(x, y), Qt.LeftButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def move(x, y):
+    canvas.mouseMoveEvent(QMouseEvent(
+        QMouseEvent.MouseMove, QPointF(x, y), Qt.NoButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def release(x, y):
+    canvas.mouseReleaseEvent(QMouseEvent(
+        QMouseEvent.MouseButtonRelease, QPointF(x, y), Qt.LeftButton,
+        Qt.NoButton, Qt.NoModifier))
+
+# --- 面板开着：按框不该选中、不该进入拖动 ---
+w._open_scope_panel()
+app.processEvents()
+print(canvas._label_editing_locked())
+before = dict(w.detection_boxes[0])
+press(px, py)
+print(canvas.selected_box)
+print(canvas.is_dragging_box)
+move(px + 80, py + 80)
+release(px + 80, py + 80)
+print(w.detection_boxes[0] != before)
+
+# --- 关掉面板：同一操作必须照常生效（锁不能锁死）---
+w._scope_panel.cancel_btn.click()
+app.processEvents()
+print(not canvas._label_editing_locked())
+press(px, py)
+print(canvas.selected_box)
+print(canvas.is_dragging_box)
+move(px + 80, py + 80)
+release(px + 80, py + 80)
+print(w.detection_boxes[0] != before)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", f"面板开着时没判定为「锁标签框」：{lines[0]}"
+    assert lines[1] == "None", (
+        f"面板开着时按标签框竟然选中了它（{lines[1]}），接下来就能拖动/缩放")
+    assert lines[2] == "False", "面板开着时不该进入标签框拖动"
+    assert lines[3] == "False", (
+        "面板开着时标签框被拖动了：用户要求此时锁住标签框编辑")
+    assert lines[4] == "True", f"面板关掉后没解除锁：{lines[4]}"
+    assert lines[5] != "None", "面板关着时按标签框应当能选中它"
+    assert lines[6] == "True", f"面板关着时应当能进入拖动：{lines[6]}"
+    assert lines[7] == "True", "面板关着时拖动没生效，锁锁死了"
+
+
+def test_real_scope_panel_open_blocks_drawing_a_new_label_box():
+    """④ 面板开着时也不能**新画**标签框（用户说「不管是旧的还是新推理的」）。
+
+    判据是「拖完有没有多出一个框」，不是看 `is_drawing_box` 标记：标注模式下
+    本来就不是靠那个标记画矩形的，盯它等于空转（变异体会活下来）。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+w.detection_boxes = []
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+# 状态栏/信息面板会读它，缺了会 IndexError
+w.background_images = ['work.png']
+canvas = w.canvas
+canvas.resize(900, 700)
+app.processEvents()
+w.update_label_list = lambda: None
+w._save_current_detection_boxes = lambda *a, **k: None
+w.save_json = lambda *a, **k: None
+# 画完矩形会弹「选标签」模态框；这里不需要人机交互，直接喂一个标签。
+from pastelabel.canvas import canvas_drawing as _cd
+import pastelabel.ui.dialogs as _dlg
+_dlg.LabelSelectionDialog.select_label = staticmethod(lambda *a, **k: 'cat')
+
+def press(x, y):
+    canvas.mousePressEvent(QMouseEvent(
+        QMouseEvent.MouseButtonPress, QPointF(x, y), Qt.LeftButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def move(x, y):
+    canvas.mouseMoveEvent(QMouseEvent(
+        QMouseEvent.MouseMove, QPointF(x, y), Qt.NoButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+def release(x, y):
+    canvas.mouseReleaseEvent(QMouseEvent(
+        QMouseEvent.MouseButtonRelease, QPointF(x, y), Qt.LeftButton,
+        Qt.NoButton, Qt.NoModifier))
+
+def drag_to_draw():
+    # 先进入画框模式（真实入口：`_begin_draw_mode` 会置 `is_drawing_box`），
+    # 否则 `_handle_drawing_press` 根本不会被调用，测的就不是画框那条路。
+    w._begin_draw_mode('rectangle')
+    app.processEvents()
+    # 画矩形是**两次点击**（第二下按下的地方收尾），不是按住拖。
+    press(300, 250)
+    move(500, 400)
+    press(500, 400)
+    app.processEvents()
+
+# --- 面板开着：在空白处拖一下不该画出框 ---
+w._open_scope_panel()
+app.processEvents()
+drag_to_draw()
+print(len(w.detection_boxes) == 0)
+
+# --- 关掉面板：同样的拖动必须画出框（锁不能锁死）---
+w._scope_panel.cancel_btn.click()
+app.processEvents()
+drag_to_draw()
+print(len(w.detection_boxes) == 1)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", (
+        f"面板开着时拖动画出了新标签框（用户要求此时锁住）")
+    assert lines[1] == "True", "面板关着时画不出框，锁锁死了"
+
+
+def test_real_scope_panel_open_still_allows_panning_and_regions():
+    """例外两条：面板开着时**平移画布**照旧可用；会话内照旧能画区域。
+
+    锁的是标签框，不是整个画布——面板常浮在侧栏上，用户仍要拖动底图看位置；
+    而「编辑区域」进去后鼠标本就归区域绘制，不该被标签框锁拦下。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+from pastelabel.engine.inference_scope import MODE_ROI
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+w.detection_boxes = []
+img = QImage(1000, 800, QImage.Format_RGB888)
+img.fill(QColor(40, 70, 100))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+# 状态栏/信息面板会读它，缺了会 IndexError
+w.background_images = ['work.png']
+canvas = w.canvas
+canvas.resize(900, 700)
+app.processEvents()
+w.update_label_list = lambda: None
+
+def press(x, y):
+    canvas.mousePressEvent(QMouseEvent(
+        QMouseEvent.MouseButtonPress, QPointF(x, y), Qt.LeftButton,
+        Qt.LeftButton, Qt.NoModifier))
+
+# 面板开着 + 点图内空白：应当进入平移（不是画框、也不是被锁挡下）
+w._open_scope_panel()
+app.processEvents()
+press(400, 350)
+print(canvas.is_dragging_background)
+print(not canvas.is_drawing_box)
+
+# 面板开着 + 进区域会话：鼠标归区域绘制
+w._scope_panel.set_mode(MODE_ROI)
+app.processEvents()
+w._edit_regions_for_scope()
+app.processEvents()
+print(canvas.region_session_active())
+press(400, 350)
+print(canvas.is_drawing_region)
+""")
+    lines = _lines(out)
+    assert lines[0] == "True", "面板开着时连平移画布都被锁死了"
+    assert lines[1] == "True", lines[1]
+    assert lines[2] == "True", f"没能进入区域会话：{lines[2]}"
+    assert lines[3] == "True", (
+        "会话内应当去画区域，却被标签框锁拦下了")
