@@ -94,19 +94,79 @@ class Editor:
         self.current_background_index = 0
         self.detection_boxes = []
         self.detection_boxes_dict = {}
-        self.region_boxes = []
-        self.region_fixed = False
+        # 第 10 轮把区域拆成两份：标注模式看 `region_boxes`（推理范围），
+        # 贴图模式看 `paste_region_boxes`（贴图落点）。假 Editor 用一个
+        # `region_boxes` 属性把两者统一起来（见下），测试里 `e.region_boxes`
+        # 始终表示「当前模式下那份区域」，不必每处都判模式。
+        self._inference_regions = []
+        self._paste_regions = []
+        self._inference_fixed = False
+        self._paste_fixed = False
+        self._scope_panel_open = False
         self.selected_item = None
+
+    @property
+    def region_fixed(self):
+        """当前模式那份区域的固定开关（测试统一入口，与 `region_boxes` 配套）。"""
+        return (self._paste_fixed if self.edit_mode == 'paste'
+                else self._inference_fixed)
+
+    @region_fixed.setter
+    def region_fixed(self, value):
+        if self.edit_mode == 'paste':
+            self._paste_fixed = bool(value)
+        else:
+            self._inference_fixed = bool(value)
+
+    @property
+    def paste_region_fixed(self):
+        return self._paste_fixed
+
+    @paste_region_fixed.setter
+    def paste_region_fixed(self, value):
+        self._paste_fixed = bool(value)
+
+    @property
+    def region_boxes(self):
+        """当前模式那份区域（测试统一入口）。"""
+        return (self._paste_regions if self.edit_mode == 'paste'
+                else self._inference_regions)
+
+    @region_boxes.setter
+    def region_boxes(self, value):
+        if self.edit_mode == 'paste':
+            self._paste_regions = list(value or [])
+        else:
+            self._inference_regions = list(value or [])
+
+    @property
+    def paste_region_boxes(self):
+        return self._paste_regions
+
+    @paste_region_boxes.setter
+    def paste_region_boxes(self, value):
+        self._paste_regions = list(value or [])
 
     def save_undo_state(self):
         pass
 
 
 class Canvas(CanvasInteractionMixin):
-    def __init__(self, regions=None, fixed=False):
+    def __init__(self, regions=None, fixed=False, mode='paste'):
         self._editor = Editor()
-        self._editor.region_boxes = list(regions) if regions else []
-        self._editor.region_fixed = fixed
+        self._editor.edit_mode = mode
+        # `regions=` 落到**当前模式**那份上：贴图模式给 `paste_region_boxes`，
+        # 标注模式给 `region_boxes`。测试因此不必关心"两份"这件事，它表达的
+        # 始终是「我这个模式下有哪些区域」。
+        if mode == 'paste':
+            self._editor.paste_region_boxes = list(regions) if regions else []
+            self._editor.paste_region_fixed = fixed
+        else:
+            self._editor.region_boxes = list(regions) if regions else []
+            self._editor.region_fixed = fixed
+        # 面板开着才允许编辑区域。第 11 轮去掉贴图区域面板后，贴图模式
+        # 恒允许编辑（右键就是它的入口），标注模式仍要求范围面板开着。
+        self._editor._scope_panel_open = True
         self.background_scale = 1
         self.mouse_pos = None
         self.draw_start_pos = None
@@ -224,7 +284,10 @@ class Engine(PasteEngineMixin):
         self.paste_count_spin = Spin(5)
         self.min_size_spin = Spin(30)
         self.max_size_spin = Spin(60)
-        self.region_boxes = list(regions) if regions else []
+        # 第 10 轮起贴图落点看的是**贴图那份**区域（`paste_region_boxes`），
+        # 不再是推理那份。测试里的 `regions=` 表达的就是「贴图区域」。
+        self.paste_region_boxes = list(regions) if regions else []
+        self.region_boxes = []
         self.canvas = CanvasUpdate()
         self._paste_labels = []
 
@@ -537,8 +600,8 @@ def test_wheel_region_can_fill_background():
 
 def test_wheel_scales_selected_box_not_region_in_annotate_mode():
     """回归：标注模式下悬停区域不得吞掉滚轮，选中的检测框仍要缩放。"""
-    canvas = Canvas(regions=[{'x': 100.0, 'y': 100.0, 'width': 100.0, 'height': 100.0}])
-    canvas._editor.edit_mode = 'annotate'
+    canvas = Canvas(regions=[{'x': 100.0, 'y': 100.0, 'width': 100.0, 'height': 100.0}],
+                    mode='annotate')
     canvas._editor.detection_boxes = [
         {'label': 'cat', 'x': 120.0, 'y': 120.0, 'width': 60.0, 'height': 60.0},
     ]

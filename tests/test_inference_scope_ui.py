@@ -5091,12 +5091,17 @@ print('状态栏', w.status_label.text())
 
 # ---------- 第九轮：区域右键入口在两种模式下都可达 ----------
 
-def test_real_region_menu_is_reachable_in_annotate_mode_too():
-    """⑤ 标注模式（范围面板开着）右键也要有「添加区域」，不只是贴图模式。
+def test_real_region_menu_is_reachable_only_in_paste_mode():
+    """⑤ 区域菜单**只在贴图模式**给（用户第 11 轮改了口径）。
 
-    用户报的「推理的区域和贴图的区域不是同一个，贴图下不能操作」：区域本就是
-    同一份 `region_boxes`，入口却只挂在贴图模式的右键菜单里，于是用范围面板调
-    区域时找不到添加入口。
+    第 9/10 轮的做法是两种模式都挂区域入口；第 11 轮用户明确：
+
+        标注模式不要，只走推理范围的区域。
+
+    理由是「推理是推理的操作，贴图是贴图的操作」——推理区域的增删改全部走
+    「推理范围」面板，标注模式右键再留一份入口，同一份数据就有两个地方能改。
+
+    贴图模式的入口必须保留：贴图区域没有面板，右键是它唯一的编辑入口。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QMenu
@@ -5123,7 +5128,9 @@ w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'active_providers': ['CPU']})()
 w._on_model_loaded(w._detector, (640, 640), 'test')
 w.region_boxes = []
+w.paste_region_boxes = []
 w.region_fixed = False
+w.paste_region_fixed = False
 w._open_scope_panel()
 app.processEvents()
 
@@ -5146,10 +5153,10 @@ finally:
     QMenu.exec_ = orig_exec
 """)
     lines = _lines(out)
-    assert lines[0].endswith("True"), (
-        f"标注模式下右键没有「添加区域」：{lines[0]}")
+    assert lines[0].endswith("False"), (
+        f"标注模式不该再有区域入口（用户：只走推理范围的区域）：{lines[0]}")
     assert lines[1].endswith("True"), (
-        f"贴图模式下右键没有「添加区域」（原有入口被弄坏了）：{lines[1]}")
+        f"贴图模式下右键没有「添加区域」（贴图区域唯一的入口被弄坏了）：{lines[1]}")
 
 
 def test_real_region_menu_uses_the_same_region_list_in_both_modes():
@@ -5197,14 +5204,16 @@ print('贴图模式下画布也认这条区域',
 # ---------- 第九轮：固定区域菜单项左对齐 ----------
 
 def test_real_region_menu_items_are_left_aligned():
-    """⑥ 四项文字缩进必须一致（不再有「空了一个字」）。
+    """⑥ 各项文字缩进必须一致（不再有「空了一个字」）。
 
     用 Qt 画菜单项的口径复算每项的文字缩进：可勾选项会被额外加一个
-    `PM_MenuButtonIndicator`（本主题 12px），于是「固定区域」比同菜单其它三项
+    `PM_MenuButtonIndicator`（本主题 12px），于是「固定区域」比同菜单其它项
     多缩进一个字——用户报的「固定区域没有左对齐空了一个字」。
 
     ⚠️ 必须按**每项**算，不能看 `actionGeometry().width()`：菜单宽度会被最长项
     撑满，几种写法都是同一个值，看宽度永远发现不了这个 bug。
+
+    第 11 轮去掉多边形区域后菜单只剩三项（添加矩形/固定/清空）。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QMenu, QStyle, QStyleOptionMenuItem
@@ -5255,10 +5264,10 @@ print('没有可勾选项:', not any(
                                          m.actions())[1])(QMenu())))
 """)
     lines = _lines(out)
-    assert lines[0] == "未固定缩进: [0, 0, 0, 0]", (
-        f"未固定时四项没有齐平：{lines[0]}")
-    assert lines[1] == "已固定缩进: [0, 0, 0, 0]", (
-        f"已固定时四项没有齐平：{lines[1]}")
+    assert lines[0] == "未固定缩进: [0, 0, 0]", (
+        f"未固定时各项没有齐平：{lines[0]}")
+    assert lines[1] == "已固定缩进: [0, 0, 0]", (
+        f"已固定时各项没有齐平：{lines[1]}")
     assert lines[2].endswith("True"), lines[2]
 
 
