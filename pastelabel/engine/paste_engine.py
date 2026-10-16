@@ -237,8 +237,11 @@ class PasteEngineMixin:
         num_paste = self.paste_count_spin.value()
         selected_indices = rng.choices(range(len(self.small_images)), k=num_paste)
 
+        # 用**贴图**那份区域（用户第 10 轮把区域拆成两份：贴图落点看
+        # `paste_region_boxes`，推理范围看 `region_boxes`）。以前这里读的是
+        # `region_boxes`，等于贴图的落点约束就是推理范围——两类区域混在一起。
         regions = [
-            r for r in (getattr(self, 'region_boxes', None) or [])
+            r for r in (getattr(self, 'paste_region_boxes', None) or [])
             if r.get('width', 0) > 0 and r.get('height', 0) > 0
         ]
 

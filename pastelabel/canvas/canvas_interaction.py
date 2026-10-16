@@ -282,7 +282,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
     def _region_polygon_edge_at(self, mouse_pos):
         """返回鼠标附近的区域多边形边 (region_index, vertex_index, image_point)。"""
         from ..engine.shape_io import point_line_distance
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions:
             return None
         background_rect = self.get_background_rect()
@@ -312,9 +312,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         return None
 
     def _insert_region_vertex(self, region_index, vertex_index, point):
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return False
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= region_index < len(regions)):
             return False
         region = regions[region_index]
@@ -332,9 +332,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         return True
 
     def _drag_region_vertex(self):
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or self.selected_region is None:
             return
         if not (0 <= self.selected_region < len(regions)):
@@ -360,9 +360,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.update()
 
     def _drag_region(self):
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or self.selected_region is None:
             return
         if not (0 <= self.selected_region < len(regions)):
@@ -402,9 +402,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
 
     def _resize_region(self):
         from ..core.config import REGION_CONFIG
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or self.selected_region is None:
             return
         if not (0 <= self.selected_region < len(regions)):
@@ -1004,7 +1004,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
 
     def _check_region_hover(self):
         """贴图模式下区域悬停光标提示（固定时跳过）。"""
-        if not self._is_paste_mode() or getattr(self._editor, 'region_fixed', False):
+        if not self._is_paste_mode() or self._active_region_fixed():
             return False
         if self._region_vertex_at(self.mouse_pos) is not None:
             self.setCursor(Qt.PointingHandCursor)
@@ -1012,7 +1012,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         index = self._region_at(self.mouse_pos)
         if index is None:
             return False
-        region = (getattr(self._editor, 'region_boxes', None) or [])[index]
+        region = (self._active_regions() or [])[index]
         if (region.get('shape_type') or 'rectangle') == 'polygon':
             if self._region_polygon_edge_at(self.mouse_pos) is not None:
                 self.setCursor(Qt.CrossCursor)
@@ -1320,6 +1320,13 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.is_dragging_background = False
         self.is_dragging_box = False
         self.is_resizing_box = False
+        # 区域手势收尾要通知宿主：范围面板显示的是 `region_boxes` 的**快照**，
+        # 拖动/缩放/改顶点之后坐标已经变了，不通知它就一直停在旧坐标上
+        # （用户第 10 轮：「推理时调整区域，窗口内没更新坐标信息」）。
+        # 只在**真的动过区域**时通知，避免每次松手都白刷一遍面板。
+        region_touched = bool(getattr(self, 'is_dragging_region_vertex', False)
+                              or getattr(self, 'is_dragging_region', False)
+                              or getattr(self, 'is_resizing_region', False))
         self.is_dragging_region_vertex = False
         self.region_vertex_drag_index = None
         self.is_rotating_box = False
@@ -1328,6 +1335,8 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.region_resize_handle = None
         self.rotation_prev_angle = None
         self.resize_handle = None
+        if region_touched:
+            self._notify_region_changed()
         self._check_hover()
         self.update()
 
@@ -1335,15 +1344,18 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if not self._editor.current_background:
             return
 
+        region_wheeled = False
         if event.modifiers() & Qt.ControlModifier:
             self._scale_background(event)
         elif (self._region_editable() and
-              self._region_at(self.mouse_pos) is not None and
-              self.find_item_at_position(self.mouse_pos) is None):
+              self._wheel_target_region() is not None and
+              self.find_item_at_position(self.mouse_pos) is None and
+              not self._selected_box_takes_wheel()):
             # 与检测框同一套分流：鼠标**贴边**时滚轮单边调整，在**中间**时
             # 整体缩放（用户要求「单边调整包括滚轮，复用检测框的」）。
             # 边上不再画手柄，所以这里要主动判一次位置，不能靠「有没有抓手柄」。
             self._wheel_region(event)
+            region_wheeled = True
         elif self._editor.selected_item is not None:
             self._scale_selected_item(event)
         elif self.selected_box is not None:
@@ -1365,7 +1377,90 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
 
         # 滚轮不产生鼠标移动事件，必须主动刷新状态栏宽高
         self.update_status_label()
+        # 滚轮改的是区域几何：范围面板的坐标快照也要跟着刷，否则「滚完面板
+        # 还是旧数字」（用户第 10 轮：「调整区域，窗口内没更新坐标信息」）。
+        if region_wheeled:
+            self._notify_region_changed()
         self.update()
+
+    def _selected_box_takes_wheel(self):
+        """当前选中的检测框是否应当**优先**吃掉这次滚轮。
+
+        用户第 10 轮把贴边滚轮也放给区域（"检测框处于编辑模式，鼠标放在一侧
+        滚轮可以调整对应边"），但不能因此把检测框自己的滚轮抢走——已有回归
+        测试钉住「标注模式下选中检测框时，悬停在区域上也必须缩框、不动区域」。
+
+        判据：**标注模式**下、有选中的检测框，且鼠标落在它身上（框内，或贴着
+        它的某条边）时，滚轮归框；区域只在没有框在管这件事时接手。
+
+        贴图模式下恒为 False：那时画布改的是素材，标注框不该抢滚轮——已有的
+        对照测试正是「贴图模式下选中着框，悬停区域也要缩放区域」。
+        """
+        if self._is_paste_mode():
+            return False
+        if self.selected_box is None:
+            return False
+        boxes = getattr(self._editor, 'detection_boxes', None) or []
+        if not (0 <= self.selected_box < len(boxes)):
+            return False
+        if self._is_mouse_inside_selected_box():
+            return True
+        return self._get_selected_box_edge() is not None
+
+    def _wheel_target_region(self):
+        """滚轮该作用在哪个区域上——**贴边含外侧**，与检测框一致。
+
+        用户第 10 轮：「检测框处于编辑模式，鼠标放在一侧滚轮可以调整对应边平移」，
+        即检测框的滚轮命中**不要求鼠标在框内**，贴在外侧正对某条边也算。
+
+        原先这里用的是 `_region_at()`（严格在区域内部），实测反了：
+        图内坐标 scale=1.28 时「右边内侧 5px」返回 None（进不来），
+        「右边外侧 5px」反而命中——因为内侧那点已经落在 `min_size` 边距
+        之外被算作「不在区域内」。于是用户按检测框的手感去贴边滚，没反应。
+
+        现在的判据：鼠标在区域内 **或** 落在某条边的容差带里（含外侧）都算。
+        容差用 `_region_handle_hit_size()`（屏上像素）换算回图内坐标，与
+        单边调整/手柄命中同一把尺子。
+
+        返回区域下标；没有则 None。
+        """
+        regions = self._active_regions()
+        if not regions:
+            return None
+
+        inside = self._region_at(self.mouse_pos)
+        if inside is not None:
+            return inside
+
+        # 区域内没有：看是否贴在某个**未锁定**区域的边附近（外侧也算）
+        background_rect = self.get_background_rect()
+        if background_rect is None or not self.background_scale:
+            return None
+        mx = (self.mouse_pos.x() - background_rect.left()) / self.background_scale
+        my = (self.mouse_pos.y() - background_rect.top()) / self.background_scale
+        tol = self._region_handle_hit_size() / max(self.background_scale, 1e-6)
+
+        # 倒序：与 `_region_at()` 一致，重叠时取最上面那条
+        for i in range(len(regions) - 1, -1, -1):
+            r = regions[i]
+            if r.get('locked'):
+                continue          # 锁定 = 最底层且不可修改，滚轮也不该碰
+            if (r.get('shape_type') or 'rectangle') == 'polygon' and r.get('points'):
+                # 多边形：用外接矩形判"贴边"，够用且与手柄绘制口径一致
+                xs = [p[0] for p in r['points']]
+                ys = [p[1] for p in r['points']]
+                left, right = min(xs), max(xs)
+                top, bottom = min(ys), max(ys)
+            else:
+                left, top = r.get('x', 0), r.get('y', 0)
+                right, bottom = left + r.get('width', 0), top + r.get('height', 0)
+            if (min(abs(mx - left), abs(mx - right)) <= tol
+                    and top - tol <= my <= bottom + tol):
+                return i
+            if (min(abs(my - top), abs(my - bottom)) <= tol
+                    and left - tol <= mx <= right + tol):
+                return i
+        return None
 
     def _wheel_region(self, event):
         """区域滚轮：贴边 → 单边调整；在中间 → 整体缩放。
@@ -1374,10 +1469,10 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         放大的口径（`_region_handle_hit_size()`），图缩小后仍能贴到边；否则
         屏上只有几十像素宽的区域按图内坐标算距离会永远「不够近」。
         """
-        index = self._region_at(self.mouse_pos)
+        index = self._wheel_target_region()
         if index is None:
             return
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= index < len(regions)):
             return
         background_rect = self.get_background_rect()
@@ -1398,16 +1493,21 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             edge = self._region_edge_at(self.mouse_pos, index)
             self._adjust_hovered_region_edge(event, index, edge)
         else:
-            self._scale_hovered_region(event)
+            self._scale_hovered_region(event, index)
 
-    def _scale_hovered_region(self, event):
-        """鼠标悬停在区域上时滚轮缩放该区域（绕中心，夹紧背景边界）。"""
-        if getattr(self._editor, 'region_fixed', False):
+    def _scale_hovered_region(self, event, index=None):
+        """鼠标悬停在区域上时滚轮缩放该区域（绕中心，夹紧背景边界）。
+
+        `index` 允许调用方传入（`_wheel_region` 已经解析过目标区域，它可能
+        是"贴在区域外侧"的那种命中，重新用 `_region_at()` 会解析不出来）。
+        """
+        if self._active_region_fixed():
             return
-        index = self._region_at(self.mouse_pos)
+        if index is None:
+            index = self._region_at(self.mouse_pos)
         if index is None:
             return
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= index < len(regions)):
             return
 
@@ -1456,7 +1556,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         的了」）：先在框**外**找正对着的那条边，都在外面时取距离最近的。
         区域内侧也算——用户要的是「滚轮贴边调整」，鼠标压在边上时也该调那条边。
         """
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= index < len(regions)):
             return None
         background_rect = self.get_background_rect()
@@ -1496,7 +1596,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         - 鼠标压在某条边附近 → 本条（单边）
         - 鼠标在区域中间 → 那条（整体缩放）
         """
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= index < len(regions)):
             return
         if edge is None:

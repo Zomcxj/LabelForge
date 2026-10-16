@@ -182,9 +182,17 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self._last_paste_slot = None
         self._last_paste_start = -1
 
-        # 语义区域（仅运行时存在，不持久化/不导出，全局共享一套）
+        # 语义区域（仅运行时存在，不持久化/不导出）
+        #
+        # **两份独立区域**（用户第 10 轮：「推理是推理的操作，贴图是贴图的操作；
+        # 推理的区域贴图不能显示和操作，贴图的区域推理不能显示和操作」）：
+        # - `region_boxes`   ：**推理**范围（滑窗/区域推理用），画在标注模式
+        # - `paste_region_boxes`：**贴图**落点约束，画在贴图模式，从空开始
+        # 两份各自有面板、各自可编辑，互不可见、互不影响。
         self.region_boxes = []
+        self.paste_region_boxes = []
         self.region_fixed = False
+        self.paste_region_fixed = False
         # 范围面板是否开着。**在这里就初始化**：画布在鼠标事件里会读它
         # （`_region_editing_allowed`），只靠「第一次开面板时赋值」会让开面板
         # 之前的状态是「属性不存在」，`getattr(..., False)` 虽然兜住了，但

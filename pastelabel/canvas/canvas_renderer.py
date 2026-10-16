@@ -295,12 +295,12 @@ class CanvasRendererMixin:
         检测框之下、未锁定的压在其上——层级要和点击优先级一致，否则「看着
         在上面、点下去却是别的框」。
         """
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions:
             return
         from ..core.config import REGION_CONFIG
         color = QColor(REGION_CONFIG['border_color'])
-        fixed = getattr(self._editor, 'region_fixed', False)
+        fixed = self._active_region_fixed()
 
         painter.save()
         for i, region in enumerate(regions):

@@ -13,6 +13,31 @@ from ..ui.i18n import t as tr
 class CanvasMenuMixin:
     """右键菜单逻辑"""
 
+    def _active_regions(self):
+        """**当前模式**该操作/显示的那份区域列表。
+
+        用户第 10 轮把区域拆成两份，各自属于一种模式：
+        - 贴图模式 → `paste_region_boxes`（贴图落点）
+        - 标注模式 → `region_boxes`（推理范围）
+
+        画布上所有区域相关的读写都经这里取列表，**不要**直接摸
+        `region_boxes`——否则贴图模式会改到推理的那份（这正是第 10 轮报的
+        「推理的区域在贴图下还能操作」）。
+        """
+        if self._is_paste_mode():
+            if not isinstance(getattr(self._editor, 'paste_region_boxes', None), list):
+                self._editor.paste_region_boxes = []
+            return self._editor.paste_region_boxes
+        if not isinstance(getattr(self._editor, 'region_boxes', None), list):
+            self._editor.region_boxes = []
+        return self._editor.region_boxes
+
+    def _active_region_fixed(self):
+        """当前模式的区域是否已固定（两份各记各的）。"""
+        if self._is_paste_mode():
+            return bool(getattr(self._editor, 'paste_region_fixed', False))
+        return bool(getattr(self._editor, 'region_fixed', False))
+
     @staticmethod
     def _rounded_menu(parent):
         """建一个带圆角的右键悬浮菜单。
@@ -82,7 +107,7 @@ class CanvasMenuMixin:
         `True`（比如往外拖文件的守卫，那里关心的是有没有东西挡着，与能否
         编辑无关）。
         """
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions:
             return None
         background_rect = self.get_background_rect()
@@ -113,7 +138,7 @@ class CanvasMenuMixin:
 
     def region_locked_at(self, index):
         """第 index 条区域是否被锁定；越界或没有区域时返回 False。"""
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= index < len(regions)):
             return False
         return self.region_locked(regions[index])
@@ -129,7 +154,7 @@ class CanvasMenuMixin:
         锁只写在区域字典自己身上。`region_fixed`（右键菜单里的「固定区域」）
         是**贴图模式**的全局开关，两者互不相干，不去动它。
         """
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= index < len(regions)):
             return False
         region = regions[index]
@@ -151,7 +176,7 @@ class CanvasMenuMixin:
 
     def _region_vertex_at(self, mouse_pos):
         """返回鼠标位置下的区域多边形顶点 (index, vertex_index)。"""
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions:
             return None
         background_rect = self.get_background_rect()
@@ -172,12 +197,12 @@ class CanvasMenuMixin:
         return None
 
     def _show_region_vertex_menu(self, region_index, vertex_index, mouse_pos):
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= region_index < len(regions)):
             return
         region = regions[region_index]
         points = region.get('points') or []
-        fixed = getattr(self._editor, 'region_fixed', False)
+        fixed = self._active_region_fixed()
 
         menu = self._rounded_menu(self)
         delete_action = QAction(tr("删除顶点"), self)
@@ -189,9 +214,9 @@ class CanvasMenuMixin:
         menu.exec_(QPoint(self.mapToGlobal(mouse_pos)))
 
     def _delete_region_vertex(self, region_index, vertex_index):
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return False
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= region_index < len(regions)):
             return False
         region = regions[region_index]
@@ -230,7 +255,7 @@ class CanvasMenuMixin:
         看到的「没办法调整大小」。四角优先于四边：角上同时落在两条边的
         判定里，取角才能一次改两个方向。
         """
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= index < len(regions)):
             return None
         background_rect = self.get_background_rect()
@@ -277,7 +302,7 @@ class CanvasMenuMixin:
         index = self._region_at(mouse_pos)
         if index is None:
             return
-        fixed = getattr(self._editor, 'region_fixed', False)
+        fixed = self._active_region_fixed()
         menu = self._rounded_menu(self)
 
         delete_action = QAction(tr("删除区域"), self)
@@ -293,38 +318,38 @@ class CanvasMenuMixin:
         menu.exec_(QPoint(self.mapToGlobal(mouse_pos)))
 
     def _add_region_actions(self, menu, fixed):
-        """追加 添加矩形/多边形区域、固定、清空 菜单项。"""
+        """追加 添加区域（矩形）、固定、清空 菜单项。
+
+        **只有矩形**（用户第 11 轮：「多边形不要了」）：推理范围只做矩形，
+        多边形那条路（`_start_add_region_polygon`）已随右键段一起去掉，
+        免得留一个画得出来、面板里却看不全的入口。
+        """
         add_rect_action = QAction(tr("添加区域（矩形）"), self)
         add_rect_action.setEnabled(not fixed)
         add_rect_action.triggered.connect(self._start_add_region)
         menu.addAction(add_rect_action)
 
-        add_poly_action = QAction(tr("添加区域（多边形）"), self)
-        add_poly_action.setEnabled(not fixed)
-        add_poly_action.triggered.connect(self._start_add_region_polygon)
-        menu.addAction(add_poly_action)
-
         # 「固定区域」**不用 `setCheckable`**：Qt 会给可勾选项的文字额外缩进
         # 一个 `PM_MenuButtonIndicator` 的宽度（本主题下 12px），于是它比同菜单
-        # 里其它三项多空出一个字——用户报的「固定区域没有左对齐空了一个字」。
-        # 按 Qt 画菜单项的口径复算，四项缩进分别是 [0, 0, 12, 0]；去掉 checkable
-        # 后是 [0, 0, 0, 0]。
+        # 里其它项多空出一个字——用户报的「固定区域没有左对齐空了一个字」。
+        # 按 Qt 画菜单项的口径复算，可勾选时缩进是 [0, 12, 0]，去掉 checkable
+        # 后是 [0, 0, 0]。
         #
         # 勾**仍然要有**（用户明确「我不是固定区域左边有打钩吗，不勾选不就解除了」），
         # 所以把勾画进文案本身：未固定显示「固定区域」，已固定显示「✔ 固定区域」，
-        # 点一下照样来回切。这样勾看得见、四项也严格左对齐。
+        # 点一下照样来回切。这样勾看得见、各项也严格左对齐。
         fix_action = QAction(
             tr("✔ 固定区域") if fixed else tr("固定区域"), self)
         fix_action.triggered.connect(self._toggle_fix_regions)
         menu.addAction(fix_action)
 
         clear_action = QAction(tr("清空区域"), self)
-        clear_action.setEnabled(not fixed and bool(getattr(self._editor, 'region_boxes', None)))
+        clear_action.setEnabled(not fixed and bool(self._active_regions()))
         clear_action.triggered.connect(self._clear_regions)
         menu.addAction(clear_action)
 
     def _start_add_region(self):
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return
         self.is_drawing_region = True
         # 记下「这一次绘制是刚被 arm 的」：见 `_region_draw_armed()`。
@@ -340,25 +365,14 @@ class CanvasMenuMixin:
             status.setText(tr("添加区域（矩形）"))
         self.update()
 
-    def _start_add_region_polygon(self):
-        if getattr(self._editor, 'region_fixed', False):
-            return
-        self.is_drawing_region = False
-        self._region_draw_armed_flag = True
-        self.is_drawing_region_polygon = True
-        self.temp_region_points = []
-        self.selected_region = None
-        self.draw_start_pos = None
-        self.temp_draw_box = None
-        self.setCursor(Qt.CrossCursor)
-        status = getattr(self._editor, 'status_label', None)
-        if status is not None:
-            status.setText(tr("添加区域（多边形）"))
-        self.update()
-
     def _toggle_fix_regions(self):
-        self._editor.region_fixed = not getattr(self._editor, 'region_fixed', False)
-        if self._editor.region_fixed:
+        """固定/取消固定**当前模式**那把锁（两份各记各的）。"""
+        new_state = not self._active_region_fixed()
+        if self._is_paste_mode():
+            self._editor.paste_region_fixed = new_state
+        else:
+            self._editor.region_fixed = new_state
+        if new_state:
             self.is_drawing_region = False
             self.is_drawing_region_polygon = False
             self.temp_region_points = []
@@ -367,9 +381,9 @@ class CanvasMenuMixin:
         self.update()
 
     def _clear_regions(self):
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return
-        if not getattr(self._editor, 'region_boxes', None):
+        if not self._active_regions():
             return
         reply = dialog_helpers.question(
             self._editor,
@@ -380,7 +394,8 @@ class CanvasMenuMixin:
         )
         if reply != dialog_helpers.QMessageBox.Yes:
             return
-        self._editor.region_boxes = []
+        regions = self._active_regions()
+        regions.clear()
         self.selected_region = None
         self.is_drawing_region = False
         self.is_drawing_region_polygon = False
@@ -388,9 +403,9 @@ class CanvasMenuMixin:
         self.update()
 
     def _delete_region(self, index):
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return
-        regions = getattr(self._editor, 'region_boxes', None)
+        regions = self._active_regions()
         if not regions or not (0 <= index < len(regions)):
             return
         regions.pop(index)
@@ -727,6 +742,8 @@ class CanvasMenuMixin:
         shutil.move(file_path, dst)
         json_path = os.path.splitext(file_path)[0] + '.json'
         if os.path.isfile(json_path):
+            from ..core import json_trace
+            json_trace.trace('canvas_menu 移动到原目录', json_path)
             shutil.move(json_path, os.path.splitext(dst)[0] + '.json')
 
         insert_idx = len(self._editor.background_images)
@@ -747,12 +764,14 @@ class CanvasMenuMixin:
         remove_action.triggered.connect(self._remove_current_background)
         menu.addAction(remove_action)
 
-        # 区域那一段过去只在贴图模式的右键菜单里出现，于是「用范围面板调区域」
-        # （面板开着时画布停在标注模式）时根本找不到添加入口——用户报的
-        # 「推理的区域和贴图的区域不是同一个，贴图下不能操作」。
-        # 区域本来就是**同一份** `region_boxes`，所以两种模式都该能进这里。
-        menu.addSeparator()
-        self._add_region_actions(menu, getattr(self._editor, 'region_fixed', False))
+        # 区域那一整段**只在贴图模式**给（用户第 10 轮）：
+        # 「推理是推理的操作，贴图是贴图的操作」——推理区域的增删改全部走
+        # 「推理范围」面板（`ScopePanel`），标注模式的右键不该还留一份入口，
+        # 否则同一个推理区域有两个地方能改，用户分不清哪份才算数。
+        # 贴图模式下的这段作用于贴图那份（`_active_regions()`）。
+        if self._is_paste_mode():
+            menu.addSeparator()
+            self._add_region_actions(menu, self._active_region_fixed())
 
         menu.exec_(QPoint(self.mapToGlobal(mouse_pos)))
 
@@ -785,11 +804,17 @@ class CanvasMenuMixin:
         self.selected_box = None
         self.selected_boxes = []
         if has_json:
+            from ..core import json_trace
+            json_trace.trace('canvas_menu._delete_current_label_file 即将删',
+                             json_path)
             try:
                 os.remove(json_path)
             except OSError:
                 from ..core.exception_hook import _write_log
                 _write_log(f"删除标签文件失败: {json_path}")
+            json_trace.trace_delete(
+                'canvas_menu._delete_current_label_file', json_path,
+                survived=os.path.exists(json_path))
 
         refresh = getattr(self._editor, "_refresh_background_item_status", None)
         if callable(refresh):
@@ -827,6 +852,8 @@ class CanvasMenuMixin:
         shutil.move(file_path, os.path.join(delete_dir, os.path.basename(file_path)))
         json_path = os.path.splitext(file_path)[0] + '.json'
         if os.path.isfile(json_path):
+            from ..core import json_trace
+            json_trace.trace('canvas_menu 移入 _delete_ 目录', json_path)
             shutil.move(json_path, os.path.join(delete_dir, os.path.basename(json_path)))
 
         self._editor.background_images.pop(idx)

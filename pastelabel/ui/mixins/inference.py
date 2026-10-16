@@ -18,8 +18,28 @@ INFERENCE_SOURCE = "inference"
 class InferenceMixin:
     # ---------- 模型参数行 ----------
 
+    def _inference_allowed_by_mode(self):
+        """当前模式允许推理吗——**贴图模式一律不准**。
+
+        用户第 10 轮反馈：「切到贴图模式能够关闭，但是还能手动打开推理，我要
+        直接禁用」。原先只做了 `row.hide()`，而参数行的第一个图标在贴图模式下
+        照样能把行 `show()` 回来，行一显示两个推理按钮就被重新 enable——那是
+        「收起」，不是「禁用」。
+
+        判据收拢到这里，按钮状态（`_update_inference_buttons`）与实际开跑
+        （`_start_inference`）都走它，保证「看着灰」和「真跑不了」永远一致。
+        """
+        return getattr(self, 'edit_mode', 'annotate') != 'paste'
+
     def _toggle_model_row(self):
-        """第一个图标：显示/隐藏参数行；关掉后不能推理。"""
+        """第一个图标：显示/隐藏参数行；关掉后不能推理。
+
+        贴图模式下**直接拒绝**：推理与贴图是两件事（用户第 10 轮要求），贴图
+        模式下这个图标不该还有把人带回推理的能力。
+        """
+        if not self._inference_allowed_by_mode():
+            self.status_label.setText(tr("贴图模式下不可推理，请切回标注模式"))
+            return
         row = self._ensure_model_row()
         if row.isVisible():
             row.hide()
@@ -30,9 +50,10 @@ class InferenceMixin:
     def _sync_model_row_to_edit_mode(self):
         """贴图模式自动收起参数行并停用推理，切回标注模式再恢复。
 
-        用户要求「切到贴图模式时自动收起模型参数行/禁用推理」。隐藏参数行本身
-        就已经让 `_update_inference_buttons()` 把两个推理按钮disable 掉，所以
-        「禁用」是收起的自然结果，不必另设一套开关。
+        用户要求「切到贴图模式时自动收起模型参数行/禁用推理」。贴图模式下
+        `_update_inference_buttons()` 会因为模式条件把两个推理按钮钉死在
+        disable，所以**即使有人把参数行弄出来了也推不了**（第 10 轮：原先靠
+        "收起"当禁用，参数行图标一按就能恢复推理）。
 
         特意**记住用户原本的状态**：他若在标注模式下自己收了参数行，切回时也
         不该替他展开——模式切换只管「贴图模式下必须是收起的」这一条。
@@ -439,7 +460,10 @@ class InferenceMixin:
         panel = getattr(self, '_scope_panel', None)
         if panel is not None:
             # 用 set_regions（而不是只报个数）：面板要显示每条区域的坐标，
-            # 画完一个就该在列表里出现一行。
+            # 画完一个就该在列表里看到新的一行。
+            #
+            # 只有**推理区域**有面板反馈（第 11 轮去掉贴图区域面板后更纯粹）：
+            # 贴图区域在画布上直接增删，没有面板要同步，这里不必按模式分流。
             panel.set_regions(self._region_boxes())
         self.status_label.setText(tr("区域绘制结束"))
 
@@ -618,7 +642,7 @@ class InferenceMixin:
             return
         # 贴图模式的提示要**先于**「参数行已关闭」：贴图模式下参数行正是被自动
         # 收起的，报「参数行已关闭」会让用户以为自己关掉了什么、去翻按钮。
-        if getattr(self, 'edit_mode', 'annotate') == 'paste':
+        if not self._inference_allowed_by_mode():
             self.status_label.setText(tr("贴图模式下不可推理，请切回标注模式"))
             return
         # 参数行关着就不能推理；按钮虽已禁用，这里再挡一次，避免快捷键/代码路径绕过
@@ -843,12 +867,18 @@ class InferenceMixin:
         return bool(row is not None and row.replace_mode())
 
     def _update_inference_buttons(self):
-        """参数行开着且有模型才让推理；关掉行等于停用推理。"""
+        """参数行开着、有模型、且**当前模式允许推理**才让推理。
+
+        模式条件是第 10 轮加的硬条件：只要在贴图模式，无论参数行是开是关，
+        两个推理按钮都钉在 disable。这样「参数行图标」即便被以任何方式弄出来
+        （快捷键、代码路径、以后新增的入口），也推不了。
+        """
         detector = getattr(self, '_detector', None)
         busy = getattr(self, '_run_worker', None) is not None
         row = getattr(self, 'model_row', None)
         row_open = bool(row is not None and row.isVisible())
-        ready = detector is not None and not busy and row_open
+        ready = (detector is not None and not busy and row_open
+                 and self._inference_allowed_by_mode())
         for name in ('model_single_btn', 'model_all_btn'):
             button = getattr(self, name, None)
             if button is not None:

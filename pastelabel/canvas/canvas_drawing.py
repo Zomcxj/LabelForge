@@ -14,15 +14,22 @@ class CanvasDrawingMixin:
         return not getattr(self._editor, '_is_delete_view', False)
 
     def _region_editing_allowed(self):
-        """现在允许编辑区域框吗（面板开着就行，与编辑模式无关）。
+        """现在允许编辑区域框吗（**当前模式是否有在调的入口**）。
 
-        用户要求「区域框可以调整大小和位置，只在范围面板开着时允许」——面板
-        正是调区域的地方，此时画布常停在标注模式，光靠 `_is_paste_mode()` 会
-        让区域框完全拖不动。
+        用户要求「区域框可以调整大小和位置，只在面板开着时允许」——范围面板正是
+        调推理区域的地方，此时画布常停在标注模式，光靠 `_is_paste_mode()` 会让
+        区域框完全拖不动。
+
+        第 11 轮去掉贴图区域面板后，两份区域的编辑入口不对称了：
+        - 标注模式 → 范围面板（`_scope_panel_open`）开着才允许，管推理区域
+        - 贴图模式 → 恒允许：贴图区域没有面板，画布右键就是它的编辑入口，
+          再要求「某个面板开着」就等于谁也改不了它
 
         只放行**未锁定**的区域：锁定的区域要「最底层、不可修改」，由
         `_region_at()` 跳过它，这里不必再判一次。
         """
+        if self._is_paste_mode():
+            return True
         return bool(getattr(self._editor, '_scope_panel_open', False))
 
     def _region_editable(self, index=None):
@@ -38,7 +45,7 @@ class CanvasDrawingMixin:
         """
         if not (self._is_paste_mode() or self._region_editing_allowed()):
             return False
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return False
         if index is not None and self.region_locked_at(index):
             return False
@@ -48,7 +55,7 @@ class CanvasDrawingMixin:
         """语义区域绘制：左键按下定起点，拖动预览，松开完成。"""
         if not self._can_edit_canvas():
             return True
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return True
         if (not self._editor.background_images or
             self._editor.current_background_index < 0):
@@ -95,9 +102,7 @@ class CanvasDrawingMixin:
             self._reset_region_drawing_state()
             return
 
-        if not isinstance(getattr(self._editor, 'region_boxes', None), list):
-            self._editor.region_boxes = []
-        self._editor.region_boxes.append({
+        self._active_regions().append({
             'shape_type': 'rectangle',
             'x': float(x), 'y': float(y),
             'width': float(width), 'height': float(height),
@@ -136,7 +141,7 @@ class CanvasDrawingMixin:
         """多边形区域：左键逐点添加顶点。"""
         if not self._can_edit_canvas():
             return True
-        if getattr(self._editor, 'region_fixed', False):
+        if self._active_region_fixed():
             return True
         if (not self._editor.background_images or
             self._editor.current_background_index < 0):
@@ -196,9 +201,7 @@ class CanvasDrawingMixin:
             self._reset_region_drawing_state()
             return
 
-        if not isinstance(getattr(self._editor, 'region_boxes', None), list):
-            self._editor.region_boxes = []
-        self._editor.region_boxes.append({
+        self._active_regions().append({
             'shape_type': 'polygon',
             'points': points,
             'x': float(x), 'y': float(y),
