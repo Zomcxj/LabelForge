@@ -90,6 +90,39 @@ def _auto_font_pixels(height):
     return max(MIN_FONT_PIXELS, min(MAX_FONT_PIXELS, value))
 
 
+# 字号滑块的量程。**0 表示自动**（按画面高度算），1..MAX 是手动像素值。
+# 上限取 MAX_FONT_PIXELS：自动档的天花板已经是 72，手动再往上放只会糊。
+FONT_SLIDER_MIN = 0
+FONT_SLIDER_MAX = MAX_FONT_PIXELS
+
+
+def font_slider_to_pixels(value):
+    """滑块位置 → `RenderSpec.font_pixels`；0（或越界）表示自动，返回 0。
+
+    单独一个函数是因为这个 0 很容易在下游被 `or` 当成假值丢掉：`int(x) or auto`
+    会把「用户明确选了自动」和「没传」合并——两者语义本来就一样，但
+    `font_pixels=0` 必须能原样穿过 `_compose_render_spec()`，不能在半路变成
+    `None` 再被当成两个不同的东西。
+    """
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    if number <= FONT_SLIDER_MIN:
+        return 0
+    return min(FONT_SLIDER_MAX, number)
+
+
+def font_pixels_to_slider(pixels):
+    """反向换算，供界面初始化滑块。"""
+    return font_slider_to_pixels(pixels)
+
+
+def resolve_font_pixels(spec, height):
+    """这份 spec 实际会用的字号（像素）。预览与成片必须走同一条路径。"""
+    return int(spec.font_pixels) or _auto_font_pixels(height)
+
+
 def _clamp_points(points):
     return [(max(-COORD_LIMIT, min(COORD_LIMIT, float(p[0]))),
              max(-COORD_LIMIT, min(COORD_LIMIT, float(p[1]))))
@@ -205,7 +238,7 @@ def draw_boxes(image_rgb, boxes, spec=None):
         return canvas.copy()
 
     pen_width = int(spec.pen_width) or _auto_pen_width(height)
-    font_pixels = int(spec.font_pixels) or _auto_font_pixels(height)
+    font_pixels = resolve_font_pixels(spec, height)
     font = QFont()
     font.setPixelSize(font_pixels)
 
@@ -263,3 +296,57 @@ def draw_boxes(image_rgb, boxes, spec=None):
         painter.end()
 
     return _read_back(qimage, width, height)
+
+
+def preview_size(width, height, max_side):
+    """预览图的显示尺寸：按最长边等比缩到 `max_side` 以内，不放大。
+
+    放大没有意义（原图就是这么多像素，放大了只是糊），所以只缩不放。
+    """
+    longest = max(int(width), int(height), 1)
+    limit = int(max_side) if max_side else longest
+    if limit <= 0 or longest <= limit:
+        return int(width), int(height)
+    ratio = limit / longest
+    return max(1, int(round(width * ratio))), max(1, int(round(height * ratio)))
+
+
+def render_preview(image_rgb, boxes, spec=None, max_side=0):
+    """给界面用的预览：在一张图上按要求叠加，返回 `(rgb, 实际字号)`。
+
+    与成片**共用 `draw_boxes()`**——预览和成片必须是同一条绘制路径，否则
+    预览调好的字号到成片里对不上，比没有预览更糟。
+
+    `max_side > 0` 时缩到该边长以内再绘制，让预览的字号与成片观感一致
+    （字号是绝对像素值，拿 4K 原图缩到 400px 显示会让字看着极小）。
+
+    返回实际用的字号，界面可以直接显示出来。
+    """
+    spec = spec or RenderSpec()
+    array = np.asarray(image_rgb)
+    if array.ndim != 3 or array.shape[2] != 3:
+        raise ValueError(f"只支持 HxWx3 的 RGB 图：{array.shape}")
+
+    height, width = array.shape[:2]
+    if max_side:
+        target_w, target_h = preview_size(width, height, max_side)
+        if (target_w, target_h) != (width, height):
+            array = _resize_rgb(array, target_w, target_h)
+            height, width = array.shape[:2]
+
+    drawn = draw_boxes(array, boxes, spec)
+    return drawn, resolve_font_pixels(spec, height)
+
+
+def _resize_rgb(array, width, height):
+    """最近邻缩放纯 numpy 实现，避免为了预览多依赖一层 cv2。
+
+    预览只是看字号大小，最近邻的锯齿不影响判断；用 cv2 反而让这个模块
+    在无 cv2 环境下不可导入（模块顶部刻意不导入 cv2）。
+    """
+    src_h, src_w = array.shape[:2]
+    ys = (np.arange(height) * (src_h / height)).astype(np.int64)
+    xs = (np.arange(width) * (src_w / width)).astype(np.int64)
+    ys = np.clip(ys, 0, src_h - 1)
+    xs = np.clip(xs, 0, src_w - 1)
+    return np.ascontiguousarray(array[ys][:, xs])

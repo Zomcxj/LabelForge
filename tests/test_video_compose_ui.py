@@ -475,6 +475,32 @@ def test_compose_render_spec_none_when_no_options():
     assert stub._compose_render_spec({}) is None
 
 
+def test_compose_spec_passes_font_pixels_through():
+    """字号必须从弹窗一路传到 RenderSpec，且 `0`（自动）不能被当成没填。
+
+    用户第 12 轮要求「视频合成支持调整类别名置信度的字号大小」：滑块最左边
+    是自动（0），往右是像素值。这条钉住两端——中间任何一层用 `or` 兜底，
+    都会把「自动」悄悄换成默认值。
+    """
+    from pastelabel.ui.mixins.video import VideoMixin
+
+    class Stub(VideoMixin):
+        def get_label_color(self, label):
+            return "#FF0000"
+
+    base = {"labels": ["person"], "show_labels": True, "show_scores": True}
+
+    auto = Stub()._compose_render_spec(dict(base, font_pixels=0))
+    assert auto.font_pixels == 0, "0 是「自动」，不能被换成别的值"
+
+    manual = Stub()._compose_render_spec(dict(base, font_pixels=36))
+    assert manual.font_pixels == 36
+
+    # 旧调用方不带这个键：按自动处理，不能崩
+    legacy = Stub()._compose_render_spec(dict(base))
+    assert legacy.font_pixels == 0
+
+
 def test_compose_render_spec_survives_editor_without_color_api():
     """editor 没有取色接口时也不能炸（假 editor / 精简场景）。"""
     from pastelabel.ui.mixins.video import VideoMixin

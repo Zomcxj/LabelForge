@@ -17,8 +17,8 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
     QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QProgressBar, QPushButton, QTabWidget, QVBoxLayout,
-    QWidget,
+    QListWidgetItem, QProgressBar, QPushButton, QSlider, QTabWidget,
+    QVBoxLayout, QWidget,
 )
 
 from .dialog_helpers import center_on_parent, sync_titlebar
@@ -42,17 +42,39 @@ class _OverlayGroup:
     """
 
     def __init__(self, overlay_check, label_list, all_btn, none_btn,
-                 show_label_check, show_score_check):
+                 show_label_check, show_score_check, font_slider=None,
+                 font_value_label=None, preview_toggle=None, preview_area=None,
+                 preview_image=None, preview_hint=None):
         self.overlay_check = overlay_check
         self.label_list = label_list
         self.all_btn = all_btn
         self.none_btn = none_btn
         self.show_label_check = show_label_check
         self.show_score_check = show_score_check
+        # 字号滑块与预览控件：推理成片页也建了一组，但只有合成页接线到预览
+        self.font_slider = font_slider
+        self.font_value_label = font_value_label
+        self.preview_toggle = preview_toggle
+        self.preview_area = preview_area
+        self.preview_image = preview_image
+        self.preview_hint = preview_hint
 
     def widgets(self):
         return (self.label_list, self.all_btn, self.none_btn,
                 self.show_label_check, self.show_score_check)
+
+    def font_pixels(self):
+        """当前滑块对应的 `font_pixels`；0 = 按画面高度自动。"""
+        if self.font_slider is None:
+            return 0
+        from ..engine.video_render import font_slider_to_pixels
+        return font_slider_to_pixels(self.font_slider.value())
+
+    def set_font_pixels(self, pixels):
+        if self.font_slider is None:
+            return
+        from ..engine.video_render import font_pixels_to_slider
+        self.font_slider.setValue(font_pixels_to_slider(pixels))
 
     def set_checked(self, checked):
         state = Qt.Checked if checked else Qt.Unchecked
@@ -90,6 +112,7 @@ class _OverlayGroup:
             "labels": self.selected(),
             "show_labels": self.show_label_check.isChecked(),
             "show_scores": self.show_score_check.isChecked(),
+            "font_pixels": self.font_pixels(),
         }
 
 
@@ -113,6 +136,8 @@ class VideoDialog(QDialog):
         self._compose_images = []          # 合成要用的图片（扫标注用）
         self._render_class_names = []      # 模型类别表（推理成片页列类别）
         self._render_model_name = ""
+        self._label_color_getter = None    # 预览取类别色用；主窗口灌入
+        self._preview_image_cache = {}     # 原图路径 → RGB，避免每次重读
         self._running = False              # 任务在跑：锁参数、亮进度条
         self.action = ACTION_EXTRACT
         self._build_ui()
@@ -517,8 +542,56 @@ class VideoDialog(QDialog):
         texts.addStretch()
         layout.addLayout(texts)
 
+        # ---- 字号滑块：0 = 自动（按画面高度），1..72 = 手动像素 ----
+        from ..engine.video_render import FONT_SLIDER_MAX, FONT_SLIDER_MIN
+        font_row = QHBoxLayout()
+        font_row.setSpacing(6)
+        font_row.addWidget(QLabel(tr("字号")))
+        font_slider = QSlider(Qt.Horizontal)
+        font_slider.setObjectName(f"{attr}FontSlider")
+        font_slider.setMinimum(FONT_SLIDER_MIN)
+        font_slider.setMaximum(FONT_SLIDER_MAX)
+        font_slider.setValue(FONT_SLIDER_MIN)      # 默认自动，与旧行为一致
+        font_slider.setToolTip(tr("最左边为自动（按画面高度），其余为像素大小"))
+        font_row.addWidget(font_slider, 1)
+        font_value_label = QLabel("")
+        font_value_label.setObjectName(f"{attr}FontValue")
+        font_value_label.setMinimumWidth(48)
+        font_row.addWidget(font_value_label)
+        layout.addLayout(font_row)
+
+        # ---- 预览：默认折叠，点一下才展开 ----
+        preview_toggle = QPushButton(tr("点击展开预览"))
+        preview_toggle.setObjectName(f"{attr}PreviewToggle")
+        preview_toggle.setCheckable(True)
+        preview_toggle.setFixedHeight(22)
+        layout.addWidget(preview_toggle)
+
+        preview_area = QWidget()
+        preview_layout = QVBoxLayout(preview_area)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(4)
+        preview_image = QLabel()
+        preview_image.setObjectName(f"{attr}PreviewImage")
+        preview_image.setAlignment(Qt.AlignCenter)
+        preview_image.setMinimumHeight(120)
+        preview_layout.addWidget(preview_image)
+        preview_hint = QLabel("")
+        preview_hint.setObjectName(f"{attr}PreviewHint")
+        preview_hint.setWordWrap(True)
+        preview_layout.addWidget(preview_hint)
+        preview_area.setVisible(False)             # 默认折叠
+        layout.addWidget(preview_area)
+        # `isVisible()`/`isHidden()` 在「还没真正显示出来」时不可靠（加进布局
+        # 会被 Qt 隐式 show，父窗口没显示时又是 False）。所以折叠状态自己记一份，
+        # 界面与测试都读它，不猜 Qt 的时序。
+        setattr(self, f"_{attr}_preview_expanded", False)
+
         group = _OverlayGroup(overlay_check, label_list, all_btn, none_btn,
-                              show_label_check, show_score_check)
+                              show_label_check, show_score_check,
+                              font_slider, font_value_label,
+                              preview_toggle, preview_area,
+                              preview_image, preview_hint)
         setattr(self, f"_{attr}_overlay", group)
         # 兼容既有属性名：合成页的控件与测试都按 compose_* 访问
         setattr(self, f"{attr}_overlay_check", overlay_check)
@@ -527,9 +600,57 @@ class VideoDialog(QDialog):
         setattr(self, f"{attr}_none_btn", none_btn)
         setattr(self, f"{attr}_show_label_check", show_label_check)
         setattr(self, f"{attr}_show_score_check", show_score_check)
+        setattr(self, f"{attr}_font_slider", font_slider)
+        setattr(self, f"{attr}_font_value_label", font_value_label)
+        setattr(self, f"{attr}_preview_toggle", preview_toggle)
+        setattr(self, f"{attr}_preview_area", preview_area)
+        setattr(self, f"{attr}_preview_image", preview_image)
+        setattr(self, f"{attr}_preview_hint", preview_hint)
         all_btn.clicked.connect(lambda: group.set_checked(True))
         none_btn.clicked.connect(lambda: group.set_checked(False))
+        font_slider.valueChanged.connect(
+            lambda _v, g=group, a=attr: self._on_font_changed(g, a))
+        preview_toggle.toggled.connect(
+            lambda checked, g=group, a=attr: self._on_preview_toggled(g, a, checked))
+        # 复选框改动也要刷新预览：类别名/置信度一开一关，画面上的字就变了
+        for check in (overlay_check, show_label_check, show_score_check):
+            check.stateChanged.connect(
+                lambda _s, g=group, a=attr, c=check: self._on_overlay_option_changed(g, a, c))
+        self._refresh_font_label(group)
         return box
+
+    def _refresh_font_label(self, group):
+        """把滑块值写成人看的文字：`自动 (N px)` 或 `N px`。"""
+        if group.font_slider is None or group.font_value_label is None:
+            return
+        pixels = group.font_pixels()
+        if pixels <= 0:
+            group.font_value_label.setText(tr("自动"))
+        else:
+            group.font_value_label.setText(f"{pixels} px")
+
+    def _on_font_changed(self, group, attr):
+        """滑块动了：刷新数值文字；预览展开着就重画。"""
+        self._refresh_font_label(group)
+        self._refresh_preview(group, attr)
+
+    def _on_preview_toggled(self, group, attr, checked):
+        """「点击展开预览」：展开时才真正生成预览图（不展开不干活）。"""
+        checked = bool(checked)
+        group.preview_toggle.setText(
+            tr("收起预览") if checked else tr("点击展开预览"))
+        setattr(self, f"_{attr}_preview_expanded", checked)
+        if checked:
+            self._refresh_preview(group, attr)
+        group.preview_area.setVisible(checked)
+
+    def _preview_expanded(self, attr):
+        """预览是否展开。以自己记的状态为准（见 `_build_overlay_group`）。"""
+        return bool(getattr(self, f"_{attr}_preview_expanded", False))
+
+    def _on_overlay_option_changed(self, group, attr, _check):
+        """类别名/置信度/主开关变了：预览要跟着变。"""
+        self._refresh_preview(group, attr)
 
     def _apply_style(self):
         t = ThemeManager.get_theme()
@@ -734,6 +855,8 @@ class VideoDialog(QDialog):
         self.compose_dir_edit.setText(path)
         self.compose_dir_edit.setToolTip(path)
         self.compose_hint_label.setText("")
+        # 换了目录：缓存和预览都要清，否则会拿上一个目录的图预览
+        self._preview_image_cache = {}
 
         manifest_path = os.path.join(path, video_io.MANIFEST_NAME)
         self._compose_manifest = None
@@ -783,6 +906,8 @@ class VideoDialog(QDialog):
         self._load_compose_labels()
         self.compose_out_edit.setText(self._compose_output_for(path))
         self._sync_compose_enabled()
+        # 目录换了，展开着的预览要重画（没展开时这个调用会立刻返回）
+        self._refresh_preview(self._compose_overlay, "compose")
 
     def _load_compose_labels(self):
         """扫 sidecar 列出可选类别；没有标注就禁用叠加，标注坏了只提示不拦合成。"""
@@ -799,6 +924,135 @@ class VideoDialog(QDialog):
     def _fill_compose_labels(self, labels):
         """重建合成页的类别列表；有标注时主开关默认打开（用户就是要看框）。"""
         self._compose_overlay.fill(labels)
+
+    def _preview_frame(self):
+        """预览用的第一张**有标注**的图：`(rgb, boxes)`，找不到返回 `(None, None)`。
+
+        用户选的「取第一张有标注的图」：没标注的图预览不出框，看不出字号效果。
+        标注损坏的图**跳过而不是报错**——预览是辅助功能，不能因为一张坏标注
+        就让整个弹窗报错；真合成时 `compose_video()` 会按原规则抛错。
+        """
+        from ..engine import video_io
+
+        for image_path in (self._compose_images or []):
+            try:
+                boxes, has_labels = video_io._read_sidecar_boxes_for_compose(image_path)
+            except Exception:
+                continue
+            if not has_labels:
+                continue
+            cached = self._preview_image_cache.get(image_path)
+            if cached is not None:
+                return cached, boxes
+            rgb = self._read_image_rgb(image_path)
+            if rgb is None:
+                continue
+            # 只留最近一张：预览图几 MB，缓存一张就够，多了白占内存
+            self._preview_image_cache = {image_path: rgb}
+            return rgb, boxes
+        return None, None
+
+    @staticmethod
+    def _read_image_rgb(image_path):
+        """读图成 RGB 数组；读不动返回 None（预览不能因为一张图读不了就崩）。
+
+        优先用 cv2（与合成链路同一套解码，颜色一致）；没有 cv2 时退回 Qt，
+        保证 `tests` 里那些不装 cv2 的环境也能跑。
+        """
+        try:
+            import cv2
+            frame = cv2.imread(image_path, cv2.IMREAD_COLOR)
+            if frame is not None:
+                return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        except Exception:
+            pass
+        from PyQt5.QtGui import QImage
+        image = QImage(image_path)
+        if image.isNull():
+            return None
+        image = image.convertToFormat(QImage.Format_RGB888)
+        width, height = image.width(), image.height()
+        raw = image.constBits()
+        raw.setsize(image.byteCount())
+        import numpy as np
+        rows = np.frombuffer(raw, np.uint8).reshape(height, image.bytesPerLine())
+        return rows[:, :width * 3].copy().reshape(height, width, 3)
+
+    def _refresh_preview(self, group, attr):
+        """按当前勾选与字号重画预览。折叠着、或推理成片页，就什么都不做。
+
+        判据用**开关按钮的勾选态**而不是 `preview_area.isVisible()`：
+        后者在弹窗还没真正显示出来时（offscreen、或构造阶段）恒为 False，
+        会把预览静默吞掉，正是那种「写了但点了没反应」的 bug。
+        """
+        if group.preview_area is None or group.preview_toggle is None:
+            return
+        if not self._preview_expanded(attr):
+            return
+        # 只有合成页接了这一条：推理成片页没有「图片目录」可取帧
+        if attr != "compose":
+            return
+
+        from ..engine.video_render import render_preview
+        if not self.compose_overlay_check.isChecked():
+            group.preview_image.clear()
+            group.preview_hint.setText(tr("打开「叠加标签框」才能预览"))
+            return
+
+        rgb, boxes = self._preview_frame()
+        if rgb is None:
+            group.preview_image.clear()
+            group.preview_hint.setText(tr("找不到有标注的图片，无法预览"))
+            return
+
+        options = self._compose_overlay.options() or {}
+        spec = self._preview_spec(group, options, boxes)
+        try:
+            drawn, font_pixels = render_preview(rgb, boxes, spec, max_side=360)
+        except Exception as exc:                   # 预览失败不能拖垮弹窗
+            group.preview_image.clear()
+            group.preview_hint.setText(f"{tr('预览失败')}：{exc}")
+            return
+
+        height, width = drawn.shape[:2]
+        from PyQt5.QtGui import QImage, QPixmap
+        # 必须 `.copy()`：QImage 若指向 numpy 的缓冲，drawn 一被回收就是悬空指针
+        image = QImage(drawn.data, width, height, width * 3,
+                       QImage.Format_RGB888).copy()
+        group.preview_image.setPixmap(QPixmap.fromImage(image))
+        shown = tr("自动") if group.font_pixels() <= 0 else f"{font_pixels} px"
+        group.preview_hint.setText(
+            f"{tr('预览')}（{width}×{height}）  {tr('字号')}：{shown}")
+
+    def _preview_spec(self, group, options, boxes):
+        """预览用的 `RenderSpec`：与 `_compose_render_spec()` 同口径。
+
+        这里刻意**不**复用主窗口那个方法：弹窗拿不到主窗口的
+        `get_label_color()`，而且预览只画一张图，颜色从类别列表直接取即可。
+        """
+        from ..engine.video_render import RenderSpec
+
+        labels = [str(name) for name in (options.get("labels") or [])]
+        return RenderSpec(
+            labels=set(labels),
+            show_labels=bool(options.get("show_labels")),
+            show_scores=bool(options.get("show_scores")),
+            label_colors=self._preview_label_colors(labels),
+            font_pixels=group.font_pixels(),
+        )
+
+    def _preview_label_colors(self, labels):
+        """预览的类别色：能用主子窗口的取色就拿，拿不到就留给引擎兜底。"""
+        colors = {}
+        getter = getattr(self, "_label_color_getter", None)
+        if not callable(getter):
+            return colors
+        for label in labels:
+            try:
+                colors[label] = getter(label)
+            except Exception:
+                continue
+        return colors
 
     def _check_all_labels(self, checked):
         self._compose_overlay.set_checked(checked)
@@ -865,6 +1119,14 @@ class VideoDialog(QDialog):
         return self._compose_overlay.options()
 
     # ---------- 推理成片页 ----------
+
+    def set_label_color_getter(self, getter):
+        """灌入主窗口的类别取色函数，让预览的框颜色和画布一致。
+
+        取色会写缓存与配置，**只能在主线程调用**；弹窗本来就在主线程里，
+        所以这里直接存下来给 `_refresh_preview()` 用。
+        """
+        self._label_color_getter = getter if callable(getter) else None
 
     def set_detector_info(self, class_names=None, model_name=""):
         """告诉弹窗当前加载的模型与类别表（推理成片页据此列类别）。

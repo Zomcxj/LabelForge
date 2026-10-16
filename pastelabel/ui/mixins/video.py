@@ -34,6 +34,10 @@ class VideoMixin:
         dialog.set_detector_info(self._all_class_names(),
                                  getattr(getattr(self, '_detector', None),
                                          'model_path', ''))
+        # 预览的类别色跟画布一致（取色会写缓存/配置，必须主线程——这里就是）
+        getter = getattr(self, "get_label_color", None)
+        if callable(getter):
+            dialog.set_label_color_getter(getter)
         dialog.start_requested.connect(self._on_video_start_requested)
         dialog.cancel_requested.connect(self._cancel_video_task)
         self._video_dialog = dialog
@@ -194,6 +198,9 @@ class VideoMixin:
             show_labels=bool(options.get("show_labels")),
             show_scores=bool(options.get("show_scores")),
             label_colors=colors,
+            # 0 表示按画面高度自动。**不能用 `or` 兜底**：滑块最左边就是 0，
+            # 那正是「自动」，被 `or` 换成默认值虽然结果一样，但语义丢了。
+            font_pixels=int(options.get("font_pixels") or 0),
         )
 
     def _start_video_compose(self, settings):

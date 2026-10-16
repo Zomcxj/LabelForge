@@ -225,6 +225,16 @@ _strings = {
         "逐帧推理：每一帧都推理并画框，速度比抽帧慢；框会烧进画面，之后不能再改。":
             "逐帧推理：每一帧都推理并画框，速度比抽帧慢；框会烧进画面，之后不能再改。",
         "类别名": "类别名",
+        "字号": "字号",
+        "点击展开预览": "点击展开预览",
+        "收起预览": "收起预览",
+        "自动": "自动",
+        "预览": "预览",
+        "预览失败": "预览失败",
+        "打开「叠加标签框」才能预览": "打开「叠加标签框」才能预览",
+        "找不到有标注的图片，无法预览": "找不到有标注的图片，无法预览",
+        "最左边为自动（按画面高度），其余为像素大小":
+            "最左边为自动（按画面高度），其余为像素大小",
         "没有标注文件，不能叠加标签框": "没有标注文件，不能叠加标签框",
         "标注读不出来": "标注读不出来",
         "张图片没有标注，已按原画面写入": "张图片没有标注，已按原画面写入",
@@ -971,6 +981,17 @@ _strings = {
             "than extracting frames. Boxes are burned into the pixels and cannot "
             "be edited afterwards.",
         "类别名": "Label names",
+        "字号": "Font size",
+        "点击展开预览": "Click to expand the preview",
+        "收起预览": "Collapse the preview",
+        "自动": "Auto",
+        "预览": "Preview",
+        "预览失败": "Preview failed",
+        "打开「叠加标签框」才能预览": "Turn on \u201cOverlay label boxes\u201d to see a preview",
+        "找不到有标注的图片，无法预览":
+            "No annotated image found, cannot preview",
+        "最左边为自动（按画面高度），其余为像素大小":
+            "Leftmost is Auto (scaled to the frame height); the rest are pixel sizes",
         "没有标注文件，不能叠加标签框": "No annotation files found, cannot overlay boxes",
         "标注读不出来": "Cannot read annotation",
         "张图片没有标注，已按原画面写入": " image(s) had no annotation and were written as-is",
