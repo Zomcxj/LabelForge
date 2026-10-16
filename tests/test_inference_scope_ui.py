@@ -4862,6 +4862,131 @@ for name, *flags in cases:
             f"区域贴{name}边滚轮没做到单边调整：{lines}")
 
 
+def test_real_region_wheel_accepts_the_mouse_outside_the_edge():
+    """区域滚轮贴边命中**含外侧**，与检测框同一手感（用户第 11 轮）。
+
+    用户报「鼠标放在一侧滚动滚轮会调整一边，区域都没有」——检测框那边
+    `_get_selected_box_edge()` 在框**外**多远都认正对着的那条边（实测偏移
+    60px 仍返回 'right'），区域却只认「正好压在边线上」的 8px 带。于是同样是
+    「贴着右边滚」，框的宽在变、区域纹丝不动。
+
+    这条钉住：边线上、外侧 20、外侧 60 三处都能单边调整。
+    """
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+from PyQt5.QtGui import QWheelEvent
+from PyQt5.QtCore import QPoint
+
+def wheel(x, y):
+    canvas.mouse_pos = QPointF(x, y)
+    canvas.wheelEvent(QWheelEvent(QPointF(x, y), QPointF(x, y),
+                                  QPoint(0, 0), QPoint(0, 120),
+                                  Qt.NoButton, Qt.NoModifier,
+                                  Qt.NoScrollPhase, False))
+
+def bbox():
+    r = w.region_boxes[0]
+    return (round(r['x']), round(r['y']), round(r['width']), round(r['height']))
+
+def fresh():
+    w.region_boxes = [{'shape_type': 'rectangle', 'x': 300, 'y': 300,
+                       'width': 200, 'height': 200}]
+    canvas.selected_region = None
+
+r = w.region_boxes[0]
+right = r['x'] + r['width']
+
+for off in (0, 20, 60):
+    fresh()
+    ex, ey = C(right + off, r['y'] + r['height'] / 2)
+    b = bbox(); wheel(ex, ey); a = bbox()
+    # 只有宽度变、其余三项不动
+    print('外侧', off, a[2] > b[2], a[0] == b[0], a[1] == b[1], a[3] == b[3])
+""")
+    lines = _lines(out)
+    for off in (0, 20, 60):
+        line = next((x for x in lines if x.startswith(f"外侧 {off} ")), None)
+        assert line is not None, f"没有外侧 {off} 的输出：{lines}"
+        assert line.endswith("True True True True"), (
+            f"右边外侧 {off}px 滚轮没做到单边调整：{line}")
+
+
+def test_real_region_handles_show_a_white_square_on_hover():
+    """区域手柄悬停时必须变成**白色正方形**，与检测框完全一致（用户第 11 轮）。
+
+    用户：「检测框选中句柄会变成正方形……区域都没有」。检测框
+    `_draw_box_handles()` 里悬停那一支画的是 `drawRect`（实心白方 + 边框），
+    另一个画白底圆 + 彩色实心圆。区域过去**只有后者、没有悬停态**。
+
+    这条从两条正交的角度采样区分两种形状：
+    - 正方形：水平与对角线方向都白到半径外
+    - 圆    ：对角线方向比水平方向更早退出（勾股）
+    """
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+from PyQt5.QtGui import QWheelEvent, QPainter
+from PyQt5.QtCore import QPoint, QSize
+
+r = w.region_boxes[0]
+canvas.selected_region = 0
+br = canvas.get_background_rect()
+s = canvas.background_scale
+cx = br.left() + (r['x'] + r['width']) * s
+cy = br.top() + (r['y'] + r['height']) * s
+
+
+def render(handle):
+    canvas.hover_region_index = 0
+    canvas.hover_region_handle = handle
+    img = QImage(canvas.size(), QImage.Format_RGB888)
+    img.fill(QColor(0, 0, 0))
+    p = QPainter(img)
+    canvas._draw_region_handles(
+        p, br.left() + r['x'] * s, br.top() + r['y'] * s,
+        r['width'] * s, r['height'] * s, QColor('#FF3B30'))
+    p.end()
+    return img
+
+
+def white(img, x, y):
+    c = img.pixelColor(int(x), int(y))
+    return c.red() > 200 and c.green() > 200 and c.blue() > 200
+
+
+norm = render(None)
+hov = render('br')
+# 采样半径 2：在**填充区**内。半径 3 会落到边长 2px 的描边圈上（那是区域色
+# 而不是白），所以两种态都以 2 为准。
+# 正方形：水平与对角线方向都白到同样远；圆：对角线方向先退出（勾股）。
+print('常态 水平', white(norm, cx + 2, cy))
+print('常态 对角', white(norm, cx + 2, cy + 2))
+print('悬停 水平', white(hov, cx + 2, cy))
+print('悬停 对角', white(hov, cx + 2, cy + 2))
+print('悬停 更远对角', white(hov, cx + 3, cy + 3))
+
+# 渲染之外还要确认**悬停态真的被 hover 逻辑记下来**：只靠手动塞
+# `hover_region_handle` 的话，`_check_region_hover()` 整段删掉测试也照样过。
+canvas.selected_region = None
+canvas.hover_region_index = None
+canvas.hover_region_handle = None
+canvas.mouse_pos = QPointF(cx, cy)          # 正压在右下角手柄上
+canvas._check_region_hover()
+print('hover 记录', canvas.hover_region_handle, canvas.hover_region_index)
+""")
+    lines = _lines(out)
+    # 悬停：正方形是实心白，水平与对角线一样远
+    assert lines[2].endswith("True"), (
+        f"悬停手柄水平方向应为白色: {lines[2]}")
+    assert lines[3].endswith("True"), (
+        f"悬停手柄在对角线方向应为白色（正方形四角）: {lines[3]}")
+    # 常态：白色只是圆外那半圈月牙，正方形填充位置上是区域色
+    assert lines[0].endswith("False") and lines[1].endswith("False"), (
+        f"常态手柄不该在填充区全白（那是悬停正方形）: {lines[:2]}")
+    # 悬停在右下角 → 必须记成 ('br', 0)，渲染端才有东西可画
+    hover_line = next((x for x in lines if x.startswith("hover 记录")), None)
+    assert hover_line is not None, f"没有 hover 记录的输出：{lines}"
+    assert hover_line.endswith("br 0"), (
+        f"悬停在右下角应记为 br/0，实际：{hover_line}")
+
+
 def test_real_region_wheel_in_the_middle_scales_both_axes():
     """② 的边界：鼠标在区域**中间**时仍是整体等比缩放（不误判成单边）。"""
     out = _run_real_qt(_REGION_RESIZE_HOST + """
@@ -4887,11 +5012,15 @@ print('中间滚轮宽高都变大', a[0] > b[0] and a[1] > b[1])
         f"区域中间滚轮没有整体缩放：{lines[0]}")
 
 
-def test_real_region_border_draws_corner_handles_only():
-    """② 区域选中时**只画四角**手柄，不再画四条边的中点。
+def test_real_region_border_draws_all_eight_handles():
+    """② 区域选中时画 **8 个**手柄（4 角 + 4 边中点），与检测框完全一致。
 
-    用户原话「区域编辑怎么边上还有点」——那是四边中点手柄。它们现在不画了，
-    但**命中仍在**（边上拖动照样单边调整，见下一条）。
+    第 9 轮用户说过「区域编辑怎么边上还有点」，于是只画了四角。第 11 轮口径
+    改成「推理范围内的区域编辑要和检测框的编辑一致」，而检测框
+    `_draw_box_handles()` 一直是 8 个——两轮指令冲突，以后者为准。
+
+    边中点也一起画，顺带解决「看得见的才敢抓」：`_region_handle_at()` 一直认
+    八处，只画四角会让人以为边上不能拖。
     """
     out = _run_real_qt(_REGION_RESIZE_HOST + """
 from PyQt5.QtGui import QImage, QPainter
@@ -4931,16 +5060,20 @@ print('四角坐标仍在', '(x, y + h)' in src or '(x + w, y + h)' in src)
 """)
     lines = _lines(out)
     assert lines[1].endswith("True"), f"没走到手柄绘制：{lines}"
-    assert lines[2].endswith("False"), (
-        f"区域手柄仍在画四边中点：{lines[2]}")
+    # 第 11 轮改口径：用户要求「区域编辑要和检测框完全一致」，而检测框
+    # `_draw_box_handles()` 画的是 8 个手柄（4 角 + 4 边中点）。第 9 轮
+    # 「边上不要有点」被本轮指令覆盖，所以这里反过来钉「边中点必须画」。
+    assert lines[2].endswith("True"), (
+        f"区域手柄没画四边中点，与检测框不一致：{lines[2]}")
     assert lines[3].endswith("True"), (
         f"四角手柄被误删：{lines[3]}")
 
 
-def test_real_region_edge_drag_still_resizes_without_a_drawn_handle():
-    """② 的边界：边上不画点，但**鼠标在边上拖动**仍能单边调整。
+def test_real_region_edge_drag_still_resizes_with_a_drawn_handle():
+    """② 的边界：边中点画了句柄之后，**鼠标在边上拖动**仍能单边调整。
 
-    「不画」只该影响视觉，不该把命中一起砍掉——否则用户就没有单边调整了。
+    与上一条配套：手柄画出来是给眼睛看的，拖动靠的还是 `_region_handle_at()`
+    的命中判定，两处必须一致（「看到的点」=「抓得到的点」）。
     """
     out = _run_real_qt(_REGION_RESIZE_HOST + """
 r = w.region_boxes[0]

@@ -352,21 +352,62 @@ class CanvasRendererMixin:
                 painter.drawEllipse(p, radius, radius)
 
     def _draw_region_handles(self, painter, x, y, w, h, color):
-        """区域缩放手柄：**只画四角**。
+        """区域缩放手柄：**四角 + 四边中点**，与检测框完全同一套画法。
 
-        四边中点过去也画（与检测框一致），用户明确「区域边上还有点」是多余的，
-        已去掉。但四边中点**仍然可抓**——`_region_handle_at()` 的命中判定没动，
-        所以「鼠标移到边上拖动 = 单边调整」这条照旧；只是不再画那四个方块。
-        滚轮贴边调整见 `_adjust_hovered_region_edge()`。
+        用户第 11 轮：「推理范围内的区域编辑要和检测框的编辑一致，检测框选中
+        句柄会变成正方形」——所以这里不再自己画一套白圆圈，改成与
+        `_draw_box_handles()` 一模一样的两态：
+
+        - **悬停**：白色正方形（`hover_region_handle` 命中的那一个）
+        - **常态**：白色底圆减去区域内部，再叠一个区域色的实心圆
+
+        四边中点也一起画回来：检测框八个手柄全画，区域只画四角会让人以为
+        「边上不能拖」，而 `_region_handle_at()` 一直是认八处的——画出来的
+        才是真能抓的（用户要求「和检测框一致」）。
 
         半径用 `_region_handle_draw_size()`：与命中判定同一套随缩放放大的
         口径，保证「看到的圆」就是「抓得到的圆」。
         """
-        radius = self._region_handle_draw_size() / 2
-        painter.setPen(QPen(color, 1))
-        painter.setBrush(QColor(255, 255, 255))
-        for cx, cy in ((x, y), (x + w, y), (x, y + h), (x + w, y + h)):
-            painter.drawEllipse(QPointF(cx, cy), radius, radius)
+        from PyQt5.QtGui import QPainterPath
+        size = self._region_handle_draw_size()
+        radius = size / 2
+        hovered = getattr(self, 'hover_region_handle', None)
+        hovered_index = getattr(self, 'hover_region_index', None)
+        is_hover_region = (hovered_index is not None
+                           and hovered_index == getattr(self, 'selected_region', None))
+
+        corners = (
+            ('tl', QPointF(x, y)),
+            ('tr', QPointF(x + w, y)),
+            ('bl', QPointF(x, y + h)),
+            ('br', QPointF(x + w, y + h)),
+            ('t', QPointF(x + w / 2, y)),
+            ('b', QPointF(x + w / 2, y + h)),
+            ('l', QPointF(x, y + h / 2)),
+            ('r', QPointF(x + w, y + h / 2)),
+        )
+
+        painter.save()
+        for name, pos in corners:
+            if hovered and hovered == name and is_hover_region:
+                painter.setPen(QPen(color, 2))
+                painter.setBrush(QColor(255, 255, 255))
+                painter.drawRect(QRectF(pos.x() - radius, pos.y() - radius,
+                                        size, size))
+            else:
+                # 1. 白色底层——减去区域内部，只留区域外那半圈
+                circle = QPainterPath()
+                circle.addEllipse(pos, radius * 1.3, radius * 1.3)
+                region_path = QPainterPath()
+                region_path.addRect(QRectF(x, y, w, h))
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(255, 255, 255))
+                painter.drawPath(circle.subtracted(region_path))
+                # 2. 常态覆盖（区域色实心圆）
+                painter.setPen(QPen(color, 1))
+                painter.setBrush(color)
+                painter.drawEllipse(pos, radius, radius)
+        painter.restore()
 
     def _region_handle_draw_size(self):
         """手柄的绘制边长，与 `_region_handle_hit_size()` 同口径。"""

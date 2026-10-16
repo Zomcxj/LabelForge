@@ -989,7 +989,14 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 and not getattr(self, 'is_drawing_polygon', False)
                 and not getattr(self, 'is_drawing_region', False)
                 and self.find_item_at_position(self.mouse_pos) is None):
+            prev_region_handle = getattr(self, 'hover_region_handle', None)
             self._check_region_hover()
+            # 区域的悬停手柄变了要重画，否则「白圆圈」不会变成「白正方形」
+            if getattr(self, 'hover_region_handle', None) != prev_region_handle:
+                self.update()
+        elif getattr(self, 'hover_region_handle', None) is not None:
+            self.hover_region_handle = None
+            self.update()
 
         if (self.hover_resize_target is None
                 and not self.is_drawing_box
@@ -1003,9 +1010,23 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             self.update()
 
     def _check_region_hover(self):
-        """贴图模式下区域悬停光标提示（固定时跳过）。"""
-        if not self._is_paste_mode() or self._active_region_fixed():
+        """区域悬停：记下**悬停在哪条手柄上**，并把光标切成对应形状。
+
+        用户要求「推理范围内的区域编辑要和检测框的编辑一致」——检测框把悬停的
+        那个角画成**白色正方形**（`_draw_box_handles()` 里的 `is_hovered` 分支），
+        区域过去只有白圆圈、没有悬停态，看起来「没有这个功能」。这里把检测框
+        那套状态搬过来：`hover_region_handle` 存手柄名，渲染端据此画正方形。
+
+        返回值沿用旧语义：**是否落在某个区域上**（供调用方决定后续分流）。
+        """
+        self.hover_region_handle = None
+        if self._active_region_fixed():
             return False
+        # 悬停态只在**当前模式可编辑**时给，与点击/滚轮同一把尺子；
+        # 面板没开时不该画出「可以拖」的假象。
+        if not self._region_editable():
+            return False
+        # 顶点命中（多边形）优先：与检测框的多边形分支一致，给十字光标
         if self._region_vertex_at(self.mouse_pos) is not None:
             self.setCursor(Qt.PointingHandCursor)
             return True
@@ -1021,7 +1042,10 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             return True
         handle = self._region_handle_at(self.mouse_pos, index)
         if handle:
-            self.setCursor(Qt.PointingHandCursor)
+            # 与检测框一致：悬停在手柄上才画正方形 + 十字光标
+            self.hover_region_handle = handle
+            self.hover_region_index = index
+            self.setCursor(Qt.CrossCursor)
         else:
             self.setCursor(Qt.OpenHandCursor)
         return True
@@ -1438,7 +1462,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             return None
         mx = (self.mouse_pos.x() - background_rect.left()) / self.background_scale
         my = (self.mouse_pos.y() - background_rect.top()) / self.background_scale
-        tol = self._region_handle_hit_size() / max(self.background_scale, 1e-6)
+        tol = self._region_wheel_edge_tolerance()
 
         # 倒序：与 `_region_at()` 一致，重叠时取最上面那条
         for i in range(len(regions) - 1, -1, -1):
@@ -1454,20 +1478,52 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             else:
                 left, top = r.get('x', 0), r.get('y', 0)
                 right, bottom = left + r.get('width', 0), top + r.get('height', 0)
+            # 与检测框同一判据：**外侧不设距离上限**——鼠标贴在右边多远都算
+            # 「在管右边这一条」（检测框实测偏移 60px 仍返回 'right'）；另一轴
+            # 只要求落在该边覆盖范围内（用 tol 放宽一点，边缘上仍算）。
             if (min(abs(mx - left), abs(mx - right)) <= tol
                     and top - tol <= my <= bottom + tol):
                 return i
             if (min(abs(my - top), abs(my - bottom)) <= tol
                     and left - tol <= mx <= right + tol):
                 return i
+            # 外侧正对某条边：横向/纵向**任意远**都接管（与 `_wheel_region`
+            # 的判定配套，否则这里先返回 None，那边根本没机会判）。
+            if mx < left and top - tol <= my <= bottom + tol:
+                return i
+            if mx > right and top - tol <= my <= bottom + tol:
+                return i
+            if my < top and left - tol <= mx <= right + tol:
+                return i
+            if my > bottom and left - tol <= mx <= right + tol:
+                return i
         return None
+
+    def _region_wheel_edge_tolerance(self):
+        """滚轮判「贴边」的容差（图内坐标），与检测框同一把尺子。
+
+        检测框那边（`_get_selected_box_edge()`）的命中规则是：
+
+        - 鼠标在框**外**、且落在另一轴的范围里 → 直接认正对着的那条边；
+          **外侧多远都算**（实测偏移 60px 仍返回 'right'）。
+        - 四条都不满足 → 取距离最近的一条。
+
+        区域这边原先只有 `_region_handle_hit_size()`（屏上 8px 换算回图内，
+        scale=1.28 时图内仅 6.25px），于是鼠标压在外侧 8px 就没反应——用户报的
+        「鼠标放在一侧滚动滚轮会调整一边，区域都没有」正是这个。
+
+        现在**外侧不设限**（与检测框一致），只在「鼠标落在区域内部」时才用
+        这个容差去决定「算贴边还是算中间」，避免把整个内部都当边缘。
+        """
+        base = self._region_handle_hit_size()          # 屏上像素，已夹在 8..24
+        return base / max(self.background_scale, 1e-6)
 
     def _wheel_region(self, event):
         """区域滚轮：贴边 → 单边调整；在中间 → 整体缩放。
 
-        判据是「鼠标到最近那条边的距离」小于阈值。阈值用与手柄同一套随缩放
-        放大的口径（`_region_handle_hit_size()`），图缩小后仍能贴到边；否则
-        屏上只有几十像素宽的区域按图内坐标算距离会永远「不够近」。
+        判据是「鼠标是否落在某条边的容差带里」——**含区域外侧**，与检测框
+        「鼠标放在一侧滚轮可以调整对应边」的手感对齐（用户要求）。
+        容差随缩放换算，见 `_region_wheel_edge_tolerance()`。
         """
         index = self._wheel_target_region()
         if index is None:
@@ -1484,13 +1540,26 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         my = (self.mouse_pos.y() - background_rect.top()) / self.background_scale
         left, top = r['x'], r['y']
         right, bottom = left + r['width'], top + r['height']
-        # 屏上容差换算回图内坐标：`_region_handle_hit_size()` 是屏上像素
-        tol = self._region_handle_hit_size() / max(self.background_scale, 1e-6)
-        near_edge = min(abs(mx - left), abs(mx - right),
-                        abs(my - top), abs(my - bottom)) <= tol
+        tol = self._region_wheel_edge_tolerance()
 
-        if near_edge:
+        # 与检测框 `_get_selected_box_edge()` **同一套判据**（用户要求「复用检测
+        # 框的」）：先在**外侧**找正对着的那条边——外侧不设距离上限，鼠标贴在
+        # 右边多远都算右边；再退回「内部且贴边」的容差带；都不满足才是整体缩放。
+        edge = None
+        if mx < left and top - tol <= my <= bottom + tol:
+            edge = 'left'
+        elif mx > right and top - tol <= my <= bottom + tol:
+            edge = 'right'
+        elif my < top and left - tol <= mx <= right + tol:
+            edge = 'top'
+        elif my > bottom and left - tol <= mx <= right + tol:
+            edge = 'bottom'
+        elif min(abs(mx - left), abs(mx - right),
+                 abs(my - top), abs(my - bottom)) <= tol:
+            # 区域**内部**贴近某条边：也算单边调整（用户：滚轮贴边调整）
             edge = self._region_edge_at(self.mouse_pos, index)
+
+        if edge is not None:
             self._adjust_hovered_region_edge(event, index, edge)
         else:
             self._scale_hovered_region(event, index)

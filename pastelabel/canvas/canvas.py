@@ -27,6 +27,11 @@ class Canvas(CanvasRendererMixin, CanvasInteractionMixin, QWidget):
         self.resize_start = QPoint()
         self.hover_resize_target = None
         self.hover_resize_handle = None
+        # 区域悬停态：与检测框的 `hover_resize_target/handle` 对应。
+        # `hover_region_index` 是悬停那条区域的序号，`hover_region_handle` 是
+        # 手柄名（tl/tr/bl/br/t/b/l/r）。渲染端据此把该手柄画成白色正方形。
+        self.hover_region_index = None
+        self.hover_region_handle = None
 
         # 背景图缩放和偏移
         self.background_scale = BACKGROUND_SCALE_CONFIG['default_scale']
