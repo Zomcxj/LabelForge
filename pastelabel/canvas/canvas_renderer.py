@@ -307,7 +307,7 @@ class CanvasRendererMixin:
             if locked_only is not None and bool(region.get('locked')) != bool(locked_only):
                 continue
             is_selected = (i == self.selected_region and not fixed)
-            pen = QPen(color, REGION_CONFIG['border_width'] * (2 if is_selected else 1))
+            pen = self._get_region_border_pen(color, is_selected)
             pen.setStyle(Qt.DashLine)
             pen.setDashPattern(REGION_CONFIG['dash_pattern'])
             painter.setPen(pen)
@@ -436,6 +436,20 @@ class CanvasRendererMixin:
         pen_width = w * 1.5 if is_selected else w
         pen_width = max(1, min(4, pen_width))
         return QPen(border_color, pen_width)
+
+    def _get_region_border_pen(self, color, is_selected):
+        """区域边框笔：**复用检测框那把尺子，整体 +1**。
+
+        用户要求「区域画图的框句柄大小和边框粗细只比检测框参数 +1」，所以
+        这里不自己定粗细，而是拿 `BOX_BORDER_CONFIG['width']` 加 1，再套上
+        与 `_get_box_border_pen()` **同一套**「选中 ×1.5、夹在 1..4」的规则。
+        两边算法一致，以后检测框改粗细，区域自动跟着走。
+        """
+        from ..core.config import BOX_BORDER_CONFIG
+        base = max(1, min(4, float(BOX_BORDER_CONFIG['width']))) + 1
+        pen_width = base * 1.5 if is_selected else base
+        pen_width = max(1, min(4, pen_width))
+        return QPen(color, pen_width)
 
     def _draw_single_paste_item(self, painter, pixmap, item_rect, label, is_selected, is_pressed_label, item_index=0):
         """绘制单个贴图"""
@@ -885,7 +899,9 @@ class CanvasRendererMixin:
             return
         from ..core.config import REGION_CONFIG
         color = QColor(REGION_CONFIG['border_color'])
-        pen = QPen(color, REGION_CONFIG['border_width'], Qt.DashLine)
+        # 绘制中的预览不是「选中」态，走与区域边框同一把尺子（检测框 +1）
+        pen = self._get_region_border_pen(color, False)
+        pen.setStyle(Qt.DashLine)
         pen.setDashPattern(REGION_CONFIG['dash_pattern'])
         painter.setPen(pen)
         painter.drawRect(self.temp_draw_box)
@@ -898,7 +914,9 @@ class CanvasRendererMixin:
         from ..core.config import REGION_CONFIG
         color = QColor(REGION_CONFIG['border_color'])
         pts = self._image_to_canvas_points(self.temp_region_points, background_rect)
-        painter.setPen(QPen(color, REGION_CONFIG['border_width'], Qt.DashLine))
+        pen = self._get_region_border_pen(color, False)
+        pen.setStyle(Qt.DashLine)
+        painter.setPen(pen)
         path = QPainterPath()
         path.moveTo(pts[0])
         for p in pts[1:]:

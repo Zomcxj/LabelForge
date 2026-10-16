@@ -48,9 +48,9 @@ DETECTION_BOX_CONFIG = {
 REGION_CONFIG = {
     'min_size': 10,            # 区域最小边长（图像像素）
     'border_color': '#00D4FF',  # 区域边框颜色（青色）
-    'border_width': 2,         # 边框宽度
+    'border_width': 2,         # 边框宽度 = 检测框 (BOX_BORDER_CONFIG['width']=1) + 1
     'dash_pattern': (6, 4),    # 虚线样式
-    'handle_size': 8,          # 缩放手柄大小
+    'handle_size': 9,          # 缩放手柄大小 = 检测框 (resize_handle_size=8) + 1
     'fill_alpha': 30,          # 选中时填充透明度
     'polygon_max_points': 64,  # 多边形区域最大顶点数
     'polygon_max_retries': 200,  # 多边形区域内采样贴图中心的最大重试次数

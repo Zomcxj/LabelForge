@@ -96,31 +96,33 @@ FONT_SLIDER_MIN = 0
 FONT_SLIDER_MAX = MAX_FONT_PIXELS
 
 
-def font_slider_to_pixels(value):
-    """滑块位置 → `RenderSpec.font_pixels`；0（或越界）表示自动，返回 0。
+def label_font_pixels(height):
+    """视频里的字号：**跟设置里的「类别名字号」走**，与画布观感对齐。
 
-    单独一个函数是因为这个 0 很容易在下游被 `or` 当成假值丢掉：`int(x) or auto`
-    会把「用户明确选了自动」和「没传」合并——两者语义本来就一样，但
-    `font_pixels=0` 必须能原样穿过 `_compose_render_spec()`，不能在半路变成
-    `None` 再被当成两个不同的东西。
+    设置窗口给的是 5..15 的抽象字号（`DETECTION_BOX_CONFIG['label_font_size']`，
+    默认 9）。画布那边把它当**点**用（`QFont.setPointSize`），视频这边为了
+    分辨率无关用的是像素（`setPixelSize`），所以不能把这个数直接搬过来——
+    1080p 上「9 px」小得看不见。
+
+    换算口径：1 点 ≈ 1.333 像素（96 DPI / 72）。于是设置 9 → 12 px，正好等于
+    原来的自动值（1080p 高度 /40 = 27；这里按点换算更保守，避免字幕过粗）。
+    再乘上「画面高度 / 1080」让 480p 和 4K 的观感一致，最后夹进引擎的上下限。
     """
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        return 0
-    if number <= FONT_SLIDER_MIN:
-        return 0
-    return min(FONT_SLIDER_MAX, number)
+    from ..core.config import DETECTION_BOX_CONFIG
 
-
-def font_pixels_to_slider(pixels):
-    """反向换算，供界面初始化滑块。"""
-    return font_slider_to_pixels(pixels)
+    points = max(5, min(15, DETECTION_BOX_CONFIG.get('label_font_size', 9)))
+    pixels = points * 4 / 3                      # 点 → 像素
+    scaled = pixels * (max(1, int(height)) / 1080.0)
+    return int(max(MIN_FONT_PIXELS, min(MAX_FONT_PIXELS, round(scaled))))
 
 
 def resolve_font_pixels(spec, height):
-    """这份 spec 实际会用的字号（像素）。预览与成片必须走同一条路径。"""
-    return int(spec.font_pixels) or _auto_font_pixels(height)
+    """这份 spec 实际会用的字号（像素）。
+
+    `spec.font_pixels` 非 0 时用它（留给调用方显式指定）；为 0 时跟设置里的
+    「类别名字号」走，见 `label_font_pixels()`。成片与预览共用这一条路径。
+    """
+    return int(spec.font_pixels) or label_font_pixels(height)
 
 
 def _clamp_points(points):
@@ -296,57 +298,3 @@ def draw_boxes(image_rgb, boxes, spec=None):
         painter.end()
 
     return _read_back(qimage, width, height)
-
-
-def preview_size(width, height, max_side):
-    """预览图的显示尺寸：按最长边等比缩到 `max_side` 以内，不放大。
-
-    放大没有意义（原图就是这么多像素，放大了只是糊），所以只缩不放。
-    """
-    longest = max(int(width), int(height), 1)
-    limit = int(max_side) if max_side else longest
-    if limit <= 0 or longest <= limit:
-        return int(width), int(height)
-    ratio = limit / longest
-    return max(1, int(round(width * ratio))), max(1, int(round(height * ratio)))
-
-
-def render_preview(image_rgb, boxes, spec=None, max_side=0):
-    """给界面用的预览：在一张图上按要求叠加，返回 `(rgb, 实际字号)`。
-
-    与成片**共用 `draw_boxes()`**——预览和成片必须是同一条绘制路径，否则
-    预览调好的字号到成片里对不上，比没有预览更糟。
-
-    `max_side > 0` 时缩到该边长以内再绘制，让预览的字号与成片观感一致
-    （字号是绝对像素值，拿 4K 原图缩到 400px 显示会让字看着极小）。
-
-    返回实际用的字号，界面可以直接显示出来。
-    """
-    spec = spec or RenderSpec()
-    array = np.asarray(image_rgb)
-    if array.ndim != 3 or array.shape[2] != 3:
-        raise ValueError(f"只支持 HxWx3 的 RGB 图：{array.shape}")
-
-    height, width = array.shape[:2]
-    if max_side:
-        target_w, target_h = preview_size(width, height, max_side)
-        if (target_w, target_h) != (width, height):
-            array = _resize_rgb(array, target_w, target_h)
-            height, width = array.shape[:2]
-
-    drawn = draw_boxes(array, boxes, spec)
-    return drawn, resolve_font_pixels(spec, height)
-
-
-def _resize_rgb(array, width, height):
-    """最近邻缩放纯 numpy 实现，避免为了预览多依赖一层 cv2。
-
-    预览只是看字号大小，最近邻的锯齿不影响判断；用 cv2 反而让这个模块
-    在无 cv2 环境下不可导入（模块顶部刻意不导入 cv2）。
-    """
-    src_h, src_w = array.shape[:2]
-    ys = (np.arange(height) * (src_h / height)).astype(np.int64)
-    xs = (np.arange(width) * (src_w / width)).astype(np.int64)
-    ys = np.clip(ys, 0, src_h - 1)
-    xs = np.clip(xs, 0, src_w - 1)
-    return np.ascontiguousarray(array[ys][:, xs])

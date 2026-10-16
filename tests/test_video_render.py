@@ -272,7 +272,7 @@ app = QApplication([])
 import numpy as np
 from PyQt5.QtGui import QFont, QFontMetrics
 from pastelabel.engine.video_render import (RenderSpec, draw_boxes,
-                                            _auto_font_pixels)
+                                            label_font_pixels)
 
 app.setFont(QFont(QFont().family(), 10))        # 应用字体：明显小于标签字号
 
@@ -294,7 +294,7 @@ ink_rows = np.where(ink.any(axis=1))[0]
 ink_cols = np.where(ink.any(axis=0))[0]
 
 font = QFont()
-font.setPixelSize(_auto_font_pixels(1080))
+font.setPixelSize(label_font_pixels(1080))
 metrics = QFontMetrics(font)
 text = "car 0.72"
 print("RESULT", repr((
@@ -524,123 +524,33 @@ print("RESULT", repr((out.shape, int(out.sum()) > 0)))
     assert drew is True
 
 
-# ---------- 第 12 轮：类别名字号可调 + 预览 ----------
+def test_label_font_pixels_follows_the_setting():
+    """视频字号跟设置里的「类别名字号」走（用户要求），不是写死的自动值。
 
-def test_font_slider_zero_means_auto():
-    """滑块 0 = 按画面高度自动，返回 0；1..72 是手动像素值。
-
-    这个 0 极易在下游被 `or` 吃掉，所以换算单独成函数并在这里钉住。
+    设置窗口那个是 5..15 的抽象字号（画布按**点**用），视频这边按**像素**
+    画，所以要换算；这条钉住「改设置 → 视频字号跟着变」，并且与画面高度成
+    比例（480p 和 1080p 的观感一致）。
     """
-    from pastelabel.engine.video_render import (
-        FONT_SLIDER_MAX, font_slider_to_pixels)
+    from pastelabel.core.config import DETECTION_BOX_CONFIG
+    from pastelabel.engine.video_render import (label_font_pixels,
+                                                resolve_font_pixels, RenderSpec)
 
-    assert font_slider_to_pixels(0) == 0
-    assert font_slider_to_pixels(-5) == 0
-    assert font_slider_to_pixels(None) == 0
-    assert font_slider_to_pixels("nonsense") == 0
-    assert font_slider_to_pixels(1) == 1
-    assert font_slider_to_pixels(24) == 24
-    assert font_slider_to_pixels(FONT_SLIDER_MAX) == FONT_SLIDER_MAX
-    # 越界夹到上限，不会把字号撑爆
-    assert font_slider_to_pixels(9999) == FONT_SLIDER_MAX
+    original = DETECTION_BOX_CONFIG['label_font_size']
+    try:
+        DETECTION_BOX_CONFIG['label_font_size'] = 5
+        small = label_font_pixels(1080)
+        DETECTION_BOX_CONFIG['label_font_size'] = 15
+        big = label_font_pixels(1080)
+        assert big > small, f"改大设置里的字号，视频字号没跟着变大：{small} -> {big}"
 
+        # 分辨率比例：480p 应明显小于 1080p
+        DETECTION_BOX_CONFIG['label_font_size'] = 9
+        assert label_font_pixels(480) < label_font_pixels(1080)
+        assert label_font_pixels(2160) > label_font_pixels(1080)
 
-def test_font_pixels_to_slider_round_trips():
-    """界面初始化滑块用反向换算，两个方向必须一致。"""
-    from pastelabel.engine.video_render import (
-        font_pixels_to_slider, font_slider_to_pixels)
-
-    for value in (0, 1, 12, 40, 72):
-        assert font_pixels_to_slider(font_slider_to_pixels(value)) == value
-
-
-def test_resolve_font_pixels_falls_back_to_auto():
-    """`font_pixels=0` 时按画面高度算；非 0 时原样用。"""
-    from pastelabel.engine.video_render import RenderSpec, resolve_font_pixels
-
-    assert resolve_font_pixels(RenderSpec(font_pixels=0), 1080) == 27
-    assert resolve_font_pixels(RenderSpec(font_pixels=40), 1080) == 40
-
-
-def test_preview_size_only_shrinks():
-    """预览按最长边等比缩到上限；本来就更小的图不放大。"""
-    from pastelabel.engine.video_render import preview_size
-
-    assert preview_size(1920, 1080, 360) == (360, 202)   # 202.5 取偶
-    assert preview_size(100, 80, 360) == (100, 80)      # 不放大
-    assert preview_size(360, 360, 360) == (360, 360)    # 正好等于上限
-
-
-def test_preview_font_size_changes_rendered_text():
-    """字号滑块真的改变预览里文字的像素量（用户要的就是这个）。
-
-    只断言「函数被调用过」证明不了字号生效，所以数类别色像素：
-    字号越大，标签条越大，红像素越多。
-    """
-    result = _run_qt('''
-import sys
-sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
-app = QApplication([])
-import numpy as np
-from pastelabel.engine.video_render import RenderSpec, render_preview
-
-img = np.zeros((480, 640, 3), np.uint8)
-img[:, :] = (34, 51, 68)
-boxes = [{"label": "person", "shape_type": "rectangle",
-          "x": 150, "y": 200, "width": 300, "height": 200}]
-
-counts = []
-pixels = []
-for font_pixels in (0, 14, 24, 40, 72):
-    spec = RenderSpec(labels={"person"}, show_labels=True, show_scores=True,
-                      label_colors={"person": "#FF0000"},
-                      font_pixels=font_pixels)
-    out, used = render_preview(img, boxes, spec, max_side=360)
-    red = (out[:, :, 0] > 200) & (out[:, :, 1] < 60) & (out[:, :, 2] < 60)
-    counts.append(int(red.sum()))
-    pixels.append(used)
-
-print("RESULT", repr((counts, pixels)))
-''')
-    counts, pixels = result
-    # 0 解析成「按 270 高的画面自动」= 10px
-    assert pixels == [10, 14, 24, 40, 72], pixels
-    assert counts == sorted(counts), f"字号变大像素却没变多：{counts}"
-    assert counts[-1] > counts[0] * 5, f"字号 0 与 72 差别太小：{counts}"
-
-
-def test_render_preview_does_not_mutate_the_input():
-    """预览返回新数组，不动调用方的原图（和 draw_boxes 同一契约）。"""
-    result = _run_qt('''
-import sys
-sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
-app = QApplication([])
-import numpy as np
-from pastelabel.engine.video_render import RenderSpec, render_preview
-
-img = np.zeros((60, 60, 3), np.uint8)
-img[:, :] = 9
-before = img.copy()
-spec = RenderSpec(labels={"x"}, show_labels=True,
-                  label_colors={"x": "#FF0000"}, font_pixels=20)
-out, _ = render_preview(img, [{"label": "x", "shape_type": "rectangle",
-                               "x": 5, "y": 5, "width": 30, "height": 30}],
-                        spec, max_side=0)
-print("RESULT", repr((bool((img == before).all()), bool((out != before).any()),
-                     out is not img)))
-''')
-    unchanged, drew, is_new = result
-    assert unchanged is True, "原图被改了"
-    assert drew is True, "什么都没画"
-    assert is_new is True
-
-
-def test_render_preview_rejects_bad_shapes():
-    """非 HxWx3 输入照旧报错，和 draw_boxes 同一口径。"""
-    from pastelabel.engine.video_render import render_preview
-
-    import numpy as np
-    with pytest.raises(ValueError):
-        render_preview(np.zeros((10, 10), np.uint8), [])
+        # 显式给了 font_pixels 就照它用（成片/预览留的逃生口）
+        assert resolve_font_pixels(RenderSpec(font_pixels=40), 1080) == 40
+        # 给 0 时才走设置
+        assert resolve_font_pixels(RenderSpec(font_pixels=0), 1080) == label_font_pixels(1080)
+    finally:
+        DETECTION_BOX_CONFIG['label_font_size'] = original

@@ -1042,10 +1042,13 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             return True
         handle = self._region_handle_at(self.mouse_pos, index)
         if handle:
-            # 与检测框一致：悬停在手柄上才画正方形 + 十字光标
+            # 与检测框一致：悬停在手柄上画白色正方形 + **小手**光标。
+            # 检测框那边（`_select_hovered_detection_box`）给的就是
+            # `PointingHandCursor`；这里曾错写成十字（CrossCursor），
+            # 用户看到「移到区域手柄上变十字」就是那个错。
             self.hover_region_handle = handle
             self.hover_region_index = index
-            self.setCursor(Qt.CrossCursor)
+            self.setCursor(Qt.PointingHandCursor)
         else:
             self.setCursor(Qt.OpenHandCursor)
         return True

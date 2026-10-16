@@ -4387,7 +4387,9 @@ print(round(canvas._region_handle_hit_size()),
       round(canvas._region_handle_draw_size()))
 """)
     lines = _lines(out)
-    assert lines[0] == "[8, 16.0, 24.0, 24.0]", (
+    # 基准是 `REGION_CONFIG['handle_size']`（= 检测框 + 1，第 12 轮起为 9），
+    # 上限 24 不变；所以 scale 1.0/0.5/0.25/0.1 → 9 / 18 / 24 / 24。
+    assert lines[0] == "[9, 18.0, 24.0, 24.0]", (
         f"手柄命中区没随缩放放大：{lines[0]}")
     assert lines[1] == "24 24", (
         f"手柄「看到的」和「抓得到的」不一致：{lines[1]}")
@@ -5488,3 +5490,96 @@ print('未固定时不带勾:', not fix_text(False).startswith('✔'))
         f"已固定时没有显示勾：{lines[1]}")
     assert lines[2].endswith("True"), lines[2]
     assert lines[3].endswith("True"), lines[3]
+
+
+# ---------- 第 12 轮：区域几何参数 = 检测框 + 1（逐项对齐） ----------
+
+def test_region_geometry_is_exactly_one_more_than_the_box():
+    """区域句柄与边框 = 检测框参数 **+1**，逐项钉住（用户要求）。
+
+    这条把「复用检测框」写成可执行的对照，而不是散落在各处的一句注释：
+    句柄基准、边框未选中、边框选中三项都必须正好差 1（或 1.5×），
+    任何一项被单独改动都会在这里失败。
+
+    第 12 轮之前这里漏过一次：句柄改了 8→9，边框却还是自己那套
+    `× (2 if selected else 1)`，与检测框的 `× 1.5` 不是同一把尺子。
+    """
+    from pastelabel.core.config import (BOX_BORDER_CONFIG, DETECTION_BOX_CONFIG,
+                                        REGION_CONFIG)
+
+    box_handle = DETECTION_BOX_CONFIG['resize_handle_size']
+    assert REGION_CONFIG['handle_size'] == box_handle + 1, (
+        f"区域句柄应为检测框 {box_handle} + 1，实际 {REGION_CONFIG['handle_size']}")
+
+    assert BOX_BORDER_CONFIG['width'] == 1.0, (
+        "检测框基准宽度变了，区域那边用的是同一个常量，跟着自动变")
+
+    # 边框粗细要比 .width()，进程内的 QPen 是假对象，所以走真实 Qt 子进程
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+probe = canvas
+box_plain = probe._get_box_border_pen(QColor('#FF0000'), False).widthF()
+region_plain = probe._get_region_border_pen(QColor('#FF0000'), False).widthF()
+box_sel = probe._get_box_border_pen(QColor('#FF0000'), True).widthF()
+region_sel = probe._get_region_border_pen(QColor('#FF0000'), True).widthF()
+print('pens', box_plain, region_plain, box_sel, region_sel)
+""")
+    lines = _lines(out)
+    pen_line = next(x for x in lines if x.startswith("pens"))
+    _, box_plain, region_plain, box_sel, region_sel = pen_line.split()
+    box_plain, region_plain = float(box_plain), float(region_plain)
+    box_sel, region_sel = float(box_sel), float(region_sel)
+    assert region_plain == box_plain + 1, (
+        f"区域边框未选中应为检测框 {box_plain} + 1，实际 {region_plain}")
+    # 选中态：**先 +1 再 ×1.5**（基准参数 +1），所以是 (1+1)*1.5 = 3.0，
+    # 不是 1.5+1。用户说的「参数 +1」指的是基准参数。
+    assert region_sel == (box_plain + 1) * 1.5, (
+        f"区域边框选中应为 (检测框 {box_plain} + 1) × 1.5，实际 {region_sel}")
+
+
+def test_region_handle_cursor_matches_the_box():
+    """悬停区域手柄的光标必须和检测框**一样**，是**小手**而不是十字。
+
+    用户报「区域的句柄选中会变出十字光标」。检测框那边
+    （`_select_hovered_detection_box`）给的是 `PointingHandCursor`；区域这里
+    曾错写成 `CrossCursor`。这条直接拿两边比，谁改都能发现。
+    """
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+r = w.region_boxes[0]
+canvas.selected_region = None
+canvas.hover_region_handle = None
+canvas.hover_region_index = None
+br = canvas.get_background_rect()
+s = canvas.background_scale
+# 鼠标正压在右下角手柄上
+canvas.mouse_pos = QPointF(br.left() + (r['x'] + r['width']) * s,
+                           br.top() + (r['y'] + r['height']) * s)
+canvas._check_region_hover()
+region_cursor = canvas.cursor().shape()
+
+# 检测框的对照值：同一套 hover 逻辑给出的光标
+w.detection_boxes = [{'label': 'a', 'shape_type': 'rectangle', 'x': 120,
+                      'y': 120, 'width': 80, 'height': 60, 'points': []}]
+canvas.selected_box = 0
+canvas.mouse_pos = QPointF(br.left() + (120 + 80) * s,
+                           br.top() + (120 + 60) * s)
+canvas._select_hovered_detection_box(br)
+box_cursor = canvas.cursor().shape()
+
+print('handles', canvas.hover_region_handle, canvas.hover_resize_handle)
+print('cursors', int(region_cursor), int(box_cursor),
+      int(Qt.PointingHandCursor), int(Qt.CrossCursor))
+""")
+    lines = _lines(out)
+    handle_line = next(x for x in lines if x.startswith("handles"))
+    curves_line = next(x for x in lines if x.startswith("cursors"))
+    assert handle_line.split()[1] == "br", (
+        f"悬停右下角应命中 br 手柄：{handle_line}")
+    parts = curves_line.split()
+    region_cursor, box_cursor, pointing, cross = (int(parts[1]), int(parts[2]),
+                                                  int(parts[3]), int(parts[4]))
+    assert region_cursor != cross, "区域手柄不该是十字光标（用户明确报过）"
+    assert region_cursor == pointing, (
+        f"区域手柄光标应为小手 PointingHandCursor({pointing})，"
+        f"实际 {region_cursor}")
+    assert box_cursor == region_cursor, (
+        f"区域({region_cursor}) 与检测框({box_cursor}) 的光标必须一致")

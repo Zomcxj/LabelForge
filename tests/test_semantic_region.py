@@ -307,8 +307,12 @@ def _sample(regions, new_w=40, new_h=40, bg_w=400, bg_h=300, rng=None):
 
 
 def test_config_constants():
+    from pastelabel.core.config import DETECTION_BOX_CONFIG
+
     assert REGION_CONFIG['min_size'] == 10
-    assert REGION_CONFIG['handle_size'] == 8
+    # 第 12 轮：区域句柄 = 检测框 + 1（用户要求），所以跟着检测框走，
+    # 不再写死数字——否则改检测框时这里会骗人。
+    assert REGION_CONFIG['handle_size'] == DETECTION_BOX_CONFIG['resize_handle_size'] + 1
 
 
 def test_sample_center_single_region_500_all_inside():

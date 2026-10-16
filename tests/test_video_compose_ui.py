@@ -475,12 +475,12 @@ def test_compose_render_spec_none_when_no_options():
     assert stub._compose_render_spec({}) is None
 
 
-def test_compose_spec_passes_font_pixels_through():
-    """字号必须从弹窗一路传到 RenderSpec，且 `0`（自动）不能被当成没填。
+def test_compose_spec_leaves_font_size_to_the_engine():
+    """字号不经过弹窗：`_compose_render_spec` 一律留 0，由引擎按设置算。
 
-    用户第 12 轮要求「视频合成支持调整类别名置信度的字号大小」：滑块最左边
-    是自动（0），往右是像素值。这条钉住两端——中间任何一层用 `or` 兜底，
-    都会把「自动」悄悄换成默认值。
+    第 12 轮曾加过滑块，用户随后要求删掉，改回「跟设置里的类别名字号走」。
+    所以这里钉住「弹窗不再决定字号」——如果哪天有人又把 UI 的字号塞进来，
+    设置窗口里那个「类别名字号」就会被架空。
     """
     from pastelabel.ui.mixins.video import VideoMixin
 
@@ -490,15 +490,14 @@ def test_compose_spec_passes_font_pixels_through():
 
     base = {"labels": ["person"], "show_labels": True, "show_scores": True}
 
-    auto = Stub()._compose_render_spec(dict(base, font_pixels=0))
-    assert auto.font_pixels == 0, "0 是「自动」，不能被换成别的值"
+    spec = Stub()._compose_render_spec(dict(base))
+    assert spec.font_pixels == 0, (
+        "0 = 交给引擎按设置里的「类别名字号」算，弹窗不该自己定字号")
 
-    manual = Stub()._compose_render_spec(dict(base, font_pixels=36))
-    assert manual.font_pixels == 36
+    # 即使调用方带了历史遗留的 font_pixels，也照样忽略
+    legacy = Stub()._compose_render_spec(dict(base, font_pixels=36))
+    assert legacy.font_pixels == 0, "UI 传的字号不该再生效"
 
-    # 旧调用方不带这个键：按自动处理，不能崩
-    legacy = Stub()._compose_render_spec(dict(base))
-    assert legacy.font_pixels == 0
 
 
 def test_compose_render_spec_survives_editor_without_color_api():
