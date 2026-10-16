@@ -1309,6 +1309,16 @@ captured = {}
 
 def _capture_exec(self):
     captured["dialog"] = self
+    # ⑦ 起后台扫描之后，等它落地再读表：统计现在是「先弹窗、后填充」。
+    from PyQt5.QtCore import QEventLoop, QTimer
+    loop = QEventLoop()
+    tm = QTimer()
+    tm.timeout.connect(
+        lambda: (getattr(self, "_scan_applied", False) and loop.quit()))
+    tm.start(10)
+    QTimer.singleShot(20000, loop.quit)
+    loop.exec_()
+    tm.stop()
     return 0
 
 

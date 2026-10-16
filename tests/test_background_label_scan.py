@@ -332,7 +332,10 @@ def test_upload_background_starts_dataset_label_scan_after_loading_first_image(m
 
     assert editor.current_background.path == "first.png"
     assert loaded_detection_boxes == ["first.png"]
-    assert editor.detection_boxes_dict == {0: [], 1: []}
+    # 只有**被加载过**的那张在缓存里：另一张等真正切过去时再读盘。
+    # （早先这里断言 `{0: [], 1: []}`，那是「预置空列表当占位」的旧行为；
+    #  空列表现在是有意义的缓存值，预置它会让磁盘上的框永远读不进来。）
+    assert editor.detection_boxes_dict == {0: []}
     assert editor.scan_starts == 1
 
 

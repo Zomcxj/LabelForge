@@ -129,7 +129,11 @@ class ImageLoaderMixin:
                     self.background_list.addItem(item)
 
                     self.canvas_items_dict[new_index] = []
-                    self.detection_boxes_dict[new_index] = []
+                    # **不要**在这里预置 `detection_boxes_dict[new_index] = []`：
+                    # 缓存判据是「下标在不在字典里」（空列表也是有效缓存），预置
+                    # 一个空列表就等于告诉后面那行「这张已经加载过了、结果就是
+                    # 空的」，于是磁盘上的框永远不会被读进来。
+                    # 缓存由 `_load_detection_boxes_for_index()` 自己填。
 
                     if self.current_background is None:
                         self.current_background = pixmap
@@ -203,7 +207,8 @@ class ImageLoaderMixin:
         decorate_background_list_item(item, first_path, 0, light=True)
         self.background_list.addItem(item)
         self.canvas_items_dict[0] = []
-        self.detection_boxes_dict[0] = []
+        # 同理不预置 `detection_boxes_dict[0] = []`：那会把「还没加载」伪装成
+        # 「已加载且为空」，下面 `_load_detection_boxes_for_index()` 就读不到盘了。
 
         if load_first:
             self.current_background_index = 0
@@ -614,8 +619,15 @@ class ImageLoaderMixin:
             QMessageBox.critical(self, tr("错误"), f"{tr('读取标签文件失败：')}{e}")
 
     def _load_detection_boxes_for_index(self, index, file_path):
-        """加载指定索引的检测框（优先从缓存，否则从文件）"""
-        if index in self.detection_boxes_dict and len(self.detection_boxes_dict[index]) > 0:
+        """加载指定索引的检测框（优先从缓存，否则从文件）
+
+        缓存判据是「**这个下标在不在字典里**」，不能写成 `len(...) > 0`。
+        空列表（0 框）也是有效缓存：覆盖模式刚把这张图清空时，若把空缓存
+        当成「没加载过」而重读磁盘，磁盘上的旧 json 会把刚清掉的框又搬回来，
+        连带 `detection_boxes_dict[index]` 也被旧内容覆盖——用户报的
+        「一键推理跑完不更新结果，切到那张图又恢复原样」就是这个。
+        """
+        if index in self.detection_boxes_dict:
             self.detection_boxes = self.detection_boxes_dict[index].copy()
         else:
             self.detection_boxes = self.load_detection_boxes(file_path)

@@ -352,21 +352,20 @@ class CanvasRendererMixin:
                 painter.drawEllipse(p, radius, radius)
 
     def _draw_region_handles(self, painter, x, y, w, h, color):
-        """区域缩放手柄：四角 + **四边中点**（与检测框样式一致）。
+        """区域缩放手柄：**只画四角**。
 
-        四边手柄必须画出来，否则它虽然能抓也是隐形的——用户看不到就没法用。
+        四边中点过去也画（与检测框一致），用户明确「区域边上还有点」是多余的，
+        已去掉。但四边中点**仍然可抓**——`_region_handle_at()` 的命中判定没动，
+        所以「鼠标移到边上拖动 = 单边调整」这条照旧；只是不再画那四个方块。
+        滚轮贴边调整见 `_adjust_hovered_region_edge()`。
+
         半径用 `_region_handle_draw_size()`：与命中判定同一套随缩放放大的
         口径，保证「看到的圆」就是「抓得到的圆」。
         """
         radius = self._region_handle_draw_size() / 2
         painter.setPen(QPen(color, 1))
         painter.setBrush(QColor(255, 255, 255))
-        centers = [
-            (x, y), (x + w, y), (x, y + h), (x + w, y + h),        # 四角
-            (x + w / 2, y), (x + w / 2, y + h),                    # 上下边
-            (x, y + h / 2), (x + w, y + h / 2),                    # 左右边
-        ]
-        for cx, cy in centers:
+        for cx, cy in ((x, y), (x + w, y), (x, y + h), (x + w, y + h)):
             painter.drawEllipse(QPointF(cx, cy), radius, radius)
 
     def _region_handle_draw_size(self):

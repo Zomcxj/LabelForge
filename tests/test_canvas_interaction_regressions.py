@@ -757,3 +757,44 @@ def test_press_outside_the_image_does_not_count_as_on_the_image(monkeypatch):
     assert canvas._press_is_on_background(_PressEvent(400, 400)._pos) is False, (
         "图外空白按下不该判为「在图上」——否则「按在图上才让位给拖出」这条"
         "规则会退化成「按哪都算图上」")
+
+
+def test_copy_drag_out_wins_when_the_image_is_not_zoomed(monkeypatch):
+    """① 复制开着、图**没缩放**：按在图上拖动 = 拖出文件。
+
+    用户要的手感：「直接左键拖出图片，在图片没有缩放时」。
+    """
+    canvas = _CopyCanvas(scale=1.0)
+    _enable_copy_drag_out(monkeypatch, canvas)
+    canvas._editor.geometry = lambda: Rect(0, 0, 4000, 4000)
+    canvas._editor.mapFromGlobal = lambda p: Point(1, 1)
+    canvas.is_manual_scale = False
+
+    canvas.mousePressEvent(_PressEvent(50, 50))
+    canvas.mouseMoveEvent(_MoveEvent(90, 90))
+
+    assert canvas._drag_out_calls == 1, (
+        "未缩放时按在图上拖动没把文件拖出去")
+
+
+def test_zoomed_image_pans_instead_of_dragging_out(monkeypatch):
+    """① 复制开着但图**已缩放**：拖动 = 平移画布，不拖出。
+
+    用户原话「如果缩放了只能平移」——放大看细节时不该弹出文件。
+    """
+    canvas = _CopyCanvas(scale=3.0)
+    _enable_copy_drag_out(monkeypatch, canvas)
+    canvas._editor.geometry = lambda: Rect(0, 0, 4000, 4000)
+    canvas._editor.mapFromGlobal = lambda p: Point(1, 1)
+    canvas.is_manual_scale = True
+
+    canvas.mousePressEvent(_PressEvent(50, 50))
+
+    assert canvas.is_dragging_background is True, (
+        "已缩放时按下应当进入平移（用户要的正是这个）")
+    canvas.mouseMoveEvent(_MoveEvent(90, 90))
+
+    assert canvas._drag_out_calls == 0, (
+        "已缩放时不该拖出文件")
+    assert (canvas.background_offset.x(), canvas.background_offset.y()) != (0, 0), (
+        "已缩放时拖动没平移画布，用户会感觉「拖不动」")

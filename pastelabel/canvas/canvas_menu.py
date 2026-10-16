@@ -304,6 +304,10 @@ class CanvasMenuMixin:
         add_poly_action.triggered.connect(self._start_add_region_polygon)
         menu.addAction(add_poly_action)
 
+        # 保留勾选框：用户要的是「打得勾还在，只是别比别的项多缩进一个字」。
+        # Qt 默认给 checkable 项预留 indicator 那一列，同菜单里不可勾选的项没有，
+        # 于是「固定区域」看起来多缩进一个字宽。对齐靠 QSS 的
+        # `QMenu::indicator` 给一个固定宽度（见 `theme.py`），不靠改文案。
         fix_action = QAction(tr("固定区域"), self)
         fix_action.setCheckable(True)
         fix_action.setChecked(bool(fixed))
@@ -739,9 +743,12 @@ class CanvasMenuMixin:
         remove_action.triggered.connect(self._remove_current_background)
         menu.addAction(remove_action)
 
-        if self._is_paste_mode():
-            menu.addSeparator()
-            self._add_region_actions(menu, getattr(self._editor, 'region_fixed', False))
+        # 区域那一段过去只在贴图模式的右键菜单里出现，于是「用范围面板调区域」
+        # （面板开着时画布停在标注模式）时根本找不到添加入口——用户报的
+        # 「推理的区域和贴图的区域不是同一个，贴图下不能操作」。
+        # 区域本来就是**同一份** `region_boxes`，所以两种模式都该能进这里。
+        menu.addSeparator()
+        self._add_region_actions(menu, getattr(self._editor, 'region_fixed', False))
 
         menu.exec_(QPoint(self.mapToGlobal(mouse_pos)))
 

@@ -365,6 +365,10 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self._apply_mode_visibility_defaults()
         self._update_mode_seg_style(animated=animated)
         self._apply_paste_label_visibility()
+        # 贴图模式自动收起模型参数行（推理按钮随之禁用），切回标注模式恢复。
+        sync_row = getattr(self, '_sync_model_row_to_edit_mode', None)
+        if callable(sync_row):
+            sync_row()
         if hasattr(self, 'auto_save_b_checkbox'):
             is_annotate = self.edit_mode == 'annotate'
             self.auto_save_b_checkbox.setChecked(is_annotate)

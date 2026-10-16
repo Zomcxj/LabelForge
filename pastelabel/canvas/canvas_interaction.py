@@ -131,16 +131,20 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             return
 
         # 「准备拖出复制」只在该次按下**没抓到任何东西**时才挂起：
-        # 抓到画布/标注框/贴图说明用户是在拖画布或编辑，不是要往外拖文件。
+        # 抓到标注框/贴图/区域说明用户是在编辑，不是要往外拖文件。
         # 判据放在点击**之后**：`_handle_background_click` 等要等点击处理完
         # 才知道有没有真的抓起来（按在图上就会进入画布拖动）。
         #
-        # **例外：画布图片复制开着、且按在图上时，拖出优先于平移**。用户报的
-        # 「开启时拖动到桌面松开没有复制一份」就是撞在这里：按在图上会先被判成
-        # 平移（`is_dragging_background`），于是拖出永远挂不起来，只有点在图外
-        # 的空白才拖得出去。平移仍是兜底——复制关掉时行为与以前完全一样。
+        # **图有没有被缩放**决定这次拖动是「拖出文件」还是「平移画布」：
+        # - 图没缩放（自适应）：按在图上拖动 = 把这张图拖出去（用户要的「直接
+        #   左键拖出图片」）。这也是原来「开启复制却拖不出去」的修复点——按在
+        #   图上会先被判成平移，拖出永远挂不起来。
+        # - 图已手动缩放：拖动 = 平移画布，**不**拖出（用户明确「如果缩放了
+        #   只能平移」）。放大后要挪动看细节，这时候弹文件是干扰。
+        # - 复制关掉：一律平移，与以前逐字一致。
         copy_on = bool(getattr(self._editor, '_canvas_image_copy_enabled', False))
         press_on_image = self._press_is_on_background(mouse_pos)
+        zoomed = bool(getattr(self, 'is_manual_scale', False))
 
         self._drag_out_pending = False
         self._handle_left_click(mouse_pos)
@@ -150,15 +154,15 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                    or self.is_resizing_region or self.is_dragging_region_vertex)
         if grabbed:
             self._drag_out_pending = False
-        elif copy_on and press_on_image:
-            # 复制开着 = 用户的意图是「把这张图拖出去」，平移让位。
+        elif copy_on and press_on_image and not zoomed:
+            # 没缩放 = 用户的意图是「把这张图拖出去」，平移让位。
             self.is_dragging_background = False
             self._drag_out_pending = True
         else:
             self._drag_out_pending = (
                 not self.is_dragging_background
                 and copy_on
-                and not self.is_manual_scale
+                and not zoomed
                 and self.find_item_at_position(mouse_pos) is None
                 # 这里问的是「有没有东西挡着」，与能否编辑无关，所以**要**算上
                 # 已锁定的区域：锁定的区域也是区域，压在它上面往外拖不该弹文件。
@@ -1336,7 +1340,10 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         elif (self._region_editable() and
               self._region_at(self.mouse_pos) is not None and
               self.find_item_at_position(self.mouse_pos) is None):
-            self._scale_hovered_region(event)
+            # 与检测框同一套分流：鼠标**贴边**时滚轮单边调整，在**中间**时
+            # 整体缩放（用户要求「单边调整包括滚轮，复用检测框的」）。
+            # 边上不再画手柄，所以这里要主动判一次位置，不能靠「有没有抓手柄」。
+            self._wheel_region(event)
         elif self._editor.selected_item is not None:
             self._scale_selected_item(event)
         elif self.selected_box is not None:
@@ -1359,6 +1366,39 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         # 滚轮不产生鼠标移动事件，必须主动刷新状态栏宽高
         self.update_status_label()
         self.update()
+
+    def _wheel_region(self, event):
+        """区域滚轮：贴边 → 单边调整；在中间 → 整体缩放。
+
+        判据是「鼠标到最近那条边的距离」小于阈值。阈值用与手柄同一套随缩放
+        放大的口径（`_region_handle_hit_size()`），图缩小后仍能贴到边；否则
+        屏上只有几十像素宽的区域按图内坐标算距离会永远「不够近」。
+        """
+        index = self._region_at(self.mouse_pos)
+        if index is None:
+            return
+        regions = getattr(self._editor, 'region_boxes', None)
+        if not regions or not (0 <= index < len(regions)):
+            return
+        background_rect = self.get_background_rect()
+        if background_rect is None or not self.background_scale:
+            return
+
+        r = regions[index]
+        mx = (self.mouse_pos.x() - background_rect.left()) / self.background_scale
+        my = (self.mouse_pos.y() - background_rect.top()) / self.background_scale
+        left, top = r['x'], r['y']
+        right, bottom = left + r['width'], top + r['height']
+        # 屏上容差换算回图内坐标：`_region_handle_hit_size()` 是屏上像素
+        tol = self._region_handle_hit_size() / max(self.background_scale, 1e-6)
+        near_edge = min(abs(mx - left), abs(mx - right),
+                        abs(my - top), abs(my - bottom)) <= tol
+
+        if near_edge:
+            edge = self._region_edge_at(self.mouse_pos, index)
+            self._adjust_hovered_region_edge(event, index, edge)
+        else:
+            self._scale_hovered_region(event)
 
     def _scale_hovered_region(self, event):
         """鼠标悬停在区域上时滚轮缩放该区域（绕中心，夹紧背景边界）。"""
@@ -1405,6 +1445,107 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             region['points'] = [
                 [nx + (p[0] - x) * sx, ny + (p[1] - y) * sy]
                 for p in region['points']
+            ]
+        self.selected_region = index
+        self.update()
+
+    def _region_edge_at(self, mouse_pos, index):
+        """返回鼠标相对该区域最近的一条边：`left/right/top/bottom`。
+
+        与检测框的 `_get_selected_box_edge()` 同一套判据（用户要求「复用检测框
+        的了」）：先在框**外**找正对着的那条边，都在外面时取距离最近的。
+        区域内侧也算——用户要的是「滚轮贴边调整」，鼠标压在边上时也该调那条边。
+        """
+        regions = getattr(self._editor, 'region_boxes', None)
+        if not regions or not (0 <= index < len(regions)):
+            return None
+        background_rect = self.get_background_rect()
+        if background_rect is None or not self.background_scale:
+            return None
+        r = regions[index]
+        left = r['x']
+        top = r['y']
+        right = left + r['width']
+        bottom = top + r['height']
+        mx = (mouse_pos.x() - background_rect.left()) / self.background_scale
+        my = (mouse_pos.y() - background_rect.top()) / self.background_scale
+
+        # 框外且正对着某条边 → 直接是它
+        if mx < left and top <= my <= bottom:
+            return 'left'
+        if mx > right and top <= my <= bottom:
+            return 'right'
+        if my < top and left <= mx <= right:
+            return 'top'
+        if my > bottom and left <= mx <= right:
+            return 'bottom'
+        # 否则取四条边里最近的一条
+        distances = {
+            'left': abs(mx - left),
+            'right': abs(mx - right),
+            'top': abs(my - top),
+            'bottom': abs(my - bottom),
+        }
+        return min(distances, key=distances.get)
+
+    def _adjust_hovered_region_edge(self, event, index, edge):
+        """滚轮**单边**调整该区域：只动被点名的那条边，其余三边不动。
+
+        这是检测框 `_adjust_selected_box_edge()` 的区域版。与
+        `_scale_hovered_region()`（绕中心等比缩放）互补：
+        - 鼠标压在某条边附近 → 本条（单边）
+        - 鼠标在区域中间 → 那条（整体缩放）
+        """
+        regions = getattr(self._editor, 'region_boxes', None)
+        if not regions or not (0 <= index < len(regions)):
+            return
+        if edge is None:
+            return
+        from ..core.config import (
+            DETECTION_BOX_WHEEL_CONFIG, REGION_CONFIG,
+        )
+        step = max(1, min(50, int(
+            DETECTION_BOX_WHEEL_CONFIG.get('edge_step', 5))))
+        step = step if event.angleDelta().y() > 0 else -step
+
+        r = regions[index]
+        min_size = REGION_CONFIG['min_size']
+        left = r['x']
+        top = r['y']
+        right = left + r['width']
+        bottom = top + r['height']
+        bg = self._editor.current_background
+        max_w = bg.width() if bg is not None else None
+        max_h = bg.height() if bg is not None else None
+
+        if edge == 'left':
+            new_left = max(0, min(left - step, right - min_size))
+            r['x'] = new_left
+            r['width'] = right - new_left
+        elif edge == 'right':
+            new_right = right + step
+            if max_w is not None:
+                new_right = min(max_w, new_right)
+            r['width'] = max(min_size, new_right - left)
+        elif edge == 'top':
+            new_top = max(0, min(top - step, bottom - min_size))
+            r['y'] = new_top
+            r['height'] = bottom - new_top
+        else:                                   # bottom
+            new_bottom = bottom + step
+            if max_h is not None:
+                new_bottom = min(max_h, new_bottom)
+            r['height'] = max(min_size, new_bottom - top)
+
+        # 多边形区域：points 必须跟着矩形一起走，否则渲染与命中的是两个形状
+        if (r.get('shape_type') or 'rectangle') == 'polygon' and r.get('points'):
+            old_left, old_top = left, top
+            sx = r['width'] / (right - old_left) if right > old_left else 1.0
+            sy = r['height'] / (bottom - old_top) if bottom > old_top else 1.0
+            r['points'] = [
+                [r['x'] + (p[0] - old_left) * sx,
+                 r['y'] + (p[1] - old_top) * sy]
+                for p in r['points']
             ]
         self.selected_region = index
         self.update()

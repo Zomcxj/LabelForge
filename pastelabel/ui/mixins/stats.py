@@ -95,6 +95,93 @@ class StatsMixin:
                     tasks.setdefault(label, set()).add(shape_task_type(box))
         return {label: sorted(ts) for label, ts in tasks.items()}
 
+    def _cache_bg_stats(self, counts, tasks):
+        """把扫描结果写回统计缓存（`_cached_bg_label_stats`）。
+
+        沿用与 `_collect_bg_stats_for_dialog()` 相同的条目结构，这样重命名/改色
+        走的 `_reload_stats_bg_table()` 读到的是同一份数据，不会出现「表格显示的
+        是扫描结果、重命名后却退回旧缓存」。
+        """
+        rows = [
+            {'label': label, 'count': count,
+             'color': self.get_label_color(label),
+             'tasks': sorted(tasks.get(label, []))}
+            for label, count in sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+        ]
+        self._cached_bg_label_stats = rows
+        self._cached_bg_label_stats_path = (
+            getattr(self, '_memory_background_path', '') or '')
+        self._dataset_stats_dirty = False
+
+    def _cached_bg_stats_only(self):
+        """只读**内存缓存**的背景标签计数；不做任何磁盘扫描。
+
+        统计弹窗现在先弹窗、再后台扫描（见 `_show_label_stats`）。首次打开时
+        这份缓存通常还没建立，返回空表、由后台扫描填充；已经有缓存时（列表已
+        扫过一轮）立刻显示，用户不用等。
+        """
+        cached = getattr(self, '_cached_bg_label_stats', None) or []
+        out = {}
+        for item in cached:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get('label', '') or '').strip()
+            if not label:
+                continue
+            try:
+                out[label] = max(0, int(item.get('count', 0) or 0))
+            except (TypeError, ValueError):
+                out[label] = 0
+        return out
+
+    def _cached_bg_tasks_only(self):
+        """只读内存缓存里的「框类型」；与 `_cached_bg_stats_only()` 配套。"""
+        cached = getattr(self, '_cached_bg_label_stats', None) or []
+        tasks = {}
+        for item in cached:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get('label', '') or '').strip()
+            if not label:
+                continue
+            for t in item.get('tasks') or []:
+                tasks.setdefault(label, set()).add(t)
+        return tasks
+
+    def _start_stats_scan(self, on_done, on_error=None):
+        """后台扫一遍数据集，完成后回主线程调 `on_done(counts, tasks)`。
+
+        数据集为空时同步回一次空结果（不必起线程）。同一时刻只允许一个统计
+        扫描：新的会先请掉上一个，避免用户连点两次时两组结果互相覆盖。
+        """
+        previous = getattr(self, '_stats_scan_worker', None)
+        if previous is not None:
+            try:
+                previous.requestInterruption()
+            except Exception:
+                pass
+            self._stats_scan_worker = None
+
+        images = list(getattr(self, 'background_images', None) or [])
+        if not images:
+            on_done({}, {})
+            return None
+        from ...engine.image_loader.scan import DatasetStatsScanWorker
+
+        worker = DatasetStatsScanWorker(images, parent=self)
+        self._stats_scan_worker = worker
+        worker.stats_ready.connect(on_done)
+        if on_error is not None:
+            worker.finished.connect(
+                lambda w=worker: self._on_stats_scan_finished(w))
+        worker.start()
+        return worker
+
+    def _on_stats_scan_finished(self, worker):
+        if worker is getattr(self, '_stats_scan_worker', None):
+            self._stats_scan_worker = None
+        worker.deleteLater()
+
     def _show_label_stats(self):
         """显示标签统计弹窗"""
         self._close_health_worker()
@@ -188,27 +275,55 @@ class StatsMixin:
         central_layout.setContentsMargins(0, 0, 0, 0)
         host.setCentralWidget(central)
         layout.addWidget(host)
-        bg_stats = self._collect_bg_stats_for_dialog()
-        bg_tasks = self._collect_bg_label_tasks_for_dialog()
+        # ⑦ 先在 UI 线程拿**内存缓存**（有就是现成的，立刻显示），磁盘扫描交给
+        # 后台线程：原先 `_collect_bg_stats_for_dialog()` 会在主线程把每个
+        # sidecar json 解析两遍，数据集一大就要好几秒（用户报的「统计有时候
+        # 需要 5s 才能打开」）。现在弹窗先出来，扫描完成再填充。
+        bg_stats = self._cached_bg_stats_only()
+        bg_tasks = {}
         bg_table = QTableWidget(len(bg_stats), 4)
         bg_table.setHorizontalHeaderLabels([tr("类别"), tr("数量"), tr("框类型"), tr("颜色")])
         bg_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         bg_table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed | QAbstractItemView.SelectedClicked)
-        for row, (label, count) in enumerate(sorted(bg_stats.items(), key=lambda x: -x[1])):
-            label_item = QTableWidgetItem(label)
-            label_item.setFlags(label_item.flags() | QtCore.ItemIsEditable)
-            label_item.setData(QtCore.UserRole, label)
-            bg_table.setItem(row, 0, label_item)
-            count_item = QTableWidgetItem(str(count))
-            count_item.setFlags(count_item.flags() & ~QtCore.ItemIsEditable)
-            bg_table.setItem(row, 1, count_item)
-            task_item = QTableWidgetItem(" ".join(bg_tasks.get(label, [])))
-            task_item.setFlags(task_item.flags() & ~QtCore.ItemIsEditable)
-            bg_table.setItem(row, 2, task_item)
-            color_button = QPushButton()
-            self._set_label_color_button(color_button, self.get_label_color(label))
-            color_button.clicked.connect(lambda _, value=label, button=color_button: self._change_label_color(value, dialog, button))
-            bg_table.setCellWidget(row, 3, color_button)
+
+        def _fill_bg_table(stats, tasks):
+            """把（可能来自后台的）结果填进表里；可反复调用（扫描完再填一次）。"""
+            bg_table.blockSignals(True)
+            bg_table.setRowCount(len(stats))
+            for row, (label, count) in enumerate(
+                    sorted(stats.items(), key=lambda x: (-x[1], x[0]))):
+                label_item = QTableWidgetItem(label)
+                label_item.setFlags(label_item.flags() | QtCore.ItemIsEditable)
+                label_item.setData(QtCore.UserRole, label)
+                bg_table.setItem(row, 0, label_item)
+                count_item = QTableWidgetItem(str(count))
+                count_item.setFlags(count_item.flags() & ~QtCore.ItemIsEditable)
+                bg_table.setItem(row, 1, count_item)
+                task_item = QTableWidgetItem(" ".join(sorted(tasks.get(label, []))))
+                task_item.setFlags(task_item.flags() & ~QtCore.ItemIsEditable)
+                bg_table.setItem(row, 2, task_item)
+                color_button = QPushButton()
+                self._set_label_color_button(
+                    color_button, self.get_label_color(label))
+                color_button.clicked.connect(
+                    lambda _, value=label, button=color_button:
+                    self._change_label_color(value, dialog, button))
+                bg_table.setCellWidget(row, 3, color_button)
+            bg_table.blockSignals(False)
+
+        def _mark_bg_scanning():
+            """扫描期间的空态：**不加假行**，改用总计标签说一句「正在统计…」。
+
+            早先试过在表里插一行「正在统计…」，但那行会被「背景表求和」看到
+            （总计标签与表是同源的，测试也这么钉），于是出现 `int('')` 之类的
+            口径错位。背景表本身保持真正的空（0 行、求和为 0），加载中这件事由
+            总计标签表达。
+            """
+            bg_table.blockSignals(True)
+            bg_table.setRowCount(0)
+            bg_table.blockSignals(False)
+
+        _fill_bg_table(bg_stats, bg_tasks)
 
         def _on_bg_label_changed(item):
             if item is None or item.column() != 0:
@@ -328,22 +443,65 @@ class StatsMixin:
         central_layout.addWidget(total)
         dialog._total_label = total
         self._update_stats_total_label(
-            dialog, bg_count=sum(bg_stats.values()), paste_count=sum(paste_stats.values()))
+            dialog, bg_count=sum(bg_stats.values()),
+            paste_count=sum(paste_stats.values()))
+
+        # ⑦ 立刻显示弹窗，再后台扫盘填充背景表：扫描期间先摆一句「正在统计…」，
+        # 免得用户对着空表以为没数据。`exec_()` 之前就起线程，弹窗一出来扫描
+        # 已经在跑了。
+        def _on_stats_ready(counts, tasks):
+            # 结果一律先落缓存（重命名/改色走的是同一份缓存），再决定要不要刷新表格。
+            # **不能**用 `dialog.isVisible()` 当「用户是否已关掉」的判据：首帧
+            # 还没来得及显示时它就是 False，那样表格会永远停在「正在统计…」。
+            # 关掉弹窗的信号是 `finished`（见下方 _on_closed）。
+            self._cache_bg_stats(counts, tasks)
+            if getattr(dialog, '_stats_closed', False):
+                return
+            dialog._scan_applied = True
+            _fill_bg_table(counts, tasks)
+            self._update_stats_total_label(
+                dialog, bg_count=sum(counts.values()),
+                paste_count=sum(paste_stats.values()))
+
+        dialog._stats_closed = False
+        dialog.finished.connect(
+            lambda _r: setattr(dialog, '_stats_closed', True))
+        dialog._scan_applied = False
+        if bg_stats:
+            # 已有缓存：先显示缓存，后台仍扫一遍以保证新鲜
+            _fill_bg_table(bg_stats, self._cached_bg_tasks_only())
+        else:
+            # 还没扫过：表先空着（0 行，求和不含假数据）。加载中这件事不改总计
+            # 标签的**格式**（它是 `总计: ... | ...`，别处按 `|` 拆开读），而是
+            # 在标签前面挂一句提示，扫描完再被正常的总计覆盖。
+            _mark_bg_scanning()
+            # 格式必须与正常总计**完全一致**（`总计: ... | ...`，两段）：别处按
+            # `|` 拆开读，多一段就会 unpack 失败。加载中只是在前面挂一句提示。
+            dialog._total_label.setText(
+                f"{tr('正在统计…')} · {tr('总计')}: "
+                f"{tr('背景图标签')} 0 {tr('个')} | "
+                f"{tr('贴图标签_list')} {sum(paste_stats.values())} {tr('个')}")
+        self._start_stats_scan(_on_stats_ready)
         dialog.exec_()
 
     def _update_stats_total_label(self, dialog, bg_count=None, paste_count=None):
         """更新统计弹窗底部总计标签。
 
-        计数来源：背景 = 实时统计缓存 `_collect_bg_stats_for_dialog()`（与背景表同源，
-        勿传 payload 的 annot 计数，它排除贴图/关键点）；贴图 = payload 整库统计优先，
-        缺省回退会话内存 `_get_session_paste_stats()`。
+        计数来源：背景 = 统计缓存 `_cached_bg_stats_only()`（与背景表同源，
+        勿传 payload 的 annot 计数，它排除贴图/关键点；缓存未建立时按 0，
+        后台扫描完成会再刷）；贴图 = payload 整库统计优先，缺省回退会话内存
+        `_get_session_paste_stats()`。
         """
         from ..i18n import t as tr
         label = getattr(dialog, '_total_label', None)
         if label is None:
             return
         if not isinstance(bg_count, int) or isinstance(bg_count, bool):
-            bg_count = sum(self._collect_bg_stats_for_dialog().values())
+            # 用**缓存**而不是 `_collect_bg_stats_for_dialog()`：后者会同步扫盘，
+            # 正是 ⑦ 要避免的那件事。这里只是补一个缺省值，缓存没有就按 0 算，
+            # 后台扫描完成时 `_on_stats_ready` 会带着真实数字再刷一次。
+            cached = self._cached_bg_stats_only()
+            bg_count = sum(cached.values())
         if not isinstance(paste_count, int) or isinstance(paste_count, bool):
             paste_count = sum(self._get_session_paste_stats().values())
         label.setText(

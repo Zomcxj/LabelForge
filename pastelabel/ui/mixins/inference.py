@@ -27,6 +27,30 @@ class InferenceMixin:
             row.show()
         self._update_inference_buttons()
 
+    def _sync_model_row_to_edit_mode(self):
+        """贴图模式自动收起参数行并停用推理，切回标注模式再恢复。
+
+        用户要求「切到贴图模式时自动收起模型参数行/禁用推理」。隐藏参数行本身
+        就已经让 `_update_inference_buttons()` 把两个推理按钮disable 掉，所以
+        「禁用」是收起的自然结果，不必另设一套开关。
+
+        特意**记住用户原本的状态**：他若在标注模式下自己收了参数行，切回时也
+        不该替他展开——模式切换只管「贴图模式下必须是收起的」这一条。
+        """
+        row = getattr(self, 'model_row', None)
+        if row is None:
+            return
+        if getattr(self, 'edit_mode', 'annotate') == 'paste':
+            if row.isVisible():
+                # 只在「本来是开着的」时记一笔，避免把贴图模式下的隐藏状态记成
+                # 用户的偏好，切回标注模式后参数行就再也回不来了。
+                self._model_row_open_before_paste = True
+            row.hide()
+        elif getattr(self, '_model_row_open_before_paste', False):
+            row.show()
+            self._model_row_open_before_paste = False
+        self._update_inference_buttons()
+
     # ---------- 加载模型 ----------
 
     def _load_inference_model(self):
@@ -119,7 +143,12 @@ class InferenceMixin:
             detector.iou_threshold, size, detector.active_providers,
             dynamic=detector.is_dynamic_input(),
             end2end=self._model_format == FORMAT_V26)
-        row.show()
+        # 贴图模式下不该把参数行又弹出来（用户要求「切到贴图模式自动收起」）；
+        # 走 mode-aware 的同步，标注模式才会真的 show。
+        if getattr(self, 'edit_mode', 'annotate') == 'paste':
+            row.hide()
+        else:
+            row.show()
         # 换模型后类别表可能完全不同，之前的勾选作废，回到默认全选
         self._class_filter = None
         self._refresh_filter_button()
@@ -586,6 +615,11 @@ class InferenceMixin:
         detector = getattr(self, '_detector', None)
         if detector is None:
             self._inference_warn(tr("请先加载模型"))
+            return
+        # 贴图模式的提示要**先于**「参数行已关闭」：贴图模式下参数行正是被自动
+        # 收起的，报「参数行已关闭」会让用户以为自己关掉了什么、去翻按钮。
+        if getattr(self, 'edit_mode', 'annotate') == 'paste':
+            self.status_label.setText(tr("贴图模式下不可推理，请切回标注模式"))
             return
         # 参数行关着就不能推理；按钮虽已禁用，这里再挡一次，避免快捷键/代码路径绕过
         row = getattr(self, 'model_row', None)

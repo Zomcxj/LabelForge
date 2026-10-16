@@ -4804,3 +4804,453 @@ print('labels ->', sorted(b['label'] for b in w.detection_boxes))
     assert lines[0].endswith("True"), f"默认应是覆盖模式：{lines[0]}"
     assert lines[1] == "labels -> ['new']", (
         f"覆盖后手画框没被清掉：{lines[1]}")
+
+
+# ---------- 第九轮：区域滚轮单边调整 + 边框只画四角 ----------
+
+def test_real_region_wheel_on_edge_resizes_only_that_edge():
+    """② 滚轮压在**边上**只改那一条边（用户：单边调整包括滚轮，复用检测框的）。
+
+    检测框早有这套（`_get_selected_box_edge` / `_adjust_selected_box_edge`），
+    区域侧原先只有「绕中心等比缩放」。这里钉住四条边各自的效果。
+    """
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+from PyQt5.QtGui import QWheelEvent
+from PyQt5.QtCore import QPoint
+
+def wheel(x, y, up=True):
+    canvas.mouse_pos = QPointF(x, y)
+    d = 120 if up else -120
+    canvas.wheelEvent(QWheelEvent(QPointF(x, y), QPointF(x, y),
+                                  QPoint(0, 0), QPoint(0, d),
+                                  Qt.NoButton, Qt.NoModifier,
+                                  Qt.NoScrollPhase, False))
+
+def bbox():
+    r = w.region_boxes[0]
+    return (round(r['x']), round(r['y']), round(r['width']), round(r['height']))
+
+r = w.region_boxes[0]
+cases = []
+
+# 右边：只有宽变
+ex, ey = C(r['x'] + r['width'], r['y'] + r['height'] / 2)
+b = bbox(); wheel(ex, ey); a = bbox()
+cases.append(('right', a[2] > b[2], a[0] == b[0], a[1] == b[1], a[3] == b[3]))
+
+# 左边：x 减小、宽变
+ex, ey = C(r['x'], r['y'] + r['height'] / 2)
+b = bbox(); wheel(ex, ey); a = bbox()
+cases.append(('left', a[0] < b[0], a[2] > b[2], a[1] == b[1], a[3] == b[3]))
+
+# 下边：只有高变
+ex, ey = C(r['x'] + r['width'] / 2, r['y'] + r['height'])
+b = bbox(); wheel(ex, ey); a = bbox()
+cases.append(('bottom', a[3] > b[3], a[0] == b[0], a[1] == b[1], a[2] == b[2]))
+
+# 上边：y 减小、高变
+ex, ey = C(r['x'] + r['width'] / 2, r['y'])
+b = bbox(); wheel(ex, ey); a = bbox()
+cases.append(('top', a[1] < b[1], a[3] > b[3], a[0] == b[0], a[2] == b[2]))
+
+for name, *flags in cases:
+    print(name, all(flags))
+""")
+    lines = _lines(out)
+    for name in ("right", "left", "bottom", "top"):
+        assert f"{name} True" in lines, (
+            f"区域贴{name}边滚轮没做到单边调整：{lines}")
+
+
+def test_real_region_wheel_in_the_middle_scales_both_axes():
+    """② 的边界：鼠标在区域**中间**时仍是整体等比缩放（不误判成单边）。"""
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+from PyQt5.QtGui import QWheelEvent
+from PyQt5.QtCore import QPoint
+
+def wheel(x, y):
+    canvas.mouse_pos = QPointF(x, y)
+    canvas.wheelEvent(QWheelEvent(QPointF(x, y), QPointF(x, y),
+                                  QPoint(0, 0), QPoint(0, 120),
+                                  Qt.NoButton, Qt.NoModifier,
+                                  Qt.NoScrollPhase, False))
+
+r = w.region_boxes[0]
+cx, cy = C(r['x'] + r['width'] / 2, r['y'] + r['height'] / 2)
+b = (r['width'], r['height'])
+wheel(cx, cy)
+a = (r['width'], r['height'])
+print('中间滚轮宽高都变大', a[0] > b[0] and a[1] > b[1])
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("True"), (
+        f"区域中间滚轮没有整体缩放：{lines[0]}")
+
+
+def test_real_region_border_draws_corner_handles_only():
+    """② 区域选中时**只画四角**手柄，不再画四条边的中点。
+
+    用户原话「区域编辑怎么边上还有点」——那是四边中点手柄。它们现在不画了，
+    但**命中仍在**（边上拖动照样单边调整，见下一条）。
+    """
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+from PyQt5.QtGui import QImage, QPainter
+
+# `_draw_regions` 只在**选中**该区域时才画手柄（`is_selected`）
+w.region_fixed = False
+canvas.selected_region = 0
+print('selected_region ->', canvas.selected_region)
+
+drawn = []
+orig = canvas._draw_region_handles
+
+def spy(painter, x, y, wd, ht, color):
+    drawn.append((x, y, wd, ht))
+    return orig(painter, x, y, wd, ht, color)
+
+canvas._draw_region_handles = spy
+canvas.update()
+app.processEvents()
+img = QImage(canvas.width() or 100, canvas.height() or 100,
+             QImage.Format_ARGB32)
+p = QPainter(img)
+canvas._paint_scene(p)
+p.end()
+print('走到手柄绘制', len(drawn) > 0)
+
+# 直接问源码：四边中点那四个坐标不该再出现在绘制函数里
+import inspect
+fn = None
+for klass in type(canvas).__mro__:
+    if '_draw_region_handles' in klass.__dict__:
+        fn = klass.__dict__['_draw_region_handles']
+        break
+src = inspect.getsource(fn)
+print('源码里还有四边中点', ('w / 2' in src) and ('h / 2' in src))
+print('四角坐标仍在', '(x, y + h)' in src or '(x + w, y + h)' in src)
+""")
+    lines = _lines(out)
+    assert lines[1].endswith("True"), f"没走到手柄绘制：{lines}"
+    assert lines[2].endswith("False"), (
+        f"区域手柄仍在画四边中点：{lines[2]}")
+    assert lines[3].endswith("True"), (
+        f"四角手柄被误删：{lines[3]}")
+
+
+def test_real_region_edge_drag_still_resizes_without_a_drawn_handle():
+    """② 的边界：边上不画点，但**鼠标在边上拖动**仍能单边调整。
+
+    「不画」只该影响视觉，不该把命中一起砍掉——否则用户就没有单边调整了。
+    """
+    out = _run_real_qt(_REGION_RESIZE_HOST + """
+r = w.region_boxes[0]
+before = (round(r['x']), round(r['y']), round(r['width']), round(r['height']))
+
+# 鼠标移到右边中点并拖动
+ex, ey = C(r['x'] + r['width'], r['y'] + r['height'] / 2)
+press(ex, ey)
+move(ex + 40, ey)
+release(ex + 40, ey)
+
+after = (round(r['x']), round(r['y']), round(r['width']), round(r['height']))
+print('边上拖动只改宽', after[2] > before[2], after[3] == before[3],
+      after[0] == before[0], after[1] == before[1])
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("True True True True"), (
+        f"边上不画点之后拖动也不生效了：{lines[0]}")
+
+
+# ---------- 第九轮：贴图模式收起推理 ----------
+
+def test_real_model_row_is_hidden_and_inference_disabled_in_paste_mode():
+    """④ 切到贴图模式：参数行自动收起，两个推理按钮随之不可用。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+img = QImage(600, 400, QImage.Format_RGB888)
+img.fill(QColor(20, 30, 40))
+w.current_background = QPixmap.fromImage(img)
+w.current_background_index = 0
+w.background_images = ['work.png']
+app.processEvents()
+
+row = w._ensure_model_row()
+# 走真实的模型加载收尾（它会 show 参数行并刷新推理按钮可用性）
+w._on_model_loaded(w._detector, (640, 640), 'test')
+app.processEvents()
+print('标注模式参数行可见', row.isVisible())
+print('标注模式能推理', w.model_single_btn.isEnabled())
+
+w._set_edit_mode('paste')
+app.processEvents()
+print('贴图模式参数行可见', row.isVisible())
+print('贴图模式能推理', w.model_single_btn.isEnabled())
+print('贴图模式全图推理', w.model_all_btn.isEnabled())
+
+w._set_edit_mode('annotate')
+app.processEvents()
+print('切回标注参数行可见', row.isVisible())
+print('切回标注能推理', w.model_single_btn.isEnabled())
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("True"), lines[0]
+    assert lines[1].endswith("True"), lines[1]
+    assert lines[2].endswith("False"), f"贴图模式没收起参数行：{lines[2]}"
+    assert lines[3].endswith("False"), f"贴图模式推理按钮没禁用：{lines[3]}"
+    assert lines[4].endswith("False"), lines[4]
+    assert lines[5].endswith("True"), f"切回标注没恢复参数行：{lines[5]}"
+    assert lines[6].endswith("True"), f"切回标注没恢复推理：{lines[6]}"
+
+
+def test_real_model_row_not_restored_if_user_had_closed_it():
+    """④ 的边界：用户自己在标注模式下收了参数行，切一圈回来仍是收起的。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+w.current_background = QPixmap.fromImage(
+    QImage(600, 400, QImage.Format_RGB888))
+w.background_images = ['work.png']
+app.processEvents()
+
+row = w._ensure_model_row()
+w._on_model_loaded(w._detector, (640, 640), 'test')
+app.processEvents()
+row.hide()                    # 用户自己收起
+app.processEvents()
+
+w._set_edit_mode('paste')
+app.processEvents()
+w._set_edit_mode('annotate')
+app.processEvents()
+print('没有被强行展开', row.isVisible())
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("False"), (
+        f"用户原本收起的参数行被模式切换强行展开了：{lines[0]}")
+
+
+def test_real_start_inference_is_refused_in_paste_mode():
+    """④ 绕过按钮直接调 `_start_inference` 也要被挡（快捷键/代码路径）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+w.current_background = QPixmap.fromImage(
+    QImage(600, 400, QImage.Format_RGB888))
+w.background_images = ['work.png']
+w._on_model_loaded(w._detector, (640, 640), 'test')
+app.processEvents()
+w._set_edit_mode('paste')
+app.processEvents()
+
+w._start_inference([0], current_only=True)
+print('起了 worker 吗', w._run_worker is not None)
+print('状态栏', w.status_label.text())
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("False"), (
+        f"贴图模式下仍能起推理 worker：{lines[0]}")
+    assert "贴图模式" in lines[1], f"没有给出原因提示：{lines[1]}"
+
+
+# ---------- 第九轮：区域右键入口在两种模式下都可达 ----------
+
+def test_real_region_menu_is_reachable_in_annotate_mode_too():
+    """⑤ 标注模式（范围面板开着）右键也要有「添加区域」，不只是贴图模式。
+
+    用户报的「推理的区域和贴图的区域不是同一个，贴图下不能操作」：区域本就是
+    同一份 `region_boxes`，入口却只挂在贴图模式的右键菜单里，于是用范围面板调
+    区域时找不到添加入口。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QMenu
+from PyQt5.QtGui import QImage, QColor, QPixmap
+from PyQt5.QtCore import QPoint
+from PyQt5.QtWidgets import QAction
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w.current_background = QPixmap.fromImage(
+    QImage(600, 400, QImage.Format_RGB888))
+w.background_images = ['work.png']
+w.current_background_index = 0
+w.canvas.resize(900, 700)
+app.processEvents()
+w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
+                            'iou_threshold': .45, 'class_names': [],
+                            'resolve_format': lambda s: 'v8',
+                            'is_dynamic_input': lambda s: False,
+                            'active_providers': ['CPU']})()
+w._on_model_loaded(w._detector, (640, 640), 'test')
+w.region_boxes = []
+w.region_fixed = False
+w._open_scope_panel()
+app.processEvents()
+
+captured = {}
+orig_exec = QMenu.exec_
+def fake_exec(self, *a, **k):
+    captured['texts'] = [act.text() for act in self.actions()]
+    return None
+QMenu.exec_ = fake_exec
+try:
+    for mode in ('annotate', 'paste'):
+        w._set_edit_mode(mode)
+        app.processEvents()
+        captured.pop('texts', None)
+        w.canvas._show_background_context_menu(QPoint(10, 10))
+        app.processEvents()
+        texts = captured.get('texts') or []
+        print(mode, any('添加区域' in t for t in texts))
+finally:
+    QMenu.exec_ = orig_exec
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("True"), (
+        f"标注模式下右键没有「添加区域」：{lines[0]}")
+    assert lines[1].endswith("True"), (
+        f"贴图模式下右键没有「添加区域」（原有入口被弄坏了）：{lines[1]}")
+
+
+def test_real_region_menu_uses_the_same_region_list_in_both_modes():
+    """⑤ 两种模式共用同一份 `region_boxes`（不是两套区域）。"""
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QImage, QColor, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w.current_background = QPixmap.fromImage(
+    QImage(600, 400, QImage.Format_RGB888))
+w.background_images = ['work.png']
+w.current_background_index = 0
+w.region_boxes = [{'shape_type': 'rectangle', 'x': 10, 'y': 10,
+                   'width': 50, 'height': 50}]
+app.processEvents()
+
+w._set_edit_mode('annotate')
+app.processEvents()
+a = w._region_boxes()
+w._set_edit_mode('paste')
+app.processEvents()
+b = w._region_boxes()
+print('模式切换不丢区域', len(a) == 1 and len(b) == 1)
+print('两种模式读的是同一个列表',
+      len(a) == 1 and a[0] is w.region_boxes[0])
+rect = w.canvas.get_background_rect()
+sc = w.canvas.background_scale
+from PyQt5.QtCore import QPointF
+ctr = QPointF(rect.x() + 35 * sc, rect.y() + 35 * sc)   # 区域中心 (10+25, 10+25)
+print('贴图模式下画布也认这条区域',
+      w.canvas._region_at(ctr) is not None)
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("True"), lines[0]
+    assert lines[1].endswith("True"), (
+        f"贴图模式下画布读不到同一份区域：{lines[1]}")
+
+
+# ---------- 第九轮：固定区域菜单项左对齐 ----------
+
+def test_real_region_menu_keeps_a_checkable_fix_item():
+    """⑥ 「固定区域」**仍然是可勾选项**（用户要的勾），文案也不改。
+
+    用户明确「我不是固定区域左边有打钩吗，不勾选不就解除了」——所以修这条时
+    不能把它改成不可勾选、也不能另编「解除固定区域」文案。这条钉住勾还在、
+    文案不变，防止以后又「顺手」改成别的形态。
+
+    ⚠️ 缩进对齐本身（「空了一个字」）**尚未修好**：QSS 里加
+    `QMenu::indicator` 规则没能被验证出效果（offscreen 下量
+    `actionGeometry` / `sizeHint` 两类项宽度完全相同，像素探测也不可靠），
+    所以那条规则已撤回，不留没有依据的改动。真正原因待查。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QMenu
+from PyQt5.QtGui import QImage, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w.current_background = QPixmap.fromImage(
+    QImage(600, 400, QImage.Format_RGB888))
+w.background_images = ['work.png']
+w.current_background_index = 0
+w.region_boxes = []
+w.region_fixed = False
+app.processEvents()
+
+def fix_action(fixed):
+    menu = QMenu()
+    w.canvas._add_region_actions(menu, fixed)
+    for a in menu.actions():
+        if '固定区域' in a.text():
+            return a
+    return None
+
+a = fix_action(False)
+print('有固定区域项', a is not None)
+print('是可勾选的', a is not None and a.isCheckable())
+print('未固定时没勾', a is not None and not a.isChecked())
+print('文案就是固定区域', a is not None and a.text() == '固定区域')
+
+b = fix_action(True)
+print('已固定时打勾', b is not None and b.isChecked())
+print('文案不改成解除', b is not None and b.text() == '固定区域')
+""")
+    lines = _lines(out)
+    assert lines[0].endswith("True"), lines[0]
+    assert lines[1].endswith("True"), (
+        f"「固定区域」不是可勾选项了（勾没了）：{lines[1]}")
+    assert lines[2].endswith("True"), lines[2]
+    assert lines[3].endswith("True"), lines[3]
+    assert lines[4].endswith("True"), (
+        f"已固定时没打勾：{lines[4]}")
+    assert lines[5].endswith("True"), (
+        f"文案被改成了「解除固定区域」这类额外文案：{lines[5]}")

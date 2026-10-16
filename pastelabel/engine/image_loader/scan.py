@@ -142,6 +142,49 @@ def scan_dataset_full(image_paths, is_interrupted=None, progress_cb=None,
     return labels, counts, statuses
 
 
+def collect_background_label_stats_and_tasks(image_paths, is_interrupted=None):
+    """一次扫描同时得到 {label: count} 与 {label: set(task_types)}。
+
+    统计弹窗原先分别调 `collect_background_label_counts()` 与
+    `collect_background_label_tasks()`，**把每个 sidecar json 解析了两遍**，
+    而且都在 UI 线程上，数据集一大就要好几秒（用户报的「统计有时候需要 5s
+    才能打开」）。这里复用 `scan_dataset_full()` 的单趟解析：它本来就在同一
+    次读取里同时产出 counts 与 tasks。
+
+    返回 `(counts, tasks)`；两者都是普通 dict（tasks 的值仍为 set）。
+    """
+    tasks = {}
+    _labels, counts, _statuses = scan_dataset_full(
+        image_paths, is_interrupted=is_interrupted, tasks_out=tasks)
+    return counts, tasks
+
+
+class DatasetStatsScanWorker(QThread):
+    """在后台为统计弹窗扫一遍数据集（counts + 框类型）。
+
+    与 `DatasetLabelScanWorker` 的区别：那个服务背景列表的标签/状态扫描、
+    结果走 `labels_scanned` 缓存；这个只服务统计弹窗的一次性查询，结果直接
+    回传，不改动任何缓存状态。
+    """
+    stats_ready = pyqtSignal(object, object)
+
+    def __init__(self, image_paths, parent=None):
+        super().__init__(parent)
+        self._image_paths = tuple(image_paths)
+
+    def run(self):
+        try:
+            tasks = {}
+            _labels, counts, _statuses = scan_dataset_full(
+                self._image_paths, self.isInterruptionRequested,
+                tasks_out=tasks,
+            )
+        except Exception:
+            counts, tasks = {}, {}
+        if not self.isInterruptionRequested():
+            self.stats_ready.emit(counts, tasks)
+
+
 def count_labels_in_json(json_path):
     """Parse a LabelMe JSON and return {label: shape_count}, or None on error."""
     try:
