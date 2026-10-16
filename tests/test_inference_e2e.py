@@ -16,8 +16,8 @@ pytest.importorskip("onnxruntime")   # 真实权重仍需人工对照，这里�
 
 from onnx import TensorProto, helper, numpy_helper  # noqa: E402
 
-from pastelabel.engine.inference_task import model_class_names  # noqa: E402
-from pastelabel.engine.onnx_inference import (  # noqa: E402
+from labelforge.engine.inference_task import model_class_names  # noqa: E402
+from labelforge.engine.onnx_inference import (  # noqa: E402
     InferenceError, OnnxDetector,
 )
 
@@ -413,8 +413,8 @@ def test_real_model_detects_on_real_image(fmt):
 import sys
 sys.path.insert(0, r"{REPO_ROOT}")
 from PyQt5.QtGui import QImage
-from pastelabel.engine.inference_image import qimage_to_rgb_array, resize_for_model
-from pastelabel.engine.inference_task import build_detector
+from labelforge.engine.inference_image import qimage_to_rgb_array, resize_for_model
+from labelforge.engine.inference_task import build_detector
 
 # 走生产装配路径：类别表来自模型元数据，标签才不会是空串
 det = build_detector({{"model_path": r"{model_path}", "conf_threshold": 0.35}})
@@ -508,7 +508,7 @@ def test_detection_head_index_is_not_zero_when_aux_comes_first(tmp_path):
 
 def test_pick_detection_output_reports_shapes_in_error():
     """挑不出来时错误里要带上实际形状，方便用户自己看模型导出了什么。"""
-    from pastelabel.engine.onnx_inference import pick_detection_output
+    from labelforge.engine.onnx_inference import pick_detection_output
 
     class Out:
         def __init__(self, shape):

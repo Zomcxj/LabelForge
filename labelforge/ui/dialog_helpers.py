@@ -141,15 +141,15 @@ class ThemedMessageBox(QMessageBox):
             raw = btn.text().replace('&', '').strip().lower()
             if raw in ("show details...", "show details", "显示详情"):
                 btn.setText(i18n.t("显示详情"))
-                if not btn.property("_pastelabel_detail_wired"):
-                    btn.setProperty("_pastelabel_detail_wired", True)
+                if not btn.property("_labelforge_detail_wired"):
+                    btn.setProperty("_labelforge_detail_wired", True)
                     btn.clicked.connect(
                         lambda: QTimer.singleShot(0, self._fix_detail_buttons)
                     )
             elif raw in ("hide details...", "hide details", "隐藏详情"):
                 btn.setText(i18n.t("隐藏详情"))
-                if not btn.property("_pastelabel_detail_wired"):
-                    btn.setProperty("_pastelabel_detail_wired", True)
+                if not btn.property("_labelforge_detail_wired"):
+                    btn.setProperty("_labelforge_detail_wired", True)
                     btn.clicked.connect(
                         lambda: QTimer.singleShot(0, self._fix_detail_buttons)
                     )

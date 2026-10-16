@@ -40,7 +40,7 @@ def test_qimage_to_rgb_array_strips_stride_padding():
     """宽度非 4 倍数时 Qt 每行有填充，取图必须剥掉，否则逐行错位。"""
     out = _run_real_qt('''
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.inference_image import qimage_to_rgb_array
+from labelforge.engine.inference_image import qimage_to_rgb_array
 
 # 7px 宽 ARGB32：bytesPerLine=28 无填充；用 5px 宽 RGB888 逼出对齐填充
 img = QImage(5, 3, QImage.Format_RGB888)
@@ -62,7 +62,7 @@ def test_qimage_to_rgb_array_converts_argb32_to_rgb_channel_order():
     """显示缓冲是 ARGB32（小端 BGRA），取图必须转成 RGB 而不是直接读内存。"""
     out = _run_real_qt('''
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.inference_image import qimage_to_rgb_array
+from labelforge.engine.inference_image import qimage_to_rgb_array
 
 img = QImage(4, 2, QImage.Format_ARGB32)
 img.fill(QColor(255, 128, 64))
@@ -78,7 +78,7 @@ print("OK_ORDER")
 def test_qimage_to_rgb_array_returns_none_for_null_image():
     out = _run_real_qt('''
 from PyQt5.QtGui import QImage
-from pastelabel.engine.inference_image import qimage_to_rgb_array
+from labelforge.engine.inference_image import qimage_to_rgb_array
 
 assert qimage_to_rgb_array(None) is None
 assert qimage_to_rgb_array(QImage()) is None
@@ -90,8 +90,8 @@ print("OK_NULL")
 def test_letterbox_to_array_pads_with_fill_and_keeps_size():
     out = _run_real_qt('''
 import numpy as np
-from pastelabel.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
-from pastelabel.engine.inference_image import letterbox_to_array
+from labelforge.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
+from labelforge.engine.inference_image import letterbox_to_array
 
 # 100x50 → 64x64：scale=0.64，缩放后 64x32，上下各补 16
 g = letterbox_geometry(100, 50, 64, 64)
@@ -115,8 +115,8 @@ print("OK_PAD")
 def test_letterbox_to_array_no_resize_when_already_model_size():
     out = _run_real_qt('''
 import numpy as np
-from pastelabel.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
-from pastelabel.engine.inference_image import letterbox_to_array
+from labelforge.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
+from labelforge.engine.inference_image import letterbox_to_array
 
 g = letterbox_geometry(32, 32, 32, 32)
 rgb = np.arange(32 * 32 * 3, dtype=np.uint8).reshape(32, 32, 3)
@@ -134,8 +134,8 @@ def test_letterbox_canvas_matches_geometry_for_odd_ratios():
     """画布尺寸必须严格等于 geometry.dst_*，否则送模型前张量形状就错了。"""
     out = _run_real_qt('''
 import numpy as np
-from pastelabel.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
-from pastelabel.engine.inference_image import letterbox_to_array
+from labelforge.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
+from labelforge.engine.inference_image import letterbox_to_array
 
 for src_w, src_h in [(1000, 333), (333, 1000), (7, 5), (1, 1), (1920, 1080)]:
     g = letterbox_geometry(src_w, src_h, 64, 64)
@@ -153,8 +153,8 @@ def test_resize_for_model_is_usable_as_detector_resize_fn():
     """桥接函数必须能被 OnnxDetector 直接当作 resize_fn 使用。"""
     out = _run_real_qt('''
 import numpy as np
-from pastelabel.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
-from pastelabel.engine.inference_image import resize_for_model
+from labelforge.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
+from labelforge.engine.inference_image import resize_for_model
 
 g = letterbox_geometry(80, 40, 64, 64)
 rgb = np.zeros((40, 80, 3), dtype=np.uint8)
@@ -177,8 +177,8 @@ def test_letterbox_to_array_matches_reference_geometry():
     out = _run_real_qt('''
 import numpy as np
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
-from pastelabel.engine.inference_image import qimage_to_rgb_array, letterbox_to_array
+from labelforge.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
+from labelforge.engine.inference_image import qimage_to_rgb_array, letterbox_to_array
 
 # 100x50 的图，左上角 10x5 红块
 img = QImage(100, 50, QImage.Format_RGB888)
@@ -211,8 +211,8 @@ def test_letterbox_to_array_scales_non_square_input_preserving_aspect():
     out = _run_real_qt('''
 import numpy as np
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
-from pastelabel.engine.inference_image import qimage_to_rgb_array, letterbox_to_array
+from labelforge.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
+from labelforge.engine.inference_image import qimage_to_rgb_array, letterbox_to_array
 
 img = QImage(256, 64, QImage.Format_RGB888)
 img.fill(QColor(10, 20, 30))
@@ -237,8 +237,8 @@ def test_qimage_and_letterbox_roundtrip_through_detector_resize_fn():
     out = _run_real_qt('''
 import numpy as np
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
-from pastelabel.engine.inference_image import qimage_to_rgb_array, resize_for_model
+from labelforge.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
+from labelforge.engine.inference_image import qimage_to_rgb_array, resize_for_model
 
 img = QImage(256, 64, QImage.Format_ARGB32)
 img.fill(QColor(200, 100, 50))

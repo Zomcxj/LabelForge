@@ -3,8 +3,8 @@ import json
 import os
 from pathlib import Path
 
-from pastelabel.core.utils import PathUtils
-from pastelabel.engine.label_manager import LabelManager
+from labelforge.core.utils import PathUtils
+from labelforge.engine.label_manager import LabelManager
 
 
 def _paste_shape(label):
@@ -23,7 +23,7 @@ def _read_labels(path):
 
 def test_rewrite_paste_label_on_disk_lists_output_dir_once(tmp_path, monkeypatch):
     """整库贴图改名：同一输出目录只 listdir 一次，且全部 sidecar 仍正确改名。"""
-    import pastelabel.engine.label_manager as lm
+    import labelforge.engine.label_manager as lm
 
     imgs = []
     for stem in ("a", "b", "c"):
@@ -81,7 +81,7 @@ def test_rename_shapes_in_file_match_predicate(tmp_path):
 
 def test_rename_detection_label_disk_rewrite_still_works(tmp_path, monkeypatch):
     """背景标签整库改名走重构后的共享 helper，旧名 shape 全部落盘改名。"""
-    import pastelabel.core.config_manager as config_manager
+    import labelforge.core.config_manager as config_manager
 
     img = tmp_path / "a.png"
     img.write_bytes(b"x")

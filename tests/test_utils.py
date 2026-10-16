@@ -12,8 +12,8 @@ def _load_module(name, path):
     spec.loader.exec_module(mod)
     return mod
 
-_utils_path = os.path.join(os.path.dirname(__file__), '..', 'pastelabel', 'core', 'utils.py')
-_utils = _load_module('pastelabel.core.utils', os.path.abspath(_utils_path))
+_utils_path = os.path.join(os.path.dirname(__file__), '..', 'labelforge', 'core', 'utils.py')
+_utils = _load_module('labelforge.core.utils', os.path.abspath(_utils_path))
 
 calculate_iou = _utils.calculate_iou
 natural_sort_key = _utils.natural_sort_key
@@ -122,12 +122,12 @@ class TestBoxMatchesFilter:
     """任务/分组筛选（仅显示用）。"""
 
     def test_empty_filters_pass_all(self):
-        from pastelabel.core.utils import box_matches_filter
+        from labelforge.core.utils import box_matches_filter
         assert box_matches_filter({"shape_type": "rectangle"})
         assert box_matches_filter({"shape_type": "point", "group_id": 5})
 
     def test_task_filter_matches_shape_type(self):
-        from pastelabel.core.utils import box_matches_filter
+        from labelforge.core.utils import box_matches_filter
         rect = {"shape_type": "rectangle"}
         poly = {"shape_type": "polygon", "points": [[0, 0], [1, 0], [1, 1]]}
         assert box_matches_filter(rect, task_filter={"det"})
@@ -135,7 +135,7 @@ class TestBoxMatchesFilter:
         assert box_matches_filter(poly, task_filter={"seg", "pose"})
 
     def test_group_filter_matches_group_id(self):
-        from pastelabel.core.utils import box_matches_filter
+        from labelforge.core.utils import box_matches_filter
         assert box_matches_filter({"group_id": 1}, group_filter={1})
         assert not box_matches_filter({"group_id": 2}, group_filter={1})
         assert not box_matches_filter({}, group_filter={1})

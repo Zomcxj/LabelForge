@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 import pytest
 
-from pastelabel.engine.video_io import (
+from labelforge.engine.video_io import (
     VideoError, compose_video, compose_plan, list_sequence_images,
     read_manifest, write_manifest,
 )
@@ -45,7 +45,7 @@ def _decode_marker(frame):
 
 def _write_frame_image(path, index, size=(FRAME_W, FRAME_H)):
     """写一张带帧号的图片（走 video_io.write_image，中文路径安全）。"""
-    from pastelabel.engine.video_io import write_image
+    from labelforge.engine.video_io import write_image
     path = pathlib.Path(str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     w, h = size
@@ -60,7 +60,7 @@ def _write_frame_image(path, index, size=(FRAME_W, FRAME_H)):
 
 def _make_manifest_dir(tmp_path, count=10, target_fps=2.0, duration=5.0):
     """造一个「像抽帧产物」的目录：图片 + 合法清单。"""
-    from pastelabel.engine.video_io import (
+    from labelforge.engine.video_io import (
         Manifest, ManifestFrame, output_dir_for, probe,
     )
     video = _make_source_video(tmp_path / "src.mp4", 50, fps=10.0)
@@ -427,7 +427,7 @@ def test_compose_verifies_readback_frame_count(tmp_path, monkeypatch):
     这条守的是编码器静默丢帧（cv2 对尺寸不符的帧就是直接丢弃、write()
     不抛异常），所以要单独钉住，不能指望尺寸检查替它兜底。
     """
-    import pastelabel.engine.video_io as video_io
+    import labelforge.engine.video_io as video_io
 
     out_dir, manifest_path = _make_manifest_dir(tmp_path, count=5, duration=2.5)
     real_probe = video_io._probe_output
@@ -443,7 +443,7 @@ def test_compose_verifies_readback_frame_count(tmp_path, monkeypatch):
 
 def test_compose_verifies_readback_fps(tmp_path, monkeypatch):
     """回读帧率与计划不符也要报错（编码器可能不认非标准帧率）。"""
-    import pastelabel.engine.video_io as video_io
+    import labelforge.engine.video_io as video_io
 
     out_dir, manifest_path = _make_manifest_dir(tmp_path, count=5, duration=2.5)
     real_probe = video_io._probe_output

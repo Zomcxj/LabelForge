@@ -1,11 +1,11 @@
 """画布悬停状态回归测试。"""
 from PyQt5.QtCore import Qt
 
-from pastelabel.canvas import canvas_interaction
-from pastelabel.canvas import canvas as canvas_module
-from pastelabel.canvas.canvas import Canvas as RealCanvas
-from pastelabel.canvas.canvas_interaction import CanvasInteractionMixin
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.canvas import canvas_interaction
+from labelforge.canvas import canvas as canvas_module
+from labelforge.canvas.canvas import Canvas as RealCanvas
+from labelforge.canvas.canvas_interaction import CanvasInteractionMixin
+from labelforge.ui.main_window import ImageEditor
 
 
 class Point:

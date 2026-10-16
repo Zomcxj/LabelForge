@@ -11,7 +11,7 @@ def _load_module(name, path):
     spec.loader.exec_module(mod)
     return mod
 
-_base = os.path.join(os.path.dirname(__file__), '..', 'pastelabel', 'core')
+_base = os.path.join(os.path.dirname(__file__), '..', 'labelforge', 'core')
 config = _load_module('config', os.path.join(_base, 'config.py'))
 
 

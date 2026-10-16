@@ -54,8 +54,8 @@ def test_real_preview_window_count_matches_engine():
     """预览算出的窗口数必须等于 iter_windows() 的长度。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
-from pastelabel.engine.inference_scope import iter_windows
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.engine.inference_scope import iter_windows
 
 app = QApplication([])
 p = WindowOverlayPreview()
@@ -79,8 +79,8 @@ def test_real_preview_clamps_overlap_like_engine():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
-from pastelabel.engine.inference_scope import iter_windows
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.engine.inference_scope import iter_windows
 
 app = QApplication([])
 p = WindowOverlayPreview()
@@ -99,7 +99,7 @@ def test_real_preview_rejects_window_size_out_of_range():
     """窗口尺寸超上限：引擎抛 ScopeError，预览必须显示为不可用而不是崩溃。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 p = WindowOverlayPreview()
@@ -118,7 +118,7 @@ def test_real_preview_rejects_zero_and_negative_window():
     """窗口尺寸为 0 / 负数：同样显示为不可用，不抛异常。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 p = WindowOverlayPreview()
@@ -139,7 +139,7 @@ def test_real_preview_rejects_too_many_windows():
     """窗口数超 MAX_WINDOWS：引擎抛错，预览必须给「参数非法」而不是画几万个框。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 p = WindowOverlayPreview()
@@ -158,7 +158,7 @@ def test_real_preview_without_image_is_not_valid():
     """没加载图片时预览不可用，但仍能重绘不崩。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 p = WindowOverlayPreview()
@@ -176,7 +176,7 @@ def test_real_preview_without_spec_is_not_valid():
     """参数还没设过时不可用（弹窗刚建、还没填参数）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 p = WindowOverlayPreview()
@@ -201,8 +201,8 @@ def test_real_preview_draws_grid_over_image():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtGui import QPainter, QColor, QImage
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
-from pastelabel.ui.theme import ThemeManager
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.theme import ThemeManager
 
 app = QApplication([])
 host = QWidget()
@@ -244,8 +244,8 @@ def test_real_preview_grid_density_tracks_window_count():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtGui import QPainter, QImage, QColor
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
-from pastelabel.ui.theme import ThemeManager
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.theme import ThemeManager
 
 app = QApplication([])
 host = QWidget()
@@ -302,7 +302,7 @@ def test_real_preview_skips_offscreen_windows_when_clipping():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtCore import QRectF
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 host = QWidget()
@@ -351,7 +351,7 @@ def test_real_preview_survives_large_window_count():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtGui import QPainter, QImage
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 host = QWidget()
@@ -386,7 +386,7 @@ def test_real_preview_paints_the_background_image_not_just_a_fill():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 p = WindowOverlayPreview()
@@ -426,7 +426,7 @@ def test_real_preview_without_pixmap_falls_back_to_placeholder():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtGui import QPainter, QImage, QColor
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 host = QWidget()
@@ -460,7 +460,7 @@ def test_real_params_widget_estimates_and_validates_like_dialog():
     """参数控件是滑窗弹窗与范围面板的共同内核，口径必须一致。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_params import WindowParamsWidget
+from labelforge.ui.widgets.window_params import WindowParamsWidget
 
 app = QApplication([])
 w = WindowParamsWidget(reference_size=(3840, 2160),
@@ -496,7 +496,7 @@ print(w2.spec())
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 p = WindowOverlayPreview()
@@ -525,7 +525,7 @@ def test_real_preview_survives_malformed_spec_types():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
 p = WindowOverlayPreview()

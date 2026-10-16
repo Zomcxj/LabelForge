@@ -11,11 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from pastelabel.ui import i18n
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.ui.mixins.inference import InferenceMixin
-from pastelabel.ui.mixins.translation import TranslationMixin
-from pastelabel.ui.mixins.video import VideoMixin
+from labelforge.ui import i18n
+from labelforge.ui.main_window import ImageEditor
+from labelforge.ui.mixins.inference import InferenceMixin
+from labelforge.ui.mixins.translation import TranslationMixin
+from labelforge.ui.mixins.video import VideoMixin
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,7 +34,7 @@ VIDEO_KEYS = (
 
 def test_video_button_sits_between_labels_and_model_icons():
     """视频按钮在工具栏「标签:」两个导入图标与「模型推理:」之间。"""
-    from pastelabel.ui.mixins.toolbar import ToolbarMixin
+    from labelforge.ui.mixins.toolbar import ToolbarMixin
 
     src = inspect.getsource(ToolbarMixin._create_toolbar)
     label_idx = src.index("self.label_lbl = QLabel")
@@ -47,7 +47,7 @@ def test_video_button_sits_between_labels_and_model_icons():
 
 def test_video_label_precedes_video_button():
     """视频按钮前有「视频:」文字标签，位置与「标签:」「模型推理:」一致。"""
-    from pastelabel.ui.mixins.toolbar import ToolbarMixin
+    from labelforge.ui.mixins.toolbar import ToolbarMixin
 
     src = inspect.getsource(ToolbarMixin._create_toolbar)
     assert "video_lbl" in src
@@ -65,7 +65,7 @@ def test_video_label_is_translated():
 
 
 def test_video_label_refreshed_on_language_switch():
-    from pastelabel.ui.mixins.translation import TranslationMixin
+    from labelforge.ui.mixins.translation import TranslationMixin
 
     src = inspect.getsource(TranslationMixin._refresh_ui_texts)
     assert "video_lbl" in src
@@ -79,7 +79,7 @@ def test_model_row_load_button_precedes_name_label():
     视频行是「选择视频」按钮在前、视频名在后；模型行原来是名字在前，
     两行并排时顺序看起来不一致。
     """
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
 
     src = inspect.getsource(ModelRow._build_ui)
     load_idx = src.index("self.load_btn = QPushButton")
@@ -90,7 +90,7 @@ def test_model_row_load_button_precedes_name_label():
 
 def test_model_row_clear_model_still_works_after_reorder():
     """交换顺序后 clear_model 仍要填默认值、禁用控件（不能因顺序改动而漏掉）。"""
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
 
     src = inspect.getsource(ModelRow.clear_model)
     assert "尚未加载模型" in src
@@ -99,7 +99,7 @@ def test_model_row_clear_model_still_works_after_reorder():
 
 def test_video_button_greyed_when_cv2_missing():
     """cv2 缺失时按钮置灰并说明原因，不能点了才报错。"""
-    from pastelabel.ui.mixins.toolbar import ToolbarMixin
+    from labelforge.ui.mixins.toolbar import ToolbarMixin
 
     src = inspect.getsource(ToolbarMixin._create_toolbar)
     assert "cv2" in src
@@ -108,7 +108,7 @@ def test_video_button_greyed_when_cv2_missing():
 
 def test_video_button_is_not_in_options_menu():
     """入口在工具栏，不再重复放到「选项」行。"""
-    from pastelabel.ui.mixins.options_popup import OptionsPopupMixin
+    from labelforge.ui.mixins.options_popup import OptionsPopupMixin
 
     src = inspect.getsource(OptionsPopupMixin._create_options_menu)
     assert "video_btn" not in src
@@ -118,7 +118,7 @@ def test_video_button_is_not_in_options_menu():
 
 def test_video_dialog_has_all_extraction_params():
     """弹窗里要有：选视频、帧率、起止时间、格式、质量、输出目录、开始按钮。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     for name in ("path_edit", "pick_btn", "fps_spin", "start_spin", "end_spin",
@@ -131,7 +131,7 @@ def test_video_dialog_has_all_extraction_params():
 
 def test_video_dialog_output_dir_is_readonly():
     """输出目录只读展示，由视频路径推导，用户不能另选位置。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     assert "setReadOnly(True)" in src
@@ -140,7 +140,7 @@ def test_video_dialog_output_dir_is_readonly():
 
 def test_video_dialog_validates_before_signalling():
     """开始前用 probe 校验；非法输入不发 start_requested，只在提示区说明。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     assert "probe(" in src
@@ -154,13 +154,13 @@ def test_video_dialog_validates_before_signalling():
 
 def test_video_dialog_uses_theme_and_centers():
     """与其它弹窗一致：走 dialog_helpers 的主题标题栏与居中（别自己重写一遍）。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     assert "sync_titlebar" in src
     assert "center_on_parent" in src
     # 这两个辅助函数本身负责 set_titlebar_dark 与居中计算
-    from pastelabel.ui import dialog_helpers
+    from labelforge.ui import dialog_helpers
 
     helper_src = inspect.getsource(dialog_helpers)
     assert "set_titlebar_dark" in helper_src
@@ -168,7 +168,7 @@ def test_video_dialog_uses_theme_and_centers():
 
 def test_video_dialog_settings_reports_full_range_as_none():
     """全片按 None 传：全片抽帧要读至 EOF 核对帧数，显式范围会丢掉这层检查。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog.settings)
     assert "None" in src
@@ -177,7 +177,7 @@ def test_video_dialog_settings_reports_full_range_as_none():
 
 def test_video_button_opens_dialog():
     """工具栏按钮打开弹窗（按钮位置不动）。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     src = inspect.getsource(VideoMixin._open_video_extract)
     assert "VideoDialog" in src
@@ -186,7 +186,7 @@ def test_video_button_opens_dialog():
 
 def test_video_mixin_has_no_row_methods():
     """已改回弹窗，不再有参数行的开关方法。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     for name in ("_toggle_video_row", "_ensure_video_row"):
         assert not hasattr(VideoMixin, name), name
@@ -194,18 +194,18 @@ def test_video_mixin_has_no_row_methods():
 
 def test_video_row_module_is_gone():
     """参数行模块已删除。"""
-    assert not (ROOT / "pastelabel" / "ui" / "video_row.py").exists()
+    assert not (ROOT / "labelforge" / "ui" / "video_row.py").exists()
 
 
 def test_video_mixin_registered_on_image_editor():
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     assert VideoMixin in ImageEditor.__mro__
     assert callable(getattr(ImageEditor, "_open_video_extract"))
 
 
 def test_video_mixin_contract():
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     for name in ("_open_video_extract", "_start_video_extract",
                  "_on_video_extract_finished", "_on_video_extract_failed",
@@ -217,17 +217,17 @@ def test_video_mixin_contract():
 
 def test_extraction_runs_in_background_thread():
     """抽帧必须走线程，否则大视频会冻住界面。"""
-    src = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
+    src = (ROOT / "labelforge" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
     assert "class VideoExtractWorker" in src
     assert "QThread" in src
 
-    mixin = (ROOT / "pastelabel" / "ui" / "mixins" / "video.py").read_text(encoding="utf-8")
+    mixin = (ROOT / "labelforge" / "ui" / "mixins" / "video.py").read_text(encoding="utf-8")
     assert "worker.start()" in mixin
     assert "extract_frames(" not in mixin, "抽帧只能在 worker 里执行"
 
 
 def test_video_worker_supports_cancel():
-    src = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
+    src = (ROOT / "labelforge" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
     block = src[src.index("class VideoExtractWorker"):]
     assert "def cancel(self)" in block
     assert "cancel=" in block
@@ -235,7 +235,7 @@ def test_video_worker_supports_cancel():
 
 def test_video_extract_respects_busy_flag():
     """抽帧不能与其它任务并行：起任务时检查 _busy，结束时释放。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     start_src = inspect.getsource(VideoMixin._start_video_extract)
     assert "_busy" in start_src
@@ -261,8 +261,8 @@ def test_i18n_video_terms():
 
 
 @pytest.mark.parametrize("rel", [
-    "pastelabel/ui/video_dialog.py",
-    "pastelabel/ui/mixins/video.py",
+    "labelforge/ui/video_dialog.py",
+    "labelforge/ui/mixins/video.py",
 ])
 def test_every_tr_key_in_video_code_is_translated(rel):
     """视频相关代码里每个 tr() 键都必须在两个语言表里有定义。
@@ -299,7 +299,7 @@ def test_video_texts_refreshed_on_language_switch():
 
 def test_dialog_and_model_row_are_independent():
     """视频走弹窗、模型走参数行：点视频不能顺手改模型行状态。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     src = inspect.getsource(VideoMixin._open_video_extract)
     assert "model_row" not in src
@@ -308,7 +308,7 @@ def test_dialog_and_model_row_are_independent():
 
 def test_theme_refresh_does_not_reference_deleted_row():
     """主题刷新里不能留已删除的 video_row 引用。"""
-    from pastelabel.ui.mixins.theme import ThemeMixin
+    from labelforge.ui.mixins.theme import ThemeMixin
 
     src = inspect.getsource(ThemeMixin._apply_theme)
     assert "video_row" not in src
@@ -331,7 +331,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication(sys.argv)
 import cv2, numpy as np
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui.video_dialog import VideoDialog
 
 tmp = tempfile.mkdtemp()
 video = os.path.join(tmp, "我的 视频.mp4")
@@ -426,7 +426,7 @@ def test_load_video_frames_reuses_folder_loader():
     由 load_background_folder 负责填充，还要重置索引、拉起分批加载与标签重扫。
     自己拼一遍就会只显示图片、列表里没有路径。
     """
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     src = inspect.getsource(VideoMixin._load_video_frames)
     assert "load_background_folder" in src
@@ -449,8 +449,8 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import cv2, numpy as np
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine import video_io
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine import video_io
 
 tmp = tempfile.mkdtemp()
 video = os.path.join(tmp, "我的 视频.mp4")
@@ -511,7 +511,7 @@ os._exit(0)
 
 def test_dialog_has_two_tabs():
     """抽帧与合成放在同一个弹窗的两个标签页里。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     assert "QTabWidget" in src
@@ -528,7 +528,7 @@ def test_dialog_tab_titles_translated():
 
 def test_dialog_extract_tab_keeps_existing_params():
     """抽帧页保留原参数：选视频、每秒抽几帧、起止时间、格式、质量、输出目录。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     for name in ("path_edit", "pick_btn", "fps_spin", "start_spin", "end_spin",
@@ -541,7 +541,7 @@ def test_dialog_extract_tab_keeps_existing_params():
 
 def test_dialog_compose_tab_has_its_own_params():
     """合成页参数：图片来源、每秒几帧、输出视频路径。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     for name in ("compose_dir_edit", "compose_pick_btn", "compose_fps_spin",
@@ -553,7 +553,7 @@ def test_dialog_compose_tab_has_its_own_params():
 
 def test_dialog_tabs_have_separate_action_buttons():
     """两页各有自己的动作按钮（开始抽帧 / 开始合成），不能共用一个。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     assert "self.start_btn" in src          # 抽帧
@@ -563,9 +563,9 @@ def test_dialog_tabs_have_separate_action_buttons():
 
 def test_dialog_reports_which_tab_was_accepted():
     """关窗后主窗口要知道用户做的是抽帧还是合成。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
-    from pastelabel.ui.video_dialog import ACTION_COMPOSE, ACTION_EXTRACT
+    from labelforge.ui.video_dialog import ACTION_COMPOSE, ACTION_EXTRACT
 
     assert ACTION_EXTRACT == "extract"
     assert ACTION_COMPOSE == "compose"
@@ -576,7 +576,7 @@ def test_dialog_reports_which_tab_was_accepted():
 
 def test_dialog_compose_detects_manifest_automatically():
     """合成页选目录后自动判断有没有清单：有就按清单，没有才让填每秒几帧。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     assert "MANIFEST_NAME" in src or "video_manifest.json" in src
@@ -587,7 +587,7 @@ def test_dialog_compose_detects_manifest_automatically():
 
 def test_dialog_compose_derives_output_path():
     """输出视频路径由来源推导，不让用户乱填。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog)
     assert "compose_out_edit" in src
@@ -599,7 +599,7 @@ def test_dialog_compose_derives_output_path():
 
 def test_compose_worker_runs_in_background_thread():
     """合成必须走线程，否则大序列会冻住界面。"""
-    src = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
+    src = (ROOT / "labelforge" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
     assert "class VideoComposeWorker" in src
 
     block = src[src.index("class VideoComposeWorker"):]
@@ -611,7 +611,7 @@ def test_compose_worker_runs_in_background_thread():
 
 def test_mixin_dispatches_by_action():
     """弹窗按 action 发信号，mixin 据此分发到抽帧或合成。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     src = inspect.getsource(VideoMixin._on_video_start_requested)
     assert "ACTION_COMPOSE" in src
@@ -619,13 +619,13 @@ def test_mixin_dispatches_by_action():
     assert "_start_video_extract" in src
     # 弹窗不关窗：只发信号，由 mixin 起任务
     dialog_src = inspect.getsource(
-        __import__('pastelabel.ui.video_dialog', fromlist=['VideoDialog']).VideoDialog)
+        __import__('labelforge.ui.video_dialog', fromlist=['VideoDialog']).VideoDialog)
     assert "start_requested.emit" in dialog_src
 
 
 def test_mixin_has_compose_lifecycle():
     """合成要有起任务、进度、完成、失败、清理。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     for name in ("_start_video_compose", "_on_compose_progress",
                  "_on_compose_finished", "_on_compose_failed",
@@ -635,7 +635,7 @@ def test_mixin_has_compose_lifecycle():
 
 def test_compose_respects_busy_flag():
     """合成不能与其它任务并行：起任务时检查 _busy，结束时释放。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     src = inspect.getsource(VideoMixin._start_video_compose)
     assert "_busy" in src
@@ -651,7 +651,7 @@ def test_close_event_releases_compose_worker():
 
 def test_compose_does_not_load_dataset():
     """合成产出是视频，不能当成图片数据集加载。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     src = inspect.getsource(VideoMixin._on_compose_finished)
     assert "load_background_folder" not in src
@@ -673,8 +673,8 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import cv2, numpy as np
-from pastelabel.ui.video_dialog import VideoDialog
-from pastelabel.engine import video_io as vio
+from labelforge.ui.video_dialog import VideoDialog
+from labelforge.engine import video_io as vio
 
 tmp = tempfile.mkdtemp()
 video = os.path.join(tmp, "v.mp4")
@@ -725,7 +725,7 @@ print("RESULT", repr((sorted(s1.keys()), sorted(s2.keys()), "target_fps" in s3))
 
 def test_compose_checks_busy_flag_before_start():
     """合成起任务前必须查 _busy 与 _compose_worker，避免与其它任务并行。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     src = inspect.getsource(VideoMixin._start_video_compose)
     assert "if getattr(self, '_busy', False) or getattr(self, '_compose_worker', None):" in src
@@ -748,8 +748,8 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import cv2, numpy as np
-from pastelabel.ui.video_dialog import VideoDialog
-from pastelabel.engine import video_io as vio
+from labelforge.ui.video_dialog import VideoDialog
+from labelforge.engine import video_io as vio
 
 tmp = tempfile.mkdtemp()
 video = os.path.join(tmp, "v.mp4")
@@ -812,7 +812,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import cv2, numpy as np
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui.video_dialog import VideoDialog
 
 tmp = tempfile.mkdtemp()
 def make(fps, name):
@@ -881,7 +881,7 @@ import sys
 sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui.video_dialog import VideoDialog
 
 d = VideoDialog()
 # 用 isHidden 而不是 isVisible：弹窗没 show() 过，isVisible 恒为 False
@@ -919,7 +919,7 @@ import sys
 sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui.video_dialog import VideoDialog
 
 d = VideoDialog()
 d.action = "compose"
@@ -938,7 +938,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import cv2, numpy as np
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui.video_dialog import VideoDialog
 
 tmp = tempfile.mkdtemp()
 video = os.path.join(tmp, "v.mp4")
@@ -974,7 +974,7 @@ import sys
 sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui.video_dialog import VideoDialog
 
 d = VideoDialog()
 cancels = []
@@ -1176,9 +1176,9 @@ import sys
 sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication, QProgressBar
 app = QApplication([])
-from pastelabel.ui.theme import ThemeManager
-from pastelabel.ui import dialogs, inference_progress, quality_lint_dialog
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui.theme import ThemeManager
+from labelforge.ui import dialogs, inference_progress, quality_lint_dialog
+from labelforge.ui.video_dialog import VideoDialog
 
 base = ThemeManager.get_progress_style()
 
@@ -1211,6 +1211,6 @@ print("RESULT", repr((base.count("border-radius: 8px"),
 
 def test_video_progress_bar_matches_project_height():
     """视频进度条高度跟其它三处一致（统一样式给的 16px），不再是 12px 直角。"""
-    src = (ROOT / "pastelabel" / "ui" / "video_dialog.py").read_text(encoding="utf-8")
+    src = (ROOT / "labelforge" / "ui" / "video_dialog.py").read_text(encoding="utf-8")
     assert "setFixedHeight(12)" not in src, "12px 直角是旧的、与别处不一致的高度"
     assert "get_progress_style" in src, "要用 ThemeManager 的统一进度条样式"

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pastelabel.ui.theme import ThemeManager, ThemeMode
+from labelforge.ui.theme import ThemeManager, ThemeMode
 
 
 @pytest.mark.parametrize(
@@ -57,10 +57,10 @@ def test_buttons_use_theme_primary_text_except_background_list_controls(mode):
 
 def test_color_buttons_render_their_selected_color_without_blue_states():
     import inspect
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
 
     root = Path(__file__).resolve().parents[1]
-    settings = (root / "pastelabel" / "ui" / "settings_dialog.py").read_text(encoding="utf-8")
+    settings = (root / "labelforge" / "ui" / "settings_dialog.py").read_text(encoding="utf-8")
 
     label_style = inspect.getsource(ImageEditor._set_label_color_button)
     crosshair_style = settings.split("def _update_crosshair_color_button", 1)[1].split("def _choose_crosshair_color", 1)[0]

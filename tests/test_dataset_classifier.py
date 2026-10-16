@@ -2,7 +2,7 @@
 import json
 import os
 
-from pastelabel.engine.dataset_classifier import (
+from labelforge.engine.dataset_classifier import (
     analyze_dataset, build_features, classify_and_split, cluster_labels,
     get_image_extensions, recommend_k, split_by_class,
 )
@@ -131,7 +131,7 @@ def test_classify_and_split_progress_callback(tmp_path):
 
 
 def test_dataset_classifier_folder_defaults_to_open_folder():
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
     editor = ImageEditor.__new__(ImageEditor)
     editor.background_images = [os.path.join('D:', 'data', 'img1.png')]
     assert editor._get_dataset_classifier_folder() == os.path.join('D:', 'data')
@@ -149,7 +149,7 @@ def test_dataset_classifier_dialog_defaults(tmp_path):
 import os
 from pathlib import Path
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.dataset_classifier_dialog import DatasetClassifierDialog
+from labelforge.ui.dataset_classifier_dialog import DatasetClassifierDialog
 
 app = QApplication.instance() or QApplication([])
 folder = {str(tmp_path)!r}

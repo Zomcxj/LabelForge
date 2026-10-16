@@ -1,4 +1,4 @@
-from pastelabel.ui.theme import ThemeManager
+from labelforge.ui.theme import ThemeManager
 
 
 def test_dialog_button_style_matches_settings_radius():

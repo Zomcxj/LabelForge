@@ -5,7 +5,7 @@ import os
 
 def _write_output_sidecar(tmp_path, image_path, shapes):
     """贴图实际保存在输出目录 sidecar：{background_dir}_paste_output/{stem}.json。"""
-    from pastelabel.core.utils import PathUtils
+    from labelforge.core.utils import PathUtils
     out_dir = PathUtils.get_output_dir(image_path)
     os.makedirs(out_dir, exist_ok=True)
     json_path = os.path.join(out_dir, os.path.splitext(os.path.basename(image_path))[0] + ".json")
@@ -58,7 +58,7 @@ class _TextInput:
 
 def _real_save(img_path, prefix_checked=True, prefix="paste"):
     """走真实 SaveManager：默认前缀 paste 落盘 {prefix}_{stem}.json。"""
-    from pastelabel.engine.save_manager import SaveManager
+    from labelforge.engine.save_manager import SaveManager
 
     class _Bg:
         def width(self): return 100
@@ -90,7 +90,7 @@ def _image_in_subdir(tmp_path, name="cat.png"):
 
 
 def test_collect_shape_geometry_basic(tmp_path):
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "a", [
         _box("cat", w=100, h=50),
         _box("dog", w=40, h=80),
@@ -105,7 +105,7 @@ def test_collect_shape_geometry_basic(tmp_path):
 
 
 def test_collect_shape_geometry_skips_points_and_degenerate(tmp_path):
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "b", [
         _box("kp", w=0, h=0, shape_type="point"),
         _box("zero", w=0, h=0),
@@ -116,7 +116,7 @@ def test_collect_shape_geometry_skips_points_and_degenerate(tmp_path):
 
 
 def test_collect_shape_geometry_skips_missing_sidecar(tmp_path):
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = tmp_path / "none.png"
     img.write_bytes(b"x")
     out = collect_shape_geometry([str(img)])
@@ -125,7 +125,7 @@ def test_collect_shape_geometry_skips_missing_sidecar(tmp_path):
 
 
 def test_collect_shape_geometry_memory_overrides_disk(tmp_path):
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "c", [_box("cat", w=100, h=50)])
     memory = {0: [_box("cat", w=10, h=10), _box("bird", w=20, h=20)]}
     out = collect_shape_geometry([img], memory_boxes=memory)
@@ -134,7 +134,7 @@ def test_collect_shape_geometry_memory_overrides_disk(tmp_path):
 
 
 def test_collect_paste_geometry():
-    from pastelabel.engine.dataset_health import collect_paste_geometry
+    from labelforge.engine.dataset_health import collect_paste_geometry
 
     class Rect:
         def __init__(self, w, h, x=0, y=0):
@@ -162,7 +162,7 @@ def _geo(label, w, h, x=0.0, y=0.0):
 
 
 def test_compute_health_class_dist_descending():
-    from pastelabel.engine.dataset_health import compute_health
+    from labelforge.engine.dataset_health import compute_health
     stats = compute_health([_geo("a", 10, 10), _geo("a", 10, 10),
                             _geo("b", 10, 10)])
     assert stats['class_dist'] == [{'label': 'a', 'count': 2},
@@ -172,7 +172,7 @@ def test_compute_health_class_dist_descending():
 
 
 def test_compute_health_size_hist_covers_all_boxes():
-    from pastelabel.engine.dataset_health import compute_health
+    from labelforge.engine.dataset_health import compute_health
     boxes = [_geo("a", i * 10, 10) for i in range(1, 21)]
     stats = compute_health(boxes)
     assert sum(stats['size_hist']['counts']) == len(boxes)
@@ -180,14 +180,14 @@ def test_compute_health_size_hist_covers_all_boxes():
 
 
 def test_compute_health_aspect_hist():
-    from pastelabel.engine.dataset_health import compute_health
+    from labelforge.engine.dataset_health import compute_health
     boxes = [_geo("a", 10, 10), _geo("a", 20, 10), _geo("a", 40, 10)]
     stats = compute_health(boxes)
     assert sum(stats['aspect_hist']['counts']) == 3
 
 
 def test_compute_health_iou_hist_same_label_only():
-    from pastelabel.engine.dataset_health import compute_health
+    from labelforge.engine.dataset_health import compute_health
     # 两个同类框完全重叠 -> IoU 1.0 落最后一桶
     boxes = [_geo("a", 100, 100), _geo("a", 100, 100)]
     for i, b in enumerate(boxes):
@@ -197,7 +197,7 @@ def test_compute_health_iou_hist_same_label_only():
 
 
 def test_health_advice_rare_class():
-    from pastelabel.engine.dataset_health import health_advice
+    from labelforge.engine.dataset_health import health_advice
     stats = {
         'class_dist': [{'label': 'a', 'count': 1950}, {'label': 'b', 'count': 50}],
         'size_hist': {'edges': [0, 1, 2], 'counts': [1000, 1000]},
@@ -212,7 +212,7 @@ def test_health_advice_rare_class():
 
 
 def test_health_advice_no_issue():
-    from pastelabel.engine.dataset_health import health_advice
+    from labelforge.engine.dataset_health import health_advice
     stats = {
         'class_dist': [{'label': 'a', 'count': 50}, {'label': 'b', 'count': 50}],
         'size_hist': {'edges': [0, 1, 2], 'counts': [50, 50]},
@@ -226,7 +226,7 @@ def test_health_advice_no_issue():
 
 def test_worker_signals_and_run_source():
     import inspect
-    from pastelabel.engine import dataset_health
+    from labelforge.engine import dataset_health
     assert hasattr(dataset_health, 'DatasetHealthWorker')
     src = inspect.getsource(dataset_health.DatasetHealthWorker)
     assert 'health_ready' in src
@@ -235,7 +235,7 @@ def test_worker_signals_and_run_source():
 
 
 def test_health_bar_chart_api_and_paint():
-    from pastelabel.ui.widgets.health_charts import HealthBarChart
+    from labelforge.ui.widgets.health_charts import HealthBarChart
     chart = HealthBarChart()
     chart.set_data([{'label': 'a', 'value': 3}, {'label': 'b', 'value': 1}])
     chart.paintEvent(None)
@@ -250,7 +250,7 @@ def test_health_bar_chart_api_and_paint():
 
 
 def test_i18n_health_terms():
-    from pastelabel.ui.i18n import _strings
+    from labelforge.ui.i18n import _strings
     for key in ("数据集健康", "正在分析", "暂无贴图数据", "请先加载数据集",
                 "类别分布", "尺寸分布", "长宽比分布", "IoU 重叠分布",
                 "建议", "未发现明显失衡"):
@@ -260,7 +260,7 @@ def test_i18n_health_terms():
 
 def test_stats_mixin_exposes_health_section_source():
     import inspect
-    from pastelabel.ui.mixins.stats import StatsMixin
+    from labelforge.ui.mixins.stats import StatsMixin
     src = inspect.getsource(StatsMixin)
     assert "_build_health_section" in src
     assert "DatasetHealthWorker" in src
@@ -273,7 +273,7 @@ def test_stats_mixin_exposes_health_section_source():
 
 def test_stats_dialog_themes_tabs_and_dock_titles():
     import inspect
-    from pastelabel.ui.mixins.stats import StatsMixin
+    from labelforge.ui.mixins.stats import StatsMixin
     src = inspect.getsource(StatsMixin._show_label_stats)
     assert "QTabBar::tab" in src
     assert "QDockWidget::title" in src
@@ -291,7 +291,7 @@ class _FakeSignal:
 
 
 def _run_health_worker(image_paths=(), memory_boxes=None, canvas_items=None):
-    from pastelabel.engine.dataset_health import DatasetHealthWorker
+    from labelforge.engine.dataset_health import DatasetHealthWorker
     w = DatasetHealthWorker(tuple(image_paths), memory_boxes or {},
                             canvas_items or {})
     w.health_ready = _FakeSignal()
@@ -303,7 +303,7 @@ def _run_health_worker(image_paths=(), memory_boxes=None, canvas_items=None):
 
 
 def test_collect_paste_geometry_carries_image_index():
-    from pastelabel.engine.dataset_health import collect_paste_geometry
+    from labelforge.engine.dataset_health import collect_paste_geometry
 
     class Rect:
         def __init__(self, w, h, x=0, y=0):
@@ -336,7 +336,7 @@ def test_worker_paste_section_empty_without_paste():
 
 
 def test_fmt_num_formats_thousands_and_millions():
-    from pastelabel.ui.widgets.health_charts import _fmt_num
+    from labelforge.ui.widgets.health_charts import _fmt_num
     assert _fmt_num(0) == '0'
     assert _fmt_num(999) == '999'
     assert _fmt_num(1200) == '1.2k'
@@ -344,14 +344,14 @@ def test_fmt_num_formats_thousands_and_millions():
 
 
 def test_bar_label_formats_value_and_percent():
-    from pastelabel.ui.widgets.health_charts import _bar_label
+    from labelforge.ui.widgets.health_charts import _bar_label
     assert _bar_label(3, 4) == '3 (75%)'
     assert _bar_label(1200, 2400) == '1.2k (50%)'
     assert _bar_label(0, 0) == '0 (0%)'
 
 
 def test_chart_accepts_colors_and_axis_labels():
-    from pastelabel.ui.widgets.health_charts import HealthBarChart
+    from labelforge.ui.widgets.health_charts import HealthBarChart
     chart = HealthBarChart()
     chart.set_data([{'label': 'a', 'value': 3, 'color': '#FF0000'},
                     {'label': 'b', 'value': 1}])
@@ -363,7 +363,7 @@ def test_chart_accepts_colors_and_axis_labels():
 
 def test_hist_header_shows_total_not_peak():
     """顶部标签显示柱高总和：IoU 图口径是配对数，显示峰值会误以为框数不一致。"""
-    from pastelabel.ui.widgets.health_charts import _hist_header
+    from labelforge.ui.widgets.health_charts import _hist_header
     assert _hist_header('框数', [5, 20, 10, 2]) == '框数: 37'
     assert _hist_header('框对数', [30, 8, 1]) == '框对数: 39'
     assert _hist_header('框数', []) == '框数: 0'
@@ -388,7 +388,7 @@ def test_chart_paint_offscreen_real_qt(tmp_path):
     root = Path(__file__).resolve().parents[1]
     script = '''
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.health_charts import HealthBarChart, _fmt_num
+from labelforge.ui.widgets.health_charts import HealthBarChart, _fmt_num
 app = QApplication.instance() or QApplication([])
 assert _fmt_num(1200) == "1.2k"
 c = HealthBarChart()
@@ -447,7 +447,7 @@ print("OK")
 
 def test_collect_shape_geometry_empty_memory_slot_falls_back_to_disk(tmp_path):
     """已加载但内存为空的图（应用里每张图都有空槽）必须回读磁盘。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "mem_empty", [_box("cat", w=100, h=50)])
     out = collect_shape_geometry([img], memory_boxes={0: []})
     assert [b["label"] for b in out["boxes"]] == ["cat"]
@@ -456,7 +456,7 @@ def test_collect_shape_geometry_empty_memory_slot_falls_back_to_disk(tmp_path):
 
 def test_collect_shape_geometry_routes_paste_shapes(tmp_path):
     """磁盘 flags.paste 的 shape 进 paste_boxes，不进 boxes。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "flagged", [
         _box("cat", w=100, h=50),
         dict(_box("logo", w=10, h=10), flags={"paste": True}),
@@ -469,7 +469,7 @@ def test_collect_shape_geometry_routes_paste_shapes(tmp_path):
 
 def test_collect_shape_geometry_memory_paste_boxes_routed(tmp_path):
     """内存框带 is_paste（新会话从磁盘载入的贴图）也要进 paste_boxes。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "mem_paste", [_box("cat", w=100, h=50)])
     memory = {0: [
         {"label": "cat", "x": 0, "y": 0, "width": 100, "height": 50},
@@ -486,7 +486,7 @@ def test_collect_shape_geometry_reads_output_dir_paste_sidecar(tmp_path):
 
     输出 sidecar 的非贴图框是保存时的副本，不能作为来源（见 FIX B）。
     """
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "out_paste", [_box("cat", w=100, h=50)])
     _write_output_sidecar(tmp_path, img, [
         dict(_box("logo", w=10, h=10), flags={"paste": True}),
@@ -500,8 +500,8 @@ def test_collect_shape_geometry_reads_output_dir_paste_sidecar(tmp_path):
 
 def test_collect_shape_geometry_reads_prefixed_output_sidecar_from_real_save(tmp_path):
     """默认前缀开启时真实保存为 paste_cat.json，统计必须看到贴图。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
-    from pastelabel.core.utils import PathUtils
+    from labelforge.engine.dataset_health import collect_shape_geometry
+    from labelforge.core.utils import PathUtils
     img = _image_in_subdir(tmp_path)
     _real_save(img)
 
@@ -517,7 +517,7 @@ def test_collect_shape_geometry_reads_prefixed_output_sidecar_from_real_save(tmp
 
 def test_collect_shape_geometry_reads_custom_prefix_output_sidecar(tmp_path):
     """前缀是用户自由输入的，不能硬编码 paste_。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _image_in_subdir(tmp_path)
     _real_save(img, prefix="sess2")
 
@@ -527,7 +527,7 @@ def test_collect_shape_geometry_reads_custom_prefix_output_sidecar(tmp_path):
 
 def test_collect_shape_geometry_reads_output_sidecar_without_prefix(tmp_path):
     """关闭前缀时保存为 cat.json，同样要能采到。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _image_in_subdir(tmp_path)
     _real_save(img, prefix_checked=False)
 
@@ -537,8 +537,8 @@ def test_collect_shape_geometry_reads_output_sidecar_without_prefix(tmp_path):
 
 def test_collect_shape_geometry_scans_image_with_only_prefixed_output_sidecar(tmp_path):
     """原图未标注、只有带前缀的输出 sidecar 时也要计入扫描数。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
-    from pastelabel.core.utils import PathUtils
+    from labelforge.engine.dataset_health import collect_shape_geometry
+    from labelforge.core.utils import PathUtils
     img = _image_in_subdir(tmp_path)
     _real_save(img)
     assert not os.path.exists(os.path.splitext(img)[0] + ".json")
@@ -550,7 +550,7 @@ def test_collect_shape_geometry_scans_image_with_only_prefixed_output_sidecar(tm
 
 def test_collect_shape_geometry_does_not_resurrect_deleted_output_boxes(tmp_path):
     """已加载图以内存为准：输出 sidecar 的非贴图框不能复活。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "resurrect", [])
     _write_output_sidecar(tmp_path, img, [
         _box("cat", w=100, h=50),
@@ -564,7 +564,7 @@ def test_collect_shape_geometry_does_not_resurrect_deleted_output_boxes(tmp_path
 
 def test_collect_shape_geometry_output_non_paste_not_counted_when_original_missing(tmp_path):
     """原目录无 sidecar 时，输出 sidecar 的非贴图框也不能单独算数。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = tmp_path / "only_out2.png"
     img.write_bytes(b"x")
     _write_output_sidecar(tmp_path, str(img), [
@@ -577,7 +577,7 @@ def test_collect_shape_geometry_output_non_paste_not_counted_when_original_missi
 
 def test_collect_shape_geometry_counts_memory_box_and_output_paste_once(tmp_path):
     """内存检测框与输出 sidecar 的同几何副本只计一次，贴图另计。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "move_case", [])
     shape = _box("cat", w=100, h=50)
     _write_output_sidecar(tmp_path, img, [
@@ -592,7 +592,7 @@ def test_collect_shape_geometry_counts_memory_box_and_output_paste_once(tmp_path
 
 def test_collect_shape_geometry_dedupes_paste_across_memory_and_output(tmp_path):
     """内存贴图（is_paste）与磁盘贴图（flags.paste）同几何只能计一次。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "paste_dup", [])
     _write_output_sidecar(tmp_path, img, [
         {"label": "logo", "points": [[5, 5], [15, 5], [15, 15], [5, 15]],
@@ -607,7 +607,7 @@ def test_collect_shape_geometry_dedupes_paste_across_memory_and_output(tmp_path)
 
 def test_close_health_worker_disconnects_signal_before_drop():
     """超时未停的 worker 不能再往已销毁的弹窗发信号：丢引用前必须断开。"""
-    from pastelabel.ui.mixins.stats import StatsMixin
+    from labelforge.ui.mixins.stats import StatsMixin
 
     class Signal:
         def __init__(self):
@@ -647,7 +647,7 @@ def test_close_health_worker_disconnects_signal_before_drop():
 def test_collect_shape_geometry_abandons_pending_reads_on_interrupt(tmp_path, monkeypatch):
     """健康扫描中断后不能等所有排队读盘 future 完成。"""
     import time
-    from pastelabel.engine import dataset_health
+    from labelforge.engine import dataset_health
 
     def _slow_read(json_path):
         time.sleep(0.5)
@@ -669,7 +669,7 @@ def test_collect_shape_geometry_abandons_pending_reads_on_interrupt(tmp_path, mo
 
 def test_collect_shape_geometry_output_sidecar_only(tmp_path):
     """只有输出目录 sidecar（原图未标注）时，贴图要采到，非贴图不算。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = tmp_path / "only_out.png"
     img.write_bytes(b"x")
     _write_output_sidecar(tmp_path, str(img), [
@@ -684,7 +684,7 @@ def test_collect_shape_geometry_output_sidecar_only(tmp_path):
 
 def test_collect_shape_geometry_dedupes_shapes_in_both_sidecars(tmp_path):
     """save_json 把当前图检测框同时写进两份 sidecar：同一形状只能计一次。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     shape = _box("cat", w=100, h=50)
     img = _write(tmp_path, "dup_side", [shape])
     _write_output_sidecar(tmp_path, img, [
@@ -698,7 +698,7 @@ def test_collect_shape_geometry_dedupes_shapes_in_both_sidecars(tmp_path):
 
 def test_collect_shape_geometry_skips_malformed_shape(tmp_path):
     """坏 shape（点数为 1 / 非数值坐标）不能中断整库扫描。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "malformed", [
         {"label": "bad", "points": [[5]]},
         {"label": "bad2", "points": [["x", "y"], ["z", "w"]]},
@@ -711,7 +711,7 @@ def test_collect_shape_geometry_skips_malformed_shape(tmp_path):
 
 def test_collect_shape_geometry_skips_non_finite_coords(tmp_path):
     """NaN/Inf 坐标（json 允许 NaN/Infinity 字面量）跳过，不能整库分析失败。"""
-    from pastelabel.engine.dataset_health import collect_shape_geometry
+    from labelforge.engine.dataset_health import collect_shape_geometry
     img = _write(tmp_path, "nonfinite", [
         {"label": "nan", "points": [[float("nan"), 0], [10, 0],
                                     [10, 10], [float("nan"), 10]]},
@@ -738,7 +738,7 @@ def test_worker_survives_nan_in_sidecar(tmp_path):
 
 def test_compute_health_survives_non_finite_values():
     """聚合入口的防御：坏 area/aspect/IoU 值跳过，好框照常计数。"""
-    from pastelabel.engine.dataset_health import compute_health
+    from labelforge.engine.dataset_health import compute_health
     boxes = [
         {"label": "a", "x": 0, "y": 0, "width": float("nan"),
          "height": 10, "area": float("nan"), "aspect": float("inf"),
@@ -754,14 +754,14 @@ def test_compute_health_survives_non_finite_values():
 
 def test_merge_shapes_keeps_primary_duplicates(tmp_path):
     """primary（原始 sidecar）内部重复框必须保留：IoU 直方图靠它暴露重复。"""
-    from pastelabel.engine.dataset_health import _merge_shapes
+    from labelforge.engine.dataset_health import _merge_shapes
     shape = _box("cat", w=100, h=50)
     assert len(_merge_shapes([shape, dict(shape)], None)) == 2
 
 
 def test_merge_shapes_dedupes_only_secondary():
     """secondary（输出 sidecar）与 primary 同几何只追加一次，primary 全保留。"""
-    from pastelabel.engine.dataset_health import _merge_shapes
+    from labelforge.engine.dataset_health import _merge_shapes
     shape = _box("cat", w=100, h=50)
     merged = _merge_shapes([shape], [dict(shape), _box("dog", w=1, h=1)])
     assert [s["label"] for s in merged] == ["cat", "dog"]
@@ -769,8 +769,8 @@ def test_merge_shapes_dedupes_only_secondary():
 
 def test_health_advice_items_are_i18n_keys():
     """建议项为 {key, params}，zh 键为 identity，en 键可 format 渲染。"""
-    from pastelabel.engine.dataset_health import health_advice
-    from pastelabel.ui.i18n import _strings
+    from labelforge.engine.dataset_health import health_advice
+    from labelforge.ui.i18n import _strings
     stats = {
         'class_dist': [{'label': '类别A', 'count': 20},
                        {'label': 'b', 'count': 980}],
@@ -789,14 +789,14 @@ def test_health_advice_items_are_i18n_keys():
 
 
 def test_iou_hist_payload_has_no_dead_skipped_images():
-    from pastelabel.engine.dataset_health import compute_health
+    from labelforge.engine.dataset_health import compute_health
     stats = compute_health([_geo("a", 10, 10)])
     assert 'skipped_images' not in stats['iou_hist']
 
 
 def test_collect_shape_geometry_survives_geometry_exception(tmp_path, monkeypatch):
     """_geometry_of 抛异常时跳过该 shape，不能中断整库扫描。"""
-    from pastelabel.engine import dataset_health
+    from labelforge.engine import dataset_health
     img = _write(tmp_path, "geo_raise", [
         _box("bad", w=10, h=10),
         _box("ok", w=20, h=20),
@@ -816,7 +816,7 @@ def test_collect_shape_geometry_survives_geometry_exception(tmp_path, monkeypatc
 
 
 def test_merge_paste_geometry_prefers_memory_and_dedupes():
-    from pastelabel.engine.dataset_health import merge_paste_geometry
+    from labelforge.engine.dataset_health import merge_paste_geometry
     disk = [{"label": "old", "x": 1.0, "y": 2.0, "width": 10.0, "height": 10.0,
              "area": 100.0, "aspect": 1.0, "image_index": 0}]
     memory = [{"label": "new", "x": 1.0, "y": 2.0, "width": 10.0, "height": 10.0,
@@ -868,7 +868,7 @@ def test_worker_paste_section_computed_with_paste():
 
 
 def test_i18n_stats_redesign_terms():
-    from pastelabel.ui.i18n import _strings
+    from labelforge.ui.i18n import _strings
     for key in ("数据源：背景图标签（切换标签页）",
                 "数据源：贴图标签（切换标签页）",
                 "各类别占比应接近均衡；长尾类别建议多合成",
@@ -883,7 +883,7 @@ def test_i18n_stats_redesign_terms():
 
 def test_stats_health_section_supports_source_switch():
     import inspect
-    from pastelabel.ui.mixins.stats import StatsMixin
+    from labelforge.ui.mixins.stats import StatsMixin
     src = inspect.getsource(StatsMixin)
     assert "_set_health_source" in src
     assert "'annot'" in src and "'paste'" in src
@@ -903,7 +903,7 @@ def test_health_source_switch_routes_payload_real_qt(tmp_path):
     script = '''
 from PyQt5.QtCore import QObject
 from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout
-from pastelabel.ui.mixins.stats import StatsMixin
+from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
 
@@ -1007,7 +1007,7 @@ print("OK")
 
 def test_stats_dialog_min_width_810():
     import inspect
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
     src = inspect.getsource(ImageEditor._show_label_stats)
     assert "dialog.setMinimumSize(1200, 640)" in src
 
@@ -1022,7 +1022,7 @@ def test_stats_dialog_table_wiring_and_worker_payload_real_qt(tmp_path):
     script = '''
 from PyQt5.QtCore import QObject
 from PyQt5.QtWidgets import QApplication, QDialog, QWidget
-from pastelabel.ui.mixins.stats import StatsMixin
+from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
 
@@ -1151,7 +1151,7 @@ def test_stats_total_label_payload_paste_count_real_qt(tmp_path):
     script = '''
 from PyQt5.QtCore import QObject
 from PyQt5.QtWidgets import QApplication, QDialog
-from pastelabel.ui.mixins.stats import StatsMixin
+from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
 
@@ -1268,7 +1268,7 @@ def test_stats_total_bg_count_matches_bg_table_with_disk_paste_real_qt(tmp_path)
     script = '''
 import json
 from PyQt5.QtWidgets import QApplication, QDialog
-from pastelabel.ui.mixins.stats import StatsMixin
+from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
 
@@ -1366,7 +1366,7 @@ def test_stats_dialog_tabs_and_docks_real_qt(tmp_path):
     script = '''
 from PyQt5.QtCore import QObject
 from PyQt5.QtWidgets import QApplication, QDialog, QDockWidget
-from pastelabel.ui.mixins.stats import StatsMixin
+from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
 
@@ -1459,7 +1459,7 @@ assert abs(top_row[0].width() - top_row[1].width()) <= 2, (
     top_row[0].width(), top_row[1].width())
 
 # 浮动 dock 的独立顶层窗口：原生标题栏需随主题设深色
-from pastelabel.ui import dwm as _dwm
+from labelforge.ui import dwm as _dwm
 _dwm_calls = []
 _orig_dwm = _dwm.set_titlebar_dark
 
@@ -1480,7 +1480,7 @@ try:
     dock_hwnd = int(docks["class"].winId())
     dock_calls = [c for c in _dwm_calls if c[0] == dock_hwnd]
     assert dock_calls, ("floating dock titlebar not synced", _dwm_calls, dock_hwnd)
-    from pastelabel.ui.theme import ThemeManager
+    from labelforge.ui.theme import ThemeManager
     expected_dark = ThemeManager.get_mode().value == "dark"
     assert dock_calls[-1][1] is expected_dark, (dock_calls, expected_dark)
 finally:

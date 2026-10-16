@@ -14,12 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from pastelabel.ui import i18n
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.ui.mixins.inference import InferenceMixin
-from pastelabel.ui.mixins.options_popup import OptionsPopupMixin
-from pastelabel.ui.mixins.toolbar import ToolbarMixin
-from pastelabel.ui.mixins.translation import TranslationMixin
+from labelforge.ui import i18n
+from labelforge.ui.main_window import ImageEditor
+from labelforge.ui.mixins.inference import InferenceMixin
+from labelforge.ui.mixins.options_popup import OptionsPopupMixin
+from labelforge.ui.mixins.toolbar import ToolbarMixin
+from labelforge.ui.mixins.translation import TranslationMixin
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -92,15 +92,15 @@ def test_inference_mixin_contract():
 
 def test_dialog_module_is_deleted():
     """弹窗已被图标 + 模型行取代。"""
-    assert not (ROOT / "pastelabel" / "ui" / "inference_dialog.py").exists()
+    assert not (ROOT / "labelforge" / "ui" / "inference_dialog.py").exists()
 
 
 def test_inference_runs_in_background_threads():
     """模型加载与推理都必须走线程，否则大模型会冻住界面。"""
-    src = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
+    src = (ROOT / "labelforge" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
     assert "QThread" in src
     assert src.count("def run(self)") >= 2, "加载与推理各一个 worker"
-    mixin = (ROOT / "pastelabel" / "ui" / "mixins" / "inference.py").read_text(encoding="utf-8")
+    mixin = (ROOT / "labelforge" / "ui" / "mixins" / "inference.py").read_text(encoding="utf-8")
     assert "worker.start()" in mixin
     assert "detector.detect(" not in mixin, "推理只能在 worker 里执行"
 
@@ -121,10 +121,10 @@ def test_i18n_inference_terms():
 
 
 @pytest.mark.parametrize("rel", [
-    "pastelabel/ui/inference_workers.py",
-    "pastelabel/ui/inference_progress.py",
-    "pastelabel/ui/model_row.py",
-    "pastelabel/ui/mixins/inference.py",
+    "labelforge/ui/inference_workers.py",
+    "labelforge/ui/inference_progress.py",
+    "labelforge/ui/model_row.py",
+    "labelforge/ui/mixins/inference.py",
 ])
 def test_every_tr_key_in_inference_code_is_translated(rel):
     """推理相关代码里用到的每个 tr() 键都必须在两个语言表里有定义。
@@ -149,7 +149,7 @@ def test_inference_keys_do_not_shadow_existing_translations():
     重名的前一份定义在内存里根本看不到。
     """
     import collections
-    text = (ROOT / "pastelabel/ui/i18n.py").read_text(encoding="utf-8")
+    text = (ROOT / "labelforge/ui/i18n.py").read_text(encoding="utf-8")
     tree = ast.parse(text)
     dicts = [n for n in ast.walk(tree)
              if isinstance(n, ast.Dict) and len(n.keys) > 100]
@@ -165,14 +165,14 @@ def test_inference_keys_do_not_shadow_existing_translations():
 
 def test_thresholds_are_passed_per_call_not_baked_in():
     """detect 必须接受阈值参数，否则调参就得重建会话。"""
-    from pastelabel.engine.onnx_inference import OnnxDetector
+    from labelforge.engine.onnx_inference import OnnxDetector
     sig = inspect.signature(OnnxDetector.detect)
     assert "conf_threshold" in sig.parameters
     assert "iou_threshold" in sig.parameters
 
 
 def test_detector_exposes_live_setters():
-    from pastelabel.engine.onnx_inference import OnnxDetector
+    from labelforge.engine.onnx_inference import OnnxDetector
     for name in ("set_thresholds", "set_input_size"):
         assert callable(getattr(OnnxDetector, name)), name
 
@@ -194,7 +194,7 @@ def test_changing_input_size_does_not_reload_model():
 # ---------- 类别名解析 ----------
 
 def test_class_names_prefer_sidecar_txt(tmp_path):
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     model = tmp_path / "m.onnx"
     model.write_bytes(b"x")
@@ -205,7 +205,7 @@ def test_class_names_prefer_sidecar_txt(tmp_path):
 
 
 def test_class_names_fall_back_to_metadata(tmp_path):
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     class _Meta:
         custom_metadata_map = {"names": "{0: 'person', 1: 'car'}"}
@@ -224,7 +224,7 @@ def test_class_names_fall_back_to_metadata(tmp_path):
 
 def test_class_names_missing_reports_missing(tmp_path):
     """两处都没有时报 missing，不能编造 0 1 2 3 之类的假类名。"""
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     class _Session:
         def get_modelmeta(self):
@@ -238,13 +238,13 @@ def test_class_names_missing_reports_missing(tmp_path):
 
 
 def test_sidecar_class_names_path_is_same_stem(tmp_path):
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
     assert inference_task.sidecar_class_names_path(
         str(tmp_path / "yolov8n.onnx")) == str(tmp_path / "yolov8n.txt")
 
 
 def test_write_class_names_creates_file(tmp_path):
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
     target = tmp_path / "sub" / "m.txt"
 
     assert inference_task.write_class_names(str(target), ["cat", "dog"]) is True
@@ -262,17 +262,17 @@ def test_cancelling_class_prompt_disables_inference():
 
 def test_cancelling_prompt_does_not_fall_back_to_numbers(monkeypatch):
     """取消后不能退化成 0 1 2 3... 之类的占位类名。"""
-    from pastelabel.ui import inference_workers
+    from labelforge.ui import inference_workers
 
     monkeypatch.setattr(
-        "pastelabel.ui.dialog_helpers.get_multiline_text",
+        "labelforge.ui.dialog_helpers.get_multiline_text",
         lambda *a, **k: ("", False))
     assert inference_workers.class_names_prompt(None, "m.onnx", "m.txt") is None
 
 
 def test_prompt_uses_multiline_input():
     """QInputDialog 只有单行，多个类别写不下——必须用多行输入。"""
-    from pastelabel.ui import inference_workers
+    from labelforge.ui import inference_workers
     src = inspect.getsource(inference_workers.class_names_prompt)
     assert "get_multiline_text" in src
     assert "get_text(" not in src
@@ -280,7 +280,7 @@ def test_prompt_uses_multiline_input():
 
 def test_prompt_passes_expected_class_count(monkeypatch):
     """能把「模型需要几个类别」传进输入框，用户才知道该填几行。"""
-    from pastelabel.ui import inference_workers
+    from labelforge.ui import inference_workers
 
     seen = {}
 
@@ -288,7 +288,7 @@ def test_prompt_passes_expected_class_count(monkeypatch):
         seen["expected"] = expected_lines
         return "a\nb", True
 
-    monkeypatch.setattr("pastelabel.ui.dialog_helpers.get_multiline_text", fake)
+    monkeypatch.setattr("labelforge.ui.dialog_helpers.get_multiline_text", fake)
     monkeypatch.setattr(inference_workers.inference_task, "write_class_names",
                         lambda path, names: True)
     out = inference_workers.class_names_prompt(None, "m.onnx", "m.txt",
@@ -299,11 +299,11 @@ def test_prompt_passes_expected_class_count(monkeypatch):
 
 def test_prompt_writes_all_lines_not_just_first(monkeypatch):
     """多行都要写进 txt；只写第一行等于丢类别（原始 bug）。"""
-    from pastelabel.ui import inference_workers
+    from labelforge.ui import inference_workers
 
     written = {}
     monkeypatch.setattr(
-        "pastelabel.ui.dialog_helpers.get_multiline_text",
+        "labelforge.ui.dialog_helpers.get_multiline_text",
         lambda *a, **k: ("car\nperson\nbus\ntruck", True))
     monkeypatch.setattr(
         inference_workers.inference_task, "write_class_names",
@@ -364,7 +364,7 @@ class _FakeEditor(InferenceMixin):
 
 
 def _result(index, path, boxes, error=None, width=100, height=80):
-    from pastelabel.engine.inference_task import ImageResult
+    from labelforge.engine.inference_task import ImageResult
     return ImageResult(index, path, boxes, error, width, height)
 
 
@@ -471,7 +471,7 @@ def test_apply_results_ignores_delete_view():
 
 def test_result_ready_writes_non_current_image_to_disk(monkeypatch):
     """非当前图逐张写 sidecar，不依赖主窗口索引。"""
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     calls = {}
 
@@ -495,7 +495,7 @@ def test_result_ready_writes_non_current_image_to_disk(monkeypatch):
 
 def test_result_ready_skips_current_image(monkeypatch):
     """当前显示图走 `_apply_inference_to_current`，逐张回调里不能再写一遍。"""
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     calls = []
     monkeypatch.setattr(inference_task, "write_one_result",
@@ -509,7 +509,7 @@ def test_result_ready_skips_current_image(monkeypatch):
 
 def test_result_ready_refreshes_the_row_status_dot(monkeypatch):
     """写完盘要立刻刷新那一行的圆点，用户才看得到绿点一个个亮起来。"""
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     monkeypatch.setattr(inference_task, "write_one_result",
                         lambda *a, **kw: True)
@@ -525,7 +525,7 @@ def test_result_ready_refreshes_the_row_status_dot(monkeypatch):
 
 def test_result_ready_discards_when_dataset_changed(monkeypatch):
     """推理途中换了数据集，迟到的结果不能写进新数据集的磁盘。"""
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     calls = []
     monkeypatch.setattr(inference_task, "write_one_result",
@@ -544,7 +544,7 @@ def test_batch_finish_does_not_rewrite_already_written_images(monkeypatch):
 
     走完整流程：逐张回调记账 → 收尾消费，不能只在收尾时手工塞一个集合。
     """
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     calls = []
     monkeypatch.setattr(inference_task, "write_one_result",
@@ -611,14 +611,14 @@ def test_batch_inference_shows_non_modal_progress_dialog():
 
 def test_progress_dialog_syncs_titlebar_on_show():
     """小窗导航栏要跟主题一致：显示时同步一次系统标题栏。"""
-    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    from labelforge.ui.inference_progress import InferenceProgressDialog
     src = inspect.getsource(InferenceProgressDialog.showEvent)
     assert "sync_titlebar(self)" in src, src
 
 
 def test_progress_dialog_refresh_theme_repaints_and_syncs_titlebar():
     """切主题后重新上色 + 再同步标题栏，否则标题栏会留在旧主题。"""
-    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    from labelforge.ui.inference_progress import InferenceProgressDialog
     assert hasattr(InferenceProgressDialog, "refresh_theme")
     src = inspect.getsource(InferenceProgressDialog.refresh_theme)
     assert "_apply_style()" in src, src
@@ -627,14 +627,14 @@ def test_progress_dialog_refresh_theme_repaints_and_syncs_titlebar():
 
 def test_progress_dialog_style_uses_theme_colors():
     """样式表必须取自当前主题，不能写死颜色。"""
-    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    from labelforge.ui.inference_progress import InferenceProgressDialog
     src = inspect.getsource(InferenceProgressDialog._apply_style)
     assert "ThemeManager.get_theme()" in src, src
 
 
 def test_theme_switch_refreshes_inference_widgets():
     """参数行与小窗自带样式表，全局样式刷不到它们，必须显式刷新。"""
-    from pastelabel.ui.mixins.theme import ThemeMixin
+    from labelforge.ui.mixins.theme import ThemeMixin
     src = inspect.getsource(ThemeMixin._apply_theme)
     assert "model_row" in src, src
     assert "_progress_dialog" in src, src
@@ -642,16 +642,16 @@ def test_theme_switch_refreshes_inference_widgets():
 
 
 def test_model_row_has_refresh_theme():
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     assert hasattr(ModelRow, "refresh_theme")
     src = inspect.getsource(ModelRow.refresh_theme)
     assert "_apply_style()" in src, src
 
 
 def test_progress_dialog_is_cancellable_and_non_modal():
-    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    from labelforge.ui.inference_progress import InferenceProgressDialog
     assert hasattr(InferenceProgressDialog, "cancelled")
-    src = (ROOT / "pastelabel" / "ui" / "inference_progress.py").read_text(encoding="utf-8")
+    src = (ROOT / "labelforge" / "ui" / "inference_progress.py").read_text(encoding="utf-8")
     # 非模态：用 show() 而不是 exec_()
     assert "exec_()" not in src
 
@@ -680,8 +680,8 @@ def test_first_icon_toggles_the_settings_row():
 
 def test_model_row_has_its_own_load_button():
     """加载按钮搬进参数行，并通过信号请求主窗口加载。"""
-    from pastelabel.ui.model_row import ModelRow
-    src = (ROOT / "pastelabel" / "ui" / "model_row.py").read_text(encoding="utf-8")
+    from labelforge.ui.model_row import ModelRow
+    src = (ROOT / "labelforge" / "ui" / "model_row.py").read_text(encoding="utf-8")
     assert "self.load_btn = QPushButton(" in src
     assert "load_requested" in src
     mixin = inspect.getsource(InferenceMixin._ensure_model_row)
@@ -690,19 +690,19 @@ def test_model_row_has_its_own_load_button():
 
 def test_replace_button_uses_shared_button_style():
     """覆盖/补充按钮与工具栏其它按钮同一套样式，选中态交给主题的 :checked。"""
-    from pastelabel.ui.model_row import ModelRow
-    src = (ROOT / "pastelabel" / "ui" / "model_row.py").read_text(encoding="utf-8")
+    from labelforge.ui.model_row import ModelRow
+    src = (ROOT / "labelforge" / "ui" / "model_row.py").read_text(encoding="utf-8")
     assert 'self.replace_btn = QPushButton()' in src
     assert 'self.replace_btn.setObjectName("optionsBtn")' in src
     assert "QPushButton#optionsBtn:checked" in (
-        ROOT / "pastelabel" / "ui" / "theme.py").read_text(encoding="utf-8")
+        ROOT / "labelforge" / "ui" / "theme.py").read_text(encoding="utf-8")
 
 
 # ---------- 模型行 ----------
 
 def test_model_row_close_hides_and_signals():
     """关闭隐藏那一行并通知主窗口；由主窗口负责停用推理图标。"""
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow._on_close)
     assert "hide()" in src
     assert "closed.emit()" in src
@@ -731,8 +731,8 @@ def test_closing_row_keeps_detector_for_reopen():
 
 
 def test_model_row_exposes_required_controls():
-    from pastelabel.ui.model_row import ModelRow
-    src = (ROOT / "pastelabel" / "ui" / "model_row.py").read_text(encoding="utf-8")
+    from labelforge.ui.model_row import ModelRow
+    src = (ROOT / "labelforge" / "ui" / "model_row.py").read_text(encoding="utf-8")
     for name in ("name_label", "conf_spin", "iou_spin", "size_spin_w",
                  "size_spin_h", "replace_btn", "close_btn"):
         assert f"self.{name} =" in src, name
@@ -749,20 +749,20 @@ def test_model_row_inserted_above_canvas():
 
 def test_default_thresholds_are_conf_025_nms_045():
     """用户指定的默认值：置信度 0.25、NMS 0.45。"""
-    from pastelabel.engine.inference_task import DEFAULT_CONF, DEFAULT_IOU
+    from labelforge.engine.inference_task import DEFAULT_CONF, DEFAULT_IOU
     assert DEFAULT_CONF == 0.25
     assert DEFAULT_IOU == 0.45
 
 
 def test_default_input_size_is_640():
-    from pastelabel.engine.onnx_inference import DEFAULT_INPUT_SIZE
+    from labelforge.engine.onnx_inference import DEFAULT_INPUT_SIZE
     assert DEFAULT_INPUT_SIZE == (640, 640)
 
 
 # ---------- 配置持久化 ----------
 
 def test_inference_settings_roundtrip(tmp_path, monkeypatch):
-    from pastelabel.core import config_manager
+    from labelforge.core import config_manager
     monkeypatch.setattr(config_manager, "CONFIG_PATH", str(tmp_path / "c.json"))
     config_manager.save_all(inference_settings={
         "model_path": "m.onnx", "conf_threshold": 0.6,
@@ -779,7 +779,7 @@ def test_inference_settings_roundtrip(tmp_path, monkeypatch):
 
 
 def test_inference_settings_tolerates_garbage(tmp_path, monkeypatch):
-    from pastelabel.core import config_manager
+    from labelforge.core import config_manager
     monkeypatch.setattr(config_manager, "CONFIG_PATH", str(tmp_path / "c.json"))
     config_manager.save_config({"inference_settings": "not-a-dict"})
 
@@ -872,15 +872,15 @@ import os, tempfile
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 
-from pastelabel.core import config_manager
-from pastelabel.engine.onnx_inference import DEFAULT_CONF, DEFAULT_IOU
+from labelforge.core import config_manager
+from labelforge.engine.onnx_inference import DEFAULT_CONF, DEFAULT_IOU
 config_manager.CONFIG_PATH = os.path.join(tempfile.mkdtemp(), "c.json")
 config_manager.save_config({"inference_settings": {
     "model_path": "m.onnx", "conf_threshold": 0.77, "iou_threshold": 0.11,
     "input_size": [512, 512], "window_spec": {"w": 512, "h": 512, "overlap": 64},
 }})
 
-from pastelabel.ui.mixins.inference import InferenceMixin
+from labelforge.ui.mixins.inference import InferenceMixin
 settings = InferenceMixin._saved_inference_settings(None)
 print(settings.get("conf_threshold"), settings.get("iou_threshold"))
 print(DEFAULT_CONF, DEFAULT_IOU)
@@ -893,7 +893,7 @@ print(settings.get("input_size"))
 
 
 def test_worker_passes_saved_thresholds_to_detector():
-    src = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
+    src = (ROOT / "labelforge" / "ui" / "inference_workers.py").read_text(encoding="utf-8")
     for key in ("conf_threshold", "iou_threshold", "input_size"):
         assert f"self._{key}" in src or key in src, key
     assert "conf_threshold=self._conf" in src
@@ -902,14 +902,14 @@ def test_worker_passes_saved_thresholds_to_detector():
 
 def test_engine_defaults_are_single_source():
     """默认值只在引擎里定义一份，任务模块与界面都引用它。"""
-    from pastelabel.engine import inference_task, onnx_inference
+    from labelforge.engine import inference_task, onnx_inference
     assert inference_task.DEFAULT_CONF == onnx_inference.DEFAULT_CONF == 0.25
     assert inference_task.DEFAULT_IOU == onnx_inference.DEFAULT_IOU == 0.45
 
 
 def test_detector_defaults_come_from_constants():
     """不传阈值时 detector 用引擎默认值，而不是各自写死一个数。"""
-    from pastelabel.engine.onnx_inference import (
+    from labelforge.engine.onnx_inference import (
         DEFAULT_CONF, DEFAULT_IOU, OnnxDetector,
     )
     detector = OnnxDetector("m.onnx")
@@ -925,7 +925,7 @@ def test_static_model_size_field_is_read_only():
     """
     src = inspect.getsource(InferenceMixin._on_model_loaded)
     assert "dynamic=" in src
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     row_src = inspect.getsource(ModelRow.set_model)
     assert "set_size_fields_visible(bool(dynamic))" in row_src
     # 隐藏必须覆盖标签与两个输入框，不能只藏一个
@@ -937,8 +937,8 @@ def test_static_model_size_field_is_read_only():
 
 def test_class_prompt_writes_txt_next_to_model(tmp_path):
     """用户输入后要真的在模型同级写出同名 txt。"""
-    from pastelabel.engine import inference_task
-    from pastelabel.ui import inference_workers
+    from labelforge.engine import inference_task
+    from labelforge.ui import inference_workers
 
     model = tmp_path / "yolov8n.onnx"
     model.write_bytes(b"x")
@@ -954,7 +954,7 @@ def test_class_prompt_writes_txt_next_to_model(tmp_path):
 
 def test_first_icon_uses_sliders_glyph():
     """第一个图标是「参数行开关」，用滑杆比芯片更贴语义。"""
-    from pastelabel.ui import icons
+    from labelforge.ui import icons
     src = inspect.getsource(ToolbarMixin._create_toolbar)
     assert "SVG_MODEL_SLIDERS, self._toggle_model_row" in src
     assert hasattr(icons, "SVG_MODEL_SLIDERS")
@@ -969,8 +969,8 @@ def test_cross_mark_label_import_icons_unchanged():
 
 
 def test_model_row_has_class_filter_button():
-    from pastelabel.ui.model_row import ModelRow
-    src = (ROOT / "pastelabel" / "ui" / "model_row.py").read_text(encoding="utf-8")
+    from labelforge.ui.model_row import ModelRow
+    src = (ROOT / "labelforge" / "ui" / "model_row.py").read_text(encoding="utf-8")
     assert "self.filter_btn = QPushButton(" in src
     assert "filter_requested" in src
     assert 'self.filter_btn.setObjectName("optionsBtn")' in src
@@ -978,14 +978,14 @@ def test_model_row_has_class_filter_button():
 
 def test_filter_button_disabled_until_model_loaded():
     """没模型就没有类别可选，按钮要是灰的。"""
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     assert "self.filter_btn.setEnabled(False)" in inspect.getsource(ModelRow.clear_model)
     assert "self.filter_btn.setEnabled(True)" in inspect.getsource(ModelRow.set_model)
 
 
 def test_filter_button_shows_selected_count():
     """不打开面板也能看出当前筛了几类。"""
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.set_filter_summary)
     assert "len(selected)" in src and "total" in src
 
@@ -1013,7 +1013,7 @@ def test_filter_returns_concrete_set_when_some_unchecked():
 
 def test_checked_classes_defaults_to_all():
     """没设过筛选视为全选，不是空集。"""
-    from pastelabel.ui.mixins.inference import InferenceMixin
+    from labelforge.ui.mixins.inference import InferenceMixin
     src = inspect.getsource(InferenceMixin._checked_classes)
     assert "is None" in src, src
 
@@ -1038,7 +1038,7 @@ def test_filter_summary_shows_all_selected_after_model_load(monkeypatch):
 def test_class_filter_passed_into_worker():
     src = inspect.getsource(InferenceMixin._start_inference)
     assert "_filter_for_run()" in src, src
-    worker_src = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(
+    worker_src = (ROOT / "labelforge" / "ui" / "inference_workers.py").read_text(
         encoding="utf-8")
     assert "class_filter=self._class_filter" in worker_src
 
@@ -1050,8 +1050,8 @@ def test_changing_model_resets_class_filter():
 
 
 def test_filter_panel_has_select_all_and_clear():
-    from pastelabel.ui.class_filter_panel import ClassFilterPanel
-    src = (ROOT / "pastelabel" / "ui" / "class_filter_panel.py").read_text(
+    from labelforge.ui.class_filter_panel import ClassFilterPanel
+    src = (ROOT / "labelforge" / "ui" / "class_filter_panel.py").read_text(
         encoding="utf-8")
     assert "全选" in src and "全不选" in src
     assert hasattr(ClassFilterPanel, "set_class_names")
@@ -1062,14 +1062,14 @@ def test_filter_panel_has_select_all_and_clear():
 
 def test_filter_panel_is_scrollable():
     """COCO 80 类会很长，必须能滚。"""
-    src = (ROOT / "pastelabel" / "ui" / "class_filter_panel.py").read_text(
+    src = (ROOT / "labelforge" / "ui" / "class_filter_panel.py").read_text(
         encoding="utf-8")
     assert "QScrollArea" in src
 
 
 def test_filter_panel_rebuilds_keep_previous_selection():
     """重建列表（比如换模型后重开）要保留还存在的勾选。"""
-    from pastelabel.ui.class_filter_panel import ClassFilterPanel
+    from labelforge.ui.class_filter_panel import ClassFilterPanel
     src = inspect.getsource(ClassFilterPanel.set_class_names)
     assert "keep" in src, src
 
@@ -1077,14 +1077,14 @@ def test_filter_panel_rebuilds_keep_previous_selection():
 # ---------- 进度小窗日志 ----------
 
 def test_progress_log_keeps_only_five_lines():
-    from pastelabel.ui.inference_progress import LOG_LINES, InferenceProgressDialog
+    from labelforge.ui.inference_progress import LOG_LINES, InferenceProgressDialog
     assert LOG_LINES == 5
     src = inspect.getsource(InferenceProgressDialog._build_ui)
     assert "setMaximumBlockCount(LOG_LINES)" in src, src
 
 
 def test_progress_log_line_has_time_boxes_and_duration():
-    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    from labelforge.ui.inference_progress import InferenceProgressDialog
     src = inspect.getsource(InferenceProgressDialog.set_progress)
     assert "beijing_timestamp()" in src, src
     assert "个框" in src, src
@@ -1092,22 +1092,22 @@ def test_progress_log_line_has_time_boxes_and_duration():
 
 
 def test_progress_accumulates_total_box_count():
-    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    from labelforge.ui.inference_progress import InferenceProgressDialog
     src = inspect.getsource(InferenceProgressDialog.set_progress)
     assert "self._total_boxes += int(boxes)" in src, src
 
 
 def test_progress_does_not_yank_scroll_when_user_scrolled_up():
     """用户往上翻历史时新结果不能把他拽回底部。"""
-    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    from labelforge.ui.inference_progress import InferenceProgressDialog
     src = inspect.getsource(InferenceProgressDialog._append_log)
     assert "at_bottom" in src, src
     assert "if at_bottom" in src, src
 
 
 def test_progress_uses_utc_plus_8_not_local_time():
-    from pastelabel.ui import inference_progress
-    src = (ROOT / "pastelabel" / "ui" / "inference_progress.py").read_text(
+    from labelforge.ui import inference_progress
+    src = (ROOT / "labelforge" / "ui" / "inference_progress.py").read_text(
         encoding="utf-8")
     assert "beijing_timestamp" in src
     assert "datetime.now()" not in src, "不能用本机时间"
@@ -1115,7 +1115,7 @@ def test_progress_uses_utc_plus_8_not_local_time():
 
 def test_progress_tolerates_three_arg_progress_calls():
     """单图路径也可能走这条连接，缺框数时不应报错。"""
-    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    from labelforge.ui.inference_progress import InferenceProgressDialog
     src = inspect.getsource(InferenceProgressDialog.set_progress)
     assert "if boxes is None" in src, src
 
@@ -1126,7 +1126,7 @@ def test_real_log_line_shows_time_boxes_ms_and_no_date():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.inference_progress import InferenceProgressDialog
+from labelforge.ui.inference_progress import InferenceProgressDialog
 
 app = QApplication([])
 d = InferenceProgressDialog()
@@ -1141,7 +1141,7 @@ print("RESULT", repr(d.log_area.toPlainText()))
 
 
 def test_progress_reset_clears_log_and_counter():
-    from pastelabel.ui.inference_progress import InferenceProgressDialog
+    from labelforge.ui.inference_progress import InferenceProgressDialog
     src = inspect.getsource(InferenceProgressDialog.reset)
     assert "log_area.clear()" in src
     assert "_total_boxes = 0" in src
@@ -1151,19 +1151,19 @@ def test_progress_reset_clears_log_and_counter():
 
 def test_model_row_disables_nms_for_end2end_model():
     """v26 已内置 NMS，界面上的 NMS 输入框必须禁用，否则用户改了没反应。"""
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.set_model)
     assert "self.iou_spin.setEnabled(not self._end2end)" in src, src
 
 
 def test_model_row_explains_why_nms_is_disabled():
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.set_model)
     assert "该模型已内置 NMS，此项不生效" in src, src
 
 
 def test_model_row_tracks_end2end_flag():
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.set_model)
     assert "self._end2end = bool(end2end)" in src
     # __init__ 里要有默认值，否则未加载模型时访问会 AttributeError
@@ -1180,7 +1180,7 @@ def test_end2end_flag_passed_from_detector_format():
 
 def test_conf_stays_enabled_for_end2end_model():
     """端到端模型仍要按置信度过滤，置信度框不能一起禁用。"""
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.set_model)
     assert "self.conf_spin.setEnabled(True)" in src, src
 
@@ -1212,8 +1212,8 @@ def test_real_row_shows_defaults_before_any_model_is_loaded():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
-from pastelabel.engine.onnx_inference import DEFAULT_CONF, DEFAULT_IOU, DEFAULT_INPUT_SIZE
+from labelforge.ui.model_row import ModelRow
+from labelforge.engine.onnx_inference import DEFAULT_CONF, DEFAULT_IOU, DEFAULT_INPUT_SIZE
 
 app = QApplication([])
 row = ModelRow()
@@ -1232,7 +1232,7 @@ def test_real_row_populates_values_after_set_model():
     """真实控件：加载模型后填入的是传进来的值，不是占位数字。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -1248,7 +1248,7 @@ def test_real_row_clear_model_restores_defaults():
     """真实控件：清掉模型后回到默认值，不会残留上一个模型的值。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -1265,7 +1265,7 @@ print(row.conf_spin.isEnabled(), row.filter_btn.isEnabled())
 
 def test_single_inference_icon_is_a_play_triangle():
     """单图推理用播放三角，与批量的闪电区分开。"""
-    from pastelabel.ui import icons
+    from labelforge.ui import icons
     svg = icons.SVG_MODEL_SINGLE
     assert "<rect" not in svg, "旧图标是矩形相框，应已换成三角"
     assert "M7 4.5v15l12.5-7.5z" in svg, svg
@@ -1275,14 +1275,14 @@ def test_single_inference_icon_is_a_play_triangle():
 
 def test_single_and_batch_icons_are_distinct():
     """两个推理图标不能长得一样，否则分不清哪个是哪个。"""
-    from pastelabel.ui import icons
+    from labelforge.ui import icons
     assert icons.SVG_MODEL_SINGLE != icons.SVG_MODEL_ALL
     assert "M13 2L4.5 13.5" in icons.SVG_MODEL_ALL, "批量应是闪电"
 
 
 def test_toolbar_icons_are_all_different():
     """四个图标两两不同：滑杆 / 三角 / 闪电 / 漏斗。"""
-    from pastelabel.ui import icons
+    from labelforge.ui import icons
     four = [icons.SVG_MODEL_SLIDERS, icons.SVG_MODEL_SINGLE,
             icons.SVG_MODEL_ALL, icons.SVG_MODEL_FILTER]
     assert len(set(four)) == 4
@@ -1296,7 +1296,7 @@ def test_clear_model_fills_defaults_not_spinbox_minimums():
     不显式填值的话 QDoubleSpinBox 会停在 setRange 的下限，
     显示成 0.01 / 0.05 / 32x32，看着像参数坏了。
     """
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.clear_model)
     assert "DEFAULT_CONF" in src and "DEFAULT_IOU" in src, src
     assert "DEFAULT_INPUT_SIZE" in src, src
@@ -1307,7 +1307,7 @@ def test_clear_model_fills_defaults_not_spinbox_minimums():
 
 def test_clear_model_does_not_emit_change_signals():
     """填初值时不能触发阈值变更回调（那时还没有 detector）。"""
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.clear_model)
     # 阈值一组、尺寸一组，每组各封一次信号
     assert src.count("blockSignals(True)") >= 2, src
@@ -1317,20 +1317,20 @@ def test_clear_model_does_not_emit_change_signals():
 
 def test_clear_model_resets_end2end_and_tooltip():
     """换回无模型状态后，端到端模型的 NMS 提示文案要清掉。"""
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.clear_model)
     assert "self._end2end = False" in src, src
     assert "NMS 去重阈值" in src, src
 
 
 def test_clear_model_resets_filter_button_text():
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.clear_model)
     assert "self.set_filter_summary(set(), 0)" in src, src
 
 
 def test_row_constructor_starts_in_the_no_model_state():
-    from pastelabel.ui.model_row import ModelRow
+    from labelforge.ui.model_row import ModelRow
     src = inspect.getsource(ModelRow.__init__)
     assert "self.clear_model()" in src, src
 
@@ -1338,7 +1338,7 @@ def test_row_constructor_starts_in_the_no_model_state():
 # ---------- 显示置信度 ----------
 
 def test_toolbar_has_show_scores_checkbox():
-    src = (ROOT / 'pastelabel' / 'ui' / 'mixins' / 'toolbar.py').read_text(
+    src = (ROOT / 'labelforge' / 'ui' / 'mixins' / 'toolbar.py').read_text(
         encoding='utf-8')
     assert 'self.show_scores_checkbox = QCheckBox(tr("显示置信度"))' in src
     assert 'showScoreCb' in src, '要跟其它隐藏复选框一样给 objectName'
@@ -1348,19 +1348,19 @@ def test_toolbar_has_show_scores_checkbox():
 
 
 def test_show_scores_has_shortcut():
-    from pastelabel.core.config import SHORTCUT_CONFIG
+    from labelforge.core.config import SHORTCUT_CONFIG
     assert SHORTCUT_CONFIG.get('toggle_scores') == 'Y'
 
 
 def test_shortcut_does_not_collide_with_existing():
     """新快捷键不能和已有的撞车，否则会有一个不生效。"""
-    from pastelabel.core.config import SHORTCUT_CONFIG
+    from labelforge.core.config import SHORTCUT_CONFIG
     values = [v for k, v in SHORTCUT_CONFIG.items() if k != 'toggle_scores']
     assert 'Y' not in values
 
 
 def test_toggle_scores_handler_is_wired():
-    from pastelabel.engine.event_handler import EventHandlerMixin
+    from labelforge.engine.event_handler import EventHandlerMixin
     src = inspect.getsource(EventHandlerMixin.setup_shortcuts)
     assert "'toggle_scores': self._toggle_scores" in src
     handler = inspect.getsource(EventHandlerMixin._toggle_scores)
@@ -1370,20 +1370,20 @@ def test_toggle_scores_handler_is_wired():
 
 def test_toggle_scores_tolerates_missing_checkbox():
     """没有该复选框的宿主（测试替身/精简窗口）不能抛异常。"""
-    from pastelabel.engine.event_handler import EventHandlerMixin
+    from labelforge.engine.event_handler import EventHandlerMixin
     handler = inspect.getsource(EventHandlerMixin._toggle_scores)
     assert 'hasattr' in handler
 
 
 def test_options_menu_lists_show_scores():
-    from pastelabel.ui.mixins.options_popup import OptionsPopupMixin
-    src = (ROOT / 'pastelabel' / 'ui' / 'mixins' /
+    from labelforge.ui.mixins.options_popup import OptionsPopupMixin
+    src = (ROOT / 'labelforge' / 'ui' / 'mixins' /
            'options_popup.py').read_text(encoding='utf-8')
     assert src.count('"toggle_scores"') == 2, '菜单与弹窗两处都要有'
 
 
 def test_renderer_reads_the_show_scores_checkbox():
-    from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+    from labelforge.canvas.canvas_renderer import CanvasRendererMixin
     src = inspect.getsource(CanvasRendererMixin._show_scores)
     assert 'show_scores_checkbox' in src
     assert 'isChecked' in src
@@ -1391,8 +1391,8 @@ def test_renderer_reads_the_show_scores_checkbox():
 
 def test_renderer_passes_score_flag_at_all_three_sites():
     """矩形、多边形、关键点三条渲染路径都要带上置信度开关。"""
-    from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
-    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+    from labelforge.canvas.canvas_renderer import CanvasRendererMixin
+    src = (ROOT / 'labelforge' / 'canvas' / 'canvas_renderer.py').read_text(
         encoding='utf-8')
     assert src.count('show_score=self._show_scores()') == 3, \
         '三处渲染都要传 show_score'
@@ -1400,7 +1400,7 @@ def test_renderer_passes_score_flag_at_all_three_sites():
 
 def test_rect_renderer_uses_box_display_label_for_score():
     """矩形路径原先用 format_label_display，拿不到 score，必须改走 box_display_label。"""
-    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+    src = (ROOT / 'labelforge' / 'canvas' / 'canvas_renderer.py').read_text(
         encoding='utf-8')
     rect_block = src.split('def _draw_single_detection_box')[1][:2500]
     assert 'box_display_label' in rect_block
@@ -1408,14 +1408,14 @@ def test_rect_renderer_uses_box_display_label_for_score():
 
 
 def test_translation_refreshes_show_scores_label():
-    from pastelabel.ui.mixins.translation import TranslationMixin
+    from labelforge.ui.mixins.translation import TranslationMixin
     src = inspect.getsource(TranslationMixin._refresh_ui_texts)
     assert 'show_scores_checkbox' in src
     assert '显示置信度' in src
 
 
 def test_i18n_has_show_scores_in_both_languages():
-    from pastelabel.ui import i18n
+    from labelforge.ui import i18n
     assert i18n._strings['zh']['显示置信度'] == '显示置信度'
     assert i18n._strings['en']['显示置信度'] == 'Show Score'
     assert i18n._strings['zh']['在类别名后显示推理置信度']
@@ -1424,7 +1424,7 @@ def test_i18n_has_show_scores_in_both_languages():
 
 def test_score_hidden_when_label_names_hidden():
     """显示Label 关掉后置信度也要一起隐藏（分数挂在类别名后面）。"""
-    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+    src = (ROOT / 'labelforge' / 'canvas' / 'canvas_renderer.py').read_text(
         encoding='utf-8')
     assert src.count("show_label_names_checkbox.isChecked()") >= 3
 
@@ -1436,7 +1436,7 @@ def test_rect_draw_helper_does_not_use_undefined_box():
     表现就是「画布空白且没有报错」，极难排查。这条测试专门守住这个坑。
     """
     import ast
-    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+    src = (ROOT / 'labelforge' / 'canvas' / 'canvas_renderer.py').read_text(
         encoding='utf-8')
     tree = ast.parse(src)
     cls = [n for n in tree.body if isinstance(n, ast.ClassDef)][0]
@@ -1455,7 +1455,7 @@ def test_rect_draw_helper_does_not_use_undefined_box():
 def test_rect_draw_takes_score_as_parameter():
     """score 必须作为参数传进来，而不是在函数里现找 box。"""
     import ast
-    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+    src = (ROOT / 'labelforge' / 'canvas' / 'canvas_renderer.py').read_text(
         encoding='utf-8')
     tree = ast.parse(src)
     cls = [n for n in tree.body if isinstance(n, ast.ClassDef)][0]
@@ -1470,7 +1470,7 @@ def test_rect_draw_takes_score_as_parameter():
 def test_rect_caller_passes_score():
     """调用点必须把 box 的 score 传进绘制函数，否则框上永远不会显示置信度。"""
     import ast
-    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+    src = (ROOT / 'labelforge' / 'canvas' / 'canvas_renderer.py').read_text(
         encoding='utf-8')
     tree = ast.parse(src)
     calls = [n for n in ast.walk(tree)
@@ -1486,7 +1486,7 @@ def test_rect_caller_passes_score():
 
 def test_paint_event_swallows_errors_so_tests_must_cover_draw_helpers():
     """paintEvent 会吞掉绘制异常，说明绘制函数必须有直接测试兜底。"""
-    src = (ROOT / 'pastelabel' / 'canvas' / 'canvas_renderer.py').read_text(
+    src = (ROOT / 'labelforge' / 'canvas' / 'canvas_renderer.py').read_text(
         encoding='utf-8')
     head = src.split('def paintEvent')[1][:900]
     assert 'except' in head, 'paintEvent 依赖兜底异常处理'
@@ -1496,7 +1496,7 @@ def test_paint_event_swallows_errors_so_tests_must_cover_draw_helpers():
 
 def test_menu_actions_store_i18n_key_not_translation():
     """每项要记住自己的 i18n 键；存翻译后的文字会在切语言时二次翻译。"""
-    src = (ROOT / 'pastelabel' / 'ui' / 'mixins' / 'options_popup.py').read_text(
+    src = (ROOT / 'labelforge' / 'ui' / 'mixins' / 'options_popup.py').read_text(
         encoding='utf-8')
     body = src.split('def _rebuild_options_popup')[1][:6000]
     assert 'text_key' in body
@@ -1510,7 +1510,7 @@ def test_translation_no_longer_hardcodes_menu_labels():
 
     约定：菜单文字只能由 _refresh_options_menu_texts 一处产生。
     """
-    src = (ROOT / 'pastelabel' / 'ui' / 'mixins' / 'translation.py').read_text(
+    src = (ROOT / 'labelforge' / 'ui' / 'mixins' / 'translation.py').read_text(
         encoding='utf-8')
     assert '_menu_actions' not in src, \
         'translation 不应再直接操作 _menu_actions，应由共享方法统一刷新'
@@ -1519,7 +1519,7 @@ def test_translation_no_longer_hardcodes_menu_labels():
 
 
 def test_refresh_options_menu_texts_uses_stored_key():
-    from pastelabel.ui.mixins.options_popup import OptionsPopupMixin
+    from labelforge.ui.mixins.options_popup import OptionsPopupMixin
     src = inspect.getsource(OptionsPopupMixin._refresh_options_menu_texts)
     assert 'i18n.t(text_key)' in src
     assert '_get_shortcut' in src
@@ -1527,7 +1527,7 @@ def test_refresh_options_menu_texts_uses_stored_key():
 
 def test_menu_actions_are_four_tuples_with_keys():
     """结构调整后所有追加点都要保持一致，混用长度会让解包炸掉。"""
-    src = (ROOT / 'pastelabel' / 'ui' / 'mixins' / 'options_popup.py').read_text(
+    src = (ROOT / 'labelforge' / 'ui' / 'mixins' / 'options_popup.py').read_text(
         encoding='utf-8')
     import ast
     tree = ast.parse(src)
@@ -1546,7 +1546,7 @@ def test_menu_actions_are_four_tuples_with_keys():
 
 
 def test_shortcut_Y_does_not_collide():
-    from pastelabel.core.config import SHORTCUT_CONFIG
+    from labelforge.core.config import SHORTCUT_CONFIG
     assert SHORTCUT_CONFIG['toggle_scores'] == 'Y'
     values = [v for k, v in SHORTCUT_CONFIG.items() if k != 'toggle_scores']
     assert 'Y' not in values
@@ -1554,7 +1554,7 @@ def test_shortcut_Y_does_not_collide():
 
 def test_settings_dialog_lists_toggle_scores():
     """设置对话框漏了这一行，用户就没法改或查看这个快捷键。"""
-    src = (ROOT / 'pastelabel' / 'ui' / 'settings_dialog.py').read_text(
+    src = (ROOT / 'labelforge' / 'ui' / 'settings_dialog.py').read_text(
         encoding='utf-8')
     body = src.split('shortcut_names = {')[1].split('}')[0]
     assert "'toggle_scores'" in body
@@ -1563,7 +1563,7 @@ def test_settings_dialog_lists_toggle_scores():
 
 def test_settings_dialog_keeps_display_label_adjacent():
     """插在显示标签名与显示贴图名之间，与选项菜单顺序一致。"""
-    src = (ROOT / 'pastelabel' / 'ui' / 'settings_dialog.py').read_text(
+    src = (ROOT / 'labelforge' / 'ui' / 'settings_dialog.py').read_text(
         encoding='utf-8')
     body = src.split('shortcut_names = {')[1].split('}')[0]
     i_name = body.index("'toggle_label_names'")
@@ -1621,7 +1621,7 @@ def test_current_image_merge_keeps_everything_without_filter():
 
 def test_result_ready_forwards_filter_to_disk_writer(monkeypatch):
     """逐张写盘那条路也要带上筛选，否则其它图还是脏的。"""
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     seen = {}
 
@@ -1647,7 +1647,7 @@ def test_guess_class_count_uses_detection_head_not_first_output():
     断言必须看真实行为，不能 grep 源码——docstring 里就写着
     pick_detection_output，字符串匹配在变异后会假通过。
     """
-    from pastelabel.ui.inference_workers import ModelLoadWorker
+    from labelforge.ui.inference_workers import ModelLoadWorker
 
     class Out:
         def __init__(self, shape):
@@ -1677,23 +1677,23 @@ def test_guess_class_count_uses_detection_head_not_first_output():
 
 def test_guess_class_count_lives_on_model_load_worker():
     """算类别数要在加载 worker 上；放错类会让 need_class_names 直接抛异常。"""
-    from pastelabel.ui.inference_workers import InferenceWorker, ModelLoadWorker
+    from labelforge.ui.inference_workers import InferenceWorker, ModelLoadWorker
     assert hasattr(ModelLoadWorker, "_guess_class_count")
     assert not hasattr(InferenceWorker, "_guess_class_count")
 
 
 def test_need_class_names_signal_carries_three_args():
-    from pastelabel.ui.inference_workers import ModelLoadWorker
+    from labelforge.ui.inference_workers import ModelLoadWorker
     src = inspect.getsource(ModelLoadWorker.run)
     assert "self._guess_class_count(session)" in src
     # 信号本身要是三元组，否则 emit 会丢参数
-    sig = (ROOT / "pastelabel" / "ui" / "inference_workers.py").read_text(
+    sig = (ROOT / "labelforge" / "ui" / "inference_workers.py").read_text(
         encoding="utf-8")
     assert "need_class_names = pyqtSignal(str, str, object)" in sig
 
 
 def test_guess_class_count_from_shapes():
-    from pastelabel.engine.onnx_inference import guess_class_count
+    from labelforge.engine.onnx_inference import guess_class_count
     assert guess_class_count([1, 25200, 9]) == 4        # v5: 5+C
     assert guess_class_count([1, 25200, 85]) == 80      # v5: 5+C
     assert guess_class_count([1, 84, 8400]) == 80       # v8: 4+C（通道在 rows）
@@ -1703,13 +1703,13 @@ def test_guess_class_count_from_shapes():
 
 def test_guess_class_count_refuses_ambiguous_small_shapes():
     """小形状端到端与普通检测同形，猜不得。"""
-    from pastelabel.engine.onnx_inference import guess_class_count
+    from labelforge.engine.onnx_inference import guess_class_count
     for shape in ([1, 5, 6], [1, 100, 6], [1, 6, 6]):
         assert guess_class_count(shape) is None, shape
 
 
 def test_guess_class_count_tolerates_garbage():
-    from pastelabel.engine.onnx_inference import guess_class_count
+    from labelforge.engine.onnx_inference import guess_class_count
     for bad in (None, [], [1], "abc", [1, "x", 5]):
         assert guess_class_count(bad) is None, bad
 
@@ -1738,7 +1738,7 @@ def test_filter_for_run_is_none_without_known_classes(tmp_save_target=None):
 
 def test_default_all_selected_needs_a_detector():
     """默认全选语义要靠真实类别表比对，不能只看 _class_filter 是不是 None。"""
-    from pastelabel.engine.inference_task import filter_by_class
+    from labelforge.engine.inference_task import filter_by_class
 
     names = ["car", "person", "bus"]
     editor = _FakeEditor()
@@ -1760,7 +1760,7 @@ def test_real_panel_defaults_to_everything_checked():
     """真实面板：首次填入类别表时默认全勾（用户要求「默认全选」）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.class_filter_panel import ClassFilterPanel
+from labelforge.ui.class_filter_panel import ClassFilterPanel
 app = QApplication([])
 names = ["car", "person", "bus", "truck"]
 panel = ClassFilterPanel(None)
@@ -1782,7 +1782,7 @@ def test_real_multiline_dialog_drops_blank_lines():
     """真实多行框：空行和首尾空格要被丢掉，不能变成空类名。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.dialog_helpers import ThemedMultiLineDialog
+from labelforge.ui.dialog_helpers import ThemedMultiLineDialog
 app = QApplication([])
 blank = chr(10) + "   " + chr(10)
 dlg = ThemedMultiLineDialog(None)
@@ -1809,7 +1809,7 @@ def test_real_replace_button_defaults_to_overwrite():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 app = QApplication([])
 row = ModelRow()
 print("MODE", row.replace_mode())
@@ -1831,7 +1831,7 @@ def test_summary_counts_only_images_actually_written(monkeypatch):
 
     0 是当前图（有手工框，走正常保存流程 → 写）、1 写了、2 没框可写。
     """
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     monkeypatch.setattr(inference_task, "write_one_result",
                         lambda *a, **kw: a[0].index == 1)
@@ -1849,8 +1849,8 @@ def test_summary_counts_only_images_actually_written(monkeypatch):
 
 def test_summary_reports_write_failures(monkeypatch):
     """写盘失败要单独报出来，不能混进「已写入」。"""
-    from pastelabel.engine.inference_task import InferenceError
-    from pastelabel.engine import inference_task
+    from labelforge.engine.inference_task import InferenceError
+    from labelforge.engine import inference_task
 
     def fake_write(result, **kwargs):
         raise InferenceError("写不进去")
@@ -1870,8 +1870,8 @@ def test_summary_reports_write_failures(monkeypatch):
 
 def test_summary_does_not_count_failed_write_as_written(monkeypatch):
     """失败的图不能同时被算成「已写入」。"""
-    from pastelabel.engine.inference_task import InferenceError
-    from pastelabel.engine import inference_task
+    from labelforge.engine.inference_task import InferenceError
+    from labelforge.engine import inference_task
 
     monkeypatch.setattr(
         inference_task, "write_one_result",
@@ -1892,8 +1892,8 @@ def test_summary_does_not_count_failed_write_as_written(monkeypatch):
 
 def test_write_failure_does_not_stop_the_batch(monkeypatch):
     """单张写失败不能影响后面的图（否则一批全废）。"""
-    from pastelabel.engine.inference_task import InferenceError
-    from pastelabel.engine import inference_task
+    from labelforge.engine.inference_task import InferenceError
+    from labelforge.engine import inference_task
 
     seen = []
 
@@ -1920,8 +1920,8 @@ def test_result_ready_writes_real_json_and_turns_the_dot_green(tmp_path):
     """
     import json
 
-    from pastelabel.engine import inference_task
-    from pastelabel.engine.image_loader.status import (
+    from labelforge.engine import inference_task
+    from labelforge.engine.image_loader.status import (
         STATUS_ANNOTATED, annotation_status_for_image)
 
     path = tmp_path / "a.png"
@@ -1942,7 +1942,7 @@ def test_result_ready_writes_real_json_and_turns_the_dot_green(tmp_path):
 
 def test_write_one_result_skips_empty_merge(tmp_path):
     """没框且原本没标注：不写盘，免得数据集里多出一堆空 json。"""
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     path = tmp_path / "b.png"
     path.write_bytes(b"")
@@ -1958,7 +1958,7 @@ def test_write_one_result_reads_disk_when_caller_has_no_memory_copy(tmp_path):
     """
     import json
 
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     path = tmp_path / "e.png"
     path.write_bytes(b"")
@@ -1984,7 +1984,7 @@ def test_write_one_result_keeps_existing_manual_annotations(tmp_path):
     """合并时要以内存里的标注为底，不能把人工框冲掉。"""
     import json
 
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     path = tmp_path / "c.png"
     path.write_bytes(b"")
@@ -2004,7 +2004,7 @@ def test_write_one_result_replace_clears_all_detection_boxes(tmp_path):
     """覆盖模式：本图检测框全清（含人工框），贴图保留。"""
     import json
 
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     path = tmp_path / "d.png"
     path.write_bytes(b"")
@@ -2027,7 +2027,7 @@ def test_write_one_result_replace_clears_all_detection_boxes(tmp_path):
 
 def test_write_one_result_raises_on_unwritable_path(tmp_path):
     """写不进去必须抛 InferenceError，让调用方记成「这张失败」。"""
-    from pastelabel.engine.inference_task import InferenceError, write_one_result
+    from labelforge.engine.inference_task import InferenceError, write_one_result
 
     # 父路径是文件而不是目录 → 建目录必失败
     blocker = tmp_path / "blocker"
@@ -2043,7 +2043,7 @@ def test_write_results_matches_write_one_result_per_image(tmp_path):
     """批量入口就是逐张调单张入口：两条路的结果必须一致。"""
     import json
 
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     batch_dir = tmp_path / "batch"
     single_dir = tmp_path / "single"
@@ -2085,7 +2085,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.ui.inference_workers import InferenceWorker
+from labelforge.ui.inference_workers import InferenceWorker
 
 tmp = tempfile.mkdtemp()
 paths = []
@@ -2099,7 +2099,7 @@ class Detector:
     def detect(self, rgb, resize_fn):
         return [{"label": "cat", "x": 1, "y": 1, "width": 2, "height": 2}]
 
-import pastelabel.ui.inference_workers as workers
+import labelforge.ui.inference_workers as workers
 workers.load_rgb = lambda path: np.zeros((10, 10, 3), dtype="uint8")
 workers.resize_for_model = lambda rgb: (rgb, None, None, 0, 0)
 
@@ -2123,8 +2123,8 @@ def test_first_image_of_a_batch_turns_green_immediately(tmp_path):
     回归：曾经把当前图整个跳过，留到整批结束的收尾里处理，用户看到的是
     「第一张一直不绿，跑到最后才绿」。
     """
-    from pastelabel.engine import inference_task
-    from pastelabel.engine.image_loader.status import (
+    from labelforge.engine import inference_task
+    from labelforge.engine.image_loader.status import (
         STATUS_ANNOTATED, annotation_status_for_image)
 
     a = tmp_path / "a.png"
@@ -2158,7 +2158,7 @@ def test_current_image_write_goes_through_the_normal_save_path(monkeypatch):
     两条路的差别不只是写盘：正常保存流程还会更新内存框、画布与撤销快照。
     走错了就会出现「盘上有了、画布上还是旧框，切走再切回才更新」。
     """
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     direct = []
     monkeypatch.setattr(inference_task, "write_one_result",
@@ -2175,7 +2175,7 @@ def test_current_image_write_goes_through_the_normal_save_path(monkeypatch):
 
 def test_current_image_is_not_applied_twice_at_batch_end(monkeypatch):
     """收尾不能把当前图再处理一遍：补充模式会写重复框，覆盖模式会多压快照。"""
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     editor = _FakeEditor(images=("a.png", "b.png"), current=0)
     applied = []
@@ -2200,7 +2200,7 @@ def test_result_ready_updates_memory_cache_for_non_current_image(monkeypatch):
     里仍是跑批之前的旧框；而切图时的 `_load_detection_boxes_for_index`
     只要发现缓存非空就直接用缓存，于是盘上的新结果永远看不到。
     """
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     monkeypatch.setattr(inference_task, "write_one_result",
                         lambda *a, **kw: True)
@@ -2222,7 +2222,7 @@ def test_result_ready_updates_memory_cache_for_non_current_image(monkeypatch):
 
 def test_result_ready_cache_sync_honours_replace_mode(monkeypatch):
     """覆盖模式下缓存要与盘上一致：旧推理框该删就删。"""
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     monkeypatch.setattr(inference_task, "write_one_result",
                         lambda *a, **kw: True)
@@ -2248,7 +2248,7 @@ def test_result_ready_cache_sync_honours_replace_mode(monkeypatch):
 
 def test_result_ready_cache_sync_honours_class_filter(monkeypatch):
     """类别筛选也要作用到缓存，否则切回去会看到被筛掉的类别。"""
-    from pastelabel.engine import inference_task
+    from labelforge.engine import inference_task
 
     monkeypatch.setattr(inference_task, "write_one_result",
                         lambda *a, **kw: True)

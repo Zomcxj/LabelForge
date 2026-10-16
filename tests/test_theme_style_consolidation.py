@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pastelabel.ui.theme import ThemeManager, ThemeMode
+from labelforge.ui.theme import ThemeManager, ThemeMode
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,8 +53,8 @@ def test_global_stylesheet_owns_normal_mode_and_cache_widget_rules():
 
 def test_mode_and_cache_widgets_use_global_qss_contract_without_local_overrides():
     root = __import__("pathlib").Path(__file__).parents[1]
-    mode_setup = _method_source(root / "pastelabel" / "ui" / "mixins" / "options_popup.py", "_create_options_menu", "_rebuild_options_popup")
-    cache_setup = _method_source(root / "pastelabel" / "ui" / "mixins" / "cache_menu.py", "_rebuild_label_cache_menu", "_handle_cache_slot_row_click")
+    mode_setup = _method_source(root / "labelforge" / "ui" / "mixins" / "options_popup.py", "_create_options_menu", "_rebuild_options_popup")
+    cache_setup = _method_source(root / "labelforge" / "ui" / "mixins" / "cache_menu.py", "_rebuild_label_cache_menu", "_handle_cache_slot_row_click")
 
     assert 'self.mode_seg.setObjectName("modeSeg")' in mode_setup
     assert mode_setup.count('setObjectName("modeSegBtn")') == 2
@@ -67,7 +67,7 @@ def test_mode_and_cache_widgets_use_global_qss_contract_without_local_overrides(
 
 
 def test_mode_refresh_only_syncs_state_and_indicator_without_local_qss():
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
     import inspect
 
     refresh = inspect.getsource(ImageEditor._update_mode_seg_style)
@@ -80,7 +80,7 @@ def test_mode_refresh_only_syncs_state_and_indicator_without_local_qss():
 
 
 def test_apply_theme_refreshes_the_mode_indicator_from_current_tokens():
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
     import inspect
 
     refresh = inspect.getsource(ImageEditor._apply_theme)
@@ -90,10 +90,10 @@ def test_apply_theme_refreshes_the_mode_indicator_from_current_tokens():
 
 def test_settings_and_label_dialog_normal_controls_inherit_global_qss():
     root = __import__("pathlib").Path(__file__).parents[1]
-    settings = (root / "pastelabel" / "ui" / "settings_dialog.py").read_text(encoding="utf-8")
-    dialogs = (root / "pastelabel" / "ui" / "dialogs.py").read_text(encoding="utf-8")
-    settings_setup = _method_source(root / "pastelabel" / "ui" / "settings_dialog.py", "_init_ui", "_switch_page")
-    label_setup = _method_source(root / "pastelabel" / "ui" / "dialogs.py", "__init__", "showEvent")
+    settings = (root / "labelforge" / "ui" / "settings_dialog.py").read_text(encoding="utf-8")
+    dialogs = (root / "labelforge" / "ui" / "dialogs.py").read_text(encoding="utf-8")
+    settings_setup = _method_source(root / "labelforge" / "ui" / "settings_dialog.py", "_init_ui", "_switch_page")
+    label_setup = _method_source(root / "labelforge" / "ui" / "dialogs.py", "__init__", "showEvent")
 
     assert "setStyleSheet" not in settings_setup
     assert "setStyleSheet" not in label_setup
@@ -102,10 +102,10 @@ def test_settings_and_label_dialog_normal_controls_inherit_global_qss():
 
 def test_progress_dialog_uses_global_button_states_and_color_swatch_keeps_its_color():
     root = __import__("pathlib").Path(__file__).parents[1]
-    settings = (root / "pastelabel" / "ui" / "settings_dialog.py").read_text(encoding="utf-8")
-    dialogs = (root / "pastelabel" / "ui" / "dialogs.py").read_text(encoding="utf-8")
-    progress_setup = _method_source(root / "pastelabel" / "ui" / "dialogs.py", "create_progress_dialog", "_center_dialog")
-    crosshair_style = _method_source(root / "pastelabel" / "ui" / "settings_dialog.py", "_update_crosshair_color_button", "_choose_crosshair_color")
+    settings = (root / "labelforge" / "ui" / "settings_dialog.py").read_text(encoding="utf-8")
+    dialogs = (root / "labelforge" / "ui" / "dialogs.py").read_text(encoding="utf-8")
+    progress_setup = _method_source(root / "labelforge" / "ui" / "dialogs.py", "create_progress_dialog", "_center_dialog")
+    crosshair_style = _method_source(root / "labelforge" / "ui" / "settings_dialog.py", "_update_crosshair_color_button", "_choose_crosshair_color")
 
     assert "QPushButton" not in progress_setup
     assert "#2950ff" not in progress_setup
@@ -118,10 +118,10 @@ def test_real_qt_theme_switch_styles_settings_and_label_dialog_inputs(mode, colo
     script = f'''
 from PyQt5.QtGui import QPalette
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.dialogs import LabelSelectionDialog
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.ui.settings_dialog import SettingsDialog
-from pastelabel.ui.theme import ThemeManager, ThemeMode
+from labelforge.ui.dialogs import LabelSelectionDialog
+from labelforge.ui.main_window import ImageEditor
+from labelforge.ui.settings_dialog import SettingsDialog
+from labelforge.ui.theme import ThemeManager, ThemeMode
 
 app = QApplication.instance() or QApplication([])
 window = ImageEditor()
@@ -154,9 +154,9 @@ def test_real_qt_canvas_keeps_business_overlay_colors_across_a_light_to_dark_swi
 from PyQt5.QtCore import QPoint, QRectF, Qt
 from PyQt5.QtGui import QColor, QImage, QPixmap
 from PyQt5.QtWidgets import QApplication, QWidget
-from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.ui.theme import ThemeManager, ThemeMode
+from labelforge.canvas.canvas_renderer import CanvasRendererMixin
+from labelforge.ui.main_window import ImageEditor
+from labelforge.ui.theme import ThemeManager, ThemeMode
 
 class Check:
     def __init__(self, checked=True): self.checked = checked
@@ -230,7 +230,7 @@ assert samples[0][3] != "#ffffff", samples
 
 def test_options_popup_uses_global_qss_instead_of_a_stale_local_override():
     popup_setup = _method_source(
-        ROOT / "pastelabel" / "ui" / "mixins" / "options_popup.py",
+        ROOT / "labelforge" / "ui" / "mixins" / "options_popup.py",
         "_rebuild_options_popup",
         "_refresh_options_popup_texts",
     )
@@ -263,8 +263,8 @@ def test_real_qt_options_popup_paints_rounded_corners():
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QImage, QPainter
 from PyQt5.QtWidgets import QApplication, QStyle, QStyleOption
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.ui.theme import ThemeManager
+from labelforge.ui.main_window import ImageEditor
+from labelforge.ui.theme import ThemeManager
 
 app = QApplication.instance() or QApplication([])
 app.setStyleSheet(ThemeManager.get_stylesheet())

@@ -1,4 +1,4 @@
-"""Tests for pastelabel/engine/dataset_converter.py (数据集转换/校验适配层).
+"""Tests for labelforge/engine/dataset_converter.py (数据集转换/校验适配层).
 
 转换实现完全自研、零外部依赖，因此所有用例在任何环境都必须真实执行，
 不存在可选依赖跳过。
@@ -14,8 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from pastelabel.engine import dataset_converter as ST
-from pastelabel.engine.dataset_converter import (
+from labelforge.engine import dataset_converter as ST
+from labelforge.engine.dataset_converter import (
     COCO_ANNOTATION_NAME,
     IMAGE_EXTS,
     DatasetToolError,

@@ -52,7 +52,7 @@ _HOST = """
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel
 from PyQt5.QtCore import QPoint, Qt
 from PyQt5.QtGui import QMouseEvent, QPixmap
-from pastelabel.canvas import Canvas
+from labelforge.canvas import Canvas
 
 class Editor(QWidget):
     def __init__(self):

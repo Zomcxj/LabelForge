@@ -1,5 +1,5 @@
 """滑窗裁剪测试：网格公式 + 标注过滤（纯逻辑，conftest mock 下可直接跑）。"""
-from pastelabel.engine.augmenter.crop import (
+from labelforge.engine.augmenter.crop import (
     crop_boxes, normalized_fill_rgb, normalized_window, overlap_for_count,
     size_for_count, window_starts,
 )
@@ -275,7 +275,7 @@ def test_augmenter_crop_all_mode_outputs_and_sidecar(tmp_path):
     script = f'''
 import json, os
 from PyQt5.QtGui import QImage
-from pastelabel.engine.augmenter import Augmenter
+from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
 src = os.path.join(out, "img.png")
@@ -303,7 +303,7 @@ def test_augmenter_crop_fill_pads_overflow_with_rgb_and_names_pad(tmp_path):
     script = f'''
 import json, os
 from PyQt5.QtGui import QColor, QImage
-from pastelabel.engine.augmenter import Augmenter
+from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
 src = os.path.join(out, "img.png")
@@ -345,7 +345,7 @@ def test_augmenter_crop_fill_keeps_window_size_when_image_smaller(tmp_path):
     script = f'''
 import os
 from PyQt5.QtGui import QColor, QImage
-from pastelabel.engine.augmenter import Augmenter
+from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
 src = os.path.join(out, "s.png")
@@ -378,7 +378,7 @@ def test_augmenter_crop_image_smaller_than_window(tmp_path):
     script = f'''
 import os
 from PyQt5.QtGui import QImage
-from pastelabel.engine.augmenter import Augmenter
+from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
 src = os.path.join(out, "s.png")
@@ -399,7 +399,7 @@ def test_augmenter_crop_empty_source_writes_nothing(tmp_path):
     script = f'''
 import os
 from PyQt5.QtGui import QImage
-from pastelabel.engine.augmenter import Augmenter
+from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
 src = os.path.join(out, "e.png")
@@ -420,8 +420,8 @@ def test_augmenter_crop_random_mode_pool(tmp_path):
     script = f'''
 import os
 from PyQt5.QtGui import QImage
-from pastelabel.engine.augmenter import Augmenter
-from pastelabel.engine.augmenter.color import Brightness
+from labelforge.engine.augmenter import Augmenter
+from labelforge.engine.augmenter.color import Brightness
 
 out = r"{(tmp_path / "out").as_posix()}"
 src = os.path.join(out, "r.png")
@@ -443,7 +443,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.processing_panel import ProcessingPanel
+from labelforge.ui.processing_panel import ProcessingPanel
 
 QImage(100, 80, QImage.Format_RGB888).save(os.path.join(r"{tmp_path.as_posix()}", "p.png"))
 editor = type("E", (), {{"background_images": []}})()
@@ -481,7 +481,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.crop_dialog import CropConfigDialog
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "big.png")
@@ -515,8 +515,8 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
-from pastelabel.engine.augmenter.crop import size_range_for_count, window_starts
+from labelforge.ui.crop_dialog import CropConfigDialog
+from labelforge.engine.augmenter.crop import size_range_for_count, window_starts
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "big.png")
@@ -558,7 +558,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.crop_dialog import CropConfigDialog
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "big.png")
@@ -586,7 +586,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.crop_dialog import CropConfigDialog
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "big.png")
@@ -610,7 +610,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.crop_dialog import CropConfigDialog
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "big.png")
@@ -639,8 +639,8 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
-from pastelabel.ui.i18n import t as tr
+from labelforge.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.i18n import t as tr
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "big.png")
@@ -670,7 +670,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.crop_dialog import CropConfigDialog
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "a.png")
@@ -695,7 +695,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.crop_dialog import CropConfigDialog
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "a.png")
@@ -727,7 +727,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.crop_dialog import CropConfigDialog
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "a.png")
@@ -754,7 +754,7 @@ import os
 from PyQt5.QtGui import QColor, QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.crop_dialog import CropConfigDialog
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "w.png")
@@ -798,8 +798,8 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
-from pastelabel.engine.augmenter.crop import size_for_flush, window_starts
+from labelforge.ui.crop_dialog import CropConfigDialog
+from labelforge.engine.augmenter.crop import size_for_flush, window_starts
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "d.png")
@@ -836,8 +836,8 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.processing_panel import ProcessingPanel
-from pastelabel.engine.augmenter.crop import window_starts
+from labelforge.ui.processing_panel import ProcessingPanel
+from labelforge.engine.augmenter.crop import window_starts
 
 d = r"{tmp_path.as_posix()}"
 d2 = os.path.join(d, "other")
@@ -878,8 +878,8 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
-from pastelabel.engine.augmenter.crop import size_for_count, size_for_flush, window_starts
+from labelforge.ui.crop_dialog import CropConfigDialog
+from labelforge.engine.augmenter.crop import size_for_count, size_for_flush, window_starts
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "big.png")
@@ -912,7 +912,7 @@ def test_augmenter_crop_random_mode_deterministic_crop_path(tmp_path):
     script = f'''
 import os
 from PyQt5.QtGui import QImage
-from pastelabel.engine.augmenter import Augmenter
+from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
 src = os.path.join(out, "x.png")
@@ -937,7 +937,7 @@ def test_augmenter_crop_random_mode_zero_windows_fallback(tmp_path):
     script = f'''
 import os
 from PyQt5.QtGui import QImage
-from pastelabel.engine.augmenter import Augmenter
+from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
 src = os.path.join(out, "z.png")
@@ -961,13 +961,13 @@ print("OK_RANDOM_FALLBACK")
 def test_crop_dialog_templates_row_apply_and_recompute(tmp_path):
     script = f'''
 import os
-os.environ["PASTELABEL_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
+os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication, QLabel, QPushButton
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
-from pastelabel.core.config_manager import add_crop_template
-from pastelabel.engine.augmenter.crop import normalized_window, window_starts
+from labelforge.ui.crop_dialog import CropConfigDialog
+from labelforge.core.config_manager import add_crop_template
+from labelforge.engine.augmenter.crop import normalized_window, window_starts
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "t.png")
@@ -1015,12 +1015,12 @@ print("OK_TEMPLATES")
 def test_panel_open_crop_config_records_template(tmp_path):
     script = f'''
 import os
-os.environ["PASTELABEL_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
+os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.processing_panel import ProcessingPanel
-from pastelabel.core.config_manager import load_crop_templates
+from labelforge.ui.processing_panel import ProcessingPanel
+from labelforge.core.config_manager import load_crop_templates
 
 d = r"{tmp_path.as_posix()}"
 QImage(100, 80, QImage.Format_RGB888).save(os.path.join(d, "p.png"))
@@ -1030,7 +1030,7 @@ panel._path_edit.setText(d)
 panel._ensure_boxes_loaded()
 
 spec = {{"w": 800, "h": 640, "overlap": 200, "min_visible": 0.5, "square": False}}
-from pastelabel.ui import crop_dialog as cd
+from labelforge.ui import crop_dialog as cd
 orig = cd.CropConfigDialog
 class FakeDlg:
     def __init__(self, *a, **kw): pass
@@ -1054,8 +1054,8 @@ def test_crop_template_persists_fill_and_rgb(tmp_path):
     # 模板落盘/读回必须保住 fill 与 fill_rgb；损坏值回落默认灰并钳到 0..255。
     script = f'''
 import os
-os.environ["PASTELABEL_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
-from pastelabel.core.config_manager import add_crop_template, load_crop_templates
+os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
+from labelforge.core.config_manager import add_crop_template, load_crop_templates
 
 base = {{"w": 800, "h": 640, "overlap": 200, "min_visible": 0.5}}
 
@@ -1087,8 +1087,8 @@ def test_crop_template_fill_variant_not_deduped(tmp_path):
     # 去重键须含 fill/fill_rgb：同尺寸但填充不同的两条模板都要留住。
     script = f'''
 import os
-os.environ["PASTELABEL_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
-from pastelabel.core.config_manager import add_crop_template, load_crop_templates
+os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
+from labelforge.core.config_manager import add_crop_template, load_crop_templates
 
 base = {{"w": 640, "h": 640, "overlap": 100, "min_visible": 0.7}}
 add_crop_template({{**base, "fill": False}})
@@ -1108,14 +1108,14 @@ def test_panel_default_spec_and_summary_pad_marker(tmp_path):
     # 面板默认 spec 带 fill/fill_rgb；开填充后摘要与模板按钮都给出「补边」标记。
     script = f'''
 import os
-os.environ["PASTELABEL_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
+os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication, QPushButton
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.processing_panel import ProcessingPanel
-from pastelabel.ui.crop_dialog import CropConfigDialog
-from pastelabel.ui.i18n import t as tr
-from pastelabel.core.config_manager import add_crop_template
+from labelforge.ui.processing_panel import ProcessingPanel
+from labelforge.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.i18n import t as tr
+from labelforge.core.config_manager import add_crop_template
 
 d = r"{tmp_path.as_posix()}"
 QImage(200, 100, QImage.Format_RGB888).save(os.path.join(d, "p.png"))
@@ -1157,12 +1157,12 @@ def test_crop_dialog_apply_template_restores_fill(tmp_path):
     # 套用带填充的模板，fill 与 fill_rgb 必须一起回填到 UI 与 spec()。
     script = f'''
 import os
-os.environ["PASTELABEL_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
+os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication, QPushButton
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
-from pastelabel.core.config_manager import add_crop_template
+from labelforge.ui.crop_dialog import CropConfigDialog
+from labelforge.core.config_manager import add_crop_template
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "t.png")
@@ -1192,8 +1192,8 @@ from PyQt5.QtCore import QPoint
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication, QCheckBox, QPushButton
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
-from pastelabel.ui.i18n import t as tr
+from labelforge.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.i18n import t as tr
 
 d = r"{d}"
 src = os.path.join(d, "a.png")
@@ -1274,8 +1274,8 @@ def test_panel_crop_config_btn_not_clipped_in_english(tmp_path):
 import os
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.processing_panel import ProcessingPanel
-from pastelabel.ui.i18n import set_lang
+from labelforge.ui.processing_panel import ProcessingPanel
+from labelforge.ui.i18n import set_lang
 
 d = r"{tmp_path.as_posix()}"
 editor = type("E", (), {{"background_images": []}})()
@@ -1298,8 +1298,8 @@ def test_panel_uncheck_all_transforms_button(tmp_path):
 import os
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.processing_panel import ProcessingPanel
-from pastelabel.ui.i18n import t as tr
+from labelforge.ui.processing_panel import ProcessingPanel
+from labelforge.ui.i18n import t as tr
 
 d = r"{tmp_path.as_posix()}"
 editor = type("E", (), {{"background_images": []}})()
@@ -1332,7 +1332,7 @@ def test_default_window_gives_two_by_three_grid_with_fifteen_percent_overlap():
     用 ceil 而非 round 反推尺寸：round 会把窗口取小，导致余量多凑出一个窗口
     （100×80 上 round 得 w=37 → 4 列），ceil 取到能盖满目标列数的最小窗口。
     """
-    from pastelabel.engine.augmenter.crop import default_window, window_starts
+    from labelforge.engine.augmenter.crop import default_window, window_starts
 
     for iw, ih in ((1920, 1080), (1280, 720), (800, 600), (640, 480),
                    (4000, 3000), (1000, 1000), (300, 200), (100, 80), (64, 64)):
@@ -1348,7 +1348,7 @@ def test_default_window_gives_two_by_three_grid_with_fifteen_percent_overlap():
 
 def test_default_window_falls_back_to_square_ratio_reference():
     """无参考图时用 640×640 名义尺寸，仍保证 2×3 且比例口径一致。"""
-    from pastelabel.engine.augmenter.crop import default_window, window_starts
+    from labelforge.engine.augmenter.crop import default_window, window_starts
 
     w, h, ov = default_window(0, 0)
     assert w > 0 and h > 0 and ov >= 0
@@ -1365,8 +1365,8 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.processing_panel import ProcessingPanel
-from pastelabel.engine.augmenter.crop import window_starts
+from labelforge.ui.processing_panel import ProcessingPanel
+from labelforge.engine.augmenter.crop import window_starts
 
 d = r"{tmp_path.as_posix()}"
 QImage(1920, 1080, QImage.Format_RGB888).save(os.path.join(d, "p.png"))
@@ -1397,7 +1397,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.crop_dialog import CropConfigDialog
 
 d = r"{tmp_path.as_posix()}"
 p = os.path.join(d, "a.png")
@@ -1425,7 +1425,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
+from labelforge.ui.crop_dialog import CropConfigDialog
 
 d = r"{tmp_path.as_posix()}"
 p = os.path.join(d, "a.png")
@@ -1465,7 +1465,7 @@ def test_size_range_for_count_matches_brute_force():
     锁定「重叠+数量」时尺寸不是唯一解而是一个区间：任何落在区间内的尺寸都恰好
     排出 count 个窗口。闭式解若与枚举差一个边界，用户就会看到数量莫名跳变。
     """
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         MAX_WINDOW, size_range_for_count, window_starts,
     )
 
@@ -1486,7 +1486,7 @@ def test_size_range_for_count_matches_brute_force():
 
 def test_overlap_range_for_count_matches_brute_force():
     """重叠可行区间闭式解必须与暴力枚举完全一致（n=2 与 n>=3 是两套推导）。"""
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         overlap_range_for_count, window_starts,
     )
 
@@ -1506,7 +1506,7 @@ def test_overlap_range_for_count_matches_brute_force():
 def test_crop_dialog_locked_ov_and_cnt_keeps_size_editable_in_range(tmp_path):
     """锁「重叠+数量」时尺寸不是唯一解：应可编辑，且范围恰好是可行区间。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import size_range_for_count, window_starts
+from labelforge.engine.augmenter.crop import size_range_for_count, window_starts
 
 dlg._lock_ov.setChecked(True)
 dlg._lock_cnt.setChecked(True)
@@ -1542,7 +1542,7 @@ print("OK_SIZE_RANGE")
 def test_crop_dialog_locked_size_and_cnt_keeps_overlap_editable_in_range(tmp_path):
     """锁「尺寸+数量」时重叠同样有自由度：应可编辑，范围取两轴可行区间的交集。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import overlap_range_for_count, window_starts
+from labelforge.engine.augmenter.crop import overlap_range_for_count, window_starts
 
 dlg._lock_size.setChecked(True)
 dlg._lock_cnt.setChecked(True)
@@ -1613,7 +1613,7 @@ def test_panel_dataset_dir_follows_background_folder(tmp_path):
 import os
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.processing_panel import ProcessingPanel
+from labelforge.ui.processing_panel import ProcessingPanel
 
 d1 = os.path.join(r"{tmp_path.as_posix()}", "set1")
 d2 = os.path.join(r"{tmp_path.as_posix()}", "set2")
@@ -1673,7 +1673,7 @@ print("OK_LOCK_SHIFT")
 
 def test_pad_overflow_measures_uniform_step_overflow():
     """pad_overflow 就是「需要补边的像素数」：恰好铺满时为 0，步长口径才可能非 0。"""
-    from pastelabel.engine.augmenter.crop import pad_overflow, window_starts
+    from labelforge.engine.augmenter.crop import pad_overflow, window_starts
 
     assert pad_overflow(1920, 640, 0) == 0          # 3*640 == 1920 恰好铺满
     assert pad_overflow(1920, 640, 320) == 0        # step=320, 1+ceil(1280/320)=5, 4*320+640=1920
@@ -1688,7 +1688,7 @@ def test_pad_overflow_measures_uniform_step_overflow():
 
 def test_size_range_for_count_fill_caps_pad_at_thirty_percent():
     """开启填充时尺寸区间必须排除补边超过窗口 30% 的组合（与暴力枚举对拍）。"""
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         MAX_WINDOW, pad_overflow, size_range_for_count, window_starts,
     )
 
@@ -1712,7 +1712,7 @@ def test_size_range_for_count_fill_caps_pad_at_thirty_percent():
 
 def test_size_range_for_count_without_fill_is_unchanged_by_pad_cap():
     """不开填充时区间不该被 30% 上限动过：上限只能收窄、不能放宽。"""
-    from pastelabel.engine.augmenter.crop import size_range_for_count
+    from labelforge.engine.augmenter.crop import size_range_for_count
 
     for length in (600, 1080, 1920, 2000):
         for count in (2, 3, 4):
@@ -1727,7 +1727,7 @@ def test_size_range_for_count_without_fill_is_unchanged_by_pad_cap():
 
 def test_overlap_range_for_count_fill_caps_pad_at_thirty_percent():
     """锁「尺寸+数量」时重叠区间同样受 30% 补边上限约束。"""
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         overlap_range_for_count, pad_overflow, window_starts,
     )
 
@@ -1750,7 +1750,7 @@ def test_overlap_range_for_count_fill_caps_pad_at_thirty_percent():
 def test_crop_dialog_fill_on_narrows_size_range_to_pad_cap(tmp_path):
     """开启填充后，锁「重叠+数量」的尺寸区间要收紧到补边不超过 30%。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import (
+from labelforge.engine.augmenter.crop import (
     MAX_WINDOW, pad_overflow, size_range_for_count, window_starts,
 )
 
@@ -1781,7 +1781,7 @@ print("OK_FILL_PAD_CAP")
 def test_crop_dialog_toggling_fill_back_restores_plain_range(tmp_path):
     """关掉填充后区间要回到不含 30% 上限的版本，不能把收紧后的范围留在控件上。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import size_range_for_count
+from labelforge.engine.augmenter.crop import size_range_for_count
 
 dlg._lock_ov.setChecked(True)
 dlg._lock_cnt.setChecked(True)
@@ -1802,7 +1802,7 @@ print("OK_FILL_TOGGLE_BACK")
 
 def test_exact_overlap_derives_flush_grid():
     """恰好铺满的唯一解：n·c−(n−1)·ov=L 反解重叠，且该重叠真能让网格贴边。"""
-    from pastelabel.engine.augmenter.crop import exact_overlap_for_flush, window_starts
+    from labelforge.engine.augmenter.crop import exact_overlap_for_flush, window_starts
 
     assert exact_overlap_for_flush(1920, 3, 800) == 240    # 3*800-2*240=1920
     assert exact_overlap_for_flush(1080, 2, 660) == 240    # 2*660-240=1080
@@ -1822,7 +1822,7 @@ def test_exact_overlap_derives_flush_grid():
 
 def test_size_range_for_count_without_fill_stays_flush():
     """不开填充时区间内每个尺寸都必须真能贴边（这是互相反推成立的前提）。"""
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         size_range_for_count, window_starts,
     )
 
@@ -1843,7 +1843,7 @@ def test_size_range_for_count_without_fill_stays_flush():
 def test_crop_dialog_no_lock_derives_overlap_from_size_without_fill(tmp_path):
     """不开填充 + 无锁定：改宽高要反推重叠，两轴保持恰好铺满（同步）。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import window_starts
+from labelforge.engine.augmenter.crop import window_starts
 
 assert not dlg._fill.isChecked()
 dlg._cols.setValue(3)
@@ -1868,7 +1868,7 @@ print("OK_DERIVE_OV_FROM_SIZE")
 def test_crop_dialog_no_lock_derives_size_from_overlap_without_fill(tmp_path):
     """不开填充 + 无锁定：改重叠要反推宽高，仍保持恰好铺满。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import window_starts
+from labelforge.engine.augmenter.crop import window_starts
 
 assert not dlg._fill.isChecked()
 dlg._cols.setValue(3)
@@ -1931,7 +1931,7 @@ print("OK_FILL_NO_DERIVE_FROM_OV")
 def test_crop_dialog_pad_cap_blocks_oversized_pad_without_locks(tmp_path):
     """无锁定 + 开填充：30% 补边上限也必须生效，不能调出几乎全补边的窗口。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import pad_overflow
+from labelforge.engine.augmenter.crop import pad_overflow
 
 dlg._fill.setChecked(True)
 app.processEvents()
@@ -1958,7 +1958,7 @@ def test_pad_compliant_size_run_matches_brute_force():
     硬墙依赖「段」这个结构：把输入框范围钳到当前值所在的段，用户就撞不到超限值。
     段算错一格，墙就会漏掉一个超限值或多挡一个合规值。
     """
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         MAX_WINDOW, pad_compliant_size_run, pad_overflow,
     )
 
@@ -1990,7 +1990,7 @@ def test_pad_compliant_size_run_matches_brute_force():
 
 def test_nearest_pad_compliant_size_prefers_closest_then_smaller():
     """超限值回退到最近合规值：距离相同取较小值，且绝不改出更远的解。"""
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         MAX_WINDOW, nearest_pad_compliant_size, pad_overflow,
     )
 
@@ -2021,7 +2021,7 @@ def test_pad_compliant_overlap_run_uses_both_axes():
 
     重叠两轴共用一个值，只按单轴算墙会让另一轴偷偷超限（实测 93%/90%）。
     """
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         pad_compliant_overlap_run, pad_overflow,
     )
 
@@ -2053,7 +2053,7 @@ def test_pad_compliant_overlap_run_uses_both_axes():
 
 def test_nearest_pad_compliant_overlap_prefers_closest_then_smaller():
     """重叠超限回退到最近的两轴同时合规值。"""
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         nearest_pad_compliant_overlap, pad_overflow,
     )
 
@@ -2086,7 +2086,7 @@ def test_crop_dialog_fill_on_clamps_size_inputs_to_compliant_run(tmp_path):
     中间的空洞里（600 图上 ov=60 有 15 段）。硬墙须按「当前所在段」设置范围。
     """
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import pad_overflow, pad_compliant_size_run
+from labelforge.engine.augmenter.crop import pad_overflow, pad_compliant_size_run
 
 # 300x200/60 在 600x400 上本就超限（宽 93%/高 90%）
 dlg._fill.setChecked(True)
@@ -2111,7 +2111,7 @@ print("OK_SIZE_WALL")
 def test_crop_dialog_fill_on_clamps_overlap_input_to_joint_compliant_run(tmp_path):
     """开填充时重叠输入框范围钳到「两轴同时合规」的段，拖不出单轴超限值。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import pad_overflow, pad_compliant_overlap_run
+from labelforge.engine.augmenter.crop import pad_overflow, pad_compliant_overlap_run
 
 dlg._fill.setChecked(True)
 app.processEvents()
@@ -2138,7 +2138,7 @@ print("OK_OV_WALL")
 def test_crop_dialog_fill_on_snaps_oversized_values_on_toggle(tmp_path):
     """开填充那一刻若当前宽高已超限，回退到最近合规值，而不是留着违规值。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import (
+from labelforge.engine.augmenter.crop import (
     nearest_pad_compliant_size, pad_overflow,
 )
 
@@ -2167,7 +2167,7 @@ print("OK_SNAP_ON_TOGGLE")
 def test_crop_dialog_fill_on_notifies_when_pad_clamped(tmp_path):
     """回退发生时摘要行必须提示（回归：_pad_clamped 曾是只写不读的死代码）。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import pad_overflow
+from labelforge.engine.augmenter.crop import pad_overflow
 
 dlg._fill.setChecked(True)
 app.processEvents()
@@ -2193,7 +2193,7 @@ print("OK_PAD_NOTICE")
 def test_crop_dialog_fill_on_count_edit_keeps_count_and_cap(tmp_path):
     """开填充改数量：派生的尺寸若超限，回退必须保住数量且满足 30% 上限。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from pastelabel.engine.augmenter.crop import (
+from labelforge.engine.augmenter.crop import (
     pad_overflow, size_range_for_count, window_starts,
 )
 
@@ -2219,13 +2219,13 @@ def test_crop_dialog_fill_on_template_over_cap_snaps_and_notifies(tmp_path):
     """套用模板时模板宽高在填充模式下超限：回退到最近合规值并提示。"""
     script = f'''
 import os
-os.environ["PASTELABEL_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
+os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication, QPushButton
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
-from pastelabel.core.config_manager import add_crop_template
-from pastelabel.engine.augmenter.crop import (
+from labelforge.ui.crop_dialog import CropConfigDialog
+from labelforge.core.config_manager import add_crop_template
+from labelforge.engine.augmenter.crop import (
     nearest_pad_compliant_size, pad_overflow,
 )
 
@@ -2289,8 +2289,8 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.crop_dialog import CropConfigDialog
-from pastelabel.engine.augmenter.crop import pad_overflow
+from labelforge.ui.crop_dialog import CropConfigDialog
+from labelforge.engine.augmenter.crop import pad_overflow
 
 d = r"{tmp_path.as_posix()}"
 src = os.path.join(d, "a.png")
@@ -2317,7 +2317,7 @@ def test_pad_compliant_overlap_run_respects_half_window_limit():
 
     回归：(60,62) 两轴的合规段是 (30,31)，而半窗上限为 30，不叠加就放行了 31。
     """
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         pad_compliant_overlap_run, pad_overflow,
     )
 
@@ -2342,7 +2342,7 @@ def test_nearest_pad_compliant_size_breaks_segment_ties_toward_smaller():
 
     L=400/ov=0 时 size=3 到段 (1,2) 与 (4,5) 等距，必须稳定回 2 而非 4。
     """
-    from pastelabel.engine.augmenter.crop import (
+    from labelforge.engine.augmenter.crop import (
         nearest_pad_compliant_size, pad_overflow,
     )
 

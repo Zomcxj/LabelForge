@@ -1,5 +1,5 @@
 """标签管理回归测试。"""
-from pastelabel.engine.label_manager import LabelManager
+from labelforge.engine.label_manager import LabelManager
 
 
 class FakeSignal:
@@ -94,7 +94,7 @@ def test_update_label_list_flags_point_without_matching_box_group():
     ]
 
     manager = LabelManager(editor)
-    import pastelabel.engine.label_manager as lm
+    import labelforge.engine.label_manager as lm
     lm.QListWidgetItem = FakeItem
     try:
         manager.update_label_list()
@@ -122,7 +122,7 @@ def test_point_inside_group_box_has_no_warning():
          "group_id": 1},
     ]
     manager = LabelManager(editor)
-    import pastelabel.engine.label_manager as lm
+    import labelforge.engine.label_manager as lm
     lm.QListWidgetItem = FakeItem
     try:
         manager.update_label_list()
@@ -147,7 +147,7 @@ def test_point_outside_group_box_warns_not_inside():
          "group_id": 1},
     ]
     manager = LabelManager(editor)
-    import pastelabel.engine.label_manager as lm
+    import labelforge.engine.label_manager as lm
     lm.QListWidgetItem = FakeItem
     try:
         manager.update_label_list()
@@ -172,7 +172,7 @@ def test_delete_label_does_not_pass_detection_boxes_as_canvas_items(monkeypatch)
     ]
     editor.detection_boxes_dict = {0: list(editor.detection_boxes)}
 
-    from pastelabel.engine import label_manager
+    from labelforge.engine import label_manager
     monkeypatch.setattr(
         label_manager.dialog_helpers,
         "question",
@@ -350,11 +350,11 @@ def test_modify_label_all_mode_to_existing_keeps_target_color(monkeypatch):
     ]
 
     monkeypatch.setattr(
-        "pastelabel.ui.dialogs.LabelSelectionDialog.select_label",
+        "labelforge.ui.dialogs.LabelSelectionDialog.select_label",
         staticmethod(lambda *a, **kw: "dog"),
     )
     monkeypatch.setattr(
-        "pastelabel.core.config_manager.save_all",
+        "labelforge.core.config_manager.save_all",
         lambda **kwargs: None,
     )
     manager = LabelManager(editor)
@@ -394,7 +394,7 @@ def test_modify_label_all_mode_renames_only_selected_box(monkeypatch):
     editor.label_color_map = {"Car": "#111", "dog": "#222"}
 
     monkeypatch.setattr(
-        "pastelabel.ui.dialogs.LabelSelectionDialog.select_label",
+        "labelforge.ui.dialogs.LabelSelectionDialog.select_label",
         staticmethod(lambda *a, **kw: "Truck"),
     )
     manager = LabelManager(editor)
@@ -435,10 +435,10 @@ def test_modify_label_all_mode_changes_group_without_label_change(monkeypatch):
     editor.label_color_map = {"nose": "#111"}
 
     monkeypatch.setattr(
-        "pastelabel.ui.dialogs.LabelSelectionDialog.select_label",
+        "labelforge.ui.dialogs.LabelSelectionDialog.select_label",
         staticmethod(lambda *a, **kw: ("nose", 3)),
     )
-    monkeypatch.setattr("pastelabel.core.config_manager.save_all", lambda **kw: None)
+    monkeypatch.setattr("labelforge.core.config_manager.save_all", lambda **kw: None)
     manager = LabelManager(editor)
     manager.label_list_changed = FakeSignal()
     manager.data_changed = FakeSignal()
@@ -473,10 +473,10 @@ def test_modify_label_all_mode_clears_group_to_none(monkeypatch):
     editor.label_color_map = {"nose": "#111"}
 
     monkeypatch.setattr(
-        "pastelabel.ui.dialogs.LabelSelectionDialog.select_label",
+        "labelforge.ui.dialogs.LabelSelectionDialog.select_label",
         staticmethod(lambda *a, **kw: ("nose", None)),
     )
-    monkeypatch.setattr("pastelabel.core.config_manager.save_all", lambda **kw: None)
+    monkeypatch.setattr("labelforge.core.config_manager.save_all", lambda **kw: None)
     manager = LabelManager(editor)
     manager.label_list_changed = FakeSignal()
     manager.data_changed = FakeSignal()
@@ -509,7 +509,7 @@ def test_delete_label_all_mode_removes_only_selected_box(monkeypatch):
     ]
     editor.detection_boxes_dict = {0: list(editor.detection_boxes)}
 
-    from pastelabel.engine import label_manager
+    from labelforge.engine import label_manager
     monkeypatch.setattr(
         label_manager.dialog_helpers,
         "question",
@@ -545,7 +545,7 @@ def test_delete_label_saves_each_background_with_its_own_index(monkeypatch):
         1: list(editor.detection_boxes),
     }
 
-    from pastelabel.engine import label_manager
+    from labelforge.engine import label_manager
     monkeypatch.setattr(
         label_manager.dialog_helpers,
         "question",
@@ -592,7 +592,7 @@ def test_rename_detection_label_updates_memory_sets_and_color_map(tmp_path, monk
     manager.label_list_changed = FakeSignal()
     manager.data_changed = FakeSignal()
     monkeypatch.setattr(
-        "pastelabel.core.config_manager.save_all",
+        "labelforge.core.config_manager.save_all",
         lambda **kwargs: None,
     )
 
@@ -614,8 +614,8 @@ def test_rename_detection_label_updates_memory_sets_and_color_map(tmp_path, monk
 
 def test_update_label_list_stats_mode_aggregates_task_types(monkeypatch):
     """统计模式下同一标签跨任务时，行上要聚合出多个任务徽标。"""
-    from pastelabel.engine import label_manager as lm
-    from pastelabel.core.utils import TASK_DATA_ROLE
+    from labelforge.engine import label_manager as lm
+    from labelforge.core.utils import TASK_DATA_ROLE
 
     class RoleItem(FakeItem):
         def __init__(self, text):
@@ -646,8 +646,8 @@ def test_update_label_list_stats_mode_aggregates_task_types(monkeypatch):
 
 def test_update_label_list_all_mode_stores_task_type_per_row(monkeypatch):
     """每框一行时，行上要带 det/seg/pose/obb 任务类型供右侧徽标绘制。"""
-    from pastelabel.engine import label_manager as lm
-    from pastelabel.core.utils import TASK_DATA_ROLE
+    from labelforge.engine import label_manager as lm
+    from labelforge.core.utils import TASK_DATA_ROLE
 
     class RoleItem(FakeItem):
         def __init__(self, text):
@@ -682,7 +682,7 @@ def test_update_label_list_all_mode_stores_task_type_per_row(monkeypatch):
 
 def test_update_label_list_all_mode_sorts_by_group(monkeypatch):
     """每框一行：先无组别，再按 group_id 从小到大。"""
-    from pastelabel.engine import label_manager as lm
+    from labelforge.engine import label_manager as lm
 
     class RoleItem(FakeItem):
         def __init__(self, text):
@@ -714,7 +714,7 @@ def test_update_label_list_all_mode_sorts_by_group(monkeypatch):
 
 
 def test_update_label_list_all_mode_one_row_per_box(monkeypatch):
-    from pastelabel.engine import label_manager as lm
+    from labelforge.engine import label_manager as lm
 
     class RoleItem(FakeItem):
         def __init__(self, text):
@@ -750,7 +750,7 @@ def test_update_label_list_all_mode_one_row_per_box(monkeypatch):
 
 def test_update_label_list_empty_image_shows_dataset_labels(monkeypatch):
     """Empty current image must still list all dataset labels (count 0)."""
-    from pastelabel.engine import label_manager as lm
+    from labelforge.engine import label_manager as lm
 
     monkeypatch.setattr(lm, "QListWidgetItem", FakeItem)
     editor = FakeEditor()
@@ -836,7 +836,7 @@ def test_rename_paste_label_renames_paste_boxes_only():
 
 def test_update_label_list_all_mode_hides_filtered_out_boxes(monkeypatch):
     """每框一行时，被任务筛选排除的框不出现在列表。"""
-    from pastelabel.engine import label_manager as lm
+    from labelforge.engine import label_manager as lm
 
     class RoleItem(FakeItem):
         def __init__(self, text):
@@ -871,7 +871,7 @@ def test_update_label_list_all_mode_hides_filtered_out_boxes(monkeypatch):
 
 def test_update_label_list_all_mode_hides_filtered_out_groups(monkeypatch):
     """按分组筛选：只保留选中分组的框。"""
-    from pastelabel.engine import label_manager as lm
+    from labelforge.engine import label_manager as lm
 
     class RoleItem(FakeItem):
         def __init__(self, text):
@@ -904,7 +904,7 @@ def test_update_label_list_all_mode_hides_filtered_out_groups(monkeypatch):
 
 def test_update_label_list_stats_mode_hides_filtered_out_labels(monkeypatch):
     """统计模式下，筛选后不并入无框的数据集标签。"""
-    from pastelabel.engine import label_manager as lm
+    from labelforge.engine import label_manager as lm
 
     monkeypatch.setattr(lm, "QListWidgetItem", FakeItem)
     editor = FakeEditor()
@@ -962,7 +962,7 @@ def test_rename_paste_label_rewrite_disk_updates_output_sidecar(tmp_path):
     """贴图实际保存在输出目录 sidecar，磁盘改名必须覆盖那里。"""
     import json
     import os
-    from pastelabel.core.utils import PathUtils
+    from labelforge.core.utils import PathUtils
     img = tmp_path / "q.png"
     img.write_bytes(b"x")
     out_dir = PathUtils.get_output_dir(str(img))
@@ -1000,7 +1000,7 @@ def test_rename_paste_label_rewrite_disk_updates_prefixed_output_sidecar(tmp_pat
     """默认前缀开启时贴图落在 paste_{stem}.json，改名必须覆盖该文件。"""
     import json
     import os
-    from pastelabel.core.utils import PathUtils
+    from labelforge.core.utils import PathUtils
     img = tmp_path / "r.png"
     img.write_bytes(b"x")
     out_dir = PathUtils.get_output_dir(str(img))
@@ -1035,8 +1035,8 @@ def test_modify_paste_label_rewrites_disk(tmp_path, monkeypatch):
     """列表右键改名（modify_paste_label）也要落盘，否则重启后统计回到旧名。"""
     import json
     import os
-    from pastelabel.core.utils import PathUtils
-    from pastelabel.engine import label_manager as lm
+    from labelforge.core.utils import PathUtils
+    from labelforge.engine import label_manager as lm
     img = tmp_path / "m.png"
     img.write_bytes(b"x")
     out_dir = PathUtils.get_output_dir(str(img))

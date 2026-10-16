@@ -5,16 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from pastelabel.core import config as config_module
-from pastelabel.core import config_manager
-from pastelabel.core.utils import PathUtils
-from pastelabel.ui import i18n
+from labelforge.core import config as config_module
+from labelforge.core import config_manager
+from labelforge.core.utils import PathUtils
+from labelforge.ui import i18n
 
 ROOT = Path(__file__).resolve().parents[1]
-OPTIONS_SRC = ROOT / "pastelabel" / "ui" / "mixins" / "options_popup.py"
-BACKGROUND_LIST_SRC = ROOT / "pastelabel" / "ui" / "mixins" / "background_list.py"
-LISTS_SRC = ROOT / "pastelabel" / "ui" / "mixins" / "lists.py"
-TRANSLATION_SRC = ROOT / "pastelabel" / "ui" / "mixins" / "translation.py"
+OPTIONS_SRC = ROOT / "labelforge" / "ui" / "mixins" / "options_popup.py"
+BACKGROUND_LIST_SRC = ROOT / "labelforge" / "ui" / "mixins" / "background_list.py"
+LISTS_SRC = ROOT / "labelforge" / "ui" / "mixins" / "lists.py"
+TRANSLATION_SRC = ROOT / "labelforge" / "ui" / "mixins" / "translation.py"
 
 # 相对路径显示依赖当前操作系统的路径语义（Windows 反斜杠/盘符，POSIX 正斜杠），
 # 因此断言必须随平台取不同的输入与期望值，否则在 Linux CI 上必然失败。
@@ -23,7 +23,7 @@ IS_WINDOWS = sys.platform == "win32"
 
 @pytest.fixture
 def temp_config(tmp_path, monkeypatch):
-    path = tmp_path / "pastelabel.json"
+    path = tmp_path / "labelforge.json"
     monkeypatch.setattr(config_manager, "CONFIG_PATH", str(path))
     yield path
 
@@ -163,8 +163,8 @@ def test_relative_path_menu_item_carries_its_i18n_key():
 # ---------- 列表项文本统一走 helper ----------
 
 def test_all_list_item_texts_go_through_the_helper():
-    loader = (ROOT / "pastelabel" / "engine" / "image_loader" / "mixin.py").read_text(encoding="utf-8")
-    main = (ROOT / "pastelabel" / "ui" / "main_window.py").read_text(encoding="utf-8")
+    loader = (ROOT / "labelforge" / "engine" / "image_loader" / "mixin.py").read_text(encoding="utf-8")
+    main = (ROOT / "labelforge" / "ui" / "main_window.py").read_text(encoding="utf-8")
     bg_list = BACKGROUND_LIST_SRC.read_text(encoding="utf-8")
 
     # 每个生成 item 文本的地方都必须用 _display_path_for
@@ -178,13 +178,13 @@ def test_all_list_item_texts_go_through_the_helper():
 
 def test_helper_lives_on_the_image_loader_mixin():
     """两个 mixin 都用到它，放在 ImageLoaderMixin 上才能被共享。"""
-    source = (ROOT / "pastelabel" / "engine" / "image_loader" / "mixin.py").read_text(encoding="utf-8")
+    source = (ROOT / "labelforge" / "engine" / "image_loader" / "mixin.py").read_text(encoding="utf-8")
     assert "def _display_path_for(self, path):" in source
     assert "def _relative_path_base(self):" in source
 
 
 def test_base_is_the_parent_of_the_loaded_folder():
-    source = (ROOT / "pastelabel" / "engine" / "image_loader" / "mixin.py").read_text(encoding="utf-8")
+    source = (ROOT / "labelforge" / "engine" / "image_loader" / "mixin.py").read_text(encoding="utf-8")
     block = source[source.index("def _relative_path_base"):source.index("def _display_path_for")]
     assert "os.path.dirname(folder)" in block
 
@@ -260,7 +260,7 @@ def test_bg_path_for_item_prefers_stored_path_role():
 # ---------- 生命周期 ----------
 
 def test_reset_settings_returns_relative_path_to_default():
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
     import inspect
     source = inspect.getsource(ImageEditor.reset_settings_to_default)
     assert "self._relative_path_display = False" in source
@@ -268,6 +268,6 @@ def test_reset_settings_returns_relative_path_to_default():
 
 
 def test_main_window_loads_the_flag():
-    source = (ROOT / "pastelabel" / "ui" / "main_window.py").read_text(encoding="utf-8")
+    source = (ROOT / "labelforge" / "ui" / "main_window.py").read_text(encoding="utf-8")
     assert "self._relative_path_display = bool(settings.get('relative_path_display', False))" in source
     assert "self._relative_path_display = False" in source  # _init_data 兜底

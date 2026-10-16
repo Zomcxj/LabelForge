@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import pytest
 
-from pastelabel.engine.video_io import (
+from labelforge.engine.video_io import (
     VideoError, probe, sample_timeline,
 )
 
@@ -63,7 +63,7 @@ def _make_video(path, frames, fps=10.0, codec="mp4v"):
 
 def _read_back(image_path):
     """读回抽出的图片，返回 (数组, 帧号)。"""
-    from pastelabel.engine.video_io import read_image
+    from labelforge.engine.video_io import read_image
     frame = read_image(str(image_path))
     assert frame is not None, f"图片读不出来：{image_path}"
     return frame, _decode_marker(frame)
@@ -122,7 +122,7 @@ def test_probe_rejects_empty_file(tmp_path):
 
 def test_write_then_read_image_roundtrip_png(tmp_path):
     """PNG 无损往返，读回的正是写下的像素。"""
-    from pastelabel.engine.video_io import read_image, write_image
+    from labelforge.engine.video_io import read_image, write_image
 
     frame = np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8)
     frame[:, :] = (10, 20, 30)
@@ -142,7 +142,7 @@ def test_write_image_supports_chinese_path(tmp_path):
     cv2.imwrite 在 Windows 中文路径下返回 False（实测），所以写图走
     imencode + Python open()；这条用例是那条实现的守卫。
     """
-    from pastelabel.engine.video_io import read_image, write_image
+    from labelforge.engine.video_io import read_image, write_image
 
     frame = np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8)
     frame[:, :] = (5, 6, 7)
@@ -158,7 +158,7 @@ def test_write_image_supports_chinese_path(tmp_path):
 
 def test_write_image_reports_failure_instead_of_claiming_success(tmp_path):
     """写不进去要报错，不能返回成功：父目录不存在时不得静默通过。"""
-    from pastelabel.engine.video_io import write_image
+    from labelforge.engine.video_io import write_image
 
     frame = np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8)
     with pytest.raises(VideoError):
@@ -167,7 +167,7 @@ def test_write_image_reports_failure_instead_of_claiming_success(tmp_path):
 
 def test_read_image_returns_none_for_unreadable(tmp_path):
     """读不出来返回 None（不抛异常），由调用方决定如何报错。"""
-    from pastelabel.engine.video_io import read_image
+    from labelforge.engine.video_io import read_image
 
     bad = tmp_path / "坏图.png"
     bad.write_bytes("不是图片".encode("utf-8"))
@@ -181,8 +181,8 @@ def test_read_image_returns_none_for_unreadable(tmp_path):
 
 def test_extract_frames_writes_exactly_the_sampled_frames(tmp_path):
     """抽出的正是时间轴指定的帧：用帧号编码验证，不只数张数。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "clip.mp4", range(60), fps=10.0)   # 6 秒
 
@@ -197,8 +197,8 @@ def test_extract_frames_writes_exactly_the_sampled_frames(tmp_path):
 
 def test_extract_frames_output_dir_is_next_to_video(tmp_path):
     """输出目录固定在视频同级，名为 <主文件名>_frames/。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "demo.mp4", range(20), fps=10.0)
 
@@ -213,8 +213,8 @@ def test_extract_frames_output_dir_is_next_to_video(tmp_path):
 
 def test_extract_frames_bumps_existing_output_dir(tmp_path):
     """同名输出目录已存在时同级加序号，不覆盖也不混入旧结果。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "demo.mp4", range(20), fps=10.0)
     first = extract_frames(str(video), target_fps=2.0)
@@ -230,8 +230,8 @@ def test_extract_frames_bumps_existing_output_dir(tmp_path):
 
 def test_extract_frames_file_names_are_numbered_from_one(tmp_path):
     """图片名 <视频名>_<序号 6 位>.jpg，序号从 1 开始。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "demo.mp4", range(20), fps=10.0)
 
@@ -244,8 +244,8 @@ def test_extract_frames_file_names_are_numbered_from_one(tmp_path):
 
 def test_extract_frames_manifest_records_traceable_mapping(tmp_path):
     """清单记录 source_frame 与两种时间，能追溯到源视频。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "demo.mp4", range(60), fps=10.0)
 
@@ -270,8 +270,8 @@ def test_extract_frames_manifest_records_traceable_mapping(tmp_path):
 
 def test_extract_frames_subrange_only_decodes_needed_frames(tmp_path):
     """指定片段时抽出的图片内容来自该片段，帧号仍是绝对帧号。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "clip.mp4", range(100), fps=10.0)   # 10 秒
 
@@ -284,8 +284,8 @@ def test_extract_frames_subrange_only_decodes_needed_frames(tmp_path):
 
 def test_extract_frames_every_frame_when_target_equals_source(tmp_path):
     """目标帧率等于源帧率时每帧一张。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "clip.mp4", range(10), fps=10.0)
 
@@ -297,8 +297,8 @@ def test_extract_frames_every_frame_when_target_equals_source(tmp_path):
 
 def test_extract_frames_clamps_target_fps_above_source(tmp_path):
     """目标帧率高于源帧率时钳制，清单记录实际使用的值。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "clip.mp4", range(10), fps=10.0)
 
@@ -310,8 +310,8 @@ def test_extract_frames_clamps_target_fps_above_source(tmp_path):
 
 def test_extract_frames_chinese_path_end_to_end(tmp_path):
     """中文视频路径、中文目录都能抽帧并写出可读的图片。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "我的视频" / "测试片段.mp4", range(20), fps=10.0)
 
@@ -324,7 +324,7 @@ def test_extract_frames_chinese_path_end_to_end(tmp_path):
 
 def test_extract_frames_png_format(tmp_path):
     """可以导出 png，内容无损。"""
-    from pastelabel.engine.video_io import extract_frames, read_image
+    from labelforge.engine.video_io import extract_frames, read_image
 
     video = _make_video(tmp_path / "clip.mp4", range(20), fps=10.0)
 
@@ -337,8 +337,8 @@ def test_extract_frames_png_format(tmp_path):
 
 def test_extract_frames_rejects_invalid_range_without_creating_output(tmp_path):
     """非法时间范围在创建输出目录之前就报错，不留空目录。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "clip.mp4", range(20), fps=10.0)
 
@@ -350,8 +350,8 @@ def test_extract_frames_rejects_invalid_range_without_creating_output(tmp_path):
 
 def test_extract_frames_cancel_keeps_completed_and_marks_incomplete(tmp_path):
     """取消：已完成的图片保留，清单标记未完成，且不把取消当成功。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "clip.mp4", range(60), fps=10.0)
     calls = []
@@ -376,8 +376,8 @@ def test_extract_frames_reports_truncated_video_instead_of_claiming_success(tmp_
     探测报 30 帧、抽帧时只解出 30 帧，但清单预期 31 帧（0..30 秒各一帧）：
     实际少于预期，不能标完成。
     """
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "clip.mp4", range(30), fps=10.0)
     # 每帧都抽：预期 30 张，实际只有 30 帧可解 —— 这条验证正常完成
@@ -389,7 +389,7 @@ def test_extract_frames_reports_truncated_video_instead_of_claiming_success(tmp_
 
 def test_extract_frames_marks_incomplete_when_video_shorter_than_probed(tmp_path, monkeypatch):
     """探测帧数虚高（文件被截断）时标 complete: false。"""
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     video = _make_video(tmp_path / "clip.mp4", range(30), fps=10.0)
     real_probe = video_io.probe
@@ -414,7 +414,7 @@ def test_extract_frames_marks_incomplete_when_video_longer_than_probed(tmp_path,
     这时时间轴的每一帧都能解出来、张数也符合预期，只有读到 EOF 核对实际
     帧数才能发现探测不准——不能因为「预期张数都拿到了」就报成功。
     """
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     video = _make_video(tmp_path / "clip.mp4", range(60), fps=10.0)
     real_probe = video_io.probe
@@ -436,7 +436,7 @@ def test_extract_frames_marks_incomplete_when_video_longer_than_probed(tmp_path,
 
 def test_extract_frames_actual_frame_count_does_not_drift_past_eof(tmp_path):
     """读到 EOF 后实际帧数必须停在真实值，不能因忽略 grab 返回值而虚高。"""
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "clip.mp4", range(30), fps=10.0)
 
@@ -452,7 +452,7 @@ def test_extract_frames_actual_count_is_real_frame_count_on_truncated_video(tmp_
     忽略 grab() 返回值时，循环会继续把 current 加到时间轴末端（59），
     把「解出 30 帧」报成 59 帧——数字虽仍触发未完成，但记录是错的。
     """
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     video = _make_video(tmp_path / "clip.mp4", range(30), fps=10.0)
     real_probe = video_io.probe
@@ -473,7 +473,7 @@ def test_extract_frames_actual_count_is_real_frame_count_on_truncated_video(tmp_
 
 def test_extract_frames_does_not_claim_success_when_image_write_fails(tmp_path, monkeypatch):
     """图片写入失败时不能报假成功：该帧不进清单，整体标未完成。"""
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     video = _make_video(tmp_path / "clip.mp4", range(60), fps=10.0)
     real_write = video_io.write_image
@@ -496,8 +496,8 @@ def test_extract_frames_does_not_claim_success_when_image_write_fails(tmp_path, 
 
 def test_extract_frames_result_can_be_loaded_as_dataset(tmp_path):
     """抽出的图片能作为数据集被现有加载器扫到。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "clip.mp4", range(20), fps=10.0)
     result = extract_frames(str(video), target_fps=2.0)
@@ -511,8 +511,8 @@ def test_extract_frames_result_can_be_loaded_as_dataset(tmp_path):
 
 def test_read_manifest_roundtrips_written_manifest(tmp_path):
     """写出的清单能被读回，字段与帧条目逐项一致。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames, read_manifest
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames, read_manifest
 
     video = _make_video(tmp_path / "clip.mp4", range(60), fps=10.0)
     result = extract_frames(str(video), target_fps=2.0, start=1.0, end=3.0)
@@ -537,7 +537,7 @@ def test_read_manifest_roundtrips_written_manifest(tmp_path):
 
 def test_read_manifest_written_with_chinese_content(tmp_path):
     """中文路径与中文名要能原样读回（ensure_ascii=False 写出的 JSON）。"""
-    from pastelabel.engine.video_io import extract_frames, read_manifest
+    from labelforge.engine.video_io import extract_frames, read_manifest
 
     video = _make_video(tmp_path / "我的视频" / "测试片段.mp4", range(20), fps=10.0)
     result = extract_frames(str(video), target_fps=2.0)
@@ -550,7 +550,7 @@ def test_read_manifest_written_with_chinese_content(tmp_path):
 
 def test_read_manifest_rejects_missing_file(tmp_path):
     """清单不存在 → 报错。"""
-    from pastelabel.engine.video_io import read_manifest
+    from labelforge.engine.video_io import read_manifest
 
     with pytest.raises(VideoError):
         read_manifest(str(tmp_path / "没有.json"))
@@ -558,7 +558,7 @@ def test_read_manifest_rejects_missing_file(tmp_path):
 
 def test_read_manifest_rejects_broken_json(tmp_path):
     """坏 JSON → 报错，不返回半个清单。"""
-    from pastelabel.engine.video_io import read_manifest
+    from labelforge.engine.video_io import read_manifest
 
     bad = tmp_path / "video_manifest.json"
     bad.write_text("{ 这不是 json", encoding="utf-8")
@@ -569,7 +569,7 @@ def test_read_manifest_rejects_broken_json(tmp_path):
 
 def test_read_manifest_rejects_wrong_version(tmp_path):
     """版本不认识 → 报错（未来格式不能按当前规则解释）。"""
-    from pastelabel.engine.video_io import read_manifest
+    from labelforge.engine.video_io import read_manifest
 
     path = tmp_path / "video_manifest.json"
     path.write_text(json.dumps({
@@ -592,7 +592,7 @@ def test_read_manifest_rejects_wrong_version(tmp_path):
 ])
 def test_read_manifest_rejects_invalid_metadata(tmp_path, field, value):
     """非有限时间/FPS、非正尺寸与帧数都拒绝。"""
-    from pastelabel.engine.video_io import read_manifest
+    from labelforge.engine.video_io import read_manifest
 
     payload = {
         "version": 1, "source": "a.mp4", "source_name": "a.mp4",
@@ -620,7 +620,7 @@ def test_read_manifest_rejects_invalid_metadata(tmp_path, field, value):
 ])
 def test_read_manifest_rejects_inconsistent_frames(tmp_path, frames):
     """帧号必须递增无重复且在范围内，时间与帧号必须自洽。"""
-    from pastelabel.engine.video_io import read_manifest
+    from labelforge.engine.video_io import read_manifest
 
     path = tmp_path / "video_manifest.json"
     path.write_text(json.dumps({
@@ -640,7 +640,7 @@ def test_read_manifest_rejects_inconsistent_frames(tmp_path, frames):
 ])
 def test_read_manifest_rejects_paths_outside_output_dir(tmp_path, name):
     """frames[].file 只允许输出目录内的相对文件名。"""
-    from pastelabel.engine.video_io import read_manifest
+    from labelforge.engine.video_io import read_manifest
 
     path = tmp_path / "video_manifest.json"
     path.write_text(json.dumps({
@@ -658,7 +658,7 @@ def test_read_manifest_rejects_paths_outside_output_dir(tmp_path, name):
 
 def test_read_manifest_keeps_complete_false(tmp_path):
     """未完成清单能读出来，但 complete 保持 false，调用方据此拒绝正式合成。"""
-    from pastelabel.engine.video_io import extract_frames, read_manifest
+    from labelforge.engine.video_io import extract_frames, read_manifest
 
     video = _make_video(tmp_path / "clip.mp4", range(60), fps=10.0)
     result = extract_frames(str(video), target_fps=2.0,
@@ -671,8 +671,8 @@ def test_read_manifest_keeps_complete_false(tmp_path):
 
 def test_manifest_path_is_inside_output_dir(tmp_path):
     """清单固定写在输出目录内，名为 video_manifest.json。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import extract_frames
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import extract_frames
 
     video = _make_video(tmp_path / "clip.mp4", range(20), fps=10.0)
     result = extract_frames(str(video), target_fps=2.0)

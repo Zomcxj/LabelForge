@@ -1,7 +1,7 @@
 """事件处理回归测试。"""
 from pathlib import Path
 
-from pastelabel.engine.event_handler import EventHandlerMixin
+from labelforge.engine.event_handler import EventHandlerMixin
 
 
 class FakeEditor(EventHandlerMixin):
@@ -25,14 +25,14 @@ def test_work_path_navigation_uses_step():
 
 
 def test_setup_shortcuts_binds_ctrl_c_to_copy_selected_labels_cache_action():
-    source = Path("pastelabel/engine/event_handler.py").read_text(encoding="utf-8")
+    source = Path("labelforge/engine/event_handler.py").read_text(encoding="utf-8")
 
     assert "copy_selected_labels_to_active_cache_slot" in source
     assert "Ctrl+C" in source
 
 
 def test_setup_shortcuts_binds_ctrl_v_to_paste_active_label_cache_slot():
-    source = Path("pastelabel/engine/event_handler.py").read_text(encoding="utf-8")
+    source = Path("labelforge/engine/event_handler.py").read_text(encoding="utf-8")
 
     assert "active_label_cache_slot" in source
     assert "paste_label_cache_slot(self.active_label_cache_slot)" in source
@@ -104,7 +104,7 @@ def test_switch_background_to_index_clears_stale_box_selection():
 
 
 def test_switch_and_close_save_current_json_after_syncing_current_objects():
-    source = Path('pastelabel/engine/event_handler.py').read_text(encoding='utf-8')
+    source = Path('labelforge/engine/event_handler.py').read_text(encoding='utf-8')
 
     switch_block = source.split('def switch_background_to_index', 1)[1].split('def on_labels_checkbox_changed', 1)[0]
     close_block = source.split('def closeEvent', 1)[1]

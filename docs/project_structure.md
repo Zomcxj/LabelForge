@@ -3,7 +3,7 @@
 [返回 README](../README.md)
 
 ```
-PasteLabel/
+LabelForge/
 ├── .gitattributes             # 文本属性（Shell 脚本使用 LF）
 ├── .gitignore                 # Git 忽略规则
 ├── .python-version            # 项目 Python 版本锚点
@@ -19,10 +19,10 @@ PasteLabel/
 │   └── workflows/
 │       ├── build.yml          # 发布构建工作流
 │       └── test.yml           # 测试工作流
-├── pastelabel/                # 主代码包
+├── labelforge/                # 主代码包
 │   ├── __init__.py
 │   ├── main.py                # 程序入口
-│   ├── PasteLabel.spec        # PyInstaller spec
+│   ├── LabelForge.spec        # PyInstaller spec
 │   ├── build_support.py       # 打包辅助：统一 MSVC 运行库版本（Windows 专用，Linux 上为空操作）
 │   ├── sip.py                 # PyInstaller 的 PyQt5 SIP 兼容模块
 │   ├── canvas/                # 画布绘制与交互
@@ -177,7 +177,7 @@ PasteLabel/
 ```
 ```
 运行时文件（不属于仓库源码树）：
-└── ~/pastelabel.log          # 未处理异常和 Qt 消息日志
+└── ~/labelforge.log          # 未处理异常和 Qt 消息日志
 ```
 
-运行时日志写入用户主目录 `~/pastelabel.log`，不属于仓库源码树中的持久文件。
+运行时日志写入用户主目录 `~/labelforge.log`，不属于仓库源码树中的持久文件。

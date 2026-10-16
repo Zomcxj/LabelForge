@@ -148,7 +148,7 @@ class Canvas(CanvasRendererMixin, CanvasInteractionMixin, QWidget):
         if background_rect is None:
             return None
 
-        from pastelabel.core.config import PASTE_ITEM_CONFIG
+        from labelforge.core.config import PASTE_ITEM_CONFIG
         handle_size = PASTE_ITEM_CONFIG['handle_size']
 
         for i in range(len(self._editor.canvas_items) - 1, -1, -1):

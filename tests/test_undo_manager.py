@@ -3,8 +3,8 @@
 `UndoManager` 此前只在 main_window 里被间接使用，测试里仅有 stub 的
 `save_undo_state`，真实栈行为从未被覆盖。
 """
-from pastelabel.core.config import UNDO_CONFIG
-from pastelabel.engine.undo_manager import UndoManager
+from labelforge.core.config import UNDO_CONFIG
+from labelforge.engine.undo_manager import UndoManager
 
 
 def _boxes(*labels):

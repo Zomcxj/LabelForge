@@ -9,22 +9,24 @@ def test_build_script_is_at_repository_root_and_uses_its_directory_as_root():
     source = (ROOT / "build.sh").read_text(encoding="utf-8")
 
     assert 'PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"' in source
-    assert not (ROOT / "pastelabel" / "build.sh").exists()
+    assert not (ROOT / "labelforge" / "build.sh").exists()
 
 
-def test_documentation_uses_pastelabel_log_without_a_leading_dot():
+def test_documentation_uses_labelforge_log_without_a_leading_dot():
     for path in (ROOT / "README.md", ROOT / "docs" / "user_guide.md", ROOT / "docs" / "project_structure.md"):
         source = path.read_text(encoding="utf-8")
-        assert "pastelabel.log" in source
-        assert ".pastelabel.log" not in source
+        assert "labelforge.log" in source
+        assert ".labelforge.log" not in source
+        # 旧名不得残留，否则用户按文档找不到日志
+        assert "pastelabel.log" not in source
 
 
 def test_build_script_does_not_list_removed_hidden_imports():
     source = (ROOT / "build.sh").read_text(encoding="utf-8")
 
-    assert "pastelabel.ui.widgets" not in source
-    assert "pastelabel.ui.styles" not in source
-    assert "pastelabel.core.models" not in source
+    assert "labelforge.ui.widgets" not in source
+    assert "labelforge.ui.styles" not in source
+    assert "labelforge.core.models" not in source
 
 
 def test_documentation_describes_stats_color_replacement_and_separate_wheel_steps():
@@ -116,8 +118,58 @@ def test_pipeline_recipe_feature_fully_removed():
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(
         ["git", "grep", "-n", "-i", "-E",
-         "recipe|配方|至少选择两步|划分比例之和", "--", "pastelabel"],
+         "recipe|配方|至少选择两步|划分比例之和", "--", "labelforge"],
         cwd=root, text=True, capture_output=True)
     assert result.returncode in (0, 1), result.stderr
     hits = [line for line in result.stdout.splitlines() if line.strip()]
     assert hits == [], "残留配方引用:\n" + "\n".join(hits)
+
+
+# ---------- 改名守卫（阶段1：PasteLabel → LabelForge） ----------
+
+# 这些位置允许出现旧名：它们是「旧名兼容」的实现或断言，不是遗漏。
+_LEGACY_ALLOWED = {
+    "labelforge/core/config_manager.py",      # LEGACY_CONFIG_PATH 常量
+    "labelforge/core/json_trace.py",          # 旧探针环境变量的回退
+    "tests/test_documentation_regressions.py",  # 本文件的断言
+    "tests/test_config_manager.py",           # 迁移用例
+}
+
+
+def test_no_legacy_package_name_outside_allowlist():
+    """包名与显示名不得在允许清单之外残留，否则改名不彻底。"""
+    offenders = []
+    for path in sorted(ROOT.rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel.startswith((".superpowers/", "build/", "dist/")) or "__pycache__" in rel:
+            continue
+        if rel in _LEGACY_ALLOWED:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for old in ("pastelabel", "PasteLabel"):
+            if old in text:
+                offenders.append(f"{rel}: {old}")
+    assert not offenders, offenders
+
+
+def test_spec_file_is_renamed_and_points_at_the_new_package():
+    spec = ROOT / "labelforge" / "LabelForge.spec"
+    assert spec.exists()
+    assert not (ROOT / "labelforge" / "PasteLabel.spec").exists()
+    text = spec.read_text(encoding="utf-8")
+    assert "'labelforge'" in text
+    assert "name='LabelForge'" in text
+
+
+def test_package_directory_is_renamed():
+    assert (ROOT / "labelforge" / "__init__.py").exists()
+    assert not (ROOT / "pastelabel").exists()
+
+
+def test_old_package_name_does_not_import():
+    """旧包名必须真的不可导入，否则改名只是表面功夫。"""
+    import importlib
+    import pytest
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("pastelabel")

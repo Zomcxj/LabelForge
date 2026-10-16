@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pastelabel.ui.theme import ThemeManager, ThemeMode
+from labelforge.ui.theme import ThemeManager, ThemeMode
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,9 +29,9 @@ def test_real_qt_uses_theme_text_for_representative_normal_controls(mode, color)
     script = f'''
 from PyQt5.QtGui import QPalette
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.ui.settings_dialog import SettingsDialog
-from pastelabel.ui.theme import ThemeManager, ThemeMode
+from labelforge.ui.main_window import ImageEditor
+from labelforge.ui.settings_dialog import SettingsDialog
+from labelforge.ui.theme import ThemeManager, ThemeMode
 
 app = QApplication.instance() or QApplication([])
 window = ImageEditor()
@@ -93,7 +93,7 @@ def test_real_qt_context_menu_has_rounded_corners(mode):
     out = _menu_corner_probe(f'''
 from PyQt5.QtWidgets import QApplication, QMenu, QAction
 from PyQt5.QtGui import QImage, QPainter
-from pastelabel.ui.theme import ThemeManager, ThemeMode
+from labelforge.ui.theme import ThemeManager, ThemeMode
 
 app = QApplication.instance() or QApplication([])
 ThemeManager.set_mode(ThemeMode.{mode})
@@ -101,7 +101,7 @@ app.setStyleSheet(ThemeManager.get_stylesheet())
 
 # 必须走真的构造路径：QSS 的圆角只有配上无边框+透明窗口才生效，
 # 自己 new 一个裸 QMenu 测不到这一点。
-from pastelabel.canvas.canvas_menu import CanvasMenuMixin
+from labelforge.canvas.canvas_menu import CanvasMenuMixin
 menu = CanvasMenuMixin._rounded_menu(None)
 menu.addAction(QAction("删除", menu))
 menu.addAction(QAction("复制", menu))

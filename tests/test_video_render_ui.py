@@ -33,8 +33,8 @@ def test_render_worker_passes_everything_to_engine(monkeypatch):
     不用源码字符串断言：那种测试在「接线绿、参数传丢」时照样通过。
     这里把引擎换成记录参数的替身，直接跑 run()（同步跑，省掉事件循环）。
     """
-    from pastelabel.engine import video_io
-    from pastelabel.ui.inference_workers import VideoRenderWorker
+    from labelforge.engine import video_io
+    from labelforge.ui.inference_workers import VideoRenderWorker
 
     seen = {}
 
@@ -78,8 +78,8 @@ def test_render_worker_passes_everything_to_engine(monkeypatch):
 
 def test_render_worker_reports_engine_failure(monkeypatch):
     """引擎抛错 → failed 信号带原因，不当成成功。"""
-    from pastelabel.engine import video_io
-    from pastelabel.ui.inference_workers import VideoRenderWorker
+    from labelforge.engine import video_io
+    from labelforge.ui.inference_workers import VideoRenderWorker
 
     def boom(*a, **kw):
         raise video_io.VideoError("编码器打不开")
@@ -100,7 +100,7 @@ def test_render_worker_reports_engine_failure(monkeypatch):
 
 def test_render_worker_signature_has_render_and_scope():
     """构造签名收 render/scope/class_filter（默认 None = 全图、不绘制）。"""
-    from pastelabel.ui.inference_workers import VideoRenderWorker
+    from labelforge.ui.inference_workers import VideoRenderWorker
 
     params = inspect.signature(VideoRenderWorker.__init__).parameters
     for name in ("video_path", "detector", "output_path", "resize_fn",
@@ -113,7 +113,7 @@ def test_render_worker_signature_has_render_and_scope():
 
 def test_render_worker_has_cancel():
     """必须能取消：逐帧推理很慢，用户要能中途停。"""
-    from pastelabel.ui.inference_workers import VideoRenderWorker
+    from labelforge.ui.inference_workers import VideoRenderWorker
 
     assert hasattr(VideoRenderWorker, "cancel")
     src = inspect.getsource(VideoRenderWorker.cancel)
@@ -124,7 +124,7 @@ def test_render_worker_has_cancel():
 
 def test_dialog_has_render_tab_and_action():
     """弹窗要有「推理成片」页与对应 action 常量。"""
-    from pastelabel.ui import video_dialog
+    from labelforge.ui import video_dialog
 
     assert hasattr(video_dialog, "ACTION_RENDER")
     src = inspect.getsource(video_dialog.VideoDialog._build_ui)
@@ -133,7 +133,7 @@ def test_dialog_has_render_tab_and_action():
 
 def test_render_tab_has_its_own_overlay_group():
     """推理成片页有自己的叠加控件（类别来自模型，与合成页的 sidecar 不同源）。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog._build_render_tab)
     assert '_build_overlay_group("render")' in src, "没给第三页建独立的叠加组"
@@ -144,7 +144,7 @@ def test_render_tab_has_its_own_overlay_group():
 
 def test_dialog_settings_branches_on_render_action():
     """settings() 要按 action 分流到推理成片的参数。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog.settings)
     assert "ACTION_RENDER" in src
@@ -153,7 +153,7 @@ def test_dialog_settings_branches_on_render_action():
 
 def test_dialog_validate_requires_model_and_source():
     """推理成片要校验：选了视频、有模型、输出路径不为空。"""
-    from pastelabel.ui.video_dialog import VideoDialog
+    from labelforge.ui.video_dialog import VideoDialog
 
     src = inspect.getsource(VideoDialog.validate)
     assert "ACTION_RENDER" in src
@@ -162,7 +162,7 @@ def test_dialog_validate_requires_model_and_source():
 
 # ---------- mixin ----------
 
-from pastelabel.ui.mixins.video import VideoMixin as _VideoMixinBase
+from labelforge.ui.mixins.video import VideoMixin as _VideoMixinBase
 
 
 class _RenderHost(_VideoMixinBase):
@@ -253,7 +253,7 @@ class _CapturedWorker:
 @pytest.fixture
 def fake_worker(monkeypatch):
     calls = []
-    from pastelabel.ui import inference_workers
+    from labelforge.ui import inference_workers
 
     monkeypatch.setattr(
         inference_workers, "VideoRenderWorker",
@@ -263,7 +263,7 @@ def fake_worker(monkeypatch):
 
 def test_start_render_worker_gets_main_thread_colors(fake_worker):
     """类别色必须在主线程取好交给 worker（后台不能读 editor 取色）。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     host = _RenderHost(detector=_Detector())
     assert VideoMixin._start_video_render(host, _settings()) is True
@@ -277,7 +277,7 @@ def test_start_render_worker_gets_main_thread_colors(fake_worker):
 
 def test_start_render_worker_passes_scope_and_filter(fake_worker):
     """范围与类别筛选都要原样交给后台，不能丢成 None。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     sentinel = ["person"]
     host = _RenderHost(detector=_Detector(), filter_value=sentinel)
@@ -290,7 +290,7 @@ def test_start_render_worker_passes_scope_and_filter(fake_worker):
 
 def test_start_render_worker_without_detector_hints(fake_worker):
     """没加载模型：明确提示，且**不能**起线程。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     host = _RenderHost(detector=None)
     assert VideoMixin._start_video_render(host, _settings()) is False
@@ -301,7 +301,7 @@ def test_start_render_worker_without_detector_hints(fake_worker):
 
 def test_start_render_worker_blocks_second_run(fake_worker):
     """已经在跑（或忙）时不能再起一个。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     host = _RenderHost(detector=_Detector())
     assert VideoMixin._start_video_render(host, _settings()) is True
@@ -311,7 +311,7 @@ def test_start_render_worker_blocks_second_run(fake_worker):
 
 def test_start_render_worker_rejects_bad_scope_before_running(fake_worker):
     """范围非法（没画 ROI 等）在启动时拦下，不进后台跑出 0 框结果。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     host = _RenderHost(detector=_Detector(), scope_error=ValueError("没画区域"))
     assert VideoMixin._start_video_render(host, _settings()) is False
@@ -321,7 +321,7 @@ def test_start_render_worker_rejects_bad_scope_before_running(fake_worker):
 
 def test_start_render_worker_without_render_options(fake_worker):
     """关掉叠加时 render=None，引擎走「只推理不绘制」。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     host = _RenderHost(detector=_Detector())
     VideoMixin._start_video_render(host, _settings(render=None))
@@ -330,8 +330,8 @@ def test_start_render_worker_without_render_options(fake_worker):
 
 def test_dispatch_recognizes_render_action():
     """start_requested 分发到 ④A，不是掉进抽帧兜底分支。"""
-    from pastelabel.ui import video_dialog
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui import video_dialog
+    from labelforge.ui.mixins.video import VideoMixin
 
     calls = []
     host = _RenderHost()
@@ -348,7 +348,7 @@ def test_dispatch_recognizes_render_action():
 
 def test_cancel_covers_render_worker():
     """弹窗取消要能取消 ④A 任务（三个 worker 都要覆盖）。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     class _Worker:
         def __init__(self):
@@ -375,8 +375,8 @@ from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 import cv2
-from pastelabel.ui.video_dialog import VideoDialog
-from pastelabel.engine import video_io as vio
+from labelforge.ui.video_dialog import VideoDialog
+from labelforge.engine import video_io as vio
 
 TMP = tempfile.mkdtemp()
 SRC = os.path.join(TMP, "源视频.mp4")
@@ -611,7 +611,7 @@ def _render_result(**overrides):
 
 def test_render_finished_reports_output_and_burn_in_warning():
     """正常完成：报输出路径 + 帧数/时长，并说清框已烧进画面。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     stub = _RenderFinishedStub()
     VideoMixin._on_render_finished(stub, _render_result())
@@ -625,7 +625,7 @@ def test_render_finished_reports_output_and_burn_in_warning():
 
 def test_render_cancelled_reports_kept_partial():
     """取消：报出半成品在哪、有多少帧、正式输出没生成。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     stub = _RenderFinishedStub()
     VideoMixin._on_render_finished(stub, _render_result(
@@ -641,7 +641,7 @@ def test_render_cancelled_reports_kept_partial():
 
 def test_render_cancelled_without_partial_is_quiet():
     """零帧取消：没有半成品可报，就不弹「保留了什么」。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     stub = _RenderFinishedStub()
     VideoMixin._on_render_finished(stub, _render_result(
@@ -653,7 +653,7 @@ def test_render_cancelled_without_partial_is_quiet():
 
 def test_render_failed_reports_reason():
     """失败：报原因，不当成成功。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     stub = _RenderFinishedStub()
     VideoMixin._on_render_failed(stub, "编码器打不开")
@@ -671,9 +671,9 @@ def test_full_chain_render_with_real_qt():
     """
     result = _run_prelude('''
 import cv2
-from pastelabel.ui.mixins.video import VideoMixin
-from pastelabel.engine import video_io as vio
-from pastelabel.engine.inference_image import resize_for_model
+from labelforge.ui.mixins.video import VideoMixin
+from labelforge.engine import video_io as vio
+from labelforge.engine.inference_image import resize_for_model
 
 class Stub(VideoMixin):
     def get_label_color(self, label):
@@ -736,9 +736,9 @@ def test_full_chain_render_cancel_keeps_playable_partial_real_qt():
     """真实 Qt 全链路取消：半成品能播、帧数对得上、正式名不占用。"""
     result = _run_prelude('''
 import cv2
-from pastelabel.engine import video_io as vio
-from pastelabel.engine.inference_image import resize_for_model
-from pastelabel.engine.video_render import RenderSpec
+from labelforge.engine import video_io as vio
+from labelforge.engine.inference_image import resize_for_model
+from labelforge.engine.video_render import RenderSpec
 
 class Det:
     class_names = ["person"]
@@ -792,7 +792,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage
 app = QApplication([])
 
-work = os.path.join(os.environ["TEMP"], "pastelabel_range_ui")
+work = os.path.join(os.environ["TEMP"], "labelforge_range_ui")
 os.makedirs(work, exist_ok=True)
 for name in os.listdir(work):
     os.remove(os.path.join(work, name))
@@ -801,7 +801,7 @@ for i in range(7):
     img.fill(0x223344)
     img.save(os.path.join(work, f"{i:03d}.png"))
 
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui.video_dialog import VideoDialog
 
 d = VideoDialog()
 d.set_compose_dir(work)
@@ -825,7 +825,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage
 app = QApplication([])
 
-work = os.path.join(os.environ["TEMP"], "pastelabel_range_settings")
+work = os.path.join(os.environ["TEMP"], "labelforge_range_settings")
 os.makedirs(work, exist_ok=True)
 for name in os.listdir(work):
     os.remove(os.path.join(work, name))
@@ -834,14 +834,14 @@ for i in range(6):
     img.fill(0x223344)
     img.save(os.path.join(work, f"{i:03d}.png"))
 
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui.video_dialog import VideoDialog
 
 d = VideoDialog()
 d.set_compose_dir(work)
 d.compose_start_spin.setValue(2)
 d.compose_end_spin.setValue(4)
 # settings() 按当前 action 分派，不设成 compose 会返回 None
-from pastelabel.ui.video_dialog import ACTION_COMPOSE
+from labelforge.ui.video_dialog import ACTION_COMPOSE
 d.action = ACTION_COMPOSE
 app.processEvents()
 s = d.settings()
@@ -860,7 +860,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage
 app = QApplication([])
 
-work = os.path.join(os.environ["TEMP"], "pastelabel_range_reverse")
+work = os.path.join(os.environ["TEMP"], "labelforge_range_reverse")
 os.makedirs(work, exist_ok=True)
 for name in os.listdir(work):
     os.remove(os.path.join(work, name))
@@ -869,7 +869,7 @@ for i in range(6):
     img.fill(0x223344)
     img.save(os.path.join(work, f"{i:03d}.png"))
 
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui.video_dialog import VideoDialog
 
 d = VideoDialog()
 d.set_compose_dir(work)

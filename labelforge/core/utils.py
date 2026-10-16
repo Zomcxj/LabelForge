@@ -240,7 +240,7 @@ def create_app_icon(script_dir):
     icon_paths = [
         # 开发环境路径（从 ui/ 目录向上两级到项目根目录）
         os.path.join(script_dir, "../../ico_image", "icoo.png"),
-        # 开发环境路径（从 ui/ 目录向上一级到 pastelabel 目录）
+        # 开发环境路径（从 ui/ 目录向上一级到 labelforge 目录）
         os.path.join(script_dir, "../ico_image", "icoo.png"),
         # 打包环境路径
         os.path.join(script_dir, "ico_image", "icoo.png"),

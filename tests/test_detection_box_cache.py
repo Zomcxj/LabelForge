@@ -8,7 +8,7 @@
 import json
 import os
 
-from pastelabel.engine.image_loader import ImageLoaderMixin
+from labelforge.engine.image_loader import ImageLoaderMixin
 
 
 class _Loader(ImageLoaderMixin):
@@ -100,7 +100,7 @@ def test_progressive_loader_does_not_poison_the_box_cache(tmp_path, monkeypatch)
     这里调用**真实的** `_load_next_background_batch()`，只把「装饰列表行」和
     Qt 列表控件换掉，所以源码真被改回预置空缓存时本测试会红。
     """
-    import pastelabel.engine.image_loader.mixin as mixin_mod
+    import labelforge.engine.image_loader.mixin as mixin_mod
 
     img0 = _sidecar(tmp_path, "p0.jpg", ["A", "B"])
     img1 = _sidecar(tmp_path, "p1.jpg", ["C"])

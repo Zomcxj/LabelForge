@@ -39,13 +39,13 @@ jobs:
 
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
-        run: python -m PyInstaller pastelabel/PasteLabel.spec --noconfirm
+        run: python -m PyInstaller labelforge/LabelForge.spec --noconfirm
 
       - name: Cache pip downloads (Linux)
         if: runner.os == 'Linux'
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/pastelabel-pip-cache
+          path: ${{ runner.temp }}/labelforge-pip-cache
           key: pip-linux-python312-${{ hashFiles('requirements*.txt') }}
           restore-keys: pip-linux-python312-
 
@@ -54,7 +54,7 @@ jobs:
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
-            -v "${{ runner.temp }}/pastelabel-pip-cache:/root/.cache/pip" \
+            -v "${{ runner.temp }}/labelforge-pip-cache:/root/.cache/pip" \
             -w /workspace \
             ubuntu:18.04 \
             bash -c "
@@ -71,14 +71,14 @@ jobs:
               /opt/conda/bin/conda install -y python=3.12 pyqt
               /opt/conda/bin/python -m pip install -q pyinstaller numpy onnxruntime 'opencv-python-headless>=4.10,<4.11'
 
-              /opt/conda/bin/python -m PyInstaller pastelabel/PasteLabel.spec --noconfirm
+              /opt/conda/bin/python -m PyInstaller labelforge/LabelForge.spec --noconfirm
             "
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PasteLabel-${{ matrix.display }}
-          path: dist/PasteLabel*
+          name: LabelForge-${{ matrix.display }}
+          path: dist/LabelForge*
 
   release:
     needs: build
@@ -107,14 +107,14 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           mkdir -p staging
-          if [ -f artifacts/PasteLabel-Windows/PasteLabel.exe ]; then
-            cp artifacts/PasteLabel-Windows/PasteLabel.exe "staging/PasteLabel-${TAG}-Windows.exe"
+          if [ -f artifacts/LabelForge-Windows/LabelForge.exe ]; then
+            cp artifacts/LabelForge-Windows/LabelForge.exe "staging/LabelForge-${TAG}-Windows.exe"
           fi
-          if [ -f artifacts/PasteLabel-Linux/PasteLabel ]; then
-            file artifacts/PasteLabel-Linux/PasteLabel
-            cp artifacts/PasteLabel-Linux/PasteLabel "staging/PasteLabel-${TAG}-Linux"
-            chmod +x "staging/PasteLabel-${TAG}-Linux"
-            file "staging/PasteLabel-${TAG}-Linux"
+          if [ -f artifacts/LabelForge-Linux/LabelForge ]; then
+            file artifacts/LabelForge-Linux/LabelForge
+            cp artifacts/LabelForge-Linux/LabelForge "staging/LabelForge-${TAG}-Linux"
+            chmod +x "staging/LabelForge-${TAG}-Linux"
+            file "staging/LabelForge-${TAG}-Linux"
           fi
 
       - name: Create or upload to release
@@ -124,7 +124,7 @@ jobs:
         shell: bash
         run: |
           printf '%s\n' \
-            "PasteLabel $TAG — 小目标可检测性审核与文件夹拖入加载" \
+            "LabelForge $TAG — 小目标可检测性审核与文件夹拖入加载" \
             "" \
             "✨ 新功能与改进" \
             "• 标注质检新增「小目标可检测性」审核：按框短边占原图边的比例分两档 —— 低于 0.625%（约 4px@640 输入）常规配置检不到、低于 1.25%（约 8px@640）需 P2 检测头或裁剪放大；结果窗口表格新增「尺寸/提示」列（宽不足 / 高不足 / 宽高均不足 + 占比 + 建议）；贴图参与检查，关键点与多边形不检查" \
@@ -143,7 +143,7 @@ jobs:
           gh release delete "$TAG" --repo "${{ github.repository }}" --yes 2>/dev/null || true
           gh release create "$TAG" \
             --repo "${{ github.repository }}" \
-            --title "PasteLabel $TAG" \
+            --title "LabelForge $TAG" \
             --notes-file release-notes.md
           for f in staging/*; do
             echo "Uploading: $(basename "$f")"

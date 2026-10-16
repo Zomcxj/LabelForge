@@ -12,16 +12,16 @@ from pathlib import Path
 
 import pytest
 
-from pastelabel.engine.augmenter import Augmenter
-from pastelabel.engine.augmenter.base import BaseTransform, get_all_transforms
-from pastelabel.engine.augmenter.color import (
+from labelforge.engine.augmenter import Augmenter
+from labelforge.engine.augmenter.base import BaseTransform, get_all_transforms
+from labelforge.engine.augmenter.color import (
     Brightness, Contrast, Hue, Saturation, Value,
 )
-from pastelabel.engine.augmenter.flipt import HorizontalFlip, VerticalFlip
-from pastelabel.engine.augmenter.noise import GaussianNoise, SaltPepper
-from pastelabel.engine.augmenter.rotate import RandomRotation
-from pastelabel.engine.augmenter.scale import RandomScale
-from pastelabel.engine.augmenter.translate import RandomTranslate
+from labelforge.engine.augmenter.flipt import HorizontalFlip, VerticalFlip
+from labelforge.engine.augmenter.noise import GaussianNoise, SaltPepper
+from labelforge.engine.augmenter.rotate import RandomRotation
+from labelforge.engine.augmenter.scale import RandomScale
+from labelforge.engine.augmenter.translate import RandomTranslate
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -168,7 +168,7 @@ def test_save_labelme_json_preserves_unicode_labels(tmp_path):
 def test_horizontal_and_vertical_flip_mirror_boxes():
     out = _run_real_qt('''
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter.flipt import HorizontalFlip, VerticalFlip
+from labelforge.engine.augmenter.flipt import HorizontalFlip, VerticalFlip
 
 img = QImage(100, 50, QImage.Format_RGB888)
 img.fill(QColor(0, 0, 0))
@@ -196,7 +196,7 @@ print("OK")
 def test_translate_clips_boxes_and_drops_degenerate():
     out = _run_real_qt('''
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter.translate import RandomTranslate
+from labelforge.engine.augmenter.translate import RandomTranslate
 
 img = QImage(100, 100, QImage.Format_RGB888)
 img.fill(QColor(0, 0, 0))
@@ -221,7 +221,7 @@ print("OK")
 def test_brightness_adds_delta_and_clamps():
     out = _run_real_qt('''
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter.color import Brightness
+from labelforge.engine.augmenter.color import Brightness
 
 img = QImage(4, 1, QImage.Format_RGB888)
 img.setPixelColor(0, 0, QColor(10, 10, 10))
@@ -245,7 +245,7 @@ print("OK")
 def test_contrast_scales_around_midpoint():
     out = _run_real_qt('''
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter.color import Contrast
+from labelforge.engine.augmenter.color import Contrast
 
 img = QImage(3, 1, QImage.Format_RGB888)
 img.setPixelColor(0, 0, QColor(128, 128, 128))
@@ -264,7 +264,7 @@ print("OK")
 def test_saturation_and_value_keep_boxes_untouched():
     out = _run_real_qt('''
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter.color import Saturation, Value, Hue
+from labelforge.engine.augmenter.color import Saturation, Value, Hue
 
 img = QImage(2, 2, QImage.Format_RGB888)
 img.fill(QColor(200, 100, 50))
@@ -287,7 +287,7 @@ def test_gaussian_noise_is_deterministic_with_injected_rng():
     out = _run_real_qt('''
 import random
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter.noise import GaussianNoise
+from labelforge.engine.augmenter.noise import GaussianNoise
 
 img = QImage(8, 8, QImage.Format_RGB888)
 img.fill(QColor(100, 100, 100))
@@ -308,7 +308,7 @@ def test_salt_pepper_is_deterministic_with_injected_rng():
     out = _run_real_qt('''
 import random
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter.noise import SaltPepper
+from labelforge.engine.augmenter.noise import SaltPepper
 
 img = QImage(20, 20, QImage.Format_RGB888)
 img.fill(QColor(100, 100, 100))
@@ -331,7 +331,7 @@ def test_rotation_enlarges_canvas_and_transforms_boxes():
     out = _run_real_qt('''
 import random
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter.rotate import RandomRotation
+from labelforge.engine.augmenter.rotate import RandomRotation
 
 img = QImage(100, 100, QImage.Format_RGB888)
 img.fill(QColor(0, 0, 0))
@@ -356,7 +356,7 @@ def test_scale_shrinks_centers_and_keeps_canvas_size():
     out = _run_real_qt('''
 import random
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter.scale import RandomScale
+from labelforge.engine.augmenter.scale import RandomScale
 
 img = QImage(100, 100, QImage.Format_RGB888)
 img.fill(QColor(0, 0, 0))
@@ -382,10 +382,10 @@ def test_augmenter_is_reproducible_for_same_seed_in_all_mode():
     out = _run_real_qt('''
 import hashlib, json, os, tempfile
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter import Augmenter
-from pastelabel.engine.augmenter.color import Brightness
-from pastelabel.engine.augmenter.rotate import RandomRotation
-from pastelabel.engine.augmenter.scale import RandomScale
+from labelforge.engine.augmenter import Augmenter
+from labelforge.engine.augmenter.color import Brightness
+from labelforge.engine.augmenter.rotate import RandomRotation
+from labelforge.engine.augmenter.scale import RandomScale
 
 src_dir = tempfile.mkdtemp()
 img = QImage(64, 48, QImage.Format_RGB888)
@@ -417,8 +417,8 @@ def test_augmenter_does_not_pollute_global_random():
     out = _run_real_qt('''
 import os, random, tempfile
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter import Augmenter
-from pastelabel.engine.augmenter.color import Brightness
+from labelforge.engine.augmenter import Augmenter
+from labelforge.engine.augmenter.color import Brightness
 
 src_dir = tempfile.mkdtemp()
 img = QImage(32, 32, QImage.Format_RGB888)
@@ -444,8 +444,8 @@ def test_augmenter_run_respects_skip_empty_and_include_original():
     out = _run_real_qt('''
 import os, tempfile
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter import Augmenter
-from pastelabel.engine.augmenter.color import Brightness
+from labelforge.engine.augmenter import Augmenter
+from labelforge.engine.augmenter.color import Brightness
 
 src_dir = tempfile.mkdtemp()
 img = QImage(32, 32, QImage.Format_RGB888)
@@ -484,8 +484,8 @@ def test_augmenter_image_ratio_zero_skips_random_transforms():
     out = _run_real_qt('''
 import os, tempfile
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter import Augmenter
-from pastelabel.engine.augmenter.color import Brightness
+from labelforge.engine.augmenter import Augmenter
+from labelforge.engine.augmenter.color import Brightness
 
 src_dir = tempfile.mkdtemp()
 img = QImage(32, 32, QImage.Format_RGB888)
@@ -508,8 +508,8 @@ def test_augmenter_stops_when_interrupted():
     out = _run_real_qt('''
 import os, tempfile
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter import Augmenter
-from pastelabel.engine.augmenter.color import Brightness
+from labelforge.engine.augmenter import Augmenter
+from labelforge.engine.augmenter.color import Brightness
 
 src_dir = tempfile.mkdtemp()
 img = QImage(32, 32, QImage.Format_RGB888)
@@ -533,9 +533,9 @@ print("OK")
 def test_transforms_preserve_shape_metadata():
     out = _run_real_qt('''
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter.flipt import HorizontalFlip
-from pastelabel.engine.augmenter.scale import RandomScale
-from pastelabel.engine.augmenter.translate import RandomTranslate
+from labelforge.engine.augmenter.flipt import HorizontalFlip
+from labelforge.engine.augmenter.scale import RandomScale
+from labelforge.engine.augmenter.translate import RandomTranslate
 
 img = QImage(100, 100, QImage.Format_RGB888)
 img.fill(QColor(0, 0, 0))
@@ -576,9 +576,9 @@ def test_augmented_labelme_json_roundtrips_shape_types(tmp_path):
     out = _run_real_qt('''
 import json, os, tempfile
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter import Augmenter
-from pastelabel.engine.augmenter.color import Brightness
-from pastelabel.engine.shape_io import box_from_labelme_shape
+from labelforge.engine.augmenter import Augmenter
+from labelforge.engine.augmenter.color import Brightness
+from labelforge.engine.shape_io import box_from_labelme_shape
 
 src_dir = tempfile.mkdtemp()
 img = QImage(80, 60, QImage.Format_RGB888)
@@ -654,7 +654,7 @@ def test_augmenter_include_original_stops_when_interrupted():
     out = _run_real_qt('''
 import os, tempfile
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter import Augmenter
+from labelforge.engine.augmenter import Augmenter
 
 src_dir = tempfile.mkdtemp()
 srcs = []
@@ -684,7 +684,7 @@ def test_augmenter_include_original_stops_midway_when_interrupted():
     out = _run_real_qt('''
 import os, tempfile
 from PyQt5.QtGui import QImage, QColor
-from pastelabel.engine.augmenter import Augmenter
+from labelforge.engine.augmenter import Augmenter
 
 src_dir = tempfile.mkdtemp()
 srcs = []

@@ -8,9 +8,9 @@ import json
 
 from PyQt5.QtCore import Qt
 
-from pastelabel.canvas import canvas_interaction
-from pastelabel.canvas.canvas import Canvas, _rotation_angle_status_text
-from pastelabel.engine.image_loader import ImageLoaderMixin, scan_dataset_full
+from labelforge.canvas import canvas_interaction
+from labelforge.canvas.canvas import Canvas, _rotation_angle_status_text
+from labelforge.engine.image_loader import ImageLoaderMixin, scan_dataset_full
 
 
 class Point:
@@ -326,7 +326,7 @@ def test_apply_dataset_labels_without_tasks_defaults_to_empty():
 def test_worker_signal_carries_tasks():
     """扫描 worker 必须把 tasks 一起发给主线程。"""
     import inspect
-    from pastelabel.engine.image_loader.scan import DatasetLabelScanWorker
+    from labelforge.engine.image_loader.scan import DatasetLabelScanWorker
 
     sig = DatasetLabelScanWorker.labels_scanned
     assert sig is not None

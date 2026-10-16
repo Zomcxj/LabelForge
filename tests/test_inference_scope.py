@@ -7,8 +7,8 @@
 import numpy as np
 import pytest
 
-from pastelabel.engine.augmenter.crop import MAX_WINDOW
-from pastelabel.engine.inference_scope import (
+from labelforge.engine.augmenter.crop import MAX_WINDOW
+from labelforge.engine.inference_scope import (
     MODES, ScopeError, iter_regions, iter_windows, merge_scope_results,
     normalize_scope, region_bbox, region_contains_box_center,
 )
@@ -136,7 +136,7 @@ def test_iter_windows_reuses_the_augmenter_grid_math():
     推理里排 46 窗」这种对不上的事。这里把推理结果与直接用增强侧
     `normalized_window()` + `window_starts()`（fill=False）算出来的集合逐项比对。
     """
-    from pastelabel.engine.augmenter.crop import normalized_window, window_starts
+    from labelforge.engine.augmenter.crop import normalized_window, window_starts
 
     for iw, ih, spec in ((3840, 2160, {"w": 640, "h": 640, "overlap": 200}),
                          (1000, 700, {"w": 300, "h": 300, "overlap": 100}),
@@ -464,7 +464,7 @@ def test_iter_windows_still_rejects_a_genuinely_unknown_key():
 
 
 def test_normalize_window_spec_keeps_min_visible():
-    from pastelabel.engine.inference_task import _normalize_window_spec
+    from labelforge.engine.inference_task import _normalize_window_spec
     assert _normalize_window_spec(
         {"w": 640, "h": 640, "overlap": 200, "min_visible": 0.8}
     )["min_visible"] == 0.8
@@ -476,7 +476,7 @@ def test_normalize_window_spec_clamps_out_of_range_min_visible():
     与模板侧（越界即丢）策略不同：模板是用户手填的一条记录，丢了没损失；
     这里是「上次用过的参数」，丢了会让上次的设置莫名其妙消失。
     """
-    from pastelabel.engine.inference_task import _normalize_window_spec
+    from labelforge.engine.inference_task import _normalize_window_spec
     assert _normalize_window_spec(
         {"w": 640, "h": 640, "overlap": 200, "min_visible": 5}
     )["min_visible"] == 1.0
@@ -487,8 +487,8 @@ def test_normalize_window_spec_clamps_out_of_range_min_visible():
 
 def test_normalize_window_spec_defaults_missing_min_visible():
     """旧版本存的 spec 没有这个键 → 补默认值，不能让整份 spec 失效。"""
-    from pastelabel.core.config_manager import DEFAULT_CROP_MIN_VISIBLE
-    from pastelabel.engine.inference_task import _normalize_window_spec
+    from labelforge.core.config_manager import DEFAULT_CROP_MIN_VISIBLE
+    from labelforge.engine.inference_task import _normalize_window_spec
     spec = _normalize_window_spec({"w": 640, "h": 640, "overlap": 200})
     assert spec.get("min_visible") == DEFAULT_CROP_MIN_VISIBLE
     # 其余三个键仍要在，别把整份丢弃了
@@ -497,7 +497,7 @@ def test_normalize_window_spec_defaults_missing_min_visible():
 
 def test_normalize_window_spec_still_drops_a_broken_size():
     """min_visible 的宽容不能顺带让坏尺寸蒙混过关。"""
-    from pastelabel.engine.inference_task import _normalize_window_spec
+    from labelforge.engine.inference_task import _normalize_window_spec
     assert _normalize_window_spec(
         {"w": 0, "h": 640, "overlap": 200, "min_visible": 0.7}) == {}
     assert _normalize_window_spec(
@@ -508,7 +508,7 @@ def test_normalize_window_spec_still_drops_a_broken_size():
 
 def test_iter_windows_with_index_matches_iter_windows():
     """带序号版必须与 `iter_windows()` **逐项同序同值**（只多两个序号）。"""
-    from pastelabel.engine.inference_scope import iter_windows_with_index
+    from labelforge.engine.inference_scope import iter_windows_with_index
 
     spec = {"w": 300, "h": 300, "overlap": 100}
     plain = iter_windows(1000, 700, spec)
@@ -524,7 +524,7 @@ def test_iter_windows_with_index_numbers_rows_and_cols_from_one():
     数据增强里就是这么标的（`enumerate(window_starts(...), 1)`），画布要
     跟它一致，否则同一个窗口在两处显示不同的号。
     """
-    from pastelabel.engine.inference_scope import iter_windows_with_index
+    from labelforge.engine.inference_scope import iter_windows_with_index
 
     # 1000x700、300 窗、100 重叠 → 5 列 x 3 行（共 15 窗）
     indexed = iter_windows_with_index(1000, 700, {"w": 300, "h": 300,
@@ -541,7 +541,7 @@ def test_iter_windows_with_index_numbers_rows_and_cols_from_one():
 
 def test_iter_windows_with_index_single_window_is_r1c1():
     """窗口比图还大 → 只有一窗，号就是 `r1c1`。"""
-    from pastelabel.engine.inference_scope import iter_windows_with_index
+    from labelforge.engine.inference_scope import iter_windows_with_index
 
     indexed = iter_windows_with_index(200, 150, {"w": 640, "h": 640,
                                                  "overlap": 200})
@@ -551,7 +551,7 @@ def test_iter_windows_with_index_single_window_is_r1c1():
 
 def test_iter_windows_with_index_propagates_scope_errors():
     """参数非法时和 `iter_windows()` 一样抛 `ScopeError`，不静默给空表。"""
-    from pastelabel.engine.inference_scope import iter_windows_with_index
+    from labelforge.engine.inference_scope import iter_windows_with_index
 
     with pytest.raises(ScopeError):
         iter_windows_with_index(0, 100, {"w": 300, "h": 300, "overlap": 0})
@@ -562,8 +562,8 @@ def test_window_grid_shape_agrees_with_the_augmenter():
 
     这是「画布上的号」与「数据增强里的号」同源的依据。
     """
-    from pastelabel.engine.augmenter.crop import normalized_window, window_starts
-    from pastelabel.engine.inference_scope import iter_windows_with_index
+    from labelforge.engine.augmenter.crop import normalized_window, window_starts
+    from labelforge.engine.inference_scope import iter_windows_with_index
 
     iw, ih, spec = 3840, 2160, {"w": 640, "h": 640, "overlap": 200}
     indexed = iter_windows_with_index(iw, ih, spec)

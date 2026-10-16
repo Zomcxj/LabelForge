@@ -1,7 +1,7 @@
 """OBB (rotation) geometry, drawing and export (no Qt window)."""
 import math
 
-from pastelabel.engine.shape_io import (
+from labelforge.engine.shape_io import (
     rect_to_rotation_points,
     rotate_points,
     rotation_center,
@@ -84,8 +84,8 @@ def test_yolo_obb_line_rejects_non_four_points():
 
 
 def test_rotation_draw_mode_creates_rotation_shape(monkeypatch):
-    from pastelabel.canvas import canvas_drawing as cd
-    from pastelabel.ui import dialogs as dialogs_mod
+    from labelforge.canvas import canvas_drawing as cd
+    from labelforge.ui import dialogs as dialogs_mod
 
     class RectF:
         def __init__(self, x, y, w, h):
@@ -179,7 +179,7 @@ def test_rotation_box_has_four_corner_handles():
 
 
 def test_obb_exporter_writes_eight_coordinates(tmp_path):
-    from pastelabel.engine.yolo_exporter import YoloExporter
+    from labelforge.engine.yolo_exporter import YoloExporter
 
     out = tmp_path / "out"
     exporter = YoloExporter(str(out), mode="obb")
@@ -219,8 +219,8 @@ def test_box_display_label_plain_for_rectangle():
 
 def test_keyboard_rotate_uses_configured_step(monkeypatch):
     import math
-    from pastelabel.core.config import OBB_CONFIG
-    from pastelabel.engine.event_handler import EventHandlerMixin
+    from labelforge.core.config import OBB_CONFIG
+    from labelforge.engine.event_handler import EventHandlerMixin
 
     class Editor(EventHandlerMixin):
         def __init__(self):
@@ -259,7 +259,7 @@ def test_keyboard_rotate_uses_configured_step(monkeypatch):
 
 
 def test_keyboard_rotate_ignores_non_obb():
-    from pastelabel.engine.event_handler import EventHandlerMixin
+    from labelforge.engine.event_handler import EventHandlerMixin
 
     class Editor(EventHandlerMixin):
         def __init__(self):

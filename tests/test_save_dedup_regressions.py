@@ -5,7 +5,7 @@ import pathlib
 import subprocess
 import sys
 
-from pastelabel.engine.save_manager import SaveManager
+from labelforge.engine.save_manager import SaveManager
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -130,7 +130,7 @@ class _FakeBg:
 
 def test_save_json_marks_paste_shapes_with_flags(tmp_path):
     import json
-    from pastelabel.engine.save_manager import SaveManager
+    from labelforge.engine.save_manager import SaveManager
 
     img = tmp_path / "d.png"
     img.write_bytes(b"x")
@@ -405,7 +405,7 @@ def test_delete_view_never_touches_json(tmp_path):
 
 def test_delete_empty_json_default_is_on(tmp_path, monkeypatch):
     """默认开启：配置里没这一项时也读成 True（用户要求默认开启）。"""
-    from pastelabel.core import config_manager
+    from labelforge.core import config_manager
 
     monkeypatch.setattr(config_manager, "CONFIG_PATH", str(tmp_path / "c.json"))
     loaded = config_manager.load_all()
@@ -414,7 +414,7 @@ def test_delete_empty_json_default_is_on(tmp_path, monkeypatch):
 
 def test_delete_empty_json_toggle_persists(tmp_path, monkeypatch):
     """关掉后写盘、再读回来仍是关的。"""
-    from pastelabel.core import config_manager
+    from labelforge.core import config_manager
 
     monkeypatch.setattr(config_manager, "CONFIG_PATH", str(tmp_path / "c.json"))
     config_manager.save_all(delete_empty_json_on_switch=False)
@@ -426,7 +426,7 @@ def test_delete_empty_json_toggle_persists(tmp_path, monkeypatch):
 
 def test_delete_empty_json_explicit_false_is_not_overridden(tmp_path, monkeypatch):
     """显式存过 False 就必须尊重它，不能被默认值 True 盖掉。"""
-    from pastelabel.core import config_manager
+    from labelforge.core import config_manager
 
     monkeypatch.setattr(config_manager, "CONFIG_PATH", str(tmp_path / "c.json"))
     config_manager.save_all(delete_empty_json_on_switch=False)
@@ -740,9 +740,9 @@ def test_delete_toggle_label_is_renamed_in_both_languages():
     改名要同时改三处（action 文本、items 表、i18n 两份），漏一处会出现
     「中文界面正常、英文界面显示中文」这类只在切语言后才暴露的问题。
     """
-    from pastelabel.ui import i18n
+    from labelforge.ui import i18n
 
-    src = (ROOT / "pastelabel" / "ui" / "mixins" / "options_popup.py").read_text(
+    src = (ROOT / "labelforge" / "ui" / "mixins" / "options_popup.py").read_text(
         encoding="utf-8")
     assert "空标签文件删除" in src
     assert "画布清空时删除标注文件" not in src
@@ -762,7 +762,7 @@ def test_delete_toggle_menu_text_resolves_after_language_switch():
     """真实控件：切到英文后菜单项显示英文，切回中文显示中文。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui import i18n
+from labelforge.ui import i18n
 
 app = QApplication([])
 for lang in ("zh", "en", "zh"):

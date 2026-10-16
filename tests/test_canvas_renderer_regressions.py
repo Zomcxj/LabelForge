@@ -6,7 +6,7 @@ import sys
 
 from PyQt5.QtCore import QRectF
 
-from pastelabel.engine.paste_engine import PasteEngineMixin
+from labelforge.engine.paste_engine import PasteEngineMixin
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,7 +21,7 @@ os._exit(0)
 
 
 def test_magnifier_shows_in_side_mode_regardless_of_selection():
-    source = (ROOT / "pastelabel" / "canvas" / "canvas_renderer.py").read_text(encoding="utf-8")
+    source = (ROOT / "labelforge" / "canvas" / "canvas_renderer.py").read_text(encoding="utf-8")
 
     # v1.1.4: side magnifier is always visible; the old gating on selection must not exist.
     assert "if mag_pos == 'side' and self.selected_box is None and self._editor.selected_item is None and not self.is_drawing_box:" not in source
@@ -29,7 +29,7 @@ def test_magnifier_shows_in_side_mode_regardless_of_selection():
 
 
 def test_crosshair_is_drawn_only_in_annotate_mode_while_mouse_is_inside_canvas():
-    source = (ROOT / "pastelabel" / "canvas" / "canvas_renderer.py").read_text(encoding="utf-8")
+    source = (ROOT / "labelforge" / "canvas" / "canvas_renderer.py").read_text(encoding="utf-8")
 
     assert "if (getattr(self._editor, 'edit_mode', 'paste') == 'annotate' and" in source
     assert "self.mouse_inside and self._editor.current_background is not None and" in source
@@ -40,7 +40,7 @@ def test_crosshair_is_drawn_only_in_annotate_mode_while_mouse_is_inside_canvas()
 
 
 def test_paste_engine_offsets_fully_overlapping_group_by_three_pixels():
-    source = (ROOT / "pastelabel" / "engine" / "paste_engine.py").read_text(encoding="utf-8")
+    source = (ROOT / "labelforge" / "engine" / "paste_engine.py").read_text(encoding="utf-8")
 
     assert "OVERLAP_OFFSET_STEP = 3" in source
     assert "def _offset_overlapping_paste_group(" in source
@@ -80,7 +80,7 @@ def test_point_brush_does_not_leak_into_later_rectangles():
 from PyQt5.QtCore import Qt, QRectF
 from PyQt5.QtGui import QImage, QPainter
 from PyQt5.QtWidgets import QApplication
-from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
     def isChecked(self): return False
@@ -143,7 +143,7 @@ def test_point_with_zero_bbox_still_renders():
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPainter
 from PyQt5.QtWidgets import QApplication
-from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
     def isChecked(self): return False
@@ -197,7 +197,7 @@ def test_keypoint_selected_state_is_visually_distinct_from_idle():
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QColor, QImage, QPainter
 from PyQt5.QtWidgets import QApplication
-from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
     def isChecked(self): return False
@@ -255,7 +255,7 @@ def test_warned_keypoint_renders_as_square_with_white_outline():
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPainter
 from PyQt5.QtWidgets import QApplication
-from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
     def isChecked(self): return False
@@ -320,7 +320,7 @@ def test_keypoint_drawn_on_top_of_its_box():
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPainter
 from PyQt5.QtWidgets import QApplication
-from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
     def isChecked(self): return False
@@ -378,7 +378,7 @@ def test_boxes_use_label_color_fills_with_expected_alpha_states():
 from PyQt5.QtCore import Qt, QRectF
 from PyQt5.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt5.QtWidgets import QApplication
-from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
     def isChecked(self): return False

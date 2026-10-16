@@ -1,7 +1,7 @@
 """国际化回归测试。"""
 import string
 
-from pastelabel.ui import i18n
+from labelforge.ui import i18n
 
 
 def test_iou_axis_label_has_explicit_translation():
@@ -51,12 +51,12 @@ def test_crop_template_format_renders_in_both_languages():
 
 
 def _iter_tr_keys():
-    """扫 pastelabel/ 下所有 `tr("...")` / `t("...")` 的字面量 key。"""
+    """扫 labelforge/ 下所有 `tr("...")` / `t("...")` 的字面量 key。"""
     import ast
     import os
 
     root_dir = os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), 'pastelabel')
+        os.path.abspath(__file__))), 'labelforge')
     for root, dirs, files in os.walk(root_dir):
         dirs[:] = [d for d in dirs if d != '__pycache__']
         for name in files:

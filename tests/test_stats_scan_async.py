@@ -24,7 +24,7 @@ def _write_dataset(tmp_path, count=30):
 def test_combined_scan_parses_each_json_once(tmp_path, monkeypatch):
     """`collect_background_label_stats_and_tasks()` 每张 json 只解析一次。"""
     import builtins
-    from pastelabel.engine.image_loader import scan as scan_mod
+    from labelforge.engine.image_loader import scan as scan_mod
 
     paths = _write_dataset(tmp_path, 5)
     opens = []
@@ -48,7 +48,7 @@ def test_combined_scan_parses_each_json_once(tmp_path, monkeypatch):
 
 def test_combined_scan_counts_match_the_old_single_purpose_path(tmp_path):
     """合并扫描的计数与旧的只数数量那条路径**完全一致**（不能改口径）。"""
-    from pastelabel.engine.image_loader import scan as scan_mod
+    from labelforge.engine.image_loader import scan as scan_mod
 
     paths = _write_dataset(tmp_path, 4)
     old = scan_mod.collect_background_label_counts(paths)
@@ -61,7 +61,7 @@ import json, os, tempfile, time
 from PyQt5.QtWidgets import QApplication, QListWidgetItem, QDialog, QWidget
 from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtCore import QEventLoop, QTimer
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 tmp = tempfile.mkdtemp(prefix='pl-stats-')
@@ -105,7 +105,7 @@ def test_stats_dialog_opens_without_scanning_on_the_ui_thread():
 
     out = _run_real_qt(_STATS_HOST + """
 # 把两条同步扫盘入口换成炸弹：打开弹窗若同步碰了它们就会抛
-import pastelabel.engine.image_loader as il
+import labelforge.engine.image_loader as il
 
 def boom(*a, **k):
     raise AssertionError('UI 线程同步扫盘了')

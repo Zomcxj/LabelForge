@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from pastelabel.ui import i18n
+from labelforge.ui import i18n
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,8 +32,8 @@ def test_overlay_texts_are_translated(key):
 def test_overlay_tr_keys_are_defined():
     """视频弹窗与 mixin 用到的 tr() 键都必须在语言表里（防止只写 tr 不加词条）。"""
     missing = []
-    for rel in ("pastelabel/ui/video_dialog.py",
-                "pastelabel/ui/mixins/video.py"):
+    for rel in ("labelforge/ui/video_dialog.py",
+                "labelforge/ui/mixins/video.py"):
         src = (ROOT / rel).read_text(encoding="utf-8")
         for key in sorted(set(re.findall(r"tr\(['\"]([^'\"]+)['\"]\)", src))):
             for lang in ("zh", "en"):
@@ -48,7 +48,7 @@ def test_scan_labels_counts_and_ignores_missing(tmp_path):
     """扫描目录：统计各类别出现次数，缺 sidecar 的图不报错。"""
     import json
 
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     def rect(label):
         return {"label": label, "points": [[1, 1], [9, 1], [9, 9], [1, 9]],
@@ -75,7 +75,7 @@ def test_scan_labels_orders_by_count_then_name(tmp_path):
     """类别顺序要稳定：先按出现次数多的，次数相同再按名称。"""
     import json
 
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     def rect(label):
         return {"label": label, "points": [[1, 1], [9, 1], [9, 9], [1, 9]],
@@ -98,7 +98,7 @@ def test_scan_labels_orders_by_count_then_name(tmp_path):
 
 def test_scan_labels_empty_when_no_sidecars(tmp_path):
     """一张标注都没有 → 空字典（界面据此禁用叠加）。"""
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     d = tmp_path / "imgs"
     d.mkdir()
@@ -108,7 +108,7 @@ def test_scan_labels_empty_when_no_sidecars(tmp_path):
 
 def test_scan_labels_raises_on_corrupt(tmp_path):
     """损坏的标注要报错，不能假装那张图没标注。"""
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     d = tmp_path / "imgs"
     d.mkdir()
@@ -123,7 +123,7 @@ def test_scan_labels_ignores_shapes_without_points(tmp_path):
     """shapes 里解析不出有效框（如缺 points）时不算有标注，也不该报错。"""
     import json
 
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     d = tmp_path / "imgs"
     d.mkdir()
@@ -219,8 +219,8 @@ from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 import cv2
-from pastelabel.ui.video_dialog import VideoDialog
-from pastelabel.engine import video_io as vio
+from labelforge.ui.video_dialog import VideoDialog
+from labelforge.engine import video_io as vio
 
 TMP = tempfile.mkdtemp()
 
@@ -406,7 +406,7 @@ print("RESULT", repr((a["show_labels"], a["show_scores"],
 
 def test_worker_passes_render_to_engine():
     """后台线程要把绘制规格传给引擎，否则界面勾的选项一点用没有。"""
-    from pastelabel.ui.inference_workers import VideoComposeWorker
+    from labelforge.ui.inference_workers import VideoComposeWorker
 
     src = inspect.getsource(VideoComposeWorker)
     assert "render" in src
@@ -415,7 +415,7 @@ def test_worker_passes_render_to_engine():
 
 def test_worker_accepts_render_argument():
     """构造签名要收 render（默认 None = 纯合成）。"""
-    from pastelabel.ui.inference_workers import VideoComposeWorker
+    from labelforge.ui.inference_workers import VideoComposeWorker
 
     sig = inspect.signature(VideoComposeWorker.__init__)
     assert "render" in sig.parameters
@@ -424,7 +424,7 @@ def test_worker_accepts_render_argument():
 
 def test_mixin_builds_render_spec_with_colors_from_main_thread():
     """类别色必须在主线程取好再交给 worker（后台不能碰 editor 的取色）。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     src = inspect.getsource(VideoMixin)
     assert "_compose_render_spec" in src
@@ -436,7 +436,7 @@ def test_mixin_builds_render_spec_with_colors_from_main_thread():
 
 def test_mixin_reports_unlabeled_images():
     """完成报告要提到无标注张数，否则用户不知道哪些帧是干净画面。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     src = inspect.getsource(VideoMixin._on_compose_finished)
     assert "unlabeled_count" in src
@@ -444,7 +444,7 @@ def test_mixin_reports_unlabeled_images():
 
 def test_mixin_omits_render_when_options_absent():
     """没有叠加选项时不要凭空造一个 RenderSpec（保持纯合成路径）。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     src = inspect.getsource(VideoMixin._compose_render_spec)
     assert "return None" in src
@@ -452,7 +452,7 @@ def test_mixin_omits_render_when_options_absent():
 
 def test_compose_render_spec_takes_colors_from_the_editor():
     """_compose_render_spec 的行为：类别名 → 颜色，开关原样带过去。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     class Stub(VideoMixin):
         def get_label_color(self, label):
@@ -468,7 +468,7 @@ def test_compose_render_spec_takes_colors_from_the_editor():
 
 def test_compose_render_spec_none_when_no_options():
     """没有叠加选项 → None，引擎走纯合成（不读标注）。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     stub = object.__new__(VideoMixin)
     assert stub._compose_render_spec(None) is None
@@ -482,7 +482,7 @@ def test_compose_spec_leaves_font_size_to_the_engine():
     所以这里钉住「弹窗不再决定字号」——如果哪天有人又把 UI 的字号塞进来，
     设置窗口里那个「类别名字号」就会被架空。
     """
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     class Stub(VideoMixin):
         def get_label_color(self, label):
@@ -502,7 +502,7 @@ def test_compose_spec_leaves_font_size_to_the_engine():
 
 def test_compose_render_spec_survives_editor_without_color_api():
     """editor 没有取色接口时也不能炸（假 editor / 精简场景）。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     spec = object.__new__(VideoMixin)._compose_render_spec(
         {"labels": ["person"], "show_labels": False, "show_scores": False})
@@ -514,8 +514,8 @@ def test_full_chain_dialog_to_video_with_real_qt():
     """真实 Qt 全链路：弹窗选项 → mixin 组 spec（含颜色） → 合成 → 画面有框。"""
     result = _run_qt(_PRELUDE + '''
 import cv2
-from pastelabel.ui.mixins.video import VideoMixin
-from pastelabel.engine import video_io as vio
+from labelforge.ui.mixins.video import VideoMixin
+from labelforge.engine import video_io as vio
 
 class Stub(VideoMixin):
     def get_label_color(self, label):
@@ -589,7 +589,7 @@ def _compose_result(**overrides):
 
 def test_compose_finished_reports_unlabeled_image_count():
     """有帧没标注时要报出来：用户得知道哪些画面是干净的。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     stub = _ComposeStub()
     VideoMixin._on_compose_finished(
@@ -604,7 +604,7 @@ def test_compose_finished_reports_unlabeled_image_count():
 
 def test_compose_finished_closes_the_dialog():
     """跑完要关掉弹窗（进度条留在弹窗里，不关就永远开着）。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     stub = _ComposeStub()
     VideoMixin._on_compose_finished(stub, _compose_result())
@@ -613,7 +613,7 @@ def test_compose_finished_closes_the_dialog():
 
 def test_compose_finished_quiet_when_every_frame_has_annotations():
     """全都画了框就别多嘴。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     stub = _ComposeStub()
     VideoMixin._on_compose_finished(stub, _compose_result(unlabeled_count=0))
@@ -623,7 +623,7 @@ def test_compose_finished_quiet_when_every_frame_has_annotations():
 
 def test_compose_finished_stops_early_when_cancelled():
     """取消时不报张数、不当成正常完成，但弹窗要关掉。"""
-    from pastelabel.ui.mixins.video import VideoMixin
+    from labelforge.ui.mixins.video import VideoMixin
 
     stub = _ComposeStub()
     VideoMixin._on_compose_finished(stub, _compose_result(cancelled=True, unlabeled_count=9))
@@ -637,7 +637,7 @@ def test_compose_finished_stops_early_when_cancelled():
 
 def test_compose_range_defaults_to_the_whole_series():
     """范围默认 0 到最后一张（用户要求「默认 0 到最后」）。"""
-    from pastelabel.engine.video_io import _slice_paths
+    from labelforge.engine.video_io import _slice_paths
 
     paths = [f"{i}.png" for i in range(8)]
     assert _slice_paths(paths) == paths
@@ -647,7 +647,7 @@ def test_compose_range_defaults_to_the_whole_series():
 
 def test_slice_paths_is_inclusive_on_both_ends():
     """两端都是**包含**的：3..7 是 5 张，不是 4 张。"""
-    from pastelabel.engine.video_io import _slice_paths
+    from labelforge.engine.video_io import _slice_paths
 
     paths = [f"{i}.png" for i in range(10)]
     assert _slice_paths(paths, 3, 7) == [f"{i}.png" for i in range(3, 8)]
@@ -658,7 +658,7 @@ def test_slice_paths_is_inclusive_on_both_ends():
 
 def test_slice_paths_clamps_out_of_range():
     """越界夹紧而不是报错：界面量程就是张数，手输超了不该让合成失败。"""
-    from pastelabel.engine.video_io import _slice_paths
+    from labelforge.engine.video_io import _slice_paths
 
     paths = [f"{i}.png" for i in range(5)]
     assert _slice_paths(paths, -3, 99) == paths
@@ -668,7 +668,7 @@ def test_slice_paths_clamps_out_of_range():
 
 def test_slice_paths_rejects_an_empty_range():
     """起始 > 结束 是真的没得合成，返回空让调用方报错（不静默出空片）。"""
-    from pastelabel.engine.video_io import _slice_paths
+    from labelforge.engine.video_io import _slice_paths
 
     paths = [f"{i}.png" for i in range(5)]
     assert _slice_paths(paths, 3, 1) == []
@@ -681,7 +681,7 @@ def test_compose_video_writes_only_the_selected_range(tmp_path):
     import numpy as np
 
     cv2 = pytest.importorskip("cv2")
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     work = tmp_path / "range"
     work.mkdir()
@@ -712,7 +712,7 @@ def test_compose_video_errors_on_an_empty_range(tmp_path):
     """空范围必须报错，不能生成一个 0 帧的假成品。"""
     cv2 = pytest.importorskip("cv2")
     import numpy as np
-    from pastelabel.engine import video_io
+    from labelforge.engine import video_io
 
     work = tmp_path / "empty"
     work.mkdir()

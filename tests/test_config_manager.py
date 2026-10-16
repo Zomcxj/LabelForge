@@ -16,7 +16,7 @@ def _load_module(name, path):
     spec.loader.exec_module(mod)
     return mod
 
-_base = os.path.join(os.path.dirname(__file__), '..', 'pastelabel', 'core')
+_base = os.path.join(os.path.dirname(__file__), '..', 'labelforge', 'core')
 config = _load_module('config', os.path.join(_base, 'config.py'))
 config_manager = _load_module('config_manager', os.path.join(_base, 'config_manager.py'))
 
@@ -598,3 +598,88 @@ class TestCropTemplates:
             assert [t["w"] for t in templates] == [300, 200, 100]
         finally:
             config_manager.CONFIG_PATH = original
+
+
+class TestLegacyConfigMigration:
+    """改名迁移：旧版 ~/.pastelabel.json 自动搬到 ~/.labelforge.json。
+
+    这些用例替换 CONFIG_PATH 与 LEGACY_CONFIG_PATH 到临时目录，不碰用户真实文件。
+    """
+
+    def _paths(self, tmp_path, monkeypatch):
+        new = Path(tmp_path) / '.labelforge.json'
+        old = Path(tmp_path) / '.pastelabel.json'
+        monkeypatch.setattr(config_manager, 'CONFIG_PATH', str(new))
+        monkeypatch.setattr(config_manager, 'LEGACY_CONFIG_PATH', str(old))
+        # 环境变量会短路迁移，这里清掉以保证走文件分支
+        monkeypatch.delenv('LABELFORGE_CONFIG_PATH', raising=False)
+        monkeypatch.delenv('PASTELABEL_CONFIG_PATH', raising=False)
+        return new, old
+
+    def test_moves_legacy_file_and_keeps_the_original(self, tmp_path, monkeypatch):
+        new, old = self._paths(tmp_path, monkeypatch)
+        old.write_text(json.dumps({'theme': 'dark'}), encoding='utf-8')
+
+        assert config_manager.migrate_legacy_config() is True
+
+        assert json.loads(new.read_text(encoding='utf-8')) == {'theme': 'dark'}
+        # 旧文件保留：新版本出问题回退旧版本时设置还在
+        assert old.exists()
+
+    def test_does_not_overwrite_an_existing_new_file(self, tmp_path, monkeypatch):
+        new, old = self._paths(tmp_path, monkeypatch)
+        new.write_text(json.dumps({'theme': 'light'}), encoding='utf-8')
+        old.write_text(json.dumps({'theme': 'dark'}), encoding='utf-8')
+
+        assert config_manager.migrate_legacy_config() is False
+
+        assert json.loads(new.read_text(encoding='utf-8')) == {'theme': 'light'}
+
+    def test_no_legacy_file_is_not_an_error(self, tmp_path, monkeypatch):
+        new, old = self._paths(tmp_path, monkeypatch)
+        assert config_manager.migrate_legacy_config() is False
+        assert not new.exists()
+
+    def test_env_var_path_disables_migration(self, tmp_path, monkeypatch):
+        new, old = self._paths(tmp_path, monkeypatch)
+        old.write_text(json.dumps({'theme': 'dark'}), encoding='utf-8')
+        monkeypatch.setenv('LABELFORGE_CONFIG_PATH', str(new))
+
+        assert config_manager.migrate_legacy_config() is False
+        assert not new.exists()
+
+    def test_load_config_triggers_the_migration(self, tmp_path, monkeypatch):
+        new, old = self._paths(tmp_path, monkeypatch)
+        old.write_text(json.dumps({'theme': 'dark'}), encoding='utf-8')
+
+        assert config_manager.load_config().get('theme') == 'dark'
+        assert new.exists()
+
+    def test_legacy_env_var_still_selects_the_path(self, tmp_path, monkeypatch):
+        """老排查脚本用 PASTELABEL_CONFIG_PATH 时仍要生效。"""
+        monkeypatch.delenv('LABELFORGE_CONFIG_PATH', raising=False)
+        target = Path(tmp_path) / 'from-env.json'
+        monkeypatch.setenv('PASTELABEL_CONFIG_PATH', str(target))
+        assert config_manager._resolve_config_path() == str(target)
+
+
+class TestLegacyTraceEnvVar:
+    """json 探针的旧环境变量仍要认，免得老排查脚本失效。"""
+
+    def _fresh(self, monkeypatch, value, legacy=False):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from labelforge.core import json_trace
+        monkeypatch.setattr(json_trace, '_ON', None)
+        monkeypatch.delenv('LABELFORGE_TRACE_JSON', raising=False)
+        monkeypatch.delenv('PASTELABEL_TRACE_JSON', raising=False)
+        monkeypatch.setenv('PASTELABEL_TRACE_JSON' if legacy else 'LABELFORGE_TRACE_JSON', value)
+        return json_trace._on()
+
+    def test_new_env_var_enables(self, monkeypatch):
+        assert self._fresh(monkeypatch, '1') is True
+
+    def test_legacy_env_var_still_enables(self, monkeypatch):
+        assert self._fresh(monkeypatch, '1', legacy=True) is True
+
+    def test_absent_means_off(self, monkeypatch):
+        assert self._fresh(monkeypatch, '') is False

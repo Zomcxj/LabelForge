@@ -12,10 +12,10 @@ from xml.etree import ElementTree
 
 import pytest
 
-from pastelabel.engine.base_exporter import BaseExporter
-from pastelabel.engine.coco_exporter import CocoExporter
-from pastelabel.engine.voc_exporter import VocExporter
-from pastelabel.engine.yolo_exporter import YoloExporter
+from labelforge.engine.base_exporter import BaseExporter
+from labelforge.engine.coco_exporter import CocoExporter
+from labelforge.engine.voc_exporter import VocExporter
+from labelforge.engine.yolo_exporter import YoloExporter
 
 
 def _png_bytes(width, height):

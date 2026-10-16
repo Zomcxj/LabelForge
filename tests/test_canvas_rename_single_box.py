@@ -54,7 +54,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage
 from unittest.mock import patch
 app = QApplication([])
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 WORK = r"@@WORK@@"
 if os.path.isdir(WORK):
@@ -100,7 +100,7 @@ def test_canvas_rename_only_touches_the_clicked_box():
 w, patch = build([_box("drone", 10), _box("drone", 80), _box("Drone", 140)],
                  [_box("drone", 10)])
 print("before", json.dumps(mem(w)))
-with patch("pastelabel.ui.dialogs.LabelSelectionDialog.select_label",
+with patch("labelforge.ui.dialogs.LabelSelectionDialog.select_label",
            staticmethod(lambda *a, **k: ("cat", None))):
     w.canvas._modify_box_label(0)
 app.processEvents()
@@ -117,7 +117,7 @@ def test_canvas_rename_does_not_touch_other_images():
     out = _run_real_qt(
         _HOST.replace("@@WORK@@", "D:/tmp/_menu_other") + """
 w, patch = build([_box("drone", 10), _box("drone", 80)], [_box("drone", 10)])
-with patch("pastelabel.ui.dialogs.LabelSelectionDialog.select_label",
+with patch("labelforge.ui.dialogs.LabelSelectionDialog.select_label",
            staticmethod(lambda *a, **k: ("cat", None))):
     w.canvas._modify_box_label(0)
 app.processEvents()
@@ -135,7 +135,7 @@ def test_canvas_rename_into_an_existing_label_touches_only_that_box():
     out = _run_real_qt(
         _HOST.replace("@@WORK@@", "D:/tmp/_menu_merge") + """
 w, patch = build([_box("drone", 10), _box("Drone", 80), _box("drone", 140)])
-with patch("pastelabel.ui.dialogs.LabelSelectionDialog.select_label",
+with patch("labelforge.ui.dialogs.LabelSelectionDialog.select_label",
            staticmethod(lambda *a, **k: ("Drone", None))):
     w.canvas._modify_box_label(0)
 app.processEvents()
@@ -154,7 +154,7 @@ def test_canvas_group_only_change_is_saved():
     out = _run_real_qt(
         _HOST.replace("@@WORK@@", "D:/tmp/_menu_group") + """
 w, patch = build([_box("drone", 10, 3), _box("drone", 80)])
-with patch("pastelabel.ui.dialogs.LabelSelectionDialog.select_label",
+with patch("labelforge.ui.dialogs.LabelSelectionDialog.select_label",
            staticmethod(lambda *a, **k: ("drone", 9))):
     w.canvas._modify_box_label(0)
 app.processEvents()
@@ -173,7 +173,7 @@ def test_canvas_rename_cancelled_changes_nothing():
     out = _run_real_qt(
         _HOST.replace("@@WORK@@", "D:/tmp/_menu_cancel") + """
 w, patch = build([_box("drone", 10), _box("drone", 80)])
-with patch("pastelabel.ui.dialogs.LabelSelectionDialog.select_label",
+with patch("labelforge.ui.dialogs.LabelSelectionDialog.select_label",
            staticmethod(lambda *a, **k: None)):
     w.canvas._modify_box_label(0)
 app.processEvents()

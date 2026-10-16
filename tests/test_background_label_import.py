@@ -6,13 +6,13 @@
 import ast
 from pathlib import Path
 
-from pastelabel.engine.image_loader import ImageLoaderMixin
-from pastelabel.ui import i18n
+from labelforge.engine.image_loader import ImageLoaderMixin
+from labelforge.ui import i18n
 
 ROOT = Path(__file__).resolve().parents[1]
-TOOLBAR_SRC = ROOT / "pastelabel" / "ui" / "mixins" / "toolbar.py"
-LOADER_SRC = ROOT / "pastelabel" / "engine" / "image_loader" / "mixin.py"
-ICONS_SRC = ROOT / "pastelabel" / "ui" / "icons.py"
+TOOLBAR_SRC = ROOT / "labelforge" / "ui" / "mixins" / "toolbar.py"
+LOADER_SRC = ROOT / "labelforge" / "engine" / "image_loader" / "mixin.py"
+ICONS_SRC = ROOT / "labelforge" / "ui" / "icons.py"
 
 
 class _Editor(ImageLoaderMixin):
@@ -188,7 +188,7 @@ def test_empty_file_warns_and_changes_nothing(tmp_path, monkeypatch):
     path.write_text("\n  \n", encoding="utf-8")
     editor = _editor()
     warnings = []
-    import pastelabel.engine.image_loader as loader
+    import labelforge.engine.image_loader as loader
     monkeypatch.setattr(loader.QMessageBox, "warning",
                         lambda *a, **k: warnings.append(a), raising=False)
 
@@ -202,7 +202,7 @@ def test_empty_file_warns_and_changes_nothing(tmp_path, monkeypatch):
 def test_unreadable_file_reports_error_and_changes_nothing(tmp_path, monkeypatch):
     editor = _editor()
     errors = []
-    import pastelabel.engine.image_loader as loader
+    import labelforge.engine.image_loader as loader
     monkeypatch.setattr(loader.QMessageBox, "critical",
                         lambda *a, **k: errors.append(a), raising=False)
 
@@ -231,7 +231,7 @@ def test_replacing_dataset_clears_imported_labels():
 
 
 def test_clearing_memory_content_resets_imported_labels():
-    from pastelabel.ui.mixins.memory_record import MemoryRecordMixin
+    from labelforge.ui.mixins.memory_record import MemoryRecordMixin
 
     class Host(MemoryRecordMixin):
         def __init__(self):
@@ -256,7 +256,7 @@ def test_clearing_memory_content_resets_imported_labels():
 
 def test_restored_memory_stats_survive_a_later_scan():
     """记忆记录恢复的类别等同于手动导入，重新扫描不能丢。"""
-    from pastelabel.ui.mixins.memory_record import MemoryRecordMixin
+    from labelforge.ui.mixins.memory_record import MemoryRecordMixin
 
     class Host(MemoryRecordMixin):
         def __init__(self):
@@ -282,7 +282,7 @@ def test_restored_memory_stats_survive_a_later_scan():
 
 def test_restored_memory_stats_merge_scan_tasks():
     """旧记录 tasks 为 None 时用扫描缓存的 tasks 补齐（框类型列不再为空）。"""
-    from pastelabel.ui.mixins.memory_record import MemoryRecordMixin
+    from labelforge.ui.mixins.memory_record import MemoryRecordMixin
 
     class Host(MemoryRecordMixin):
         def __init__(self):
@@ -308,7 +308,7 @@ def test_restored_memory_stats_merge_scan_tasks():
 
 def test_restored_memory_stats_keep_recorded_tasks():
     """记录里已有 tasks 时以记录为准，不被扫描缓存覆盖。"""
-    from pastelabel.ui.mixins.memory_record import MemoryRecordMixin
+    from labelforge.ui.mixins.memory_record import MemoryRecordMixin
 
     class Host(MemoryRecordMixin):
         def __init__(self):
@@ -324,7 +324,7 @@ def test_restored_memory_stats_keep_recorded_tasks():
 
 
 def test_main_window_initializes_the_two_new_label_sets():
-    source = (ROOT / "pastelabel" / "ui" / "main_window.py").read_text(encoding="utf-8")
+    source = (ROOT / "labelforge" / "ui" / "main_window.py").read_text(encoding="utf-8")
     assert "self._scanned_background_labels = set()" in source
     assert "self.imported_background_labels = set()" in source
 
@@ -339,6 +339,6 @@ def test_apply_dataset_labels_records_scanned_labels_separately():
 
 def test_processing_panel_scan_preserves_imported_labels():
     """处理面板另有一条扫描路径，同样不能覆盖手动导入。"""
-    source = (ROOT / "pastelabel" / "ui" / "processing_panel.py").read_text(encoding="utf-8")
+    source = (ROOT / "labelforge" / "ui" / "processing_panel.py").read_text(encoding="utf-8")
     assert "_scanned_background_labels = set(labels)" in source
     assert "imported_background_labels" in source

@@ -8,7 +8,7 @@ from datetime import datetime
 from . import config_manager
 
 
-LOG_FILE = os.path.join(os.path.dirname(config_manager.CONFIG_PATH), "pastelabel.log")
+LOG_FILE = os.path.join(os.path.dirname(config_manager.CONFIG_PATH), "labelforge.log")
 
 
 def _write_log(message):
@@ -55,7 +55,7 @@ def exception_hook(exctype, value, tb):
             msg_box = ThemedMessageBox()
             msg_box.setIcon(QMessageBox.Critical)
             msg_box.setWindowTitle(i18n.t("程序错误"))
-            msg_box.setText(i18n.t("程序遇到意外错误，错误信息已保存到 pastelabel.log"))
+            msg_box.setText(i18n.t("程序遇到意外错误，错误信息已保存到 labelforge.log"))
             msg_box.setStandardButtons(QMessageBox.Ok)
             msg_box.button(QMessageBox.Ok).setText(i18n.t("确定"))
             msg_box.setDetailedText(error_msg)

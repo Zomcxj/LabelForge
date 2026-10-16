@@ -1,8 +1,8 @@
 """质检 lint 纯逻辑测试。"""
 import json
 
-from pastelabel.engine.quality_lint import lint_shapes
-from pastelabel.core.config import QUALITY_LINT_CONFIG
+from labelforge.engine.quality_lint import lint_shapes
+from labelforge.core.config import QUALITY_LINT_CONFIG
 
 
 def _box(label="cat", x=10, y=10, w=100, h=50, shape_type=None, **extra):
@@ -20,7 +20,7 @@ def test_tiny_box_is_no_longer_a_kind():
     是 10.7px、很健康；在 1920 图上只剩 2.7px、根本检不到），所以统一到
     640 空间的三档判据，不再有这一档。
     """
-    from pastelabel.engine.quality_lint import KIND_LABELS
+    from labelforge.engine.quality_lint import KIND_LABELS
     assert "tiny_box" not in KIND_LABELS
 
 
@@ -173,7 +173,7 @@ def test_group_box_without_point_detected():
 
 def test_group_mismatch_matches_point_warning():
     """一致性契约：group 判定必须与 point_warning 结论一致。"""
-    from pastelabel.engine.shape_io import point_warning
+    from labelforge.engine.shape_io import point_warning
     point = {"label": "kp", "shape_type": "point", "points": [[10, 10]],
              "x": 10, "y": 10, "width": 0, "height": 0, "group_id": 1}
     assert point_warning(point, [point]) == "无同组框"
@@ -197,7 +197,7 @@ def _write_image_and_json(tmp_path, stem, shapes, image_size=(200, 200)):
 
 def test_lint_dataset_ignores_missing_sidecar(tmp_path):
     """缺 sidecar 不再上报（背景图列表状态图标已覆盖）。"""
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = tmp_path / "a.png"
     img.write_bytes(b"x")
 
@@ -209,7 +209,7 @@ def test_lint_dataset_ignores_missing_sidecar(tmp_path):
 
 def test_lint_dataset_ignores_empty_annotation(tmp_path):
     """空标注不再上报（背景图列表状态图标已覆盖）。"""
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "b", [])
 
     results = lint_dataset([img])
@@ -219,7 +219,7 @@ def test_lint_dataset_ignores_empty_annotation(tmp_path):
 
 
 def test_lint_dataset_reports_geometry_issues(tmp_path):
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "c", [
         {"label": "cat", "x": -50, "y": 0, "width": 100, "height": 100},
     ])
@@ -230,7 +230,7 @@ def test_lint_dataset_reports_geometry_issues(tmp_path):
 
 
 def test_lint_dataset_progress_callback(tmp_path):
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     paths = [_write_image_and_json(tmp_path, f"img{i}", []) for i in range(5)]
 
     seen = []
@@ -241,7 +241,7 @@ def test_lint_dataset_progress_callback(tmp_path):
 
 def test_lint_dataset_uses_memory_override(tmp_path):
     """已加载内存图以内存框为准，不读磁盘。"""
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "d", [
         {"label": "cat", "x": 0, "y": 0, "width": 10, "height": 10},
     ])
@@ -253,7 +253,7 @@ def test_lint_dataset_uses_memory_override(tmp_path):
 
 
 def test_lint_dataset_skips_pairwise_over_limit(tmp_path):
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     limit = QUALITY_LINT_CONFIG['max_boxes_pairwise']
     shapes = [
         {"label": "cat", "x": 0, "y": 0, "width": 50, "height": 50}
@@ -274,7 +274,7 @@ def test_lint_dataset_skips_pairwise_over_limit(tmp_path):
 
 
 def test_lint_dataset_interruptible(tmp_path):
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     paths = [_write_image_and_json(tmp_path, f"img{i}", []) for i in range(20)]
 
     results = lint_dataset(paths, is_interrupted=lambda: True)
@@ -283,7 +283,7 @@ def test_lint_dataset_interruptible(tmp_path):
 
 
 def test_bbox_returns_none_for_non_numeric_coordinates():
-    from pastelabel.engine.quality_lint import _bbox
+    from labelforge.engine.quality_lint import _bbox
     assert _bbox({"label": "a", "x": "abc", "y": 0, "width": 10, "height": 10}) is None
     assert _bbox({"label": "a", "points": [[5]]}) is None
     assert _bbox({"label": "a", "points": []}) is None
@@ -293,7 +293,7 @@ def test_bbox_returns_none_for_non_numeric_coordinates():
 
 def test_malformed_shape_does_not_abort_scan(tmp_path):
     """坏 shape 不能中断整库扫描，其它图的问题仍要报出来。"""
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     bad = _write_image_and_json(tmp_path, "bad", [
         {"label": "cat", "points": [[5]]},
         {"label": "cat", "x": "abc", "y": 0, "width": 10, "height": 10},
@@ -310,7 +310,7 @@ def test_malformed_shape_does_not_abort_scan(tmp_path):
 
 def test_grouped_point_with_string_coords_does_not_abort_scan(tmp_path):
     """分组关键点坐标是字符串时不能 TypeError 中断扫描。"""
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "strpt", [
         {"label": "car", "x": -50, "y": 0, "width": 100, "height": 100,
          "group_id": 1},
@@ -326,7 +326,7 @@ def test_grouped_point_with_string_coords_does_not_abort_scan(tmp_path):
 
 def test_unhashable_group_id_does_not_abort_scan(tmp_path):
     """group_id 是 list 时集合构造不能 TypeError 中断扫描。"""
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "badgid", [
         {"label": "cat", "x": -50, "y": 0, "width": 100, "height": 100,
          "group_id": []},
@@ -340,7 +340,7 @@ def test_unhashable_group_id_does_not_abort_scan(tmp_path):
 
 def test_lint_worker_does_not_report_error_for_malformed_group_data(tmp_path):
     """以上坏数据不能让 worker 报 error=True（UI 会误显示扫描失败）。"""
-    from pastelabel.engine.quality_lint import QualityLintWorker
+    from labelforge.engine.quality_lint import QualityLintWorker
     img = _write_image_and_json(tmp_path, "worker_bad", [
         {"label": "cat", "x": -50, "y": 0, "width": 100, "height": 100,
          "group_id": []},
@@ -360,7 +360,7 @@ def test_lint_worker_does_not_report_error_for_malformed_group_data(tmp_path):
 
 
 def test_read_json_shapes_tolerates_non_numeric_size(tmp_path):
-    from pastelabel.engine.quality_lint import _read_json_shapes
+    from labelforge.engine.quality_lint import _read_json_shapes
     img = tmp_path / "weird.png"
     img.write_bytes(b"x")
     (tmp_path / "weird.json").write_text(json.dumps({
@@ -377,7 +377,7 @@ def test_read_json_shapes_tolerates_non_numeric_size(tmp_path):
 
 def test_filtered_lint_result_preserves_error_flag():
     """error 结果经忽略规则过滤后必须保留标记，UI 才能显示失败。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     editor = type("Editor", (QualityLintMixin,), {})()
     filtered = editor._filtered_lint_result(
@@ -388,18 +388,18 @@ def test_filtered_lint_result_preserves_error_flag():
 def test_lint_dialog_shows_failure_not_clean_message():
     """error 结果不能显示『未发现问题』。"""
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog.set_result)
     assert "error" in src
     assert "扫描失败" in src
-    from pastelabel.ui.i18n import _strings
+    from labelforge.ui.i18n import _strings
     assert "扫描失败" in _strings["zh"]
     assert "扫描失败" in _strings["en"]
 
 
 def test_cleanup_lint_worker_waits_for_worker():
     """关闭质检弹窗必须等待 worker 结束，不能只发中断就丢引用（回归）。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     class Worker:
         def __init__(self):
@@ -429,7 +429,7 @@ def test_cleanup_lint_worker_waits_for_worker():
 
 def test_cleanup_lint_worker_tolerates_missing_wait():
     """假 worker（无 wait）不能抛异常。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     class Worker:
         def isRunning(self):
@@ -447,7 +447,7 @@ def test_cleanup_lint_worker_tolerates_missing_wait():
 def test_lint_dataset_abandons_pending_reads_on_interrupt(tmp_path, monkeypatch):
     """中断后不能等所有排队读盘 future 完成。"""
     import time
-    from pastelabel.engine import quality_lint
+    from labelforge.engine import quality_lint
 
     def _slow_read(json_path):
         time.sleep(0.5)
@@ -467,7 +467,7 @@ def test_lint_dataset_abandons_pending_reads_on_interrupt(tmp_path, monkeypatch)
 
 def test_sync_boxes_after_delete_clears_undo_history():
     """跨类删除不可撤销：同步内存后必须清空撤销栈，否则 Ctrl+Z 会复活删掉的框。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     class Undo:
         def __init__(self):
@@ -495,7 +495,7 @@ def test_sync_boxes_after_delete_clears_undo_history():
 
 def test_sync_boxes_after_delete_keeps_undo_when_nothing_removed():
     """没有实际删除时不能清空撤销栈。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     class Undo:
         def __init__(self):
@@ -520,7 +520,7 @@ def test_sync_boxes_after_delete_keeps_undo_when_nothing_removed():
 
 
 def test_sync_boxes_after_delete_tolerates_missing_undo_manager():
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     editor = type("Editor", (QualityLintMixin,), {})()
     editor.detection_boxes_dict = {0: [
@@ -538,7 +538,7 @@ def test_sync_boxes_after_delete_tolerates_missing_undo_manager():
 
 def test_worker_reports_error_field_on_failure(monkeypatch):
     """扫描异常必须带 error=True，UI 才能提示失败而不是『未发现问题』。"""
-    from pastelabel.engine import quality_lint
+    from labelforge.engine import quality_lint
 
     def _boom(*a, **kw):
         raise RuntimeError("boom")
@@ -561,7 +561,7 @@ def test_worker_reports_error_field_on_failure(monkeypatch):
 # --------------------------------------------------------------------------
 def test_worker_exposes_signals_and_run_calls_lint():
     import inspect
-    from pastelabel.engine import quality_lint
+    from labelforge.engine import quality_lint
 
     assert hasattr(quality_lint, "QualityLintWorker")
     source = inspect.getsource(quality_lint.QualityLintWorker.run)
@@ -574,7 +574,7 @@ def test_worker_exposes_signals_and_run_calls_lint():
 # Task 5: i18n
 # --------------------------------------------------------------------------
 def test_i18n_quality_lint_terms():
-    from pastelabel.ui.i18n import _strings
+    from labelforge.ui.i18n import _strings
     for key in ("质检", "标注质检", "越界框",
                 "小目标不可检出", "小目标需放大", "重复框", "异类重叠", "近似名", "group 不一致",
                 "跳过两两比对", "正在扫描", "未发现问题", "双击跳转到问题图"):
@@ -587,34 +587,34 @@ def test_i18n_quality_lint_terms():
 # --------------------------------------------------------------------------
 def test_options_popup_has_lint_button_source():
     import inspect
-    from pastelabel.ui.mixins.options_popup import OptionsPopupMixin
+    from labelforge.ui.mixins.options_popup import OptionsPopupMixin
     source = inspect.getsource(OptionsPopupMixin._create_options_menu)
     assert "lint_btn" in source
     assert "_open_quality_lint" in source
 
 
 def test_quality_lint_mixin_contract():
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     for name in ("_open_quality_lint",
                  "_jump_to_lint_issue", "_cleanup_lint_worker"):
         assert hasattr(QualityLintMixin, name), name
 
 
 def test_main_window_includes_quality_lint_mixin():
-    from pastelabel.ui.main_window import ImageEditor
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.main_window import ImageEditor
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     assert issubclass(ImageEditor, QualityLintMixin)
 
 
 def test_dialog_exposes_progress_and_result_api():
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     for name in ("set_progress", "set_result", "issue_activated"):
         assert hasattr(QualityLintDialog, name), name
 
 
 def test_jump_to_lint_issue_selects_box():
     """双击跳图逻辑：切图 + 选中问题框。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     calls = []
     editor = type("Editor", (QualityLintMixin,), {})()
@@ -636,7 +636,7 @@ def test_jump_to_lint_issue_selects_box():
 
 
 def test_jump_to_lint_issue_ignores_invalid_index():
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     editor = type("Editor", (QualityLintMixin,), {})()
     editor.background_images = ["a.png"]
@@ -689,7 +689,7 @@ def test_edit_distance_default_is_zero():
 
 
 def test_filter_ignored_issues_by_detail():
-    from pastelabel.engine.quality_lint import filter_ignored_issues
+    from labelforge.engine.quality_lint import filter_ignored_issues
     issues = [
         {"kind": "similar_name", "detail": "car / Car"},
         {"kind": "similar_name", "detail": "cat / Car"},
@@ -702,7 +702,7 @@ def test_filter_ignored_issues_by_detail():
 
 
 def test_filter_ignored_issues_by_star():
-    from pastelabel.engine.quality_lint import filter_ignored_issues
+    from labelforge.engine.quality_lint import filter_ignored_issues
     issues = [
         {"kind": "similar_name", "detail": "car / Car"},
         {"kind": "tiny_box", "detail": "W:1 H:1"},
@@ -713,14 +713,14 @@ def test_filter_ignored_issues_by_star():
 
 
 def test_filter_ignored_issues_empty_rules_passthrough():
-    from pastelabel.engine.quality_lint import filter_ignored_issues
+    from labelforge.engine.quality_lint import filter_ignored_issues
     issues = [{"kind": "tiny_box", "detail": "x"}]
     assert filter_ignored_issues(issues, None) == issues
     assert filter_ignored_issues(issues, {}) == issues
 
 
 def test_summarize_issues_counts_by_kind():
-    from pastelabel.engine.quality_lint import summarize_issues
+    from labelforge.engine.quality_lint import summarize_issues
     issues = [
         {"kind": "tiny_box"}, {"kind": "tiny_box"}, {"kind": "duplicate"},
     ]
@@ -728,7 +728,7 @@ def test_summarize_issues_counts_by_kind():
 
 
 def test_config_manager_roundtrips_lint_ignored_rules():
-    from pastelabel.core import config_manager
+    from labelforge.core import config_manager
     rules = {"similar_name": ["car / Car"], "tiny_box": ["*"]}
     config_manager.save_all(lint_ignored_rules=rules)
     loaded = config_manager.load_all()
@@ -738,7 +738,7 @@ def test_config_manager_roundtrips_lint_ignored_rules():
 
 
 def test_dialog_exposes_ignore_api():
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     for name in ("ignore_requested", "ignore_many_requested",
                  "_remove_issues", "_on_context_menu",
                  "_selected_issues", "_on_filter_changed",
@@ -747,7 +747,7 @@ def test_dialog_exposes_ignore_api():
 
 
 def test_mixin_exposes_ignore_helpers():
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     for name in ("_ignore_lint_issue", "_ignore_lint_issues",
                  "_get_lint_ignored_rules", "_save_lint_ignored_rules"):
         assert hasattr(QualityLintMixin, name), name
@@ -756,7 +756,7 @@ def test_mixin_exposes_ignore_helpers():
 def test_lint_dialog_is_non_modal_source():
     """质检弹窗必须非模态打开（show 而非 exec_），否则无法操作主窗口。"""
     import inspect
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     source = inspect.getsource(QualityLintMixin._open_quality_lint)
     assert "dialog.show()" in source
     assert "dialog.exec_()" not in source
@@ -765,14 +765,14 @@ def test_lint_dialog_is_non_modal_source():
 def test_lint_dialog_syncs_titlebar_theme():
     """质检弹窗必须同步标题栏主题（对齐 stats 弹窗）。"""
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     source = inspect.getsource(QualityLintDialog.__init__)
     assert "set_titlebar_dark" in source
 
 
 def test_lint_dialog_filter_combo_and_multi_select_source():
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog)
     assert "ExtendedSelection" in src
     assert "filter_combo" in src
@@ -780,7 +780,7 @@ def test_lint_dialog_filter_combo_and_multi_select_source():
 
 
 def test_i18n_ignore_terms():
-    from pastelabel.ui.i18n import _strings
+    from labelforge.ui.i18n import _strings
     for key in ("右键忽略", "忽略此类问题", "忽略此项", "已忽略"):
         assert key in _strings["zh"], key
         assert key in _strings["en"], key
@@ -788,7 +788,7 @@ def test_i18n_ignore_terms():
 
 def test_remove_issues_matches_by_content_not_identity():
     """表格 UserRole 取回的是副本，忽略必须按内容匹配（回归）。"""
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     import inspect
     src = inspect.getsource(QualityLintDialog._remove_issues)
     assert "id(" not in src, "不能按 id 匹配"
@@ -808,7 +808,7 @@ def _cross_issue(index, ia, la, ib, lb, path=None, iou=0.9):
 
 
 def test_selected_removal_indices_matches_target_side():
-    from pastelabel.engine.quality_lint import _selected_removal_indices
+    from labelforge.engine.quality_lint import _selected_removal_indices
     shapes = [
         _box(label="Truck", x=0, y=0, w=100, h=100),
         _box(label="ZTruck", x=2, y=2, w=100, h=100),
@@ -820,7 +820,7 @@ def test_selected_removal_indices_matches_target_side():
 
 def test_selected_removal_indices_rejects_index_drift():
     """索引与类别不一致时不能删（防索引漂移误删）。"""
-    from pastelabel.engine.quality_lint import _selected_removal_indices
+    from labelforge.engine.quality_lint import _selected_removal_indices
     shapes = [
         _box(label="Car", x=0, y=0, w=100, h=100),
         _box(label="ZTruck", x=2, y=2, w=100, h=100),
@@ -831,14 +831,14 @@ def test_selected_removal_indices_rejects_index_drift():
 
 
 def test_selected_removal_indices_empty_target():
-    from pastelabel.engine.quality_lint import _selected_removal_indices
+    from labelforge.engine.quality_lint import _selected_removal_indices
     shapes = [_box(label="Truck")]
     issue = _cross_issue(0, 0, "Truck", 1, "ZTruck")
     assert _selected_removal_indices(shapes, [issue], "")[0] == []
 
 
 def test_remove_selected_deletes_only_selected_images(tmp_path):
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
     img0 = _write_image_and_json(tmp_path, "sel0", [
         {"label": "Truck", "x": 0, "y": 0, "width": 100, "height": 100},
         {"label": "ZTruck", "x": 2, "y": 2, "width": 100, "height": 100},
@@ -862,7 +862,7 @@ def test_remove_selected_deletes_only_selected_images(tmp_path):
 
 
 def test_remove_selected_multiple_images_and_labels(tmp_path):
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
     img0 = _write_image_and_json(tmp_path, "m0", [
         {"label": "Truck", "x": 0, "y": 0, "width": 100, "height": 100},
         {"label": "ZTruck", "x": 2, "y": 2, "width": 100, "height": 100},
@@ -885,7 +885,7 @@ def test_remove_selected_multiple_images_and_labels(tmp_path):
 
 
 def test_remove_selected_preserves_other_json_fields(tmp_path):
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
     img = tmp_path / "keep2.png"
     img.write_bytes(b"x")
     payload = {
@@ -911,7 +911,7 @@ def test_remove_selected_preserves_other_json_fields(tmp_path):
 
 def test_remove_selected_memory_wins(tmp_path):
     """已加载图以内存框为准：磁盘索引与内存不一致时按内容签名删。"""
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
     img = _write_image_and_json(tmp_path, "mem2", [
         {"label": "ZTruck", "x": 0, "y": 0, "width": 100, "height": 100},
         {"label": "Truck", "x": 2, "y": 2, "width": 100, "height": 100},
@@ -932,7 +932,7 @@ def test_remove_selected_memory_wins(tmp_path):
 
 
 def test_remove_selected_reports_refreshed_issues(tmp_path):
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
     img = _write_image_and_json(tmp_path, "refresh2", [
         {"label": "Truck", "x": 0, "y": 0, "width": 100, "height": 100},
         {"label": "ZTruck", "x": 2, "y": 2, "width": 100, "height": 100},
@@ -948,7 +948,7 @@ def test_remove_selected_reports_refreshed_issues(tmp_path):
 
 def test_remove_selected_refreshed_reports_remaining_issues(tmp_path):
     """删除后刷新结果要反映剩余框的真实问题（越界）。"""
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
     img = _write_image_and_json(tmp_path, "empty2", [
         {"label": "Truck", "x": 0, "y": 0, "width": 300, "height": 300},
         {"label": "ZTruck", "x": -5, "y": -5, "width": 300, "height": 300},
@@ -964,7 +964,7 @@ def test_remove_selected_refreshed_reports_remaining_issues(tmp_path):
 
 
 def test_remove_selected_ignores_non_cross_issues(tmp_path):
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
     img = _write_image_and_json(tmp_path, "nocross", [
         {"label": "Truck", "x": 0, "y": 0, "width": 100, "height": 100},
     ])
@@ -979,7 +979,7 @@ def test_remove_selected_ignores_non_cross_issues(tmp_path):
 
 
 def test_remove_selected_missing_sidecar_recorded_as_failed(tmp_path):
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
     img = tmp_path / "lonely2.png"
     img.write_bytes(b"x")
     selected = [_cross_issue(0, 0, "Truck", 1, "ZTruck", str(img))]
@@ -991,7 +991,7 @@ def test_remove_selected_missing_sidecar_recorded_as_failed(tmp_path):
 
 
 def test_remove_selected_interruptible(tmp_path):
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
     paths = [_write_image_and_json(tmp_path, f"si{i}", [
         {"label": "Truck", "x": 0, "y": 0, "width": 100, "height": 100},
         {"label": "ZTruck", "x": 2, "y": 2, "width": 100, "height": 100},
@@ -1007,7 +1007,7 @@ def test_remove_selected_interruptible(tmp_path):
 
 
 def test_remove_selected_progress_callback(tmp_path):
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
     paths = [_write_image_and_json(tmp_path, f"sp{i}", [
         {"label": "Truck", "x": 0, "y": 0, "width": 100, "height": 100},
         {"label": "ZTruck", "x": 2, "y": 2, "width": 100, "height": 100},
@@ -1025,7 +1025,7 @@ def test_remove_selected_progress_callback(tmp_path):
 
 def test_cross_delete_worker_contract():
     import inspect
-    from pastelabel.engine import quality_lint
+    from labelforge.engine import quality_lint
     assert hasattr(quality_lint, "CrossLabelDeleteWorker")
     source = inspect.getsource(quality_lint.CrossLabelDeleteWorker.run)
     assert "remove_selected_cross_overlaps" in source
@@ -1035,7 +1035,7 @@ def test_cross_delete_worker_contract():
 
 
 def test_box_signature_quantizes_rect():
-    from pastelabel.engine.quality_lint import box_signature
+    from labelforge.engine.quality_lint import box_signature
     a = {"label": "Truck", "x": 1.0001, "y": 2, "width": 3, "height": 4}
     b = {"label": "Truck", "x": 1.0002, "y": 2, "width": 3, "height": 4}
     assert box_signature(a) == box_signature(b)
@@ -1047,7 +1047,7 @@ def test_box_signature_quantizes_rect():
 # --------------------------------------------------------------------------
 def test_lint_single_image_uses_memory_even_when_empty(tmp_path):
     """已加载图删空后不报旧问题，也不报空标注。"""
-    from pastelabel.engine.quality_lint import lint_single_image
+    from labelforge.engine.quality_lint import lint_single_image
     img = _write_image_and_json(tmp_path, "live", [
         {"label": "Truck", "x": 0, "y": 0, "width": 100, "height": 100},
         {"label": "ZTruck", "x": 2, "y": 2, "width": 100, "height": 100},
@@ -1058,7 +1058,7 @@ def test_lint_single_image_uses_memory_even_when_empty(tmp_path):
 
 def test_lint_single_image_clears_fixed_problem(tmp_path):
     """把重叠框修好后，同一张图不再报异类重叠。"""
-    from pastelabel.engine.quality_lint import lint_single_image
+    from labelforge.engine.quality_lint import lint_single_image
     img = _write_image_and_json(tmp_path, "fixed", [
         {"label": "Truck", "x": 0, "y": 0, "width": 100, "height": 100},
         {"label": "ZTruck", "x": 2, "y": 2, "width": 100, "height": 100},
@@ -1076,7 +1076,7 @@ def test_lint_single_image_clears_fixed_problem(tmp_path):
 
 def test_lint_single_image_missing_sidecar(tmp_path):
     """缺 sidecar 不再上报。"""
-    from pastelabel.engine.quality_lint import lint_single_image
+    from labelforge.engine.quality_lint import lint_single_image
     img = tmp_path / "noside.png"
     img.write_bytes(b"x")
     issues = lint_single_image(0, str(img))
@@ -1084,7 +1084,7 @@ def test_lint_single_image_missing_sidecar(tmp_path):
 
 
 def test_lint_single_image_sets_index_and_path(tmp_path):
-    from pastelabel.engine.quality_lint import lint_single_image
+    from labelforge.engine.quality_lint import lint_single_image
     img = _write_image_and_json(tmp_path, "meta", [
         {"label": "cat", "x": -5, "y": 0, "width": 10, "height": 10},
     ])
@@ -1094,7 +1094,7 @@ def test_lint_single_image_sets_index_and_path(tmp_path):
 
 
 def test_lint_image_shapes_skips_pairwise_over_limit():
-    from pastelabel.engine.quality_lint import lint_image_shapes
+    from labelforge.engine.quality_lint import lint_image_shapes
     limit = QUALITY_LINT_CONFIG["max_boxes_pairwise"]
     shapes = [
         {"label": "cat", "x": 0, "y": 0, "width": 10, "height": 10}
@@ -1111,14 +1111,14 @@ def test_lint_image_shapes_skips_pairwise_over_limit():
 # 实时刷新（UI 契约）
 # --------------------------------------------------------------------------
 def test_mixin_exposes_live_refresh_helpers():
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     for name in ("_notify_lint_boxes_changed", "_flush_lint_refresh"):
         assert hasattr(QualityLintMixin, name), name
 
 
 def test_live_refresh_is_debounced_and_only_when_dialog_visible():
     import inspect
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     src = inspect.getsource(QualityLintMixin._notify_lint_boxes_changed)
     assert "isVisible" in src
     assert "QTimer" in src
@@ -1127,7 +1127,7 @@ def test_live_refresh_is_debounced_and_only_when_dialog_visible():
 
 def test_live_refresh_uses_single_image_lint_with_memory():
     import inspect
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     src = inspect.getsource(QualityLintMixin._flush_lint_refresh)
     assert "lint_single_image" in src
     assert "detection_boxes" in src
@@ -1136,14 +1136,14 @@ def test_live_refresh_uses_single_image_lint_with_memory():
 
 def test_save_json_triggers_live_refresh():
     import inspect
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
     src = inspect.getsource(ImageEditor.save_json)
     assert "_notify_lint_boxes_changed" in src
 
 
 def test_live_refresh_flush_updates_dialog(tmp_path):
     """契约：刷新后弹窗该图旧问题被替换为新结果。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     calls = []
 
@@ -1171,7 +1171,7 @@ def test_live_refresh_flush_updates_dialog(tmp_path):
 
 def test_live_refresh_uses_current_canvas_boxes(tmp_path):
     """当前图以画布内存框为准（detection_boxes 可能比 dict 更新）。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     calls = []
 
@@ -1208,7 +1208,7 @@ def test_live_refresh_uses_current_canvas_boxes(tmp_path):
 # --------------------------------------------------------------------------
 def test_dialog_table_has_no_box_column_and_shows_two_labels():
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog.__init__)
     # 仍是"不要 Box 列"：四列是 框类型/类别/背景图/尺寸提示，没有坐标列。
     # 第 4 列是小目标审核的提示文案落点（需求要求审核界面直接显示提示）。
@@ -1221,7 +1221,7 @@ def test_dialog_table_has_no_box_column_and_shows_two_labels():
 
 def test_dialog_sorts_issues_by_image_then_kind_then_label():
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog._sort_issues)
     assert "_image_order" in src
     assert "_kind_order" in src
@@ -1233,7 +1233,7 @@ def test_dialog_sorts_issues_by_image_then_kind_then_label():
 
 def test_sort_groups_same_image_together():
     """同一张图的多个问题必须相邻（用户要求）。"""
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     dialog = QualityLintDialog.__new__(QualityLintDialog)
     issues = [
         {"kind": "tiny_needs_p2", "label": "Zed", "image_index": 5},
@@ -1252,14 +1252,14 @@ def test_sort_groups_same_image_together():
 
 def test_dialog_corner_button_themed():
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog.__init__)
     assert "QTableCornerButton::section" in src
 
 
 def test_dialog_filter_combo_widened():
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog.__init__)
     assert "filter_combo.setMinimumWidth" in src
     assert "setMinimumWidth(133)" in src
@@ -1267,14 +1267,14 @@ def test_dialog_filter_combo_widened():
 
 def test_dialog_delete_menu_uses_selection():
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog._on_context_menu)
     assert "delete_requested.emit(items, target)" in src
     assert "_cross_labels_in" in src
 
 
 def test_dialog_cross_labels_in_dedupes_order():
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     dialog = QualityLintDialog.__new__(QualityLintDialog)
     labels = dialog._cross_labels_in([
         _cross_issue(0, 0, "Truck", 1, "ZTruck"),
@@ -1285,7 +1285,7 @@ def test_dialog_cross_labels_in_dedupes_order():
 
 def test_mixin_delete_uses_selection_and_target():
     import inspect
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     src = inspect.getsource(QualityLintMixin._delete_cross_label_overlaps)
     assert "selected" in src
     assert "不可撤销" in src
@@ -1294,14 +1294,14 @@ def test_mixin_delete_uses_selection_and_target():
 
 def test_delete_worker_gets_only_related_memory_boxes():
     import inspect
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     src = inspect.getsource(QualityLintMixin._start_cross_label_delete)
     assert "image_index" in src
     assert "CrossLabelDeleteWorker" in src
 
 
 def test_i18n_delete_terms():
-    from pastelabel.ui.i18n import _strings
+    from labelforge.ui.i18n import _strings
     for key in ("删除 {n} 项中的 '{label}' 框", "删除进度", "正在删除",
                 "删除已中断", "已删除", "个重叠框", "张图", "张写入失败",
                 "确认删除"):
@@ -1311,7 +1311,7 @@ def test_i18n_delete_terms():
 
 def test_i18n_lint_button_refreshed_on_language_switch():
     import inspect
-    from pastelabel.ui.mixins.translation import TranslationMixin
+    from labelforge.ui.mixins.translation import TranslationMixin
     src = inspect.getsource(TranslationMixin._refresh_ui_texts)
     assert "lint_btn" in src
     assert 'tr("质检")' in src
@@ -1324,7 +1324,7 @@ class _AdvanceEditor:
     """把 mixin 方法绑到一个带状态的对象上，模拟主窗口。"""
 
     def __init__(self, current, image_count=3):
-        from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+        from labelforge.ui.mixins.quality_lint import QualityLintMixin
         self.background_images = [f"img{i}.png" for i in range(image_count)]
         self.current_background_index = current
         self.switched = []
@@ -1341,7 +1341,7 @@ class _AdvanceEditor:
         self.current_background_index = idx
 
     def maybe_advance(self, issues, refreshed=None):
-        from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+        from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
         class Dialog:
             _all_issues = issues
@@ -1406,7 +1406,7 @@ def test_advance_uses_visible_filtered_issues():
 
     全量里当前图还有其它类问题，也不能卡住跳转（用户实测回归）。
     """
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     class Dialog:
         _all_issues = [
@@ -1436,7 +1436,7 @@ def test_advance_uses_visible_filtered_issues():
 
 def test_advance_focuses_dialog_row():
     """跳转后表格定位到目标图的第一条问题行。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     calls = []
 
@@ -1466,7 +1466,7 @@ def test_advance_focuses_dialog_row():
 def test_filter_preserved_after_rebuild():
     """删除后重建筛选器不能把用户的筛选重置回『全部』。"""
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog._rebuild_filter_combo)
     assert "previous" in src
     assert "itemData" in src
@@ -1491,7 +1491,7 @@ def test_advance_skips_while_busy():
 
 def test_advance_triggered_by_flush_lint_refresh(tmp_path):
     """修好当前图后 _flush_lint_refresh 自动跳下一张问题图。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     img0 = _write_image_and_json(tmp_path, "adv0", [])
     img1 = _write_image_and_json(tmp_path, "adv1", [])
@@ -1522,7 +1522,7 @@ def test_advance_triggered_by_flush_lint_refresh(tmp_path):
 
 def test_ignore_triggers_advance():
     import inspect
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     for name in ("_ignore_lint_issue", "_ignore_lint_issues"):
         src = inspect.getsource(getattr(QualityLintMixin, name))
         assert "_maybe_advance_lint_issue" in src, name
@@ -1530,7 +1530,7 @@ def test_ignore_triggers_advance():
 
 def test_delete_finished_triggers_advance():
     import inspect
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     src = inspect.getsource(QualityLintMixin._on_cross_label_delete_finished)
     assert "_maybe_advance_lint_issue" in src
     assert "set_status=False" in src
@@ -1542,7 +1542,7 @@ def test_delete_finished_triggers_advance():
 def test_ignore_triggers_advance_without_index_guard():
     """忽略其他图的问题后同样要跳（不能按被忽略问题的图限制）。"""
     import inspect
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     for name in ("_ignore_lint_issue", "_ignore_lint_issues"):
         src = inspect.getsource(getattr(QualityLintMixin, name))
         assert "_maybe_advance_lint_issue(dialog, set_status=False)" in src, name
@@ -1550,7 +1550,7 @@ def test_ignore_triggers_advance_without_index_guard():
 
 
 def test_i18n_advance_status():
-    from pastelabel.ui.i18n import _strings
+    from labelforge.ui.i18n import _strings
     assert "已跳到下一张问题图" in _strings["zh"]
     assert "已跳到下一张问题图" in _strings["en"]
 
@@ -1561,7 +1561,7 @@ def test_i18n_advance_status():
 def test_settings_dialog_manages_lint_ignored_rules():
     from pathlib import Path
     src = (Path(__file__).resolve().parents[1] /
-           "pastelabel" / "ui" / "settings_dialog.py").read_text(encoding="utf-8")
+           "labelforge" / "ui" / "settings_dialog.py").read_text(encoding="utf-8")
     assert "self.lint_rules_list = QListWidget()" in src
     assert "self.lint_remove_btn.clicked.connect(self._remove_selected_lint_rules)" in src
     assert "self.lint_clear_btn.clicked.connect(self._clear_lint_rules)" in src
@@ -1571,7 +1571,7 @@ def test_settings_dialog_manages_lint_ignored_rules():
 
 
 def test_i18n_lint_ignore_settings_terms():
-    from pastelabel.ui.i18n import _strings
+    from labelforge.ui.i18n import _strings
     for key in ("质检忽略", "质检忽略规则", "移除选中", "清空全部", "整类"):
         assert key in _strings["zh"], key
         assert key in _strings["en"], key
@@ -1589,8 +1589,8 @@ def test_settings_dialog_lint_ignored_rules_end_to_end(tmp_path):
     script = '''
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
-from pastelabel.core import config_manager
-from pastelabel.ui.settings_dialog import SettingsDialog
+from labelforge.core import config_manager
+from labelforge.ui.settings_dialog import SettingsDialog
 
 app = QApplication.instance() or QApplication([])
 config_manager.save_all(lint_ignored_rules={"tiny_box": ["*"], "out_of_bounds": ["(1,2)"]})
@@ -1623,7 +1623,7 @@ os._exit(0)
     env = os.environ | {
         "QT_QPA_PLATFORM": "offscreen",
         "PYTHONPATH": str(root),
-        "PASTELABEL_CONFIG_PATH": str(config_path),
+        "LABELFORGE_CONFIG_PATH": str(config_path),
     }
     result = subprocess.run(
         [sys.executable, "-c", script], cwd=root, env=env,
@@ -1637,7 +1637,7 @@ os._exit(0)
 # --------------------------------------------------------------------------
 def test_filtered_lint_result_rebuilds_summary_after_ignore_all():
     """整类忽略后汇总计数必须重建，不能残留被忽略类的旧计数（回归 §2-2）。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     editor = type("Editor", (QualityLintMixin,), {})()
     result = {
@@ -1658,7 +1658,7 @@ def test_filtered_lint_result_rebuilds_summary_after_ignore_all():
 
 def test_remove_shapes_matching_signature_mismatch_reports_failure(tmp_path):
     """内存框与磁盘签名失配时必须报失败，不能静默成功（回归 §2-5）。"""
-    from pastelabel.engine.quality_lint import _remove_shapes_matching
+    from labelforge.engine.quality_lint import _remove_shapes_matching
 
     img = _write_image_and_json(tmp_path, "sigmiss", [
         {"label": "Truck", "x": 0, "y": 0, "width": 100, "height": 100},
@@ -1676,7 +1676,7 @@ def test_remove_shapes_matching_signature_mismatch_reports_failure(tmp_path):
 
 def test_remove_selected_signature_mismatch_marks_failed(tmp_path):
     """端到端：签名失配的已加载图进入 failed，且内存同步兜底不删磁盘。"""
-    from pastelabel.engine.quality_lint import remove_selected_cross_overlaps
+    from labelforge.engine.quality_lint import remove_selected_cross_overlaps
 
     img = _write_image_and_json(tmp_path, "sigmiss2", [
         {"label": "Truck", "x": 0, "y": 0, "width": 100, "height": 100},
@@ -1699,7 +1699,7 @@ def test_remove_selected_signature_mismatch_marks_failed(tmp_path):
 
 def test_close_lint_dialog_interrupts_and_clears():
     """关窗/切数据集：中断扫描并清空引用，旧结果不再跳错图（回归 §2-9）。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     class Worker:
         def __init__(self):
@@ -1734,7 +1734,7 @@ def test_close_lint_dialog_interrupts_and_clears():
 def test_dialog_summary_shows_scanned_image_count():
     """汇总行需展示扫描图片数（回归 §2-3）。"""
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog._update_summary)
     assert "_scanned_images" in src
     assert "扫描图片" in src
@@ -1743,7 +1743,7 @@ def test_dialog_summary_shows_scanned_image_count():
 def test_label_manager_notifies_lint_on_rename_and_delete():
     """标签重命名/删除后必须触发质检实时刷新挂钩（回归 §2-10）。"""
     import inspect
-    from pastelabel.engine import label_manager
+    from labelforge.engine import label_manager
     src = inspect.getsource(label_manager.LabelManager)
     assert src.count("_notify_lint_boxes_changed") >= 5
 
@@ -1766,7 +1766,7 @@ def _save_editor(busy=False):
 
 def test_save_json_rejected_while_lint_removal_busy(tmp_path):
     """删除 worker 改写 sidecar 期间主线程保存必须被拒绝（防并发截断）。"""
-    from pastelabel.engine.save_manager import SaveManager
+    from labelforge.engine.save_manager import SaveManager
 
     img = tmp_path / "busy.png"
     img.write_bytes(b"x")
@@ -1781,7 +1781,7 @@ def test_save_json_rejected_while_lint_removal_busy(tmp_path):
 
 def test_save_json_atomic_replace_leaves_no_tmp(tmp_path):
     """sidecar 写入先 tmp 后 os.replace：成功后无 .tmp 残留且 JSON 完整。"""
-    from pastelabel.engine.save_manager import SaveManager
+    from labelforge.engine.save_manager import SaveManager
 
     img = tmp_path / "atomic.png"
     img.write_bytes(b"x")
@@ -1797,9 +1797,9 @@ def test_save_json_atomic_replace_leaves_no_tmp(tmp_path):
 
 def test_delete_worker_sets_lint_removal_busy_and_image_progress_max(monkeypatch):
     """启动删除 worker：置忙标记；进度条上限按涉及图片数而非问题条数。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
-    from pastelabel.ui import dialogs as dialogs_mod
-    from pastelabel.engine import quality_lint as ql
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui import dialogs as dialogs_mod
+    from labelforge.engine import quality_lint as ql
 
     captured = {}
 
@@ -1861,7 +1861,7 @@ def test_delete_worker_sets_lint_removal_busy_and_image_progress_max(monkeypatch
 
 
 def test_delete_finished_clears_lint_removal_busy():
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     class Progress:
         def close(self):
@@ -1889,7 +1889,7 @@ def test_delete_finished_clears_lint_removal_busy():
 
 def test_jump_blocked_while_lint_removal_busy():
     """删除 worker 运行中双击问题行不得切图（切图会触发 sidecar 保存）。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     editor = type("Editor", (QualityLintMixin,), {})()
     editor.background_images = ["a.png", "b.png"]
@@ -1904,14 +1904,14 @@ def test_jump_blocked_while_lint_removal_busy():
 def test_open_quality_lint_closes_existing_dialog_source():
     """重复点质检必须复用/关闭旧弹窗，不能叠加过期弹窗（回归 C2）。"""
     import inspect
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     src = inspect.getsource(QualityLintMixin._open_quality_lint)
     assert "_close_lint_dialog" in src
 
 
 def test_refresh_overflow_triggers_full_rescan(tmp_path):
     """刷新事件积压超过上限时整库重扫一次，而不是全部丢弃（回归 C3）。"""
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
 
     calls = []
 
@@ -1946,7 +1946,7 @@ def test_refresh_overflow_triggers_full_rescan(tmp_path):
 
 
 def test_i18n_scanned_images_key_has_en_translation():
-    from pastelabel.ui.i18n import _strings
+    from labelforge.ui.i18n import _strings
     assert _strings["zh"]["扫描图片"] == "扫描图片"
     assert _strings["en"]["扫描图片"] == "Scanned images"
 
@@ -1958,7 +1958,7 @@ def test_i18n_scanned_images_key_has_en_translation():
 
 def test_tensor_side_pixels_is_ratio_times_640():
     """核心口径：比例 × 640 = 框在模型输入里的短边像素。"""
-    from pastelabel.engine.quality_lint import normalized_min_side, TINY_INPUT_SIZE
+    from labelforge.engine.quality_lint import normalized_min_side, TINY_INPUT_SIZE
     assert TINY_INPUT_SIZE == 640
     # 704x576 图上的 10x8 框：等比缩放到 640 后短边 640->524 那一档
     box = _box(x=0, y=0, w=10, h=8)
@@ -2047,7 +2047,7 @@ def test_no_tiny_box_kind_anymore():
     没有 imageWidth/Height 时比例无从算起，此时也**不报**（旧口径会退回
     原图像素的 tiny_box，等于又冒出第二套口径）。
     """
-    from pastelabel.engine.quality_lint import KIND_LABELS
+    from labelforge.engine.quality_lint import KIND_LABELS
     assert "tiny_box" not in KIND_LABELS
     assert lint_shapes([_box(w=3, h=3)], 0, 0) == []
     assert lint_shapes([_box(w=5, h=50)], 200, 200) == []
@@ -2100,7 +2100,7 @@ def test_tiny_issue_carries_ratio_for_ui_column():
 
 
 def test_normalized_min_side_helper_returns_none_when_undefined():
-    from pastelabel.engine.quality_lint import normalized_min_side
+    from labelforge.engine.quality_lint import normalized_min_side
     assert normalized_min_side(_box(x=0, y=0, w=10, h=20), 100, 100) == 0.1
     assert normalized_min_side(
         {"shape_type": "point", "points": [[1, 1]]}, 100, 100) is None
@@ -2120,7 +2120,7 @@ def test_non_finite_geometry_is_not_judged_as_healthy():
     会绕过退化宽高守卫一路算到比例里。dataset_health 早为同一类问题
     设过 _finite_float 防线，这里必须同样处理。
     """
-    from pastelabel.engine.quality_lint import normalized_min_side
+    from labelforge.engine.quality_lint import normalized_min_side
     nan = float("nan")
     inf = float("inf")
     assert normalized_min_side(_box(w=nan, h=20), 640, 640) is None
@@ -2131,7 +2131,7 @@ def test_non_finite_geometry_is_not_judged_as_healthy():
 
 def test_non_finite_width_excluded_from_report(tmp_path):
     """NaN 宽的框既不进三档计数也不进直方图，更不能落进"最大目标"那一桶。"""
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "nan", [
         {"label": "broken", "x": 0, "y": 0, "width": float("nan"),
          "height": 20, "shape_type": "rectangle"},
@@ -2149,7 +2149,7 @@ def test_non_finite_width_excluded_from_report(tmp_path):
 
 def test_tiny_report_drops_non_finite_ratios():
     """公开函数自己也要设防，不能只依赖调用方给干净数据。"""
-    from pastelabel.engine.quality_lint import tiny_report
+    from labelforge.engine.quality_lint import tiny_report
     report = tiny_report([float("nan"), float("inf"), 0.5], 0)
     assert report["measured"] == 1
     assert report["pass"] == 1
@@ -2166,7 +2166,7 @@ def _tiny_issue(index, path, box_index, kind="tiny_unreachable"):
 
 
 def test_mark_tiny_keep_writes_flag_to_sidecar(tmp_path):
-    from pastelabel.engine.quality_lint import mark_tiny_keep
+    from labelforge.engine.quality_lint import mark_tiny_keep
     img = _write_image_and_json(tmp_path, "m", [
         {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
          "shape_type": "rectangle"},
@@ -2187,7 +2187,7 @@ def test_mark_tiny_keep_writes_flag_to_sidecar(tmp_path):
 
 def test_mark_tiny_keep_preserves_existing_flags(tmp_path):
     """贴图的 flags.paste 不能被覆盖掉，否则贴图标记丢失。"""
-    from pastelabel.engine.quality_lint import mark_tiny_keep
+    from labelforge.engine.quality_lint import mark_tiny_keep
     img = _write_image_and_json(tmp_path, "k", [
         {"label": "logo", "x": 0, "y": 0, "width": 3, "height": 3,
          "shape_type": "rectangle", "flags": {"paste": True}},
@@ -2202,7 +2202,7 @@ def test_mark_tiny_keep_preserves_existing_flags(tmp_path):
 
 def test_mark_tiny_keep_is_idempotent(tmp_path):
     """重复标记同一框不该报错，也不该重复计数成两次改动。"""
-    from pastelabel.engine.quality_lint import mark_tiny_keep
+    from labelforge.engine.quality_lint import mark_tiny_keep
     img = _write_image_and_json(tmp_path, "i", [
         {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
          "shape_type": "rectangle"},
@@ -2220,7 +2220,7 @@ def test_mark_tiny_keep_is_idempotent(tmp_path):
 
 def test_mark_tiny_keep_updates_memory_boxes(tmp_path):
     """已加载图重扫时以内存为准，只写盘的话豁免不会生效。"""
-    from pastelabel.engine.quality_lint import mark_tiny_keep
+    from labelforge.engine.quality_lint import mark_tiny_keep
     img = _write_image_and_json(tmp_path, "mem", [
         {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
          "shape_type": "rectangle"},
@@ -2241,7 +2241,7 @@ def test_mark_tiny_keep_matches_disk_by_signature_not_index(tmp_path):
     内存里目标框排在第 0 位，磁盘上排在第 1 位。若按下标写盘就会把
     tiny_keep 标到旁边那个大框上，豁免错对象。
     """
-    from pastelabel.engine.quality_lint import mark_tiny_keep
+    from labelforge.engine.quality_lint import mark_tiny_keep
     img = _write_image_and_json(tmp_path, "sig", [
         {"label": "car", "x": 100, "y": 0, "width": 80, "height": 80,
          "shape_type": "rectangle"},
@@ -2266,7 +2266,7 @@ def test_mark_tiny_keep_matches_disk_by_signature_not_index(tmp_path):
 
 def test_mark_tiny_keep_skips_other_kinds(tmp_path):
     """只有两个小目标 kind 能「保留」，重复框之类没有这个语义。"""
-    from pastelabel.engine.quality_lint import mark_tiny_keep
+    from labelforge.engine.quality_lint import mark_tiny_keep
     img = _write_image_and_json(tmp_path, "o", [
         {"label": "a", "x": 0, "y": 0, "width": 100, "height": 100,
          "shape_type": "rectangle"},
@@ -2283,7 +2283,7 @@ def test_mark_tiny_keep_skips_other_kinds(tmp_path):
 
 
 def test_mark_tiny_keep_reports_missing_sidecar(tmp_path):
-    from pastelabel.engine.quality_lint import mark_tiny_keep
+    from labelforge.engine.quality_lint import mark_tiny_keep
     img = tmp_path / "gone.png"
     img.write_bytes(b"x")
 
@@ -2295,7 +2295,7 @@ def test_mark_tiny_keep_reports_missing_sidecar(tmp_path):
 
 def test_mark_tiny_keep_rejects_out_of_range_index(tmp_path):
     """扫描结果与磁盘不一致时不能越界写，也不能静默当成成功。"""
-    from pastelabel.engine.quality_lint import mark_tiny_keep
+    from labelforge.engine.quality_lint import mark_tiny_keep
     img = _write_image_and_json(tmp_path, "r", [
         {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
          "shape_type": "rectangle"},
@@ -2309,7 +2309,7 @@ def test_mark_tiny_keep_rejects_out_of_range_index(tmp_path):
 
 def test_marked_box_disappears_from_rescan(tmp_path):
     """验收闭环：标记 → 重扫 → 问题消失且计入 exempt。"""
-    from pastelabel.engine.quality_lint import lint_dataset, mark_tiny_keep
+    from labelforge.engine.quality_lint import lint_dataset, mark_tiny_keep
     img = _write_image_and_json(tmp_path, "loop", [
         {"label": "wire", "x": 0, "y": 0, "width": 3, "height": 3,
          "shape_type": "rectangle"},
@@ -2332,7 +2332,7 @@ def test_marked_box_disappears_from_rescan(tmp_path):
 # ---- 质检弹窗：第 4 列提示 / 严重度着色 / 标记保留 / 报告区 ----
 
 def test_size_hint_column_shows_ratio_and_advice():
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     d = QualityLintDialog.__new__(QualityLintDialog)
     fail = d._size_hint_text({"kind": "tiny_unreachable", "ratio": 0.0047})
     assert fail.startswith("0.47%")
@@ -2346,7 +2346,7 @@ def test_size_hint_column_shows_ratio_and_advice():
 
 def test_size_hint_survives_missing_or_bad_ratio():
     """缺 ratio / NaN / None 都不能抛，UI 里一处异常会整表画不出来。"""
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     d = QualityLintDialog.__new__(QualityLintDialog)
     assert d._size_hint_text({"kind": "tiny_needs_p2"})
     assert d._size_hint_text({"kind": "tiny_needs_p2", "ratio": float("nan")})
@@ -2360,7 +2360,7 @@ def test_size_hint_distinguishes_the_two_tiers():
     必须用相同的 ratio：文本前缀是百分比，若两档各取一个真实值，
     百分比本身就不同，建议文案即使写成一样也照样"通过"。
     """
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     d = QualityLintDialog.__new__(QualityLintDialog)
     ratio = 0.00625
     fail = d._size_hint_text({"kind": "tiny_unreachable", "ratio": ratio})
@@ -2372,7 +2372,7 @@ def test_size_hint_distinguishes_the_two_tiers():
 
 def test_size_hint_names_the_small_side():
     """提示要说明是宽、高还是宽高都不满足 —— 标注员才知道该往哪个方向改。"""
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     d = QualityLintDialog.__new__(QualityLintDialog)
     wide_only = d._size_hint_text({"kind": "tiny_unreachable", "ratio": 0.0045,
                                    "min_side": "width", "both_below": False})
@@ -2388,7 +2388,7 @@ def test_size_hint_names_the_small_side():
 
 def test_size_hint_both_below_wins_over_min_side():
     """两侧都低于命中档的线时，"宽高均不足"必须压过 min_side 的单侧说法。"""
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     d = QualityLintDialog.__new__(QualityLintDialog)
     text = d._size_hint_text({"kind": "tiny_needs_p2", "ratio": 0.008,
                               "min_side": "height", "both_below": True})
@@ -2398,7 +2398,7 @@ def test_size_hint_both_below_wins_over_min_side():
 
 def test_progress_bar_hidden_after_successful_result():
     """扫描完成后进度条该藏起来，一直钉在 100% 只占地方。"""
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
 
     class _Bar:
         def __init__(self):
@@ -2428,7 +2428,7 @@ def test_progress_bar_hidden_after_successful_result():
 
 
 def test_progress_bar_hidden_after_failed_result():
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     d = QualityLintDialog.__new__(QualityLintDialog)
     d._all_issues = []
     d._kind_filter = None
@@ -2450,13 +2450,13 @@ def test_progress_bar_hidden_after_failed_result():
 
 def test_progress_bar_stylesheet_is_rounded():
     """质检进度条走 ThemeManager 的统一实现（8px 圆角，chunk 同圆角）。"""
-    from pastelabel.ui import quality_lint_dialog as mod
+    from labelforge.ui import quality_lint_dialog as mod
 
     qss = mod._progress_qss()
     assert qss.count("border-radius: 8px") == 2, qss
     assert "QProgressBar::chunk" in qss
     # 与全项目其它进度条是同一份样式
-    from pastelabel.ui.theme import ThemeManager
+    from labelforge.ui.theme import ThemeManager
 
     assert qss == ThemeManager.get_progress_style()
 
@@ -2468,14 +2468,14 @@ def test_context_menu_gives_keep_not_detail_ignore_for_tiny_kinds():
     detail 无关），不给基于 detail 的「忽略此项」。
     """
     import inspect
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     src = inspect.getsource(QualityLintDialog._on_context_menu)
     assert "TINY_KINDS" in src
     assert "mark_keep_requested" in src
 
 
 def test_dialog_exposes_mark_keep_signal():
-    from pastelabel.ui.quality_lint_dialog import QualityLintDialog
+    from labelforge.ui.quality_lint_dialog import QualityLintDialog
     assert hasattr(QualityLintDialog, "mark_keep_requested")
 
 
@@ -2486,7 +2486,7 @@ def _fake_table_env(monkeypatch):
     表格内容只能靠记录型替身断言。弹窗里是模块级引用，
     必须 patch 模块属性才生效。（行不着色后不再需要记录型 QColor。)
     """
-    from pastelabel.ui import quality_lint_dialog as mod
+    from labelforge.ui import quality_lint_dialog as mod
 
     class _Item:
         def __init__(self, text=""):
@@ -2570,7 +2570,7 @@ def test_size_hint_handles_issue_without_ratio_gracefully_in_table(monkeypatch):
 
 def test_mixin_wires_mark_keep_to_sidecar_write():
     import inspect
-    from pastelabel.ui.mixins.quality_lint import QualityLintMixin
+    from labelforge.ui.mixins.quality_lint import QualityLintMixin
     src = inspect.getsource(QualityLintMixin._open_quality_lint)
     assert "mark_keep_requested" in src
     handler = inspect.getsource(QualityLintMixin._mark_lint_tiny_keep)
@@ -2580,7 +2580,7 @@ def test_mixin_wires_mark_keep_to_sidecar_write():
 
 
 def test_i18n_small_target_audit_terms():
-    from pastelabel.ui.i18n import _strings
+    from labelforge.ui.i18n import _strings
     for key in (
             "小目标不可检出", "小目标需放大",
             "尺寸/提示", "小目标可检测性", "检测框",
@@ -2608,9 +2608,9 @@ def test_every_literal_tr_key_in_lint_ui_is_translated():
     """
     import ast
     from pathlib import Path
-    from pastelabel.ui.i18n import _strings
-    from pastelabel.engine.quality_lint import KIND_LABELS
-    root = Path(__file__).resolve().parents[1] / "pastelabel"
+    from labelforge.ui.i18n import _strings
+    from labelforge.engine.quality_lint import KIND_LABELS
+    root = Path(__file__).resolve().parents[1] / "labelforge"
     sources = [
         root / "ui" / "quality_lint_dialog.py",
         root / "ui" / "mixins" / "quality_lint.py",
@@ -2634,7 +2634,7 @@ def test_every_literal_tr_key_in_lint_ui_is_translated():
 
 
 def test_kind_labels_cover_new_tiny_kinds():
-    from pastelabel.engine.quality_lint import KIND_LABELS
+    from labelforge.engine.quality_lint import KIND_LABELS
     assert "tiny_unreachable" in KIND_LABELS
     assert "tiny_needs_p2" in KIND_LABELS
 
@@ -2647,7 +2647,7 @@ def test_stable_line_is_not_the_warn_line(tmp_path):
     要么 >= 16px，全都擦肩而过。stable 是报告参考线，把「勉强够」的框算进
     「稳定检出」会让用户以为这类目标已经稳了。
     """
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "stable", [
         {"label": "a", "x": 0, "y": 0, "width": 12, "height": 12,
          "shape_type": "rectangle"},
@@ -2663,7 +2663,7 @@ def test_stable_line_is_not_the_warn_line(tmp_path):
 
 
 def test_tiny_report_counts_three_tiers(tmp_path):
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "t", [
         {"label": "a", "x": 0, "y": 0, "width": 3, "height": 3,
          "shape_type": "rectangle"},
@@ -2687,7 +2687,7 @@ def test_tiny_report_counts_three_tiers(tmp_path):
 
 def test_tiny_report_histogram_bins_are_decision_aligned(tmp_path):
     """分桶边界必须压在 0.625%/1.25%/2.5% 上，等宽分桶会把决策区糊成一坨。"""
-    from pastelabel.engine.quality_lint import lint_dataset, TINY_RATIO_EDGES
+    from labelforge.engine.quality_lint import lint_dataset, TINY_RATIO_EDGES
     assert 0.00625 in TINY_RATIO_EDGES
     assert 0.0125 in TINY_RATIO_EDGES
     assert 0.025 in TINY_RATIO_EDGES
@@ -2715,7 +2715,7 @@ def test_tiny_report_histogram_boundary_value_goes_to_upper_bin(tmp_path):
     若归到下界那个桶，直方图会把"刚好不算 🔴"的框画进 🔴 区，
     图形与判档自相矛盾 —— 这条只有在值恰好等于边界时才暴露。
     """
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "b", [
         {"label": "a", "x": 0, "y": 0, "width": 4, "height": 4,
          "shape_type": "rectangle"},
@@ -2729,7 +2729,7 @@ def test_tiny_report_histogram_boundary_value_goes_to_upper_bin(tmp_path):
 
 def test_tiny_report_counts_exempt_separately(tmp_path):
     """豁免框单列，不混进三档占比，否则「保留」会虚增通过数。"""
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "e", [
         {"label": "wire", "x": 0, "y": 0, "width": 600, "height": 3,
          "shape_type": "rectangle", "flags": {"tiny_keep": True}},
@@ -2750,7 +2750,7 @@ def test_tiny_report_counts_exempt_separately(tmp_path):
 
 def test_tiny_report_present_even_when_no_issues(tmp_path):
     """干净数据集也要有报告，否则直方图无从显示。"""
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "ok", [
         {"label": "car", "x": 0, "y": 0, "width": 100, "height": 100,
          "shape_type": "rectangle"},
@@ -2764,7 +2764,7 @@ def test_tiny_report_present_even_when_no_issues(tmp_path):
 
 
 def test_tiny_report_on_empty_dataset(tmp_path):
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     report = lint_dataset([])["tiny_report"]
     assert report["total"] == 0
     assert sum(report["histogram"]["counts"]) == 0
@@ -2772,7 +2772,7 @@ def test_tiny_report_on_empty_dataset(tmp_path):
 
 def test_summary_initializes_new_tiny_kinds(tmp_path):
     """UI 直接读 summary[kind]，键必须恒在（哪怕计数为 0）。"""
-    from pastelabel.engine.quality_lint import lint_dataset
+    from labelforge.engine.quality_lint import lint_dataset
     img = _write_image_and_json(tmp_path, "s", [
         {"label": "a", "x": 0, "y": 0, "width": 3, "height": 3,
          "shape_type": "rectangle"},

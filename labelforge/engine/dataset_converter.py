@@ -27,7 +27,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 INPUT_FORMATS = ("yolo", "coco", "voc", "labelme")
 OUTPUT_FORMATS = ("yolo", "coco", "voc", "labelme")
 
-#: COCO 标注文件名，与 pastelabel/engine/coco_exporter.py 保持一致
+#: COCO 标注文件名，与 labelforge/engine/coco_exporter.py 保持一致
 COCO_ANNOTATION_NAME = "coco_detection.json"
 
 #: 分块写出时的块大小，避免大图集长时间无进度回调
@@ -1010,7 +1010,7 @@ def _write_coco(dataset: Dataset, layout: dict) -> None:
                 "iscrowd": 0,
             })
     payload = {
-        "info": {"description": "converted by PasteLabel",
+        "info": {"description": "converted by LabelForge",
                  "version": IMPL_VERSION},
         "images": images,
         "annotations": annotations,
@@ -1290,7 +1290,7 @@ def output_layout(output_format: str, output_dir: str) -> dict:
             "annotations": os.path.join(output_dir, "annotations"),
         }
     if fmt == "labelme":
-        # LabelMe 使用 sidecar json，与 PasteLabel 主存储一致，输出到同一目录
+        # LabelMe 使用 sidecar json，与 LabelForge 主存储一致，输出到同一目录
         return {
             "images": output_dir,
             "annotations": output_dir,

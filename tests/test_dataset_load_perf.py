@@ -7,7 +7,7 @@
 import json
 import time
 
-from pastelabel.engine.image_loader import (
+from labelforge.engine.image_loader import (
     STATUS_ANNOTATED,
     STATUS_EMPTY,
     STATUS_PENDING,
@@ -51,7 +51,7 @@ def test_light_status_never_parses_json(monkeypatch, tmp_path):
     (tmp_path / "a.json").write_text(
         json.dumps({"shapes": [{"label": "cat"}]}), encoding="utf-8")
 
-    from pastelabel.engine import image_loader
+    from labelforge.engine import image_loader
 
     def _boom(*a, **k):
         raise AssertionError("light 模式不应解析 JSON")
@@ -73,7 +73,7 @@ def test_decorate_light_marks_pending_without_parse(monkeypatch, tmp_path):
         json.dumps({"shapes": [{"label": "cat"}]}), encoding="utf-8")
     item = FakeItem()
 
-    from pastelabel.engine import image_loader
+    from labelforge.engine import image_loader
 
     def _boom(*a, **k):
         raise AssertionError("light 装饰不应解析 JSON")
@@ -105,7 +105,7 @@ def test_scan_dataset_full_returns_statuses_and_counts(tmp_path):
 
 def test_bulk_populate_is_fast_and_off_json_parser(monkeypatch, tmp_path):
     """批量填充 300 张带 JSON 的图片必须远快于逐张解析（回归守卫）。"""
-    from pastelabel.engine import image_loader
+    from labelforge.engine import image_loader
 
     N = 300
     paths = []

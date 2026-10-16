@@ -2,13 +2,13 @@
 import inspect
 from pathlib import Path
 
-from pastelabel.core import config as config_module
-from pastelabel.engine.label_manager import LabelManager
+from labelforge.core import config as config_module
+from labelforge.engine.label_manager import LabelManager
 
 ROOT = Path(__file__).resolve().parents[1]
-LABEL_MANAGER_SRC = ROOT / "pastelabel" / "engine" / "label_manager.py"
-EVENT_HANDLER_SRC = ROOT / "pastelabel" / "engine" / "event_handler.py"
-SETTINGS_SRC = ROOT / "pastelabel" / "ui" / "settings_dialog.py"
+LABEL_MANAGER_SRC = ROOT / "labelforge" / "engine" / "label_manager.py"
+EVENT_HANDLER_SRC = ROOT / "labelforge" / "engine" / "event_handler.py"
+SETTINGS_SRC = ROOT / "labelforge" / "ui" / "settings_dialog.py"
 
 
 class FakeSignal:
@@ -116,7 +116,7 @@ def test_shortcut_is_not_handled_by_the_confirming_delete_label():
 
 def test_delete_selected_label_skips_the_confirmation_dialog(monkeypatch):
     """核心：快捷键路径不能弹任何对话框。"""
-    import pastelabel.engine.label_manager as lm
+    import labelforge.engine.label_manager as lm
     calls = []
     monkeypatch.setattr(lm.dialog_helpers, "question",
                         lambda *a, **k: calls.append(a) or lm.dialog_helpers.QMessageBox.No)
@@ -131,7 +131,7 @@ def test_delete_selected_label_skips_the_confirmation_dialog(monkeypatch):
 
 def test_delete_label_still_confirms(monkeypatch):
     """右键菜单路径必须保留确认框。"""
-    import pastelabel.engine.label_manager as lm
+    import labelforge.engine.label_manager as lm
     calls = []
     monkeypatch.setattr(lm.dialog_helpers, "question",
                         lambda *a, **k: calls.append(a) or lm.dialog_helpers.QMessageBox.No)
@@ -144,7 +144,7 @@ def test_delete_label_still_confirms(monkeypatch):
 
 
 def test_confirming_no_leaves_everything_untouched(monkeypatch):
-    import pastelabel.engine.label_manager as lm
+    import labelforge.engine.label_manager as lm
     monkeypatch.setattr(lm.dialog_helpers, "question",
                         lambda *a, **k: lm.dialog_helpers.QMessageBox.No)
 
@@ -158,7 +158,7 @@ def test_confirming_no_leaves_everything_untouched(monkeypatch):
 
 def test_stats_mode_deletes_every_box_with_that_label(monkeypatch):
     """Stats 模式快捷键删除当前图片该标签的所有框（不跨图片）。"""
-    import pastelabel.engine.label_manager as lm
+    import labelforge.engine.label_manager as lm
     monkeypatch.setattr(lm.dialog_helpers, "question", lambda *a, **k: lm.dialog_helpers.QMessageBox.Yes)
 
     boxes = [{'label': 'cat', 'x': 0, 'y': 0, 'width': 1, 'height': 1},
@@ -190,7 +190,7 @@ def test_no_selection_now_deletes_the_whole_image(monkeypatch):
     用户明确要求「支持焦点在画布上就能删除」，所以旧契约被推翻、改成新契约。
     仍然要保证不弹确认框。
     """
-    import pastelabel.engine.label_manager as lm
+    import labelforge.engine.label_manager as lm
     calls = []
     monkeypatch.setattr(lm.dialog_helpers, "question",
                         lambda *a, **k: calls.append(a) or lm.dialog_helpers.QMessageBox.Yes)
@@ -221,7 +221,7 @@ def test_canvas_selection_is_cleared_after_delete():
 # ---------- 主窗口转发 ----------
 
 def test_main_window_forwards_to_the_non_confirming_variant():
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
     source = inspect.getsource(ImageEditor.delete_selected_label)
     assert "label_manager.delete_selected_label()" in source
     # 不能误转发到带确认的 delete_label

@@ -7,7 +7,7 @@ import os
 import time
 from typing import Dict, List, NamedTuple, Optional
 
-from pastelabel.engine.onnx_inference import (
+from labelforge.engine.onnx_inference import (
     DEFAULT_CONF, DEFAULT_IOU, DEFAULT_INPUT_SIZE,
     MAX_IOU, MAX_SCORE, MIN_IOU, MIN_SCORE,
     InferenceError, OnnxDetector, SUPPORTED_FORMATS,
@@ -134,7 +134,7 @@ def validate_settings(settings):
 
 def model_class_names(session):
     """从 ONNX 元数据里取类别表，取不到返回空表。"""
-    from pastelabel.engine.onnx_inference import metadata_class_names
+    from labelforge.engine.onnx_inference import metadata_class_names
     return metadata_class_names(session)
 
 
@@ -150,7 +150,7 @@ def resolve_class_names(model_path, session, read_names=None):
     找不到就报 missing，由调用方决定是否让用户手输；这里不编造 0 1 2 3，
     否则标注里会写进一堆无意义的类名。
     """
-    from pastelabel.engine.onnx_inference import metadata_class_names, read_class_names
+    from labelforge.engine.onnx_inference import metadata_class_names, read_class_names
 
     path = sidecar_class_names_path(model_path)
     if os.path.isfile(path):
@@ -181,7 +181,7 @@ def build_detector(settings, read_names=None):
 
     不给类别表时由 OnnxDetector 自己回落到元数据，这里不重复读取。
     """
-    from pastelabel.engine.onnx_inference import read_class_names
+    from labelforge.engine.onnx_inference import read_class_names
 
     settings = normalize_settings(settings)
     names = []
@@ -485,7 +485,7 @@ def beijing_timestamp(now=None):
 def read_sidecar_boxes(image_path):
     """读 sidecar 里的检测框；文件缺失或损坏返回 None（与「空标注」区分）。"""
     import json
-    from pastelabel.engine.shape_io import box_from_labelme_shape
+    from labelforge.engine.shape_io import box_from_labelme_shape
 
     json_path = f"{os.path.splitext(image_path)[0]}.json"
     if not os.path.exists(json_path):
@@ -534,7 +534,7 @@ def remove_empty_sidecar(image_path):
         os.remove(json_path)
     except OSError:
         return False
-    from pastelabel.core import json_trace
+    from labelforge.core import json_trace
     json_trace.trace_delete('inference_task.remove_empty_sidecar', json_path,
                             survived=os.path.exists(json_path))
     return True
@@ -547,8 +547,8 @@ def write_sidecar_boxes(image_path, boxes, image_width=0, image_height=0):
     因此可以给任意图片写结果；先写临时文件再原子替换，中断不留半截 JSON。
     """
     import json
-    from pastelabel.core.config import LABELME_VERSION
-    from pastelabel.engine.shape_io import labelme_shape_from_box
+    from labelforge.core.config import LABELME_VERSION
+    from labelforge.engine.shape_io import labelme_shape_from_box
 
     json_path = sidecar_path(image_path)
     data = None
@@ -575,7 +575,7 @@ def write_sidecar_boxes(image_path, boxes, image_width=0, image_height=0):
     if image_height:
         data["imageHeight"] = int(image_height)
 
-    from pastelabel.core import json_trace
+    from labelforge.core import json_trace
     json_trace.trace('write_sidecar_boxes 即将覆盖', json_path,
                      new_shapes=len(data["shapes"]))
 

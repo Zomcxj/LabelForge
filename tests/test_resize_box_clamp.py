@@ -3,7 +3,7 @@
 历史问题：br/tr/bl 角柄只做 `max(10, ...)`，不 clamp 到背景图尺寸，
 拖动时框会超出画面底部（坐标可远大于图像高度）。
 """
-from pastelabel.canvas.canvas_drawing import CanvasDrawingMixin
+from labelforge.canvas.canvas_drawing import CanvasDrawingMixin
 
 
 class Point:

@@ -1,6 +1,6 @@
-# PasteLabel
+# LabelForge
 
-PasteLabel 是一个基于 PyQt5 的图像标注工具，支持**贴图合成**和**多类型标注**（水平框 / 分割多边形 / 关键点 / 旋转框，LabelMe 格式），有效解决样本采集困难的问题。
+LabelForge 是一个基于 PyQt5 的图像标注工具，支持**贴图合成**和**多类型标注**（水平框 / 分割多边形 / 关键点 / 旋转框，LabelMe 格式），有效解决样本采集困难的问题。
 
 | 界面展示 | 数据处理 |
 |:---:|:---:|
@@ -61,11 +61,11 @@ PasteLabel 是一个基于 PyQt5 的图像标注工具，支持**贴图合成**�
 - **中英文切换** — 全界面 + 弹窗按钮同步本地化
 - **快捷键自定义** — 设置中列出的动作和缓存槽快捷键可修改
 - **一键恢复默认设置** — 设置窗口左下角可一键清除全部自定义配置并还原出厂默认
-- **命令行启动** — 支持 `PasteLabel.exe [目录] [--labels 文件]` 直接打开指定目录并导入标签
+- **命令行启动** — 支持 `LabelForge.exe [目录] [--labels 文件]` 直接打开指定目录并导入标签
 - **标签统计** — 背景图标签与贴图标签合并到同一窗口，用标签页切换（左侧）；贴图统计覆盖整个数据集（磁盘已保存 + 当前会话）；支持颜色替换，颜色按钮显示当前 HTML色值
 - **数据集健康** — 标签统计弹窗右侧内嵌诊断区，展示类别分布 / 尺寸直方图 / 长宽比分布 / IoU 重叠分布，并自动给出「该多合成哪类」的文字建议；4 个面板可拖拽交换位置、可拉伸调整大小
 - **独立滚轮缩放步长** — 检测框缩放步长只控制检测框滚轮缩放，贴图缩放步长只控制贴图滚轮缩放
-- **全局异常捕获** — 未处理异常和 Qt 消息自动写入 `~/pastelabel.log`（与 `~/.pastelabel.json` 同目录）
+- **全局异常捕获** — 未处理异常和 Qt 消息自动写入 `~/labelforge.log`（与 `~/.labelforge.json` 同目录）
 
 ---
 
@@ -101,7 +101,7 @@ Windows 深色标题栏依赖 `ffi.dll`。使用 `conda` 环境时，该文件�
 ### 运行
 
 ```bash
-python pastelabel/main.py
+python labelforge/main.py
 ```
 
 ## 文档导航
@@ -118,7 +118,7 @@ python pastelabel/main.py
 bash build.sh
 ```
 
-自动检测平台，调用 PyInstaller 打包为单文件 exe，输出 `dist/PasteLabel.exe`。Windows 下自动处理 ffi.dll 依赖。
+自动检测平台，调用 PyInstaller 打包为单文件 exe，输出 `dist/LabelForge.exe`。Windows 下自动处理 ffi.dll 依赖。
 
 **用哪个 Python 构建很重要**：脚本默认取 PATH 里的 `python`，多环境机器上未必装了全部依赖。缺依赖时 PyInstaller 不报错、只是静默不收集，打出的 exe 照样能启动，点视频功能才报缺 `cv2`。脚本现在会在打包前自检 `cv2` / `PyQt5` / `numpy` / `onnxruntime`，缺哪个直接失败并打印当前解释器路径；用别的解释器构建请显式指定：
 
@@ -126,15 +126,15 @@ bash build.sh
 PYTHON=/path/to/python bash build.sh
 ```
 
-Windows 上还会统一包内的 MSVC 运行库版本：PyQt5、JDK 与 conda 各自带着一份版本不同的 `msvcp140.dll` / `vcruntime140*.dll`，混装会让 ONNX Runtime 在初始化时直接崩溃。构建脚本按文件取版本最新的那一份替换（见 `pastelabel/build_support.py`），Linux 上该步骤为空操作。
+Windows 上还会统一包内的 MSVC 运行库版本：PyQt5、JDK 与 conda 各自带着一份版本不同的 `msvcp140.dll` / `vcruntime140*.dll`，混装会让 ONNX Runtime 在初始化时直接崩溃。构建脚本按文件取版本最新的那一份替换（见 `labelforge/build_support.py`），Linux 上该步骤为空操作。
 
 ### 使用 spec 文件（手动）
 
 ```bash
-pyinstaller pastelabel/PasteLabel.spec
+pyinstaller labelforge/LabelForge.spec
 ```
 
-输出 `dist/PasteLabel.exe`。需确保已安装全部依赖并手动处理 ffi.dll。
+输出 `dist/LabelForge.exe`。需确保已安装全部依赖并手动处理 ffi.dll。
 
 ---
 

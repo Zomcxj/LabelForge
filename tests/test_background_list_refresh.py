@@ -47,7 +47,7 @@ import os, time
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 d = r"{d}"
 folder = os.path.join(d, "imgs")
@@ -179,7 +179,7 @@ import os
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 window = ImageEditor()
 changed, added, removed = window.refresh_background_list()

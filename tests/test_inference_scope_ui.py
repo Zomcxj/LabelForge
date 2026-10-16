@@ -13,7 +13,7 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-from pastelabel.engine.inference_scope import (
+from labelforge.engine.inference_scope import (
     MODE_FULL, MODE_ROI, MODE_WINDOW, ScopeError,
 )
 
@@ -65,7 +65,7 @@ def test_real_row_has_scope_button_disabled_until_model_loads():
     """真实控件：没加载模型时范围按钮禁用，加载后启用。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -85,7 +85,7 @@ def test_real_row_scope_summary_shows_mode_next_to_button():
     """真实控件：摘要写在按钮右侧的常驻 label 上，按钮文字不自带摘要。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -104,7 +104,7 @@ def test_real_row_scope_summary_sits_right_of_button_in_same_row():
     """摘要 label 必须在**同一行**且紧贴按钮右侧（不能被 stretch 推到行尾）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -134,7 +134,7 @@ def test_real_row_scope_summary_label_is_visible_and_nonempty():
     """摘要标签可见且有文字（不能是个隐藏或空的占位）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -154,7 +154,7 @@ def test_real_row_scope_summary_resets_with_model():
     """真实控件：清掉模型后摘要回到全图。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -170,7 +170,7 @@ def test_real_row_scope_summary_ignores_detail_argument():
     """`detail` 保留但本轮不拼进摘要文字（模式名足够）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -192,7 +192,7 @@ def test_real_row_scope_summary_treats_empty_name_as_full_image():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -214,7 +214,7 @@ def test_real_row_scope_summary_text_matches_label():
     """`scope_summary_text()` 读的必须是 label（它是既有调用方的取值口）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -231,7 +231,7 @@ def test_real_row_scope_button_emits_request():
     """真实控件：点范围按钮会发出请求信号。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -255,7 +255,7 @@ def test_real_window_dialog_estimate_matches_plan_baseline():
     """真实控件：3840×2160、640×640、重叠 200 → 9×5 = 45 窗/图（计划 §3.4）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=(3840, 2160))
@@ -278,7 +278,7 @@ def test_real_window_dialog_disables_ok_when_count_explodes():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=(20000, 20000))
@@ -297,7 +297,7 @@ def test_real_window_dialog_small_image_collapses_to_one_window():
     """真实控件：图比窗口小 → 自动缩为整图，只有 1 个窗口。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=(200, 100))
@@ -310,7 +310,7 @@ def test_real_window_dialog_survives_broken_saved_spec():
     """真实控件：配置里存了坏窗口参数也不能崩，回退到默认值。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
 for bad in ({'w': 'abc', 'h': None, 'overlap': 'x'},
@@ -329,8 +329,8 @@ def test_real_window_dialog_roundtrips_spec_through_engine():
     """真实控件：弹窗给的 spec 能被引擎直接接受并排出同样数量的窗口。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
-from pastelabel.engine.inference_scope import iter_windows, normalize_scope
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.engine.inference_scope import iter_windows, normalize_scope
 
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=(3840, 2160))
@@ -354,8 +354,8 @@ def test_real_scope_panel_warns_when_region_mode_has_no_regions():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_FULL, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, region_count=0,
@@ -384,8 +384,8 @@ def test_real_scope_panel_shows_controls_per_mode():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, region_count=2,
@@ -423,12 +423,12 @@ def test_real_scope_params_are_disabled_unless_window_mode_selected():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 # 数据增强侧即使有模板，推理面板也不该再显示出模板按钮
-from pastelabel.core import config_manager as cm
+from labelforge.core import config_manager as cm
 cfg = cm.load_config()
 cfg['crop_templates'] = [{'w': 512, 'h': 512, 'overlap': 64,
                           'min_visible': 0.7, 'square': False,
@@ -472,9 +472,9 @@ def test_real_scope_panel_never_shows_a_thumbnail_preview():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
-from pastelabel.engine.inference_scope import MODE_WINDOW
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.engine.inference_scope import MODE_WINDOW
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
@@ -501,7 +501,7 @@ def test_real_scope_panel_anchors_between_the_two_lists():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -551,8 +551,8 @@ def test_real_scope_panel_embeds_window_params_without_second_dialog():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QSpinBox, QPushButton
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_WINDOW
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_WINDOW
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
@@ -581,8 +581,8 @@ def test_real_scope_panel_inline_params_track_edits():
     """真实控件：**面板内**改参数，窗口数立刻跟着变（不需要开第二个窗）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_WINDOW
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_WINDOW
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
@@ -615,8 +615,8 @@ def test_real_scope_panel_asks_the_canvas_to_redraw_on_change():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
@@ -634,7 +634,7 @@ app.processEvents()
 after_switch = len(signals)
 print(after_mode > 0, after_param > after_mode, after_switch > after_param)
 # 面板里不该有任何缩略预览控件（已在画布上画）
-from pastelabel.ui.widgets.window_overlay_preview import WindowOverlayPreview
+from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 print(len(p.findChildren(WindowOverlayPreview)))
 """)
     lines = _lines(out)
@@ -656,8 +656,8 @@ def test_real_canvas_draws_scope_grid_when_window_mode_selected():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_WINDOW, MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -728,8 +728,8 @@ def test_real_canvas_scope_grid_follows_the_parameters():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_WINDOW
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_WINDOW
 
 app = QApplication([])
 w = ImageEditor()
@@ -788,8 +788,8 @@ def test_real_scope_panel_selection_reports_windows_only_when_needed():
     """真实控件：全图/区域不带窗口参数，滑窗类带。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, region_count=2)
@@ -809,7 +809,7 @@ def test_real_scope_panel_window_summary_text():
     """真实控件：窗口摘要带上尺寸与重叠；没传参数时用控件默认值。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
+from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 512, 'overlap': 100})
@@ -832,8 +832,8 @@ def test_real_scope_panel_roi_mode_offers_the_add_region_button():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(region_count=1)
@@ -873,9 +873,9 @@ def test_real_scope_panel_retranslates():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.ui import i18n
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.ui import i18n
+from labelforge.engine.inference_scope import MODE_FULL, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(region_count=1)
@@ -905,9 +905,9 @@ def test_real_scope_panel_region_row_has_lock_button_in_both_languages():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.ui import i18n
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.ui import i18n
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 p = ScopePanel()
@@ -936,8 +936,8 @@ def test_real_scope_panel_lock_button_emits_index_and_target_state():
     """点某行的锁按钮 → 发出 (该行下标, 目标状态)，不是别的行、也不是空信号。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 p = ScopePanel()
@@ -968,7 +968,7 @@ def _scope_host(mode=MODE_FULL, regions=None, size=(200, 100), windows=None,
     `InferenceMixin` 自己定义，子类里覆盖它们即可（不能靠 MRO 让另一个基类
     的方法胜出——mixin 在左边，永远先命中）。
     """
-    from pastelabel.ui.mixins.inference import InferenceMixin
+    from labelforge.ui.mixins.inference import InferenceMixin
 
     class _Host(InferenceMixin):
         def __init__(self):
@@ -1088,7 +1088,7 @@ def test_scope_for_run_without_reference_size_skips_the_check():
 
 def test_region_boxes_tolerates_missing_attribute():
     """宿主没有 region_boxes 时回空表，不抛 AttributeError。"""
-    from pastelabel.ui.mixins.inference import InferenceMixin
+    from labelforge.ui.mixins.inference import InferenceMixin
 
     class _Host(InferenceMixin):
         pass
@@ -1098,7 +1098,7 @@ def test_region_boxes_tolerates_missing_attribute():
 
 def test_reference_image_size_tolerates_missing_image():
     """没有当前图时返回 None，不崩。"""
-    from pastelabel.ui.mixins.inference import InferenceMixin
+    from labelforge.ui.mixins.inference import InferenceMixin
 
     class _Host(InferenceMixin):
         pass
@@ -1108,7 +1108,7 @@ def test_reference_image_size_tolerates_missing_image():
 
 def test_scope_mode_defaults_to_full_when_unset():
     """从未设置过范围时视为全图（保持既有行为）。"""
-    from pastelabel.ui.mixins.inference import InferenceMixin
+    from labelforge.ui.mixins.inference import InferenceMixin
 
     class _Host(InferenceMixin):
         pass
@@ -1122,11 +1122,11 @@ import os
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtGui import QImage
 app = QApplication([])
-from pastelabel.ui.mixins.inference import InferenceMixin
+from labelforge.ui.mixins.inference import InferenceMixin
 # 圆点刷新（`_refresh_background_item_status`）在列表 mixin 里；范围刷新用例要
 # 走真实实现，别在替身里重写一遍「刷圆点」的语义。
-from pastelabel.ui.mixins.background_list import BackgroundListMixin as _BackgroundListMixin
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+from labelforge.ui.mixins.background_list import BackgroundListMixin as _BackgroundListMixin
+from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 
 class _Lbl:
@@ -1466,12 +1466,12 @@ def test_scope_modules_have_all_translations():
     """
     import re
 
-    from pastelabel.ui import i18n
-    from pastelabel.ui.scope_panel import _MODE_KEYS
+    from labelforge.ui import i18n
+    from labelforge.ui.scope_panel import _MODE_KEYS
 
     keys = set()
-    for rel in ("pastelabel/ui/scope_panel.py",
-                "pastelabel/ui/sliding_window_dialog.py"):
+    for rel in ("labelforge/ui/scope_panel.py",
+                "labelforge/ui/sliding_window_dialog.py"):
         source = (ROOT / rel).read_text(encoding="utf-8")
         keys |= set(re.findall(r"tr\(['\"]([^'\"]+)['\"]\)", source))
     for _mode, name, hint in _MODE_KEYS:
@@ -1483,7 +1483,7 @@ def test_scope_modules_have_all_translations():
     assert not missing, (
         f"{missing}\n"
         "产品代码在 scope_panel.py 里用了这些 tr() 键，但 i18n 里一条都没有；"
-        "要补的是 pastelabel/ui/i18n.py（产品代码），不是本测试。")
+        "要补的是 labelforge/ui/i18n.py（产品代码），不是本测试。")
 
 
 def test_real_mixin_toggles_scope_region_display():
@@ -1521,7 +1521,7 @@ def test_real_window_dialog_warns_when_many_windows():
     """真实控件：窗口数很多时给耗时提醒，但仍允许确定。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=(20000, 20000))
@@ -1537,7 +1537,7 @@ print(d._estimate.text().replace(chr(10), ' / '))
 def test_real_mixin_roi_without_regions_raises_before_start():
     """真实控件：区域模式但没有区域时，启动前就抛错（不是跑到后台变 0 框）。"""
     out = _run_real_qt(_MIXIN_HOST + """
-from pastelabel.engine.inference_scope import ScopeError
+from labelforge.engine.inference_scope import ScopeError
 h = _Host()
 h._on_model_loaded(_Detector(), (640, 640), "model")
 h.current_background = QImage(400, 300, QImage.Format_RGB888)
@@ -1578,7 +1578,7 @@ h._window_spec = {'w': 512, 'h': 512, 'overlap': 64}
 h._scope_mode = MODE_WINDOW
 h._save_inference_settings()
 print(h._saved_window_spec())
-from pastelabel.core import config_manager
+from labelforge.core import config_manager
 saved = config_manager.load_all()['inference_settings']
 print('mode' in saved, 'window_spec' in saved)
 """)
@@ -1607,7 +1607,7 @@ def test_real_scope_panel_positions_on_its_anchor():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtCore import QRect
-from pastelabel.ui.scope_panel import ScopePanel
+from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
 avail = app.primaryScreen().availableGeometry()
@@ -1643,7 +1643,7 @@ def test_real_scope_panel_clamps_anchor_to_screen():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtCore import QRect
-from pastelabel.ui.scope_panel import ScopePanel
+from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
 avail = app.primaryScreen().availableGeometry()
@@ -1669,7 +1669,7 @@ def test_real_scope_panel_without_anchor_centers_on_parent():
     """没给锚点（取不到右侧栏）时退回居中，行为与改动前一致。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QWidget
-from pastelabel.ui.scope_panel import ScopePanel
+from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
 host = QWidget()
@@ -1700,8 +1700,8 @@ def test_real_sliding_dialog_count_follows_params():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
-from pastelabel.engine.inference_scope import iter_windows
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.engine.inference_scope import iter_windows
 
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=(2000, 1000))
@@ -1725,8 +1725,8 @@ def test_real_sliding_dialog_count_matches_engine_count():
     """窗口数必须等于 iter_windows()：画面上的网格就是实际会跑的窗口。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
-from pastelabel.engine.inference_scope import iter_windows
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.engine.inference_scope import iter_windows
 
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=(2000, 1000))
@@ -1744,7 +1744,7 @@ def test_real_sliding_dialog_count_unusable_without_reference():
     「算不出数目但不崩」，不把 is_valid 的口径写死在这。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
 d = SlidingWindowDialog(reference_size=None)
@@ -1766,8 +1766,8 @@ def test_real_sliding_dialog_has_no_template_buttons():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
-from pastelabel.core import config_manager
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.core import config_manager
 
 app = QApplication([])
 # 数据增强侧**有**模板：推理面板仍不该显示
@@ -1794,8 +1794,8 @@ def test_real_sliding_dialog_does_not_write_the_shared_template_list():
     """弹窗的操作**绝不**改数据增强的模板列表（两边已脱钩）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.sliding_window_dialog import SlidingWindowDialog
-from pastelabel.core import config_manager
+from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
+from labelforge.core import config_manager
 
 app = QApplication([])
 config_manager.add_crop_template({'w': 384, 'h': 384, 'overlap': 64,
@@ -1821,7 +1821,7 @@ def test_real_window_params_defaults_are_640_visible_80_no_fill():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_params import (
+from labelforge.ui.widgets.window_params import (
     WindowParamsWidget, DEFAULT_WINDOW, DEFAULT_OVERLAP, DEFAULT_MIN_VISIBLE)
 
 app = QApplication([])
@@ -1845,7 +1845,7 @@ def test_real_window_params_reads_a_stale_min_visible_from_old_config():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_params import WindowParamsWidget
+from labelforge.ui.widgets.window_params import WindowParamsWidget
 
 app = QApplication([])
 w = WindowParamsWidget(spec={'min_visible': 0.7})
@@ -1873,8 +1873,8 @@ def test_real_window_params_never_reads_the_shared_templates():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_params import WindowParamsWidget
-from pastelabel.core import config_manager
+from labelforge.ui.widgets.window_params import WindowParamsWidget
+from labelforge.core import config_manager
 
 app = QApplication([])
 config_manager.add_crop_template({'w': 320, 'h': 320, 'overlap': 100,
@@ -1903,7 +1903,7 @@ def test_real_mixin_panel_close_drops_pending_region_draw_on_every_path():
     """
     out = _run_real_qt(_MIXIN_HOST + """
 from PyQt5.QtWidgets import QApplication
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.engine.inference_scope import MODE_ROI
 
 for call in ('accept', 'reject', 'close'):
     h = _Host()
@@ -1968,9 +1968,9 @@ def test_real_mixin_switching_to_window_hides_the_region_outlines():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.core.config import REGION_CONFIG
-from pastelabel.engine.inference_scope import MODE_WINDOW, MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.core.config import REGION_CONFIG
+from labelforge.engine.inference_scope import MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -2038,8 +2038,8 @@ def test_real_scope_params_stay_visible_but_locked_outside_window_mode():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200}, region_count=2,
@@ -2073,8 +2073,8 @@ def test_real_scope_panel_mode_selection_is_single_choice():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel()
@@ -2139,8 +2139,8 @@ def test_real_scope_panel_lists_region_coordinates_with_delete_buttons():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QLabel, QPushButton
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(region_count=0)
@@ -2191,7 +2191,7 @@ def test_real_scope_panel_delete_removes_the_right_region():
     """
     out = _run_real_qt(_MIXIN_HOST + """
 from PyQt5.QtWidgets import QApplication, QPushButton
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.engine.inference_scope import MODE_ROI
 
 h = _Host()
 h._on_model_loaded(_Detector(), (640, 640), "model")
@@ -2231,8 +2231,8 @@ def test_real_mixin_confirming_the_panel_clears_region_outlines():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -2445,7 +2445,7 @@ def test_real_batch_target_spin_is_spinnable_and_typable():
     """② 输入框要「可滚动可输入」，并且上限跟着数据集张数收窄。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -2480,7 +2480,7 @@ def test_real_size_fields_hidden_for_static_shown_for_dynamic():
     """③ 输入尺寸：静态模型整组不显示，动态模型才显示。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -2513,7 +2513,7 @@ def test_real_threshold_spins_step_by_one_hundredth():
     """③ 置信度 / NMS 的步长是 0.01，且宽度收窄到 58px。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -2545,8 +2545,8 @@ import os
 import tempfile
 
 from PyQt5.QtGui import QImage
-from pastelabel.engine.image_loader.mixin import BG_ROLE_STATUS
-from pastelabel.engine.image_loader.status import (
+from labelforge.engine.image_loader.mixin import BG_ROLE_STATUS
+from labelforge.engine.image_loader.status import (
     STATUS_ANNOTATED, STATUS_UNANNOTATED)
 
 # `_MIXIN_HOST` 里已经建好 QApplication；这里**不能再建一个**——同进程里
@@ -2565,7 +2565,7 @@ h.current_background_index = 0
 h.detection_boxes_dict = {i: [] for i in range(len(paths))}
 h.canvas_items_dict = {i: [] for i in range(len(paths))}
 # 建出列表行（真控件），否则圆点无处可刷
-from pastelabel.engine.image_loader.status import decorate_background_list_item
+from labelforge.engine.image_loader.status import decorate_background_list_item
 from PyQt5.QtWidgets import QListWidgetItem
 for i, p in enumerate(paths):
     item = QListWidgetItem(os.path.basename(p))
@@ -2590,7 +2590,7 @@ print(before.count(STATUS_ANNOTATED))
 # 走**收尾入口**（`_on_batch_finished`）而不是直接调刷新 helper：
 # 用户遇到的是「取消后收尾没刷新」，要钉的是收尾有没有接上这一步，
 # 绕过收尾去调 helper 的话，把收尾里的刷新删掉测试也照样绿。
-from pastelabel.engine.inference_task import ImageResult
+from labelforge.engine.inference_task import ImageResult
 results = {0: ImageResult(0, paths[0], [], None, 120, 120),
            1: ImageResult(1, paths[1], [], None, 120, 120)}
 h._close_progress_dialog = lambda: None
@@ -2631,8 +2631,8 @@ import json
 
 from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import QListWidgetItem
-from pastelabel.engine.image_loader.status import decorate_background_list_item
-from pastelabel.engine.inference_task import ImageResult
+from labelforge.engine.image_loader.status import decorate_background_list_item
+from labelforge.engine.inference_task import ImageResult
 
 # 同上：不能重复建 QApplication（`_MIXIN_HOST` 已建）。
 tmp = tempfile.mkdtemp()
@@ -2693,7 +2693,7 @@ def test_real_batch_target_has_a_prefix_label():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 app = QApplication([])
 row = ModelRow()
 print(row.batch_to_label.text())
@@ -2711,8 +2711,8 @@ def test_real_batch_target_label_retranslates():
     """切语言后前缀名要跟着变，不能留在旧语言。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
-from pastelabel.ui import i18n
+from labelforge.ui.model_row import ModelRow
+from labelforge.ui import i18n
 app = QApplication([])
 row = ModelRow()
 print(row.batch_to_label.text())
@@ -2733,7 +2733,7 @@ def test_real_batch_target_defaults_to_the_last_image():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 app = QApplication([])
 row = ModelRow()
 row.set_batch_to_range(400)
@@ -2750,7 +2750,7 @@ def test_real_batch_target_keeps_a_user_edited_value():
     """用户手动改过就不该被默认值覆盖——否则改完一换数据集就被抹掉。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 app = QApplication([])
 row = ModelRow()
 row.set_batch_to_range(400)
@@ -2765,7 +2765,7 @@ def test_real_batch_target_ceiling_and_default_track_a_new_dataset():
     """换数据集：上限与默认值同时跟着新数据集走。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 app = QApplication([])
 row = ModelRow()
 row.set_batch_to_range(400)
@@ -2784,7 +2784,7 @@ def test_real_window_params_carry_min_visible():
     """窗口参数要带上「最低可见比例」，默认 0.8、按百分比显示。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_params import WindowParamsWidget
+from labelforge.ui.widgets.window_params import WindowParamsWidget
 app = QApplication([])
 w = WindowParamsWidget(reference_size=(1000, 1000),
                        spec={"w": 640, "h": 640, "overlap": 200})
@@ -2803,7 +2803,7 @@ def test_real_min_visible_is_locked_when_window_mode_is_not_selected():
     """未选中滑窗时「最低可见比例」也要禁用（与其他窗口参数一致）。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_params import WindowParamsWidget
+from labelforge.ui.widgets.window_params import WindowParamsWidget
 app = QApplication([])
 w = WindowParamsWidget(reference_size=(1000, 1000))
 w.set_editable(False)
@@ -2825,8 +2825,8 @@ def test_real_min_visible_is_never_overwritten_by_the_augment_templates():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_params import WindowParamsWidget
-from pastelabel.core import config_manager
+from labelforge.ui.widgets.window_params import WindowParamsWidget
+from labelforge.core import config_manager
 
 app = QApplication([])
 config_manager.add_crop_template({'w': 512, 'h': 512, 'overlap': 64,
@@ -2848,7 +2848,7 @@ def test_real_min_visible_accepts_a_value_written_by_an_older_version():
     """旧配置没这个键时退回默认，不能让整个控件崩掉。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.widgets.window_params import WindowParamsWidget
+from labelforge.ui.widgets.window_params import WindowParamsWidget
 app = QApplication([])
 w = WindowParamsWidget(reference_size=(1000, 1000),
                        spec={"w": 640, "h": 640, "overlap": 200})
@@ -2872,8 +2872,8 @@ def test_real_panel_shows_all_three_sections_with_their_contents():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_FULL
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_FULL
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
@@ -2903,8 +2903,8 @@ def test_real_panel_sections_track_the_selected_mode():
     """选中哪段，那段就可编辑，其余置灰。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.engine.inference_scope import MODE_WINDOW, MODE_ROI
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
@@ -2931,7 +2931,7 @@ def test_real_panel_sections_are_grouped_in_three_blocks():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
+from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
 p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
@@ -2979,8 +2979,8 @@ def test_real_panel_section_titles_follow_the_language():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
-from pastelabel.ui import i18n
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.ui import i18n
 
 app = QApplication([])
 p = ScopePanel()
@@ -3016,8 +3016,8 @@ def test_real_panel_open_flag_tracks_the_panel_lifetime():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -3073,8 +3073,8 @@ def test_real_closing_the_panel_drops_a_pending_region_draw():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -3120,8 +3120,8 @@ def test_real_panel_flag_is_independent_of_region_drawing_state():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -3171,7 +3171,7 @@ def test_real_scope_panel_open_allows_label_box_editing():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QPoint, Qt, QPointF
 from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -3272,7 +3272,7 @@ def test_real_scope_panel_open_allows_drawing_a_new_label_box():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -3298,8 +3298,8 @@ w.update_label_list = lambda: None
 w._save_current_detection_boxes = lambda *a, **k: None
 w.save_json = lambda *a, **k: None
 # 画完矩形会弹「选标签」模态框；这里不需要人机交互，直接喂一个标签。
-from pastelabel.canvas import canvas_drawing as _cd
-import pastelabel.ui.dialogs as _dlg
+from labelforge.canvas import canvas_drawing as _cd
+import labelforge.ui.dialogs as _dlg
 _dlg.LabelSelectionDialog.select_label = staticmethod(lambda *a, **k: 'cat')
 
 def press(x, y):
@@ -3356,8 +3356,8 @@ def test_real_panel_open_still_allows_panning():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -3411,8 +3411,8 @@ def test_real_panel_open_allows_dragging_a_region_box():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -3485,8 +3485,8 @@ def test_real_panel_open_allows_resizing_a_region_box():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -3563,7 +3563,7 @@ def test_real_region_is_not_editable_when_the_panel_is_closed():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -3637,8 +3637,8 @@ def test_real_closing_the_panel_mid_drag_does_not_corrupt_the_region():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -3726,8 +3726,8 @@ def test_real_panel_window_edits_reach_the_run_scope():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_WINDOW
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_WINDOW
 
 app = QApplication([])
 w = ImageEditor()
@@ -3768,8 +3768,8 @@ def test_real_default_window_spec_carries_min_visible():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.ui.widgets.window_params import DEFAULT_MIN_VISIBLE
+from labelforge.ui.main_window import ImageEditor
+from labelforge.ui.widgets.window_params import DEFAULT_MIN_VISIBLE
 
 app = QApplication([])
 w = ImageEditor()
@@ -3801,7 +3801,7 @@ def test_real_scope_panel_has_no_ok_or_cancel_button():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.scope_panel import ScopePanel
+from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
 p = ScopePanel()
@@ -3824,8 +3824,8 @@ def test_real_switching_mode_applies_without_confirming():
     """③ 换推理方式立刻写入宿主状态，不必点确定。"""
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_WINDOW, MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_WINDOW, MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -3875,8 +3875,8 @@ def test_real_window_edits_apply_without_confirming():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_WINDOW
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_WINDOW
 
 app = QApplication([])
 w = ImageEditor()
@@ -3920,7 +3920,7 @@ def test_real_batch_target_spin_is_a_quarter_narrower():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -3945,7 +3945,7 @@ def test_real_input_size_spins_match_threshold_width():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -3983,7 +3983,7 @@ def test_real_param_row_groups_are_separated_by_dashes():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QLabel
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -4023,7 +4023,7 @@ def test_real_static_model_hides_input_size_without_doubling_dashes():
     """
     script = """
 from PyQt5.QtWidgets import QApplication, QLabel
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -4084,8 +4084,8 @@ def test_real_conf_label_reads_conf_in_both_languages():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui import i18n
-from pastelabel.ui.model_row import ModelRow
+from labelforge.ui import i18n
+from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
 row = ModelRow()
@@ -4110,8 +4110,8 @@ def test_real_video_overlay_confidence_label_is_untouched():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QCheckBox
-from pastelabel.ui import i18n
-from pastelabel.ui.video_dialog import VideoDialog
+from labelforge.ui import i18n
+from labelforge.ui.video_dialog import VideoDialog
 
 app = QApplication([])
 i18n.set_lang("zh")
@@ -4135,8 +4135,8 @@ def test_real_canvas_grid_labels_each_window_with_row_col():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_WINDOW
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_WINDOW
 
 app = QApplication([])
 w = ImageEditor()
@@ -4191,8 +4191,8 @@ def test_real_canvas_grid_labels_shift_with_window_params():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_WINDOW
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_WINDOW
 
 app = QApplication([])
 w = ImageEditor()
@@ -4237,8 +4237,8 @@ _REGION_RESIZE_HOST = """
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_scope import MODE_ROI
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_scope import MODE_ROI
 
 app = QApplication([])
 w = ImageEditor()
@@ -4377,7 +4377,7 @@ def test_real_region_handle_size_is_constant_box_plus_three():
     绘制尺寸与命中尺寸必须同源，否则会出现「看着能抓却抓不到」。
     """
     out = _run_real_qt(_REGION_RESIZE_HOST + """
-from pastelabel.core.config import DETECTION_BOX_CONFIG, REGION_HANDLE_EXTRA
+from labelforge.core.config import DETECTION_BOX_CONFIG, REGION_HANDLE_EXTRA
 
 box = DETECTION_BOX_CONFIG['resize_handle_size']
 sizes = []
@@ -4525,8 +4525,8 @@ _LAYER_ORDER_HOST = """
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel
 from PyQt5.QtCore import QPoint, Qt
 from PyQt5.QtGui import QPixmap
-from pastelabel.canvas import Canvas
-from pastelabel.canvas import canvas_renderer as _cr
+from labelforge.canvas import Canvas
+from labelforge.canvas import canvas_renderer as _cr
 
 class Editor(QWidget):
     def __init__(self):
@@ -4771,8 +4771,8 @@ def test_real_replace_mode_clears_hand_drawn_boxes_too():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_task import ImageResult
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_task import ImageResult
 
 app = QApplication([])
 w = ImageEditor()
@@ -5153,7 +5153,7 @@ def test_real_model_row_is_hidden_and_inference_disabled_in_paste_mode():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -5205,7 +5205,7 @@ def test_real_model_row_not_restored_if_user_had_closed_it():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -5244,7 +5244,7 @@ def test_real_start_inference_is_refused_in_paste_mode():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -5293,7 +5293,7 @@ from PyQt5.QtWidgets import QApplication, QMenu
 from PyQt5.QtGui import QImage, QColor, QPixmap
 from PyQt5.QtCore import QPoint
 from PyQt5.QtWidgets import QAction
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -5349,7 +5349,7 @@ def test_real_region_menu_uses_the_same_region_list_in_both_modes():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QColor, QPixmap
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -5403,7 +5403,7 @@ def test_real_region_menu_items_are_left_aligned():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QMenu, QStyle, QStyleOptionMenuItem
 from PyQt5.QtGui import QImage, QPixmap
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 st = app.style()
@@ -5465,7 +5465,7 @@ def test_real_region_menu_keeps_a_visible_check_state():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QMenu
 from PyQt5.QtGui import QImage, QPixmap
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -5515,7 +5515,7 @@ def test_region_geometry_is_exactly_one_more_than_the_box():
     第 12 轮之前这里漏过一次：句柄改了 8→9，边框却还是自己那套
     `× (2 if selected else 1)`，与检测框的 `× 1.5` 不是同一把尺子。
     """
-    from pastelabel.core.config import (BOX_BORDER_CONFIG, DETECTION_BOX_CONFIG,
+    from labelforge.core.config import (BOX_BORDER_CONFIG, DETECTION_BOX_CONFIG,
                                         REGION_CONFIG)
 
     box_handle = DETECTION_BOX_CONFIG['resize_handle_size']

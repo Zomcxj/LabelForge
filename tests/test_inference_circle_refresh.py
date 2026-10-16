@@ -52,10 +52,10 @@ def test_one_key_inference_without_detections_settles_disk_and_circle_immediatel
 import json, os, tempfile
 from PyQt5.QtWidgets import QApplication, QListWidgetItem
 from PyQt5.QtGui import QPixmap, QImage
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.image_loader.status import (
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.image_loader.status import (
     BG_ROLE_STATUS, STATUS_UNANNOTATED, STATUS_ANNOTATED)
-from pastelabel.engine.inference_task import ImageResult, sidecar_path
+from labelforge.engine.inference_task import ImageResult, sidecar_path
 
 app = QApplication([])
 tmp = tempfile.mkdtemp(prefix="pl-circle-")
@@ -120,8 +120,8 @@ def test_one_key_inference_without_detections_never_leaves_a_stale_sidecar():
 import json, os, tempfile
 from PyQt5.QtWidgets import QApplication, QListWidgetItem
 from PyQt5.QtGui import QPixmap, QImage
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_task import ImageResult, sidecar_path
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_task import ImageResult, sidecar_path
 
 app = QApplication([])
 tmp = tempfile.mkdtemp(prefix="pl-stale-")
@@ -176,8 +176,8 @@ def test_inference_replace_mode_clears_manual_annotations_too():
 import json, os, tempfile
 from PyQt5.QtWidgets import QApplication, QListWidgetItem
 from PyQt5.QtGui import QPixmap, QImage
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.engine.inference_task import ImageResult, sidecar_path
+from labelforge.ui.main_window import ImageEditor
+from labelforge.engine.inference_task import ImageResult, sidecar_path
 
 app = QApplication([])
 tmp = tempfile.mkdtemp(prefix="pl-manual-")
@@ -228,7 +228,7 @@ def test_inference_never_deletes_paste_shapes():
     out = _run_real_qt("""
 import json, os, tempfile
 from PyQt5.QtWidgets import QApplication
-from pastelabel.engine.inference_task import ImageResult, write_one_result
+from labelforge.engine.inference_task import ImageResult, write_one_result
 
 tmp = tempfile.mkdtemp(prefix="pl-paste-")
 img_path = os.path.join(tmp, "p.jpg")
@@ -245,7 +245,7 @@ write_one_result(
         width=80, height=60),
     existing=existing, replace_auto=True)
 
-from pastelabel.engine.inference_task import sidecar_path
+from labelforge.engine.inference_task import sidecar_path
 data = json.load(open(sidecar_path(img_path), encoding="utf-8"))
 labels = sorted(s["label"] for s in data["shapes"])
 print(labels)

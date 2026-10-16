@@ -11,12 +11,12 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-from pastelabel.engine.inference_scope import ScopeError
-from pastelabel.engine.inference_task import (
+from labelforge.engine.inference_scope import ScopeError
+from labelforge.engine.inference_task import (
     _masked_crop, _normalize_window_spec, detect_in_scope, normalize_settings,
     run_batch,
 )
-from pastelabel.engine.onnx_inference import LETTERBOX_FILL
+from labelforge.engine.onnx_inference import LETTERBOX_FILL
 
 
 class _FakeDetector:
@@ -373,7 +373,7 @@ def test_reference_size_absent_accepts_any_size():
 
 
 def test_normalize_scope_rejects_bad_reference_size():
-    from pastelabel.engine.inference_scope import normalize_scope
+    from labelforge.engine.inference_scope import normalize_scope
 
     for bad in ((0, 100), (-1, 100), ("x", 100), (100,)):
         with pytest.raises(ScopeError):
@@ -387,7 +387,7 @@ def test_normalize_scope_rejects_bad_reference_size():
 
 def test_scope_snapshot_is_deep_copied():
     """启动时的 scope 必须是快照：之后改原 ROI 不能影响已定稿的配置。"""
-    from pastelabel.engine.inference_scope import normalize_scope
+    from labelforge.engine.inference_scope import normalize_scope
 
     regions = [{"x": 10, "y": 10, "width": 50, "height": 50}]
     scope = normalize_scope({"mode": "roi", "regions": regions}, (100, 100))
@@ -400,7 +400,7 @@ def test_scope_snapshot_is_deep_copied():
 
 def test_polygon_roi_masks_outside_pixels():
     """多边形 ROI 把界外像素涂成 letterbox 填充色，且不改写原图。"""
-    from pastelabel.engine.inference_scope import Region
+    from labelforge.engine.inference_scope import Region
 
     points = [[20.0, 10.0], [180.0, 40.0], [60.0, 140.0]]
     region = Region(bbox=(20.0, 10.0, 180.0, 140.0), points=points)
@@ -423,7 +423,7 @@ def test_polygon_roi_masks_outside_pixels():
 
 def test_rectangular_roi_needs_no_mask():
     """矩形 ROI 不做掩膜：整块保留原像素。"""
-    from pastelabel.engine.inference_scope import Region
+    from labelforge.engine.inference_scope import Region
 
     region = Region(bbox=(0.0, 0.0, 50.0, 50.0), points=None)
     rgb = np.full((100, 100, 3), 200, dtype=np.uint8)
@@ -436,7 +436,7 @@ def test_rectangular_roi_needs_no_mask():
 
 def test_masked_crop_returns_integer_origin_for_fractional_roi():
     """ROI 坐标是小数时，返回的起点必须取整并与掩膜口径一致。"""
-    from pastelabel.engine.inference_scope import Region
+    from labelforge.engine.inference_scope import Region
 
     region = Region(bbox=(10.6, 20.4, 60.6, 70.4), points=None)
     rgb = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -449,7 +449,7 @@ def test_masked_crop_returns_integer_origin_for_fractional_roi():
 
 def test_roi_crop_is_clamped_to_image_bounds():
     """ROI 越界部分被裁掉，不报错也不越界读取。"""
-    from pastelabel.engine.inference_scope import Region
+    from labelforge.engine.inference_scope import Region
 
     region = Region(bbox=(0.0, 0.0, 50.0, 50.0), points=None)
     rgb = np.zeros((100, 100, 3), dtype=np.uint8)

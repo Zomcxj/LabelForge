@@ -1,6 +1,6 @@
 """Label color assignment regressions."""
-from pastelabel.core import config_manager
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.core import config_manager
+from labelforge.ui.main_window import ImageEditor
 
 
 def test_default_palette_assignment_is_independent_of_label_order():
@@ -118,7 +118,7 @@ def test_image_editor_color_change_updates_only_the_selected_label(monkeypatch):
         def currentColor(self):
             return Color()
 
-    from pastelabel.ui import dialog_helpers
+    from labelforge.ui import dialog_helpers
 
     monkeypatch.setattr(dialog_helpers, 'ThemedColorDialog', ColorDialog)
     saved = {}

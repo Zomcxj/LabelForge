@@ -10,13 +10,13 @@ import random
 
 import pytest
 
-from pastelabel.canvas.canvas_interaction import CanvasInteractionMixin
-from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
-from pastelabel.canvas.canvas_menu import CanvasMenuMixin
-from pastelabel.engine.shape_io import point_in_polygon
-from pastelabel.engine.paste_engine import PasteEngineMixin
-from pastelabel.engine import paste_engine as paste_engine_module
-from pastelabel.core.config import REGION_CONFIG
+from labelforge.canvas.canvas_interaction import CanvasInteractionMixin
+from labelforge.canvas.canvas_renderer import CanvasRendererMixin
+from labelforge.canvas.canvas_menu import CanvasMenuMixin
+from labelforge.engine.shape_io import point_in_polygon
+from labelforge.engine.paste_engine import PasteEngineMixin
+from labelforge.engine import paste_engine as paste_engine_module
+from labelforge.core.config import REGION_CONFIG
 
 
 class Point:
@@ -307,7 +307,7 @@ def _sample(regions, new_w=40, new_h=40, bg_w=400, bg_h=300, rng=None):
 
 
 def test_config_constants():
-    from pastelabel.core.config import DETECTION_BOX_CONFIG
+    from labelforge.core.config import DETECTION_BOX_CONFIG
 
     assert REGION_CONFIG['min_size'] == 10
     # 第 12 轮：区域句柄 = 检测框 + 1（用户要求），所以跟着检测框走，
@@ -1034,7 +1034,7 @@ def test_sample_center_all_regions_too_small_returns_none():
 def test_temp_region_box_rendered_during_drag():
     """矩形区域拖动时必须实时渲染预览（回归：曾漏 _draw_temp_region_box 分支）。"""
     import inspect
-    from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+    from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
     source = inspect.getsource(CanvasRendererMixin._draw_temp_region_box)
     assert "temp_draw_box" in source
@@ -1045,7 +1045,7 @@ def test_temp_region_box_rendered_during_drag():
 def test_paint_scene_dispatches_region_rect_preview():
     """paintEvent 必须在 is_drawing_region 时调用 _draw_temp_region_box。"""
     import inspect
-    from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+    from labelforge.canvas.canvas_renderer import CanvasRendererMixin
     source = inspect.getsource(CanvasRendererMixin._paint_scene)
     assert "is_drawing_region" in source
     assert "_draw_temp_region_box" in source

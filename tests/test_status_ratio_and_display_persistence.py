@@ -9,14 +9,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pastelabel.canvas import canvas_renderer as renderer_module
-from pastelabel.canvas.canvas import Canvas
-from pastelabel.core.utils import format_size_ratio
+from labelforge.canvas import canvas_renderer as renderer_module
+from labelforge.canvas.canvas import Canvas
+from labelforge.core.utils import format_size_ratio
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CANVAS_SRC = ROOT / "pastelabel" / "canvas" / "canvas.py"
-RENDERER_SRC = ROOT / "pastelabel" / "canvas" / "canvas_renderer.py"
+CANVAS_SRC = ROOT / "labelforge" / "canvas" / "canvas.py"
+RENDERER_SRC = ROOT / "labelforge" / "canvas" / "canvas_renderer.py"
 
 
 # --------------------------------------------------------------------------
@@ -311,7 +311,7 @@ def test_display_adjustments_are_available_to_the_renderer_mixin():
     放在 Canvas 上会让只继承 renderer 的调用方在 paintEvent 里抛
     AttributeError —— Qt 会把绘制期异常变成进程崩溃（0xC0000409）。
     """
-    from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+    from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
     assert callable(getattr(CanvasRendererMixin, "apply_display_adjustments", None))
 
@@ -319,7 +319,7 @@ def test_display_adjustments_are_available_to_the_renderer_mixin():
 def test_apply_display_adjustments_swallows_render_errors(monkeypatch):
     """调整失败只能退化为不调整，绝不能让绘制路径抛异常。"""
     logged = []
-    import pastelabel.core.exception_hook as hook
+    import labelforge.core.exception_hook as hook
     monkeypatch.setattr(hook, "_write_log", lambda msg: logged.append(msg))
 
     canvas = _make_canvas(_FakePixmap("first"))

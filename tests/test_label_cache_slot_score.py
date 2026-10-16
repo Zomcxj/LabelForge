@@ -42,7 +42,7 @@ _HOST = """
 import os, tempfile
 from PyQt5.QtWidgets import QApplication, QListWidgetItem
 from PyQt5.QtGui import QPixmap, QImage
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 
@@ -178,7 +178,7 @@ def test_paste_offset_helper_still_accepts_bare_two_tuples():
     """旧调用方给 `(rect, label)` 两元组时不能炸（保持向后兼容）。"""
     out = _run_real_qt("""
 from PyQt5.QtCore import QRectF
-from pastelabel.engine.paste_engine import PasteEngineMixin
+from labelforge.engine.paste_engine import PasteEngineMixin
 
 class FakeBg:
     def width(self):

@@ -5,13 +5,13 @@ pytest conftest - 在收集测试前 mock PyQt5
 import sys
 import types
 
-# 隔离测试：默认把配置指向临时文件，避免污染用户真实的 ~/.pastelabel.json
+# 隔离测试：默认把配置指向临时文件，避免污染用户真实的 ~/.labelforge.json
 # （部分用例会真实构造 ImageEditor 并触发 save_all）。
 import os as _os
 import tempfile as _tempfile
 _os.environ.setdefault(
-    'PASTELABEL_CONFIG_PATH',
-    _os.path.join(_tempfile.mkdtemp(prefix='pastelabel_test_'), 'config.json'),
+    'LABELFORGE_CONFIG_PATH',
+    _os.path.join(_tempfile.mkdtemp(prefix='labelforge_test_'), 'config.json'),
 )
 # 真 Qt 子进程里要 print 中文再回读到父进程断言，编码必须两端一致。
 # 不设这个变量时子进程按 Windows 默认代码页（GBK）编码 stdout，中文变成

@@ -520,11 +520,11 @@ class BackgroundListMixin:
             if self.current_background:
                 w = self.current_background.width()
                 h = self.current_background.height()
-                self.setWindowTitle(f"PasteLabel - {filename} [{w} x {h}] [{target + 1} / {total}]")
+                self.setWindowTitle(f"LabelForge - {filename} [{w} x {h}] [{target + 1} / {total}]")
             else:
-                self.setWindowTitle(f"PasteLabel - {filename} [{target + 1} / {total}]")
+                self.setWindowTitle(f"LabelForge - {filename} [{target + 1} / {total}]")
         else:
-            self.setWindowTitle("PasteLabel")
+            self.setWindowTitle("LabelForge")
             self.current_background = None
             self.detection_boxes = []
             self.canvas_items = []

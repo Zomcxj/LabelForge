@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from pastelabel.core import config as config_module
-from pastelabel.core import config_manager
-from pastelabel.ui import i18n
-from pastelabel.ui.main_window import _parse_args
+from labelforge.core import config as config_module
+from labelforge.core import config_manager
+from labelforge.ui import i18n
+from labelforge.ui.main_window import _parse_args
 
 ROOT = Path(__file__).resolve().parents[1]
-SETTINGS_SRC = ROOT / "pastelabel" / "ui" / "settings_dialog.py"
-MAIN_WINDOW_SRC = ROOT / "pastelabel" / "ui" / "main_window.py"
-MAIN_SRC = ROOT / "pastelabel" / "main.py"
+SETTINGS_SRC = ROOT / "labelforge" / "ui" / "settings_dialog.py"
+MAIN_WINDOW_SRC = ROOT / "labelforge" / "ui" / "main_window.py"
+MAIN_SRC = ROOT / "labelforge" / "main.py"
 
 _GUARD = """
 import os, sys
@@ -47,7 +47,7 @@ def _lines(out):
 
 @pytest.fixture
 def temp_config(tmp_path, monkeypatch):
-    path = tmp_path / "pastelabel.json"
+    path = tmp_path / "labelforge.json"
     monkeypatch.setattr(config_manager, "CONFIG_PATH", str(path))
     yield path
 
@@ -178,14 +178,14 @@ def test_settings_pages_align_their_first_row():
 
 
 def test_editor_exposes_reset_settings_to_default():
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
     assert hasattr(ImageEditor, "reset_settings_to_default")
 
 
 def test_reset_settings_to_default_reloads_and_refreshes(temp_config, monkeypatch):
     """reset 后必须重新加载设置并刷新界面，不能只删文件。"""
     source = inspect.getsource(
-        __import__("pastelabel.ui.main_window", fromlist=["ImageEditor"]).ImageEditor.reset_settings_to_default
+        __import__("labelforge.ui.main_window", fromlist=["ImageEditor"]).ImageEditor.reset_settings_to_default
     )
     assert "config_manager.reset_all()" in source
     assert "self._load_settings()" in source
@@ -231,7 +231,7 @@ def test_cli_rejects_unknown_option():
 
 
 def test_main_window_applies_startup_args():
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
     source = inspect.getsource(ImageEditor.apply_startup_args)
     assert "load_background_folder" in source
     assert "load_background_label_file" in source
@@ -252,7 +252,7 @@ def test_apply_startup_args_ignores_missing_paths():
         def load_background_label_file(self, p):
             self.label_calls.append(p)
 
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
 
     editor = Editor()
     ImageEditor.apply_startup_args(editor, "Z:/definitely/missing/dir", "Z:/missing.txt")
@@ -280,7 +280,7 @@ def test_apply_startup_args_loads_existing_paths(tmp_path):
         def load_background_label_file(self, p):
             self.label_calls.append(p)
 
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
 
     editor = Editor()
     ImageEditor.apply_startup_args(editor, str(folder), str(labels))
@@ -299,12 +299,12 @@ def test_main_entry_point_parses_args_before_creating_qapplication():
 
 def test_main_module_still_delegates_to_ui_main():
     source = MAIN_SRC.read_text(encoding="utf-8")
-    assert "from pastelabel.ui.main_window import main" in source
+    assert "from labelforge.ui.main_window import main" in source
 
 
 def test_cli_help_text_is_not_empty():
     import argparse
-    from pastelabel.ui.main_window import _parse_args
+    from labelforge.ui.main_window import _parse_args
     parser_source = inspect.getsource(_parse_args)
     assert "argparse" in parser_source
     assert "--labels" in parser_source
@@ -313,7 +313,7 @@ def test_cli_help_text_is_not_empty():
 # ---------- 版本号展示（左下角）与底部按钮顺序 ----------
 
 def test_real_settings_dialog_shows_version_at_bottom_left():
-    """真实控件：左下角显示 `PasteLabel v<版本>`；重置按钮紧邻保存左边。
+    """真实控件：左下角显示 `LabelForge v<版本>`；重置按钮紧邻保存左边。
 
     不断言具体版本号：那会让每次发版都红一条测试。版本串的正确性由
     `test_real_settings_dialog_version_tracks_package_constant` 保证
@@ -321,9 +321,9 @@ def test_real_settings_dialog_shows_version_at_bottom_left():
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.ui.settings_dialog import SettingsDialog
-from pastelabel import __version__
+from labelforge.ui.main_window import ImageEditor
+from labelforge.ui.settings_dialog import SettingsDialog
+from labelforge import __version__
 
 app = QApplication.instance() or QApplication([])
 # 用真 ImageEditor 当宿主：SettingsDialog 的构造会读宿主的快捷方式输入框
@@ -357,19 +357,19 @@ print(reset_tl.x() < save_tl.x())
 
 
 def test_real_settings_dialog_version_tracks_package_constant():
-    """版本号的唯一来源是 `pastelabel.__version__`：改常量即改显示。"""
+    """版本号的唯一来源是 `labelforge.__version__`：改常量即改显示。"""
     out = _run_real_qt("""
-import pastelabel
+import labelforge
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui import settings_dialog
+from labelforge.ui import settings_dialog
 
 app = QApplication([])
-original = pastelabel.__version__
+original = labelforge.__version__
 try:
-    pastelabel.__version__ = '9.9.9-test'
+    labelforge.__version__ = '9.9.9-test'
     d = settings_dialog.SettingsDialog(None)
     print(d.version_label.text())
 finally:
-    pastelabel.__version__ = original
+    labelforge.__version__ = original
 """)
     assert _lines(out)[0] == "v9.9.9-test", out

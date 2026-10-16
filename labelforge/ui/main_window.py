@@ -44,7 +44,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PasteLabel")
+        self.setWindowTitle("LabelForge")
         self.resize(WINDOW_CONFIG['default_width'], WINDOW_CONFIG['default_height'])
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -765,7 +765,7 @@ def _parse_args(argv):
     import argparse
 
     parser = argparse.ArgumentParser(
-        prog="PasteLabel",
+        prog="LabelForge",
         description="贴图标注工具",
     )
     parser.add_argument(
@@ -793,7 +793,7 @@ def main():
     args = _parse_args(sys.argv[1:])
     if args.version:
         from .. import __version__
-        print(f"PasteLabel {__version__}")
+        print(f"LabelForge {__version__}")
         return
 
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)

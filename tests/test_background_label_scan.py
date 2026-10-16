@@ -2,15 +2,15 @@
 import json
 import pytest
 
-from pastelabel.engine import image_loader
-from pastelabel.engine.image_loader import ImageLoaderMixin, scan_dataset_labels
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.ui.processing_panel import ProcessingPanel
+from labelforge.engine import image_loader
+from labelforge.engine.image_loader import ImageLoaderMixin, scan_dataset_labels
+from labelforge.ui.main_window import ImageEditor
+from labelforge.ui.processing_panel import ProcessingPanel
 
 
 def test_collect_background_label_counts_counts_each_shape(tmp_path):
     """Stats must count every shape, not unique labels per file."""
-    from pastelabel.engine.image_loader import collect_background_label_counts
+    from labelforge.engine.image_loader import collect_background_label_counts
 
     img = tmp_path / "a.png"
     img.touch()
@@ -429,7 +429,7 @@ def test_processing_panel_uses_existing_labels_while_background_scan_is_running(
     })()
     panel._path_edit = type("PathEdit", (), {"text": lambda self: ""})()
     panel._get_session_dir = lambda: ""
-    monkeypatch.setattr("pastelabel.ui.processing_panel.os.path.exists", lambda path: True)
+    monkeypatch.setattr("labelforge.ui.processing_panel.os.path.exists", lambda path: True)
     monkeypatch.setattr("builtins.open", lambda *args, **kwargs: pytest.fail("must not scan JSON on UI thread"))
 
     assert panel._scan_labels_from_json() == []
@@ -542,7 +542,7 @@ def test_stats_health_payload_discarded_after_rename_bump_real_qt():
 from PyQt5.QtCore import QObject, Qt
 from PyQt5.QtWidgets import (QApplication, QDialog, QVBoxLayout, QLabel,
                              QTableWidget, QTableWidgetItem)
-from pastelabel.ui.mixins.stats import StatsMixin
+from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
 

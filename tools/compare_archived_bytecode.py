@@ -158,7 +158,7 @@ def main(argv):
 
     mismatched, skipped, checked = [], [], 0
     for mod, code in sorted(arch.items()):
-        if not mod.startswith("pastelabel"):
+        if not mod.startswith("labelforge"):
             continue
         if wanted and mod not in wanted:
             continue
@@ -175,7 +175,7 @@ def main(argv):
         if _flatten(src_code) != _flatten(code):
             mismatched.append(mod)
 
-    print(f"比对 {checked} 个 pastelabel 模块"
+    print(f"比对 {checked} 个 labelforge 模块"
           + (f"，跳过 {len(skipped)} 个无源码" if skipped else ""))
     if mismatched:
         print(f"!! {len(mismatched)} 个模块不一致:")

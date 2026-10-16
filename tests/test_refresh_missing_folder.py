@@ -45,7 +45,7 @@ _LOADED = """
 import os, shutil, tempfile
 from PyQt5.QtWidgets import QApplication, QListWidgetItem
 from PyQt5.QtGui import QPixmap, QImage
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 

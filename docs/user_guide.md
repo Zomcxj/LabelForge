@@ -1,4 +1,4 @@
-# PasteLabel 用户使用指南
+# LabelForge 用户使用指南
 
 ## 目录
 
@@ -24,7 +24,7 @@
 
 ## 界面布局
 
-PasteLabel 界面分为四个区域：
+LabelForge 界面分为四个区域：
 
 1. **工具栏**（顶部）— 背景图/贴图/标签加载按钮，标注/贴图模式切换，记忆、选项、缓存、统计、质检、格式、导出按钮，以及最右侧的语言/主题/设置按钮
 2. **画布区域**（左侧）— 显示背景图、贴图、检测框，支持缩放/平移/绘制
@@ -270,7 +270,7 @@ PasteLabel 界面分为四个区域：
 
 ## 6. 标注操作
 
-PasteLabel 支持四种标注形状，均以 LabelMe 格式保存到 JSON 的 `shapes` 字段：
+LabelForge 支持四种标注形状，均以 LabelMe 格式保存到 JSON 的 `shapes` 字段：
 
 | 形状 | `shape_type` | 快捷键 | 说明 |
 |------|-------------|--------|------|
@@ -948,11 +948,11 @@ YOLO26 这类端到端模型导出时已做完 NMS，本软件**不会**再跑�
 可以直接带参数启动，跳过手动打开目录的步骤：
 
 ```bash
-PasteLabel.exe D:\data\images                          # 打开背景图目录
-PasteLabel.exe D:\data\images --labels D:\classes.txt  # 同时导入背景标签文件
-PasteLabel.exe --labels D:\classes.txt                 # 只导入标签
-PasteLabel.exe --version                               # 显示版本号
-PasteLabel.exe --help                                  # 显示用法
+LabelForge.exe D:\data\images                          # 打开背景图目录
+LabelForge.exe D:\data\images --labels D:\classes.txt  # 同时导入背景标签文件
+LabelForge.exe --labels D:\classes.txt                 # 只导入标签
+LabelForge.exe --version                               # 显示版本号
+LabelForge.exe --help                                  # 显示用法
 ```
 
 | 参数 | 说明 |
@@ -963,7 +963,7 @@ PasteLabel.exe --help                                  # 显示用法
 | `--help` | 打印用法后退出 |
 
 > 路径不存在时会在状态栏提示，不会静默失败。
-> 打包后的 exe 为 GUI 子系统，`--version` / `--help` 的输出在终端中不显示；需要查看输出时请用源码方式运行 `python -m pastelabel.main --version`。
+> 打包后的 exe 为 GUI 子系统，`--version` / `--help` 的输出在终端中不显示；需要查看输出时请用源码方式运行 `python -m labelforge.main --version`。
 
 ---
 
@@ -977,7 +977,7 @@ pip install -r requirements.txt
 OpenCV 的不同发行包共用 `cv2`，同一环境只保留一种。新环境默认安装 `opencv-python-headless`；已有可用的官方 OpenCV 时可复用，避免重复安装不同发行包。
 
 ### 启动 exe 缺少 ffi.dll
-Windows 深色标题栏依赖 `ffi.dll`。使用 `pastelabel/build.sh` 打包会自动包含，或手动复制 `<conda_env>/Library/bin/ffi.dll` 到 exe 同目录。
+Windows 深色标题栏依赖 `ffi.dll`。使用 `labelforge/build.sh` 打包会自动包含，或手动复制 `<conda_env>/Library/bin/ffi.dll` 到 exe 同目录。
 
 ### 贴图不显示
 确认已加载贴图，滚轮放大视图，检查贴图是否在画布范围外。
@@ -995,7 +995,7 @@ Windows 深色标题栏依赖 `ffi.dll`。使用 `pastelabel/build.sh` 打包会
 删除标签会级联移除所有使用该标签的检测框，这是设计行为。保存后 JSON 同步更新。
 
 ### 发生未处理异常或 Qt 报错
-未处理异常和 Qt 消息会写入用户主目录的 `~/pastelabel.log`，可将该日志用于排查问题。
+未处理异常和 Qt 消息会写入用户主目录的 `~/labelforge.log`，可将该日志用于排查问题。
 
 ---
 

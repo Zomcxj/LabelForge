@@ -8,7 +8,7 @@
 文件在不在、shapes 有几条」写进日志；同时在切图时记录当前图的 json 状态。
 用户跑一遍出问题的流程，日志就能直接指认凶手，而不是靠猜。
 
-开法：环境变量 `PASTELABEL_TRACE_JSON=1`（debug exe 里默认开）。
+开法：环境变量 `LABELFORGE_TRACE_JSON=1`（debug exe 里默认开）。
 关法：不设那个变量。**正常版本完全不受影响**——所有埋点先问 `_on()`。
 """
 import os
@@ -20,10 +20,15 @@ _ON = None
 
 
 def _on():
-    """是否开启探针。默认关；`PASTELABEL_TRACE_JSON=1` 时开。"""
+    """是否开启探针。默认关；`LABELFORGE_TRACE_JSON=1` 时开。
+
+    旧名 `PASTELABEL_TRACE_JSON` 仍然认，免得老排查脚本失效。
+    """
     global _ON
     if _ON is None:
-        _ON = os.environ.get('PASTELABEL_TRACE_JSON', '') == '1'
+        value = os.environ.get('LABELFORGE_TRACE_JSON',
+                               os.environ.get('PASTELABEL_TRACE_JSON', ''))
+        _ON = value == '1'
     return _ON
 
 

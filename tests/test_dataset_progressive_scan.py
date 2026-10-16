@@ -9,7 +9,7 @@
 import json
 import time
 
-from pastelabel.engine.image_loader import (
+from labelforge.engine.image_loader import (
     STATUS_ANNOTATED,
     STATUS_UNANNOTATED,
     scan_dataset_full,
@@ -97,7 +97,7 @@ class _SnapshotHost:
     _dataset_stats_dirty = False
 
     def _build_bg_label_stats_snapshot(self):
-        from pastelabel.ui.mixins.memory_record import MemoryRecordMixin
+        from labelforge.ui.mixins.memory_record import MemoryRecordMixin
         return MemoryRecordMixin._build_bg_label_stats_snapshot(self)
 
 
@@ -121,7 +121,7 @@ def test_snapshot_reuses_fresh_cache_without_rescan(tmp_path, monkeypatch):
         _dataset_stats_dirty=False,
     )
 
-    from pastelabel.engine import image_loader
+    from labelforge.engine import image_loader
 
     def _boom(*a, **k):
         raise AssertionError("缓存新鲜时不应重扫磁盘")
@@ -180,7 +180,7 @@ def test_batch_loader_uses_time_budget_not_fixed_tiny_batch():
     """
     import inspect
 
-    from pastelabel.engine.image_loader import ImageLoaderMixin
+    from labelforge.engine.image_loader import ImageLoaderMixin
 
     src = inspect.getsource(ImageLoaderMixin._load_next_background_batch)
     assert "perf_counter" in src, "应按时间预算推进批次"
@@ -192,7 +192,7 @@ def test_background_list_timer_interval_is_zero():
     """填充定时器间隔必须为 0，避免每 tick 人为 sleep 30ms。"""
     import inspect
 
-    from pastelabel.engine.image_loader import ImageLoaderMixin
+    from labelforge.engine.image_loader import ImageLoaderMixin
 
     src = inspect.getsource(ImageLoaderMixin.load_background_folder)
     assert "setInterval(0)" in src
@@ -203,7 +203,7 @@ def test_batch_loader_disables_updates_while_filling():
     """填充期间必须关闭控件重绘，避免逐行重排/重绘。"""
     import inspect
 
-    from pastelabel.engine.image_loader import ImageLoaderMixin
+    from labelforge.engine.image_loader import ImageLoaderMixin
 
     src = inspect.getsource(ImageLoaderMixin._load_next_background_batch)
     assert "setUpdatesEnabled(False)" in src

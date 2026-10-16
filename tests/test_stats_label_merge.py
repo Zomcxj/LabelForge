@@ -78,7 +78,7 @@ def test_rename_merges_into_an_existing_label():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage
 app = QApplication([])
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 w = ImageEditor(); w.resize(1200, 900); w.show(); app.processEvents()
 w.load_background_folder(WORK); app.processEvents()
@@ -110,7 +110,7 @@ from PyQt5.QtWidgets import QApplication, QDialog
 from PyQt5.QtGui import QImage
 from PyQt5.QtCore import QTimer
 app = QApplication([])
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 w = ImageEditor(); w.resize(1200, 900); w.show(); app.processEvents()
 w.load_background_folder(WORK); app.processEvents()
@@ -154,7 +154,7 @@ from PyQt5.QtWidgets import QApplication, QDialog
 from PyQt5.QtGui import QImage
 from PyQt5.QtCore import QTimer
 app = QApplication([])
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 w = ImageEditor(); w.resize(1200, 900); w.show(); app.processEvents()
 w.load_background_folder(WORK); app.processEvents()
@@ -197,7 +197,7 @@ from PyQt5.QtWidgets import QApplication, QDialog
 from PyQt5.QtGui import QPixmap, QImage, QPainter
 from PyQt5.QtCore import QTimer
 app = QApplication([])
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 w = ImageEditor(); w.resize(1200, 900); w.show(); app.processEvents()
 # 手工摆出「会话里有 logo 和 badge 两种贴图」的状态：贴图表的数据源就是

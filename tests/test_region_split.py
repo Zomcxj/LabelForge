@@ -21,7 +21,7 @@ def test_paste_mode_hard_blocks_inference_even_if_the_row_is_opened():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QPixmap
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 
 class Det:
@@ -94,7 +94,7 @@ def test_inference_and_paste_regions_are_separate_lists():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import QPoint
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -162,7 +162,7 @@ def test_editing_a_region_refreshes_the_panel_coordinates():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QPixmap, QWheelEvent
 from PyQt5.QtCore import QPoint, QPointF, Qt
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -224,7 +224,7 @@ def test_wheel_resizes_a_region_edge_from_outside_too():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QImage, QPixmap, QWheelEvent
 from PyQt5.QtCore import QPoint, QPointF, Qt
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()
@@ -288,7 +288,7 @@ def test_region_section_only_appears_in_paste_mode():
 from PyQt5.QtWidgets import QApplication, QMenu
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import QPoint
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
 w = ImageEditor()

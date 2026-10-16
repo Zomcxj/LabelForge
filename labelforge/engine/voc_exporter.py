@@ -24,7 +24,7 @@ class VocExporter(BaseExporter):
         with open(xml_path, 'w', encoding='utf-8') as f:
             f.write('<?xml version="1.0" ?>\n')
             f.write('<annotation>\n')
-            f.write('  <folder>PasteLabel</folder>\n')
+            f.write('  <folder>LabelForge</folder>\n')
             f.write(f'  <filename>{stem}</filename>\n')
             f.write('  <size>\n')
             f.write(f'    <width>{iw}</width>\n')
@@ -32,7 +32,7 @@ class VocExporter(BaseExporter):
             f.write('    <depth>3</depth>\n')
             f.write('  </size>\n')
             f.write('  <source>\n')
-            f.write('    <database>PasteLabel</database>\n')
+            f.write('    <database>LabelForge</database>\n')
             f.write('  </source>\n')
             for b in boxes:
                 x1 = max(0, b["x"])

@@ -1,7 +1,7 @@
 """对话框回归测试。"""
-from pastelabel.ui import i18n
-from pastelabel.ui.dialog_helpers import center_on_parent
-from pastelabel.ui.dialogs import ProgressDialogFactory
+from labelforge.ui import i18n
+from labelforge.ui.dialog_helpers import center_on_parent
+from labelforge.ui.dialogs import ProgressDialogFactory
 
 
 def test_progress_dialog_cancel_button_uses_current_language():
@@ -48,7 +48,7 @@ def test_center_on_parent_uses_parent_window_geometry():
 def test_label_stats_dialog_centers_after_show_event():
     import inspect
     from pathlib import Path
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
 
     stats_block = inspect.getsource(ImageEditor._show_label_stats)
 
@@ -59,7 +59,7 @@ def test_label_stats_dialog_centers_after_show_event():
 
 
 def test_label_stats_aggregates_in_memory_pastes_from_other_images():
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
 
     editor = ImageEditor.__new__(ImageEditor)
     editor.background_images = ["current.png", "other.png"]
@@ -82,7 +82,7 @@ def test_label_color_uses_all_open_image_paste_labels_when_switching_current_ima
     root = Path(__file__).resolve().parents[1]
     script = '''
 from PyQt5.QtWidgets import QApplication
-from pastelabel.ui.main_window import ImageEditor
+from labelforge.ui.main_window import ImageEditor
 
 app = QApplication.instance() or QApplication([])
 editor = ImageEditor()

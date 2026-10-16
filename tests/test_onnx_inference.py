@@ -7,7 +7,7 @@
 import numpy as np
 import pytest
 
-from pastelabel.engine.onnx_inference import (
+from labelforge.engine.onnx_inference import (
     DEFAULT_MAX_DET, FORMAT_V5, FORMAT_V8, FORMAT_V26, InferenceError,
     boxes_to_internal, decode_end2end, decode_predictions,
     decode_yolov5, decode_yolov8, detect_output_format, letterbox_geometry,
@@ -388,7 +388,7 @@ class _FakeSession:
 
 
 def _detector_with_output(raw, num_classes=80):
-    from pastelabel.engine.onnx_inference import OnnxDetector
+    from labelforge.engine.onnx_inference import OnnxDetector
     det = OnnxDetector("injected.onnx", class_names=[f"c{i}" for i in range(num_classes)],
                        output_format=FORMAT_V5, conf_threshold=0.25, iou_threshold=0.45)
     det._session = _FakeSession(raw)
@@ -627,7 +627,7 @@ def test_decode_predictions_error_message_lists_all_formats():
 
 
 def test_supported_formats_includes_v26():
-    from pastelabel.engine.onnx_inference import SUPPORTED_FORMATS
+    from labelforge.engine.onnx_inference import SUPPORTED_FORMATS
     assert FORMAT_V26 in SUPPORTED_FORMATS
 
 
@@ -640,7 +640,7 @@ def _end2end_raw(rows, num_cols=6):
 
 
 def _detector_v26(raw, num_classes=80):
-    from pastelabel.engine.onnx_inference import OnnxDetector
+    from labelforge.engine.onnx_inference import OnnxDetector
     det = OnnxDetector("injected.onnx", class_names=[f"c{i}" for i in range(num_classes)],
                        output_format=FORMAT_V26, conf_threshold=0.25, iou_threshold=0.45)
     det._session = _FakeSession(raw)
@@ -674,7 +674,7 @@ def test_resolve_detect_still_applies_conf_threshold_for_end2end():
 
 def test_resolve_detect_uses_v8_nms_for_v8_models():
     """对照组：v8 走 NMS，同类重叠框应被去重，证明上一条不是普遍行为。"""
-    from pastelabel.engine.onnx_inference import OnnxDetector
+    from labelforge.engine.onnx_inference import OnnxDetector
     # [1, 4+C, N]，C=1 -> 末维 5
     raw = np.zeros((1, 5, 3), dtype=np.float32)
     for i, (cx, cy, s) in enumerate([(35.0, 35.0, 0.9), (35.2, 35.1, 0.8)]):

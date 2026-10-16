@@ -2,7 +2,7 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout
 
-from pastelabel.ui.mixins.panels import PanelsMixin
+from labelforge.ui.mixins.panels import PanelsMixin
 
 
 def _inspect_create_splitter_source():
@@ -34,7 +34,7 @@ def test_create_control_panel_top_margin_matches_canvas():
 def test_label_list_item_padding_matches_bg_list():
     """Background / label / paste list rows share the same item padding."""
     import inspect
-    from pastelabel.ui.theme import ThemeManager
+    from labelforge.ui.theme import ThemeManager
 
     src = inspect.getsource(ThemeManager.get_stylesheet)
     # No tighter override for labelList/pasteLabelList item padding.

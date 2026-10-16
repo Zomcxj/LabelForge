@@ -1,5 +1,5 @@
 """LabelMe shape <-> internal box conversion (polygon / group_id / compat)."""
-from pastelabel.engine.shape_io import (
+from labelforge.engine.shape_io import (
     box_display_label,
     box_from_labelme_shape,
     format_label_display,
@@ -84,20 +84,20 @@ def test_yolo_seg_line_normalizes_polygon_points():
 
 
 def test_point_in_polygon_inside_and_outside():
-    from pastelabel.engine.shape_io import point_in_polygon
+    from labelforge.engine.shape_io import point_in_polygon
     pts = [[10, 10], [40, 10], [40, 40]]
     assert point_in_polygon(30, 20, pts) is True
     assert point_in_polygon(11, 39, pts) is False
 
 
 def test_point_line_distance_perpendicular_and_clamped():
-    from pastelabel.engine.shape_io import point_line_distance
+    from labelforge.engine.shape_io import point_line_distance
     assert point_line_distance((15, 20), ((10, 10), (40, 10))) == 10.0
     assert point_line_distance((0, 0), ((10, 10), (40, 10))) == 200 ** 0.5
 
 
 def test_nearest_polygon_edge_insert_index():
-    from pastelabel.engine.shape_io import nearest_polygon_edge
+    from labelforge.engine.shape_io import nearest_polygon_edge
     pts = [[10, 10], [40, 10], [40, 40], [10, 40]]
     assert nearest_polygon_edge((25, 10), pts, 3.0) == 1
     assert nearest_polygon_edge((40, 25), pts, 3.0) == 2
@@ -126,7 +126,7 @@ def test_yolo_seg_line_skips_fewer_than_three_points():
 
 
 def test_paste_flag_round_trip():
-    from pastelabel.engine.shape_io import labelme_shape_from_box, box_from_labelme_shape
+    from labelforge.engine.shape_io import labelme_shape_from_box, box_from_labelme_shape
     box = {"label": "logo", "x": 1, "y": 2, "width": 3, "height": 4}
     shape = labelme_shape_from_box(box)
     assert shape["flags"] == {}
@@ -136,7 +136,7 @@ def test_paste_flag_round_trip():
 
 
 def test_labelme_shape_from_box_preserves_flags():
-    from pastelabel.engine.shape_io import labelme_shape_from_box
+    from labelforge.engine.shape_io import labelme_shape_from_box
     shape = labelme_shape_from_box(
         {"label": "logo", "x": 0, "y": 0, "width": 1, "height": 1,
          "flags": {"paste": True}})
@@ -145,7 +145,7 @@ def test_labelme_shape_from_box_preserves_flags():
 
 def test_labelme_shape_from_box_rebuilds_paste_flag_from_is_paste():
     """磁盘载入的贴图 box（只有 is_paste 无 flags）再保存不丢标记。"""
-    from pastelabel.engine.shape_io import labelme_shape_from_box
+    from labelforge.engine.shape_io import labelme_shape_from_box
     shape = labelme_shape_from_box(
         {"label": "logo", "x": 0, "y": 0, "width": 1, "height": 1,
          "is_paste": True})

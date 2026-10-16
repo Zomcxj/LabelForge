@@ -1,5 +1,5 @@
 """Polygon draw-mode state machine (no Qt window)."""
-from pastelabel.canvas.canvas_drawing import CanvasDrawingMixin
+from labelforge.canvas.canvas_drawing import CanvasDrawingMixin
 
 
 class Point:
@@ -238,7 +238,7 @@ def test_delete_polygon_vertex_refuses_when_only_three_points():
 
 
 def test_polygon_press_ignores_points_beyond_max():
-    from pastelabel.core.config import DETECTION_BOX_CONFIG
+    from labelforge.core.config import DETECTION_BOX_CONFIG
     canvas = Canvas()
     canvas.is_drawing_polygon = True
     old = DETECTION_BOX_CONFIG.get("max_polygon_points")
@@ -271,7 +271,7 @@ def test_insert_polygon_vertex_on_edge_updates_points_and_bbox():
 
 
 def test_insert_polygon_vertex_respects_max_points():
-    from pastelabel.core.config import DETECTION_BOX_CONFIG
+    from labelforge.core.config import DETECTION_BOX_CONFIG
     canvas = Canvas()
     canvas._editor.detection_boxes = [{
         "label": "person", "shape_type": "polygon",
@@ -291,7 +291,7 @@ def test_insert_polygon_vertex_respects_max_points():
 
 
 def test_delete_selected_routes_to_vertex_when_hovering_vertex():
-    from pastelabel.engine.event_handler import EventHandlerMixin
+    from labelforge.engine.event_handler import EventHandlerMixin
 
     class Canvas:
         def __init__(self):
@@ -340,7 +340,7 @@ def test_delete_selected_routes_to_vertex_when_hovering_vertex():
 
 
 def test_delete_selected_removes_box_when_not_hovering_vertex():
-    from pastelabel.engine.event_handler import EventHandlerMixin
+    from labelforge.engine.event_handler import EventHandlerMixin
 
     class Canvas:
         def __init__(self):
@@ -380,7 +380,7 @@ def test_delete_selected_removes_box_when_not_hovering_vertex():
 
 
 def test_scale_selected_box_scales_polygon_points_proportionally():
-    from pastelabel.canvas.canvas_interaction import CanvasInteractionMixin
+    from labelforge.canvas.canvas_interaction import CanvasInteractionMixin
 
     class Delta:
         def y(self):

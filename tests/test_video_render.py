@@ -31,7 +31,7 @@ def _run_qt(script):
 
 def test_render_module_does_not_import_qt_at_module_level():
     """渲染模块不在导入期拉 PyQt5，纯逻辑测试与无 Qt 环境才能导入。"""
-    from pastelabel.engine import video_render
+    from labelforge.engine import video_render
 
     src = Path(video_render.__file__).read_text(encoding="utf-8")
     top_level = [
@@ -44,7 +44,7 @@ def test_render_module_does_not_import_qt_at_module_level():
 
 def test_render_spec_fields():
     """RenderSpec 收集绘制开关与颜色，颜色由主线程预先取好传进来。"""
-    from pastelabel.engine.video_render import RenderSpec
+    from labelforge.engine.video_render import RenderSpec
 
     spec = RenderSpec(label_colors={"person": "#FF0000"})
     assert spec.show_labels is False
@@ -55,7 +55,7 @@ def test_render_spec_fields():
 
 def test_filter_boxes_by_label_selection():
     """类别筛选：只留勾选的类别；labels=None 表示全画。"""
-    from pastelabel.engine.video_render import filter_boxes
+    from labelforge.engine.video_render import filter_boxes
 
     boxes = [{"label": "person"}, {"label": "car"}, {"label": "person"}]
     assert filter_boxes(boxes, None) == boxes
@@ -65,7 +65,7 @@ def test_filter_boxes_by_label_selection():
 
 def test_color_for_label_falls_back_to_default():
     """没配颜色的类别用兜底色，不能抛异常。"""
-    from pastelabel.engine.video_render import color_for_label
+    from labelforge.engine.video_render import color_for_label
 
     assert color_for_label({"person": "#FF0000"}, "person") == (255, 0, 0)
     r, g, b = color_for_label({"person": "#FF0000"}, "car")
@@ -76,7 +76,7 @@ def test_color_for_label_falls_back_to_default():
 
 def test_bad_color_hex_falls_back():
     """颜色串损坏时兜底，不能把 #GGGGGG 解析炸掉。"""
-    from pastelabel.engine.video_render import color_for_label
+    from labelforge.engine.video_render import color_for_label
 
     for bad in ("#GGGGGG", "red", "#FFF", ""):
         assert len(color_for_label({"x": bad}, "x")) == 3
@@ -92,7 +92,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 img = np.zeros((80, 120, 3), np.uint8)          # RGB 黑底
 spec = RenderSpec(label_colors={"person": "#FF0000"})
@@ -120,7 +120,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 img = np.zeros((60, 60, 3), np.uint8)
 spec = RenderSpec(label_colors={"person": "#00FF00"})
@@ -141,7 +141,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 spec = RenderSpec(label_colors={"a": "#FF0000"})
 
@@ -178,7 +178,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 img = np.zeros((60, 60, 3), np.uint8)
 spec = RenderSpec(label_colors={"k": "#00FF00"})
@@ -212,7 +212,7 @@ from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from PyQt5.QtGui import QFont, QFontMetrics
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 CANDIDATES = ("Microsoft YaHei", "SimHei", "SimSun", "Noto Sans CJK SC",
               "Source Han Sans SC", "WenQuanYi Zen Hei", "PingFang SC")
@@ -271,7 +271,7 @@ from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from PyQt5.QtGui import QFont, QFontMetrics
-from pastelabel.engine.video_render import (RenderSpec, draw_boxes,
+from labelforge.engine.video_render import (RenderSpec, draw_boxes,
                                             label_font_pixels)
 
 app.setFont(QFont(QFont().family(), 10))        # 应用字体：明显小于标签字号
@@ -328,7 +328,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 img = np.full((120, 260, 3), 255, np.uint8)
 spec = RenderSpec(label_colors={"a": "#FF0000", "b": "#0000FF"}, show_labels=True)
@@ -364,7 +364,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 img = np.zeros((40, 80, 3), np.uint8)
 out = draw_boxes(img, [{"label": "x", "shape_type": "rectangle",
@@ -390,7 +390,7 @@ import sys
 sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
-from pastelabel.engine.video_render import RenderSpec, label_text
+from labelforge.engine.video_render import RenderSpec, label_text
 
 box = {"label": "person", "score": 0.8765}
 off = label_text(box, RenderSpec(show_labels=True, show_scores=False))
@@ -412,7 +412,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 img = np.zeros((100, 200, 3), np.uint8)
 spec = RenderSpec(label_colors={"person": "#FF0000"}, show_labels=False)
@@ -433,7 +433,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 img = np.zeros((80, 80, 3), np.uint8)
 spec = RenderSpec(label_colors={"x": "#0000FF"})     # 纯蓝
@@ -458,7 +458,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 img = np.zeros((60, 60, 3), np.uint8)
 spec = RenderSpec(label_colors={"x": "#FF0000"})
@@ -491,7 +491,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 img = np.full((40, 40, 3), 7, np.uint8)
 out = draw_boxes(img, [], RenderSpec())
@@ -510,7 +510,7 @@ sys.path.insert(0, r"%s")
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from pastelabel.engine.video_render import RenderSpec, draw_boxes
+from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 base = np.zeros((40, 80, 3), np.uint8)
 view = base[:, ::-1, :]                      # 非连续
@@ -531,8 +531,8 @@ def test_label_font_pixels_follows_the_setting():
     画，所以要换算；这条钉住「改设置 → 视频字号跟着变」，并且与画面高度成
     比例（480p 和 1080p 的观感一致）。
     """
-    from pastelabel.core.config import DETECTION_BOX_CONFIG
-    from pastelabel.engine.video_render import (label_font_pixels,
+    from labelforge.core.config import DETECTION_BOX_CONFIG
+    from labelforge.engine.video_render import (label_font_pixels,
                                                 resolve_font_pixels, RenderSpec)
 
     original = DETECTION_BOX_CONFIG['label_font_size']

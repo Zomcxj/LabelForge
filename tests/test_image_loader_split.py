@@ -26,25 +26,25 @@ MODULE_ATTRS = ["json", "os", "QFileDialog", "QMessageBox"]
 
 @pytest.mark.parametrize("name", PUBLIC_SYMBOLS + PRIVATE_SYMBOLS + MODULE_ATTRS)
 def test_image_loader_package_exposes_symbol(name):
-    from pastelabel.engine import image_loader
+    from labelforge.engine import image_loader
 
     assert hasattr(image_loader, name), f"image_loader 缺少 {name}"
 
 
 def test_count_labels_public_alias_is_same_object():
-    from pastelabel.engine import image_loader
+    from labelforge.engine import image_loader
 
     assert image_loader.count_labels_in_json is image_loader._count_labels_in_json
 
 
 @pytest.mark.parametrize("sub", ["status", "scan", "mixin"])
 def test_submodule_imports_independently(sub):
-    importlib.import_module(f"pastelabel.engine.image_loader.{sub}")
+    importlib.import_module(f"labelforge.engine.image_loader.{sub}")
 
 
 def test_status_and_scan_do_not_depend_on_mixin():
-    import pastelabel.engine.image_loader.status as status
-    import pastelabel.engine.image_loader.scan as scan
+    import labelforge.engine.image_loader.status as status
+    import labelforge.engine.image_loader.scan as scan
 
     for mod in (status, scan):
         src = open(mod.__file__, encoding="utf-8").read()

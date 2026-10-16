@@ -700,7 +700,7 @@ class ImageLoaderMixin:
                     if self.current_background:
                         w = self.current_background.width()
                         h = self.current_background.height()
-                        self.setWindowTitle(f"PasteLabel - {filename} [{w} x {h}] [{idx + 1} / {total}]")
+                        self.setWindowTitle(f"LabelForge - {filename} [{w} x {h}] [{idx + 1} / {total}]")
                 return
 
             index = item.data(BG_ROLE_INDEX)
@@ -917,11 +917,11 @@ class ImageLoaderMixin:
                 filename = _os.path.basename(self.background_images[self.current_background_index])
                 w = self.current_background.width()
                 h = self.current_background.height()
-                self.setWindowTitle(f"PasteLabel - {filename} [{w} x {h}] [{current} / {total}]")
+                self.setWindowTitle(f"LabelForge - {filename} [{w} x {h}] [{current} / {total}]")
             else:
-                self.setWindowTitle(f"PasteLabel")
+                self.setWindowTitle(f"LabelForge")
         else:
-            self.setWindowTitle("PasteLabel")
+            self.setWindowTitle("LabelForge")
 
     def _log_error(self, message):
         """记录错误信息"""

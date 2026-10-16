@@ -8,7 +8,7 @@ sidecar JSON（O(n) 磁盘 IO）。在数千张图片的数据集上，每画一
 修复后：改为增量更新统计缓存（`_bump_cached_stats_for_box`），只做
 内存操作。
 """
-from pastelabel.canvas.canvas_drawing import CanvasDrawingMixin
+from labelforge.canvas.canvas_drawing import CanvasDrawingMixin
 
 
 class Rect:

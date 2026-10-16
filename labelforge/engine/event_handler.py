@@ -345,7 +345,7 @@ class EventHandlerMixin:
                     w = self.current_background.width()
                     h = self.current_background.height()
                     total = len(self._delete_files)
-                    self.setWindowTitle(f"PasteLabel - {filename} [{w} x {h}] [{new_idx + 1} / {total}]")
+                    self.setWindowTitle(f"LabelForge - {filename} [{w} x {h}] [{new_idx + 1} / {total}]")
         else:
             if not self.background_images:
                 return

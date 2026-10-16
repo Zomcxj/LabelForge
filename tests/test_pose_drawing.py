@@ -1,5 +1,5 @@
 """Pose (point keypoint) drawing state machine (no Qt window)."""
-from pastelabel.canvas.canvas_drawing import CanvasDrawingMixin
+from labelforge.canvas.canvas_drawing import CanvasDrawingMixin
 from tests.test_polygon_drawing import Point, Rect, Background, Editor, Canvas
 
 
@@ -19,7 +19,7 @@ def test_create_point_stores_point_shape_with_group():
 
 
 def test_point_hit_near_point_only():
-    from pastelabel.canvas.canvas_menu import CanvasMenuMixin
+    from labelforge.canvas.canvas_menu import CanvasMenuMixin
 
     class Editor:
         detection_boxes = [{
@@ -79,7 +79,7 @@ def test_point_box_has_no_corner_handles():
 
 
 def test_yolo_pose_line_format():
-    from pastelabel.engine.shape_io import yolo_pose_line
+    from labelforge.engine.shape_io import yolo_pose_line
     line = yolo_pose_line(
         class_id=0, bbox=(50, 25, 100, 50),
         keypoints=[[50, 25], [150, 25]],

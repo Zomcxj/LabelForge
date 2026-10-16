@@ -26,8 +26,8 @@ class CocoExporter(BaseExporter):
             "info": {
                 "year": datetime.now().year,
                 "version": "1.0",
-                "description": "PasteLabel COCO Export",
-                "contributor": "PasteLabel",
+                "description": "LabelForge COCO Export",
+                "contributor": "LabelForge",
                 "url": "",
                 "date_created": datetime.now().isoformat(),
             },

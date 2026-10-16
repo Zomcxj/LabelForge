@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 import pytest
 
-from pastelabel.engine.video_io import VideoError, probe
+from labelforge.engine.video_io import VideoError, probe
 
 ROOT = Path(__file__).resolve().parents[1]
 FRAME_W, FRAME_H = 64, 48
@@ -121,7 +121,7 @@ def _make_odd_size_video(path):
 
 def _bump_frame_count(info, delta):
     """把探测到的帧数改大，模拟「探测说 15 帧、实际只有 10 帧」。"""
-    from pastelabel.engine.video_io import VideoInfo
+    from labelforge.engine.video_io import VideoInfo
 
     return VideoInfo(path=info.path, fps=info.fps,
                      frame_count=info.frame_count + delta,
@@ -133,7 +133,7 @@ def _bump_frame_count(info, delta):
 
 def test_render_video_rejects_missing_source(tmp_path):
     """源视频不存在 → 报错，不留空输出。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     with pytest.raises(VideoError, match="不存在"):
         render_video(str(tmp_path / "nope.mp4"), _FakeDetector(),
@@ -143,7 +143,7 @@ def test_render_video_rejects_missing_source(tmp_path):
 
 def test_render_video_requires_output_path(tmp_path):
     """没给输出路径 → 报错，不能自己猜一个位置。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=5)
     with pytest.raises(VideoError, match="输出路径"):
@@ -152,7 +152,7 @@ def test_render_video_requires_output_path(tmp_path):
 
 def test_render_video_rejects_output_equal_to_source(tmp_path):
     """输出与源同一文件 → 拒绝（规范化后比较，含大小写），且不动源文件。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=5)
     before = os.path.getsize(video)
@@ -166,7 +166,7 @@ def test_render_video_rejects_output_equal_to_source(tmp_path):
 
 def test_render_video_detects_every_frame(tmp_path):
     """每一帧都要推理一次：源 20 帧 → detect 调用 20 次（不是只跑抽帧那几张）。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=20, fps=10.0)
     detector = _FakeDetector()
@@ -182,7 +182,7 @@ def test_render_video_detects_every_frame(tmp_path):
 
 def test_render_video_output_matches_source_frame_count_and_size(tmp_path):
     """输出帧数/分辨率/帧率与源一致；逐帧回读核对，不信 CAP_PROP_FRAME_COUNT。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=30, fps=10.0)
     source = probe(video)
@@ -210,7 +210,7 @@ def test_render_video_output_matches_source_frame_count_and_size(tmp_path):
 
 def test_render_video_frames_stay_in_source_order(tmp_path):
     """输出第 n 帧就是源第 n 帧：逐帧比对帧号标记，证明没有跳帧或重排。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=24, fps=12.0)
     out = tmp_path / "out.mp4"
@@ -231,15 +231,15 @@ def test_render_video_frames_stay_in_source_order(tmp_path):
 
 def test_render_video_draws_detected_boxes(tmp_path):
     """推理出的框要真画进画面：假绘制填色块，回读后该处是类别色。"""
-    from pastelabel.engine.video_io import render_video
-    from pastelabel.engine.video_render import RenderSpec
+    from labelforge.engine.video_io import render_video
+    from labelforge.engine.video_render import RenderSpec
 
     video = _make_video(tmp_path / "src.mp4", count=6)
     out = tmp_path / "out.mp4"
     boxes = [{"label": "person", "x": 30, "y": 20, "width": 20, "height": 10,
               "score": 0.9, "class_id": 0}]
 
-    import pastelabel.engine.video_render as video_render
+    import labelforge.engine.video_render as video_render
     original = video_render.draw_boxes
     video_render.draw_boxes = _fake_draw(boxes, None, color=(255, 0, 0))
     try:
@@ -260,7 +260,7 @@ def test_render_video_draws_detected_boxes(tmp_path):
 
 def test_render_video_without_render_spec_writes_clean_frames(tmp_path):
     """不给 render 时只推理不绘制：画面与源一致（没有框的颜色块）。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=4)
     out = tmp_path / "out.mp4"
@@ -283,7 +283,7 @@ def test_render_video_odd_size_source_fails_clearly(tmp_path):
     实测 mp4v 的 `isOpened()` 对 65x49 返回 True，但回读是 64x48——只靠
     isOpened 判成功会产出一条尺寸不对的片子，用户拿去用才发现。
     """
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     odd = _make_odd_size_video(tmp_path / "odd.avi")
     if odd is None:
@@ -301,8 +301,8 @@ def test_render_video_odd_size_source_fails_clearly(tmp_path):
 
 def test_render_video_removes_temp_file_on_failure(tmp_path, monkeypatch):
     """中途异常要清掉 .partial 临时文件，不能留半个视频冒充产物。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=10)
     out = tmp_path / "out.mp4"
@@ -323,8 +323,8 @@ def test_render_video_removes_temp_file_on_failure(tmp_path, monkeypatch):
 
 def test_render_video_verifies_readback_fps(tmp_path, monkeypatch):
     """回读帧率与源不符 → 报错（编码器可能表达不了源帧率）。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=10, fps=10.0)
     out = tmp_path / "out.mp4"
@@ -346,8 +346,8 @@ def test_render_video_early_eof_is_a_failure(tmp_path, monkeypatch):
     宽松匹配会让「读到 EOF 就 break」这种实现悄悄通过——它最后也会因为
     回读帧数不符而报错，但报的是错误的病因。
     """
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=10)
     out = tmp_path / "out.mp4"
@@ -366,8 +366,8 @@ def test_render_video_early_eof_is_a_failure(tmp_path, monkeypatch):
 
 def test_render_video_failure_keeps_previous_output(tmp_path, monkeypatch):
     """输出已存在时：失败/取消不改动旧成品。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=10)
     out = tmp_path / "out.mp4"
@@ -389,7 +389,7 @@ def test_render_video_failure_keeps_previous_output(tmp_path, monkeypatch):
 
 def test_render_video_reports_detector_failure_per_frame(tmp_path):
     """某帧推理抛异常 → 明确失败，不静默跳过该帧当没事。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     class _Boom(_FakeDetector):
         def detect(self, rgb, resize_fn, conf_threshold=None, iou_threshold=None):
@@ -407,7 +407,7 @@ def test_render_video_reports_detector_failure_per_frame(tmp_path):
 
 def test_render_video_cancel_stops_and_releases(tmp_path):
     """取消：在指定帧数后停，不留正式文件，报告已完成帧数。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=40, fps=10.0)
     out = tmp_path / "out.mp4"
@@ -428,7 +428,7 @@ def test_render_video_cancel_stops_and_releases(tmp_path):
 
 def test_render_video_cancel_leaves_no_partial_when_nothing_written(tmp_path):
     """一帧都没写就取消 → 不留垃圾文件（mp4v 会留下解不出帧的文件头）。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=20)
     out = tmp_path / "out.mp4"
@@ -444,7 +444,7 @@ def test_render_video_cancel_leaves_no_partial_when_nothing_written(tmp_path):
 
 def test_render_video_cancel_keeps_previous_output(tmp_path):
     """取消时旧的正式输出原样保留。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=20)
     out = tmp_path / "out.mp4"
@@ -461,7 +461,7 @@ def test_render_video_cancel_keeps_previous_output(tmp_path):
 
 def test_render_video_reports_progress_per_frame(tmp_path):
     """进度按帧上报：总数为源帧数，最后一条是全部完成。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=12)
     seen = []
@@ -479,7 +479,7 @@ def test_render_video_reports_progress_per_frame(tmp_path):
 
 def test_render_video_uses_scope_for_every_frame(tmp_path):
     """给了滑窗范围 → 每帧都按滑窗推理（detect 被多次调用），框坐标回到原图。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=3, fps=10.0)
     detector = _FakeDetector([{"label": "person", "x": 1.0, "y": 1.0,
@@ -497,7 +497,7 @@ def test_render_video_uses_scope_for_every_frame(tmp_path):
 
 def test_render_video_rejects_invalid_scope(tmp_path):
     """非法范围（如没画 ROI）→ 启动时报错，不进后台跑出 0 框结果。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=3)
     with pytest.raises(Exception):
@@ -509,7 +509,7 @@ def test_render_video_rejects_invalid_scope(tmp_path):
 
 def test_render_video_accepts_chinese_paths(tmp_path):
     """中文源路径、中文输出名都要能用（Windows 真路径，不只 ASCII）。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "中文视频.mp4", count=8, fps=8.0)
     out = tmp_path / "输出视频.mp4"
@@ -566,9 +566,9 @@ from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 import cv2
-from pastelabel.engine.video_io import render_video
-from pastelabel.engine.inference_image import resize_for_model
-from pastelabel.engine.video_render import RenderSpec
+from labelforge.engine.video_io import render_video
+from labelforge.engine.inference_image import resize_for_model
+from labelforge.engine.video_render import RenderSpec
 
 class Det:
     iou_threshold = 0.45
@@ -611,9 +611,9 @@ app = QApplication([])
 import numpy as np
 import cv2
 from PyQt5.QtGui import QFont, QFontMetrics
-from pastelabel.engine.video_io import render_video
-from pastelabel.engine.inference_image import resize_for_model
-from pastelabel.engine.video_render import RenderSpec
+from labelforge.engine.video_io import render_video
+from labelforge.engine.inference_image import resize_for_model
+from labelforge.engine.video_render import RenderSpec
 
 CANDIDATES = ("Microsoft YaHei", "SimHei", "SimSun", "Noto Sans CJK SC",
               "Source Han Sans SC", "WenQuanYi Zen Hei", "PingFang SC")
@@ -651,7 +651,7 @@ else:
 
 def test_render_video_filters_boxes_by_selected_classes(tmp_path):
     """勾了类别就只算/只画勾上的；没勾的类别不进 detected_total。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=4)
     out = tmp_path / "out.mp4"
@@ -671,7 +671,7 @@ def test_render_video_filters_boxes_by_selected_classes(tmp_path):
 
 def test_render_video_empty_class_filter_drops_everything(tmp_path):
     """「全不选」传空集合 = 一个框都不留（与引擎既有语义一致）。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=3)
     out = tmp_path / "out.mp4"
@@ -683,7 +683,7 @@ def test_render_video_empty_class_filter_drops_everything(tmp_path):
 
 def test_render_video_none_class_filter_keeps_everything(tmp_path):
     """不过滤（None）时所有框都算，不能顺手清空。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=3)
     out = tmp_path / "out.mp4"
@@ -702,7 +702,7 @@ def test_render_video_cancel_keeps_playable_partial(tmp_path):
     既有用例只覆盖「一帧没写就取消」：那种情况下 mp4v 连文件头都落盘了
     （几十字节），但一帧都解不出来——所以「文件存在」不能当判据。
     """
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=40, fps=10.0)
     out = tmp_path / "out.mp4"
@@ -739,7 +739,7 @@ def test_render_video_cancel_keeps_playable_partial(tmp_path):
 
 def test_render_video_cancel_result_reports_partial_not_final(tmp_path):
     """取消的结果里 output_path 仍是正式名（供 UI 显示），半成品另给字段。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=40, fps=10.0)
     out = tmp_path / "out.mp4"
@@ -756,7 +756,7 @@ def test_render_video_cancel_result_reports_partial_not_final(tmp_path):
 
 def test_render_video_detector_failure_after_frames_writes_no_leftover(tmp_path):
     """跑了几帧后推理炸了 → 临时文件同样要清掉。"""
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     class _BoomAfter(_FakeDetector):
         def detect(self, rgb, resize_fn, conf_threshold=None, iou_threshold=None):
@@ -777,8 +777,8 @@ def test_render_video_detector_failure_after_frames_writes_no_leftover(tmp_path)
 
 def test_render_video_early_eof_leaves_no_leftover(tmp_path, monkeypatch):
     """探测帧数比实际多 → 报错且不留临时文件（已经写了若干帧）。"""
-    from pastelabel.engine import video_io
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine import video_io
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=10)
     out = tmp_path / "out.mp4"
@@ -801,7 +801,7 @@ def test_render_video_cancel_during_readback_stops_and_keeps_partial(tmp_path):
     回读被打断不是失败——半成品照样留着，结果标记 cancelled。原实现里
     取消只在写帧循环里查，回读阶段按了取消要等整条视频解完才有反应。
     """
-    from pastelabel.engine.video_io import render_video
+    from labelforge.engine.video_io import render_video
 
     video = _make_video(tmp_path / "src.mp4", count=30, fps=10.0)
     out = tmp_path / "out.mp4"

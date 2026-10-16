@@ -14,14 +14,14 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-RENDERER = ROOT / "pastelabel" / "canvas" / "canvas_renderer.py"
+RENDERER = ROOT / "labelforge" / "canvas" / "canvas_renderer.py"
 
 _HARNESS = '''
 from PyQt5.QtCore import Qt, QRectF, QPoint
 from PyQt5.QtGui import QPixmap, QColor, QImage
 from PyQt5.QtWidgets import QApplication, QWidget
 app = QApplication([])
-from pastelabel.canvas.canvas_renderer import CanvasRendererMixin
+from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 
 class Check:
@@ -128,9 +128,9 @@ print("ALL OK")
 
 
 def test_paint_failure_is_logged_instead_of_silently_swallowed():
-    """失败必须落到 pastelabel.log，否则崩溃现场无从追查。"""
+    """失败必须落到 labelforge.log，否则崩溃现场无从追查。"""
     out = _run(_HARNESS + '''
-import pastelabel.core.exception_hook as hook
+import labelforge.core.exception_hook as hook
 logged = []
 hook._write_log = lambda msg: logged.append(msg)
 

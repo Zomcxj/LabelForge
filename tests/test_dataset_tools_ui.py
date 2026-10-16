@@ -10,20 +10,20 @@ import re
 
 from pathlib import Path
 
-from pastelabel.ui import i18n
-from pastelabel.ui import dataset_tools_dialog
-from pastelabel.ui import icons
-from pastelabel.ui.dataset_tools_dialog import DatasetToolsDialog
-from pastelabel.ui.mixins import toolbar as toolbar_mod
-from pastelabel.ui.mixins.dataset_tools import DatasetToolsMixin
-from pastelabel.ui.mixins.options_popup import OptionsPopupMixin
-from pastelabel.ui.mixins.toolbar import ToolbarMixin
-from pastelabel.ui.mixins.translation import TranslationMixin
+from labelforge.ui import i18n
+from labelforge.ui import dataset_tools_dialog
+from labelforge.ui import icons
+from labelforge.ui.dataset_tools_dialog import DatasetToolsDialog
+from labelforge.ui.mixins import toolbar as toolbar_mod
+from labelforge.ui.mixins.dataset_tools import DatasetToolsMixin
+from labelforge.ui.mixins.options_popup import OptionsPopupMixin
+from labelforge.ui.mixins.toolbar import ToolbarMixin
+from labelforge.ui.mixins.translation import TranslationMixin
 
 ROOT = Path(__file__).resolve().parents[1]
-DIALOG_SRC = ROOT / "pastelabel" / "ui" / "dataset_tools_dialog.py"
-THEME_SRC = ROOT / "pastelabel" / "ui" / "theme.py"
-POPUP_SRC = ROOT / "pastelabel" / "ui" / "mixins" / "options_popup.py"
+DIALOG_SRC = ROOT / "labelforge" / "ui" / "dataset_tools_dialog.py"
+THEME_SRC = ROOT / "labelforge" / "ui" / "theme.py"
+POPUP_SRC = ROOT / "labelforge" / "ui" / "mixins" / "options_popup.py"
 
 DATASET_KEYS = (
     "格式", "格式转换", "输入格式:", "输出格式:", "图片目录:",
@@ -94,12 +94,12 @@ def test_format_btn_is_text_only_without_icon():
 def test_svg_convert_constant_removed():
     """文字按钮不再需要转换箭头图标，常量已删除。"""
     assert not hasattr(icons, "SVG_CONVERT")
-    icons_src = (ROOT / "pastelabel" / "ui" / "icons.py").read_text(encoding="utf-8")
+    icons_src = (ROOT / "labelforge" / "ui" / "icons.py").read_text(encoding="utf-8")
     assert "SVG_CONVERT" not in icons_src
 
 
 def test_toolbar_module_does_not_import_svg_convert():
-    toolbar_src = (ROOT / "pastelabel" / "ui" / "mixins" / "toolbar.py").read_text(
+    toolbar_src = (ROOT / "labelforge" / "ui" / "mixins" / "toolbar.py").read_text(
         encoding="utf-8")
     assert "SVG_CONVERT" not in toolbar_src
     tree = ast.parse(toolbar_src)
@@ -114,7 +114,7 @@ def test_toolbar_module_does_not_import_svg_convert():
 # ---------- 3. mixin 注册 ----------
 
 def test_dataset_tools_mixin_registered_on_image_editor():
-    from pastelabel.ui.main_window import ImageEditor
+    from labelforge.ui.main_window import ImageEditor
     assert DatasetToolsMixin in ImageEditor.__mro__
     assert OptionsPopupMixin in ImageEditor.__mro__
     assert callable(getattr(ImageEditor, "_open_dataset_tools"))
@@ -413,7 +413,7 @@ def test_add_path_row_binds_button_when_button_attr_given():
 def test_log_area_reuses_processing_panel_log_area_style():
     """日志框圆角样式与「导出→增强划分」的日志框一致：同一 objectName。"""
     dialog_src = DIALOG_SRC.read_text(encoding="utf-8")
-    panel_src = (ROOT / "pastelabel" / "ui" / "processing_panel.py").read_text(
+    panel_src = (ROOT / "labelforge" / "ui" / "processing_panel.py").read_text(
         encoding="utf-8")
     assert 'self._log_area.setObjectName("logArea")' in dialog_src
     assert 'self._log_area.setObjectName("logArea")' in panel_src
@@ -424,7 +424,7 @@ def test_log_area_reuses_processing_panel_log_area_style():
 
 def test_theme_stylesheet_is_applied_app_wide():
     """logArea 样式来自全局 app stylesheet，对话框才能继承到。"""
-    theme_mixin = (ROOT / "pastelabel" / "ui" / "mixins" / "theme.py").read_text(
+    theme_mixin = (ROOT / "labelforge" / "ui" / "mixins" / "theme.py").read_text(
         encoding="utf-8")
     assert "app.setStyleSheet(ThemeManager.get_stylesheet())" in theme_mixin
 

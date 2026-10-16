@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pastelabel"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "labelforge"))
 from build_support import (  # noqa: E402
     MSVC_RUNTIME_NAMES, _file_version, unify_msvc_runtime,
 )
@@ -64,7 +64,7 @@ def test_destination_paths_and_count_are_unchanged(fake_versions, tmp_path):
     toc = [
         (r"PyQt5\Qt5\bin\MSVCP140.dll", os.path.join(old, "msvcp140.dll"), "BINARY"),
         ("msvcp140.dll", os.path.join(new, "msvcp140.dll"), "BINARY"),
-        ("pastelabel/main.py", r"D:\x\main.py", "PYSOURCE"),
+        ("labelforge/main.py", r"D:\x\main.py", "PYSOURCE"),
     ]
 
     out = unify_msvc_runtime(toc, extra_dirs=[])
@@ -103,7 +103,7 @@ def test_entries_without_version_info_keep_their_source(fake_versions, tmp_path)
 
 
 def test_no_runtime_entries_is_a_noop(tmp_path):
-    toc = [("pastelabel/main.py", r"D:\x\main.py", "PYSOURCE")]
+    toc = [("labelforge/main.py", r"D:\x\main.py", "PYSOURCE")]
     assert unify_msvc_runtime(toc, extra_dirs=[]) == toc
 
 
@@ -126,7 +126,7 @@ def test_real_dll_versions_are_readable():
 
 # ---------- spec 接线 ----------
 
-@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+@pytest.mark.parametrize("rel", ["build.sh", "labelforge/LabelForge.spec"])
 def test_spec_files_unify_msvc_runtime(rel):
     """两个 spec 入口都要调用统一逻辑，否则总有一个构建路径仍会闪退。"""
     source = (ROOT / rel).read_text(encoding="utf-8")
@@ -134,9 +134,9 @@ def test_spec_files_unify_msvc_runtime(rel):
     assert "a.binaries = unify_msvc_runtime(a.binaries)" in source, rel
 
 
-@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
-def test_spec_files_import_helper_from_pastelabel_dir(rel):
-    """辅助模块在 pastelabel/ 下，spec 必须把该目录加进 sys.path 再导入。"""
+@pytest.mark.parametrize("rel", ["build.sh", "labelforge/LabelForge.spec"])
+def test_spec_files_import_helper_from_labelforge_dir(rel):
+    """辅助模块在 labelforge/ 下，spec 必须把该目录加进 sys.path 再导入。"""
     source = (ROOT / rel).read_text(encoding="utf-8")
     assert "from build_support import" in source, rel
     assert "SPECPATH" in source, rel
@@ -172,37 +172,37 @@ def _hidden_imports(rel):
     return names
 
 
-@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+@pytest.mark.parametrize("rel", ["build.sh", "labelforge/LabelForge.spec"])
 def test_hidden_imports_point_to_existing_modules(rel):
     """改名/删模块后 spec 没跟着改，打包出来会在运行时才炸（推理窗口就这么炸过）。"""
     missing = []
     for name in _hidden_imports(rel):
-        if not name.startswith("pastelabel."):
+        if not name.startswith("labelforge."):
             continue
         path = ROOT / (name.replace(".", os.sep) + ".py")
         package = ROOT / name.replace(".", os.sep) / "__init__.py"
-        # 命名空间包没有 __init__.py（pastelabel/widgets 就是），但目录存在即可导入
+        # 命名空间包没有 __init__.py（labelforge/widgets 就是），但目录存在即可导入
         namespace = (ROOT / name.replace(".", os.sep)).is_dir()
         if not path.exists() and not package.exists() and not namespace:
             missing.append(name)
     assert not missing, f"{rel} 里这些模块已不存在: {missing}"
 
 
-@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+@pytest.mark.parametrize("rel", ["build.sh", "labelforge/LabelForge.spec"])
 def test_hidden_imports_cover_inference_modules(rel):
     """推理相关的懒加载模块必须显式声明，否则打包后会缺模块。"""
     names = set(_hidden_imports(rel))
-    for name in ("pastelabel.engine.onnx_inference",
-                 "pastelabel.engine.inference_image",
-                 "pastelabel.engine.inference_task",
-                 "pastelabel.ui.mixins.inference",
-                 "pastelabel.ui.model_row",
-                 "pastelabel.ui.inference_workers",
-                 "pastelabel.ui.inference_progress"):
+    for name in ("labelforge.engine.onnx_inference",
+                 "labelforge.engine.inference_image",
+                 "labelforge.engine.inference_task",
+                 "labelforge.ui.mixins.inference",
+                 "labelforge.ui.model_row",
+                 "labelforge.ui.inference_workers",
+                 "labelforge.ui.inference_progress"):
         assert name in names, f"{rel} 缺少 {name}"
 
 
-@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+@pytest.mark.parametrize("rel", ["build.sh", "labelforge/LabelForge.spec"])
 def test_hidden_imports_cover_video_modules(rel):
     """视频抽帧的懒加载模块必须显式声明，否则打包后点「视频抽帧」才炸。
 
@@ -210,14 +210,14 @@ def test_hidden_imports_cover_video_modules(rel):
     导入），漏了不会在启动时报错。
     """
     names = set(_hidden_imports(rel))
-    for name in ("pastelabel.engine.video_io",
-                 "pastelabel.engine.video_render",
-                 "pastelabel.ui.video_dialog",
-                 "pastelabel.ui.mixins.video"):
+    for name in ("labelforge.engine.video_io",
+                 "labelforge.engine.video_render",
+                 "labelforge.ui.video_dialog",
+                 "labelforge.ui.mixins.video"):
         assert name in names, f"{rel} 缺少 {name}"
 
 
-@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+@pytest.mark.parametrize("rel", ["build.sh", "labelforge/LabelForge.spec"])
 def test_hidden_imports_cover_scope_modules(rel):
     """推理范围的懒加载模块必须显式声明，否则打包后点「推理范围」才炸。
 
@@ -225,9 +225,9 @@ def test_hidden_imports_cover_scope_modules(rel):
     （避免启动时就拉 Qt 对话框），漏了不会在启动时报错。
     """
     names = set(_hidden_imports(rel))
-    for name in ("pastelabel.engine.inference_scope",
-                 "pastelabel.ui.scope_panel",
-                 "pastelabel.ui.sliding_window_dialog"):
+    for name in ("labelforge.engine.inference_scope",
+                 "labelforge.ui.scope_panel",
+                 "labelforge.ui.sliding_window_dialog"):
         assert name in names, f"{rel} 缺少 {name}"
 
 
@@ -241,7 +241,7 @@ def _excludes(rel):
     return set(re.findall(r"""['"]([\w.]+)['"]""", block.group(1)))
 
 
-@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+@pytest.mark.parametrize("rel", ["build.sh", "labelforge/LabelForge.spec"])
 def test_build_entries_collect_cv2(rel):
     """cv2 是函数内延迟导入，两个构建入口都要显式收集且不能留在 excludes。
 
@@ -271,7 +271,7 @@ def test_build_script_checks_runtime_dependencies_before_building():
     assert check_at < build_at, "依赖自检必须在打包之前"
 
 
-@pytest.mark.parametrize("rel", ["build.sh", "pastelabel/PasteLabel.spec"])
+@pytest.mark.parametrize("rel", ["build.sh", "labelforge/LabelForge.spec"])
 def test_build_entries_bundle_license_file(rel):
     """GPL 要求随产物分发许可证正文，两个入口都要把 LICENSE 打进包。"""
     source = (ROOT / rel).read_text(encoding="utf-8")

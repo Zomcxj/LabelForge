@@ -454,7 +454,7 @@ class SettingsDialog(QDialog):
         self.reset_all_btn.clicked.connect(self._reset_all_settings)
 
         # 左下角只放版本号；「恢复默认设置」挪到保存左边（用户要求）。
-        # 版本取自 `pastelabel.__version__`，不硬编码——发版时只需改包常量，
+        # 版本取自 `labelforge.__version__`，不硬编码——发版时只需改包常量，
         # 不会两处漂移。
         left_col = QVBoxLayout()
         left_col.setSpacing(2)
@@ -483,8 +483,7 @@ class SettingsDialog(QDialog):
     def _version_text():
         """左下角版本串；取不到 `__version__` 时不显示假版本号。
 
-        只显示 `v1.5.3`，不带 "PasteLabel" 前缀（用户要求「设置中删除
-        PasteLabel 只要版本」）——对话框标题里已经有应用名了，重复。
+        只显示 `v1.5.3`，不带应用名前缀——对话框标题里已经有应用名了，重复。
         """
         from .. import __version__
 

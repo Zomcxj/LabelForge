@@ -10,12 +10,12 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-from pastelabel.engine.inference_task import (
+from labelforge.engine.inference_task import (
     ImageResult, build_detector, failure_summary, filter_by_class,
     is_auto_box, mark_auto_boxes, merge_boxes, model_class_names,
     normalize_settings, run_batch, validate_settings,
 )
-from pastelabel.engine.onnx_inference import (
+from labelforge.engine.onnx_inference import (
     DEFAULT_CONF, DEFAULT_IOU, InferenceError)
 
 
@@ -58,7 +58,7 @@ def test_defaults_are_not_duplicated_elsewhere():
 
     root = pathlib.Path(__file__).resolve().parents[1]
     offenders = []
-    for py in (root / "pastelabel").rglob("*.py"):
+    for py in (root / "labelforge").rglob("*.py"):
         if py.name == "onnx_inference.py":
             continue
         for lineno, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
@@ -359,7 +359,7 @@ def test_run_batch_class_filter_counts_filtered_boxes():
 def test_beijing_timestamp_is_time_only_utc_plus_8_with_milliseconds():
     """北京时间固定 UTC+8，不跟本机时区；只给时刻、不给年月日；精确到毫秒。"""
     from datetime import datetime, timezone
-    from pastelabel.engine.inference_task import beijing_timestamp
+    from labelforge.engine.inference_task import beijing_timestamp
 
     # 2024-01-01 00:00:00 UTC -> 北京时间 08:00:00.123
     moment = datetime(2024, 1, 1, 0, 0, 0, 123456, tzinfo=timezone.utc)
@@ -370,7 +370,7 @@ def test_beijing_timestamp_has_no_date():
     """日志行不带年月日：2026-10-12 这种日期串不该出现在时间戳里。"""
     import re
     from datetime import datetime, timezone
-    from pastelabel.engine.inference_task import beijing_timestamp
+    from labelforge.engine.inference_task import beijing_timestamp
 
     moment = datetime(2024, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
     got = beijing_timestamp(moment)
@@ -387,7 +387,7 @@ def test_beijing_timestamp_ignores_the_local_timezone():
         "import os, sys;"
         "os.environ['TZ'] = 'America/New_York';"
         "import time; time.tzset() if hasattr(time, 'tzset') else None;"
-        "from pastelabel.engine.inference_task import beijing_timestamp;"
+        "from labelforge.engine.inference_task import beijing_timestamp;"
         "print(beijing_timestamp())"
     )
     env = dict(os.environ, TZ="America/New_York", PYTHONPATH=str(ROOT))
@@ -397,7 +397,7 @@ def test_beijing_timestamp_ignores_the_local_timezone():
     assert out.returncode == 0, out.stderr
     # 与当场算出的 UTC+8 时刻只差几分钟，说明用的是固定偏移而不是本机时区
     # （比到秒会偶发跨秒失败：子进程本身要花时间启动）
-    from pastelabel.engine.inference_task import beijing_timestamp
+    from labelforge.engine.inference_task import beijing_timestamp
 
     expected = beijing_timestamp()
     got = out.stdout.strip()
@@ -407,7 +407,7 @@ def test_beijing_timestamp_ignores_the_local_timezone():
 def test_beijing_timestamp_truncates_not_rounds():
     """毫秒是截断，避免 .9996 进位到下一秒。"""
     from datetime import datetime, timezone
-    from pastelabel.engine.inference_task import beijing_timestamp
+    from labelforge.engine.inference_task import beijing_timestamp
 
     moment = datetime(2024, 1, 1, 0, 0, 0, 999999, tzinfo=timezone.utc)
     assert beijing_timestamp(moment).endswith(".999")
@@ -460,8 +460,8 @@ def test_failure_summary_mentions_count_and_first_reason():
 # ---------- 装配 ----------
 
 def test_build_detector_uses_class_file_over_metadata(monkeypatch, tmp_path):
-    import pastelabel.engine.inference_task as task
-    from pastelabel.engine.onnx_inference import OnnxDetector
+    import labelforge.engine.inference_task as task
+    from labelforge.engine.onnx_inference import OnnxDetector
 
     class FakeDetector(OnnxDetector):
         def _ensure_session(self):
@@ -479,7 +479,7 @@ def test_build_detector_uses_class_file_over_metadata(monkeypatch, tmp_path):
 def test_build_detector_reads_names_from_file(tmp_path):
     names = tmp_path / "c.txt"
     names.write_text("cat\n\ndog\n", encoding="utf-8")
-    from pastelabel.engine.onnx_inference import read_class_names
+    from labelforge.engine.onnx_inference import read_class_names
     assert read_class_names(str(names)) == ["cat", "dog"]
 
 
@@ -488,15 +488,15 @@ def test_build_detector_falls_back_to_model_metadata(monkeypatch):
 
     Session 是懒加载的，所以要显式取一次 session 才会回落读元数据。
     """
-    import pastelabel.engine.inference_task as task
-    from pastelabel.engine.onnx_inference import OnnxDetector
+    import labelforge.engine.inference_task as task
+    from labelforge.engine.onnx_inference import OnnxDetector
 
     class FakeDetector(OnnxDetector):
         def _ensure_session(self):
             self._input_name = "images"
             session = _FakeSession({"names": "{0: 'cat', 1: 'dog'}"})
             if not self.class_names:
-                from pastelabel.engine.onnx_inference import metadata_class_names
+                from labelforge.engine.onnx_inference import metadata_class_names
                 self.class_names = metadata_class_names(session)
             return session
     monkeypatch.setattr(task, "OnnxDetector", FakeDetector)
@@ -509,7 +509,7 @@ def test_build_detector_falls_back_to_model_metadata(monkeypatch):
 
 def test_build_detector_prefers_explicit_class_file_over_metadata():
     """给了类别文件就用文件，不被模型元数据覆盖。"""
-    import pastelabel.engine.inference_task as task
+    import labelforge.engine.inference_task as task
 
     detector = task.build_detector(
         {"model_path": "model/yolov5n.onnx", "class_names_path": ""})
@@ -534,7 +534,7 @@ def _write_sidecar(tmp_path, stem, shapes, width=100, height=80, extra=None):
 
 
 def test_read_sidecar_boxes_returns_none_when_missing(tmp_path):
-    from pastelabel.engine.inference_task import read_sidecar_boxes
+    from labelforge.engine.inference_task import read_sidecar_boxes
     img = tmp_path / "none.png"
     img.write_bytes(b"x")
     assert read_sidecar_boxes(str(img)) is None
@@ -542,13 +542,13 @@ def test_read_sidecar_boxes_returns_none_when_missing(tmp_path):
 
 def test_read_sidecar_boxes_returns_empty_list_for_empty_shapes(tmp_path):
     """空标注（shapes 为空）与缺文件是两种状态，不能都返回 None。"""
-    from pastelabel.engine.inference_task import read_sidecar_boxes
+    from labelforge.engine.inference_task import read_sidecar_boxes
     img = _write_sidecar(tmp_path, "empty", [])
     assert read_sidecar_boxes(img) == []
 
 
 def test_read_sidecar_boxes_converts_shapes(tmp_path):
-    from pastelabel.engine.inference_task import read_sidecar_boxes
+    from labelforge.engine.inference_task import read_sidecar_boxes
     img = _write_sidecar(tmp_path, "one", [
         {"label": "cat", "points": [[10, 20], [40, 20], [40, 60], [10, 60]],
          "shape_type": "rectangle", "flags": {"paste": True}, "group_id": 3},
@@ -562,7 +562,7 @@ def test_read_sidecar_boxes_converts_shapes(tmp_path):
 
 
 def test_read_sidecar_boxes_tolerates_corrupt_json(tmp_path):
-    from pastelabel.engine.inference_task import read_sidecar_boxes
+    from labelforge.engine.inference_task import read_sidecar_boxes
     img = tmp_path / "bad.png"
     img.write_bytes(b"x")
     (tmp_path / "bad.json").write_text("{not json", encoding="utf-8")
@@ -570,7 +570,7 @@ def test_read_sidecar_boxes_tolerates_corrupt_json(tmp_path):
 
 
 def test_write_sidecar_boxes_preserves_other_fields(tmp_path):
-    from pastelabel.engine.inference_task import write_sidecar_boxes
+    from labelforge.engine.inference_task import write_sidecar_boxes
     img = _write_sidecar(tmp_path, "keep", [])
     assert write_sidecar_boxes(img, [
         {"label": "cat", "x": 1, "y": 2, "width": 3, "height": 4}], 100, 80)
@@ -582,7 +582,7 @@ def test_write_sidecar_boxes_preserves_other_fields(tmp_path):
 
 
 def test_write_sidecar_boxes_creates_file_when_missing(tmp_path):
-    from pastelabel.engine.inference_task import write_sidecar_boxes
+    from labelforge.engine.inference_task import write_sidecar_boxes
     img = tmp_path / "fresh.png"
     img.write_bytes(b"x")
     assert write_sidecar_boxes(img, [], 64, 48)
@@ -595,7 +595,7 @@ def test_write_sidecar_boxes_creates_file_when_missing(tmp_path):
 
 def test_write_sidecar_boxes_keeps_inference_flags(tmp_path):
     """推理来源标记必须落盘，重载后才能识别上一轮自动结果。"""
-    from pastelabel.engine.inference_task import write_sidecar_boxes
+    from labelforge.engine.inference_task import write_sidecar_boxes
     img = tmp_path / "flag.png"
     img.write_bytes(b"x")
     write_sidecar_boxes(img, [
@@ -608,7 +608,7 @@ def test_write_sidecar_boxes_keeps_inference_flags(tmp_path):
 
 
 def test_write_results_merges_with_disk_boxes(tmp_path):
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "merge", [
         {"label": "manual", "points": [[0, 0], [5, 0], [5, 5], [0, 5]],
          "shape_type": "rectangle", "flags": {}},
@@ -627,7 +627,7 @@ def test_write_results_merges_with_disk_boxes(tmp_path):
 
 def test_write_results_prefers_memory_over_disk(tmp_path):
     """已加载图以内存为准：磁盘滞后时不能把内存里的新标注当成不存在。"""
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "mem", [
         {"label": "stale", "points": [[0, 0], [5, 0], [5, 5], [0, 5]],
          "shape_type": "rectangle", "flags": {}},
@@ -644,7 +644,7 @@ def test_write_results_prefers_memory_over_disk(tmp_path):
 
 
 def test_write_results_skips_current_index_and_failures(tmp_path):
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     ok = _write_sidecar(tmp_path, "ok", [])
     bad = _write_sidecar(tmp_path, "bad", [])
     results = {
@@ -659,8 +659,8 @@ def test_write_results_skips_current_index_and_failures(tmp_path):
 
 def test_write_results_reports_failure_paths(tmp_path, monkeypatch):
     """写盘失败要上报路径；用有检出的图，否则空结果根本不会尝试写盘。"""
-    from pastelabel.engine import inference_task
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine import inference_task
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = tmp_path / "fail.png"
     img.write_bytes(b"x")
     monkeypatch.setattr(inference_task, "write_sidecar_boxes",
@@ -676,7 +676,7 @@ def test_write_results_reports_failure_paths(tmp_path, monkeypatch):
 
 def test_write_results_replace_auto_drops_previous_inference(tmp_path):
     """覆盖：上一轮推理框与人工框都清掉，只留本轮结果。"""
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "repl", [
         {"label": "old", "points": [[0, 0], [5, 0], [5, 5], [0, 5]],
          "shape_type": "rectangle", "flags": {"inference": True}},
@@ -696,7 +696,7 @@ def test_write_results_replace_auto_drops_previous_inference(tmp_path):
 
 def test_write_results_preserves_paste_shapes(tmp_path):
     """贴图在 sidecar 里靠 flags.paste 区分，写结果不能把它当检测框删掉。"""
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "paste", [
         {"label": "logo", "points": [[0, 0], [5, 0], [5, 5], [0, 5]],
          "shape_type": "rectangle", "flags": {"paste": True}},
@@ -723,7 +723,7 @@ def _labels_of(image_path):
 
 def test_no_detection_does_not_create_sidecar(tmp_path):
     """无检出的图不新建 json：否则数据集里全是 shapes 为 [] 的空文件。"""
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = tmp_path / "miss.png"
     img.write_bytes(b"x")
 
@@ -736,7 +736,7 @@ def test_no_detection_does_not_create_sidecar(tmp_path):
 
 def test_no_detection_removes_preexisting_empty_sidecar(tmp_path):
     """原本就是空 shapes 的 json 顺手删掉，不留无意义文件。"""
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "empty", [])
 
     written, _ = write_results(
@@ -748,7 +748,7 @@ def test_no_detection_removes_preexisting_empty_sidecar(tmp_path):
 
 def test_no_detection_keeps_manual_annotations(tmp_path):
     """无检出但有人工标注：必须原样保留，不能因为没结果就清掉。"""
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "manual", [
         {"label": "manual", "points": [[1, 1], [5, 1], [5, 5], [1, 5]],
          "shape_type": "rectangle", "flags": {}},
@@ -763,7 +763,7 @@ def test_no_detection_keeps_manual_annotations(tmp_path):
 
 def test_replace_auto_clears_previous_inference_boxes_and_drops_file(tmp_path):
     """勾选替换且无检出：上一轮推理框被清掉，清空后连 json 一起删。"""
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "old", [
         {"label": "oldauto", "points": [[1, 1], [5, 1], [5, 5], [1, 5]],
          "shape_type": "rectangle", "flags": {"inference": True}},
@@ -785,7 +785,7 @@ def test_replace_auto_also_clears_manual_boxes(tmp_path):
     ——手工框与本轮结果叠在一起看着像框重复。贴图不在检测框这层，见下一条
     贴图用例。
     """
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "mix", [
         {"label": "oldauto", "points": [[1, 1], [5, 1], [5, 5], [1, 5]],
          "shape_type": "rectangle", "flags": {"inference": True}},
@@ -804,7 +804,7 @@ def test_replace_auto_also_clears_manual_boxes(tmp_path):
 
 def test_paste_shapes_survive_inference_write(tmp_path):
     """贴图与多边形必须原样保留：推理只追加检测框。"""
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
     img = _write_sidecar(tmp_path, "shapes", [
         {"label": "poly", "points": [[10, 10], [20, 10], [15, 20]],
          "shape_type": "polygon", "flags": {}},
@@ -831,7 +831,7 @@ def test_paste_shapes_survive_inference_write(tmp_path):
 
 def test_remove_empty_sidecar_keeps_file_with_shapes(tmp_path):
     """非空 json 绝不能被删。"""
-    from pastelabel.engine.inference_task import remove_empty_sidecar
+    from labelforge.engine.inference_task import remove_empty_sidecar
     img = _write_sidecar(tmp_path, "keep", [
         {"label": "x", "points": [[1, 1], [5, 1], [5, 5], [1, 5]],
          "shape_type": "rectangle", "flags": {}},
@@ -843,7 +843,7 @@ def test_remove_empty_sidecar_keeps_file_with_shapes(tmp_path):
 
 def test_remove_empty_sidecar_ignores_missing_and_broken(tmp_path):
     """文件不存在或内容损坏时不删、不抛错。"""
-    from pastelabel.engine.inference_task import remove_empty_sidecar
+    from labelforge.engine.inference_task import remove_empty_sidecar
     img = tmp_path / "none.png"
     img.write_bytes(b"x")
     assert remove_empty_sidecar(str(img)) is False
@@ -943,7 +943,7 @@ def test_merge_replace_auto_still_works_with_filter():
 def test_write_results_passes_filter_through(tmp_path):
     """批量写盘那条路径也必须带上筛选，否则当前图对了、其它图还是脏的。"""
     import numpy as np
-    from pastelabel.engine.inference_task import ImageResult, write_results
+    from labelforge.engine.inference_task import ImageResult, write_results
 
     img = tmp_path / "a.png"
     img.write_bytes(b"x")
@@ -952,7 +952,7 @@ def test_write_results_passes_filter_through(tmp_path):
     written, failed = write_results(results, memory_boxes=memory,
                                     class_filter={"car"})
     assert failed == []
-    from pastelabel.engine.inference_task import read_sidecar_boxes
+    from labelforge.engine.inference_task import read_sidecar_boxes
     boxes = read_sidecar_boxes(str(img)) or []
     assert sorted(b["label"] for b in boxes) == ["car"], boxes
 
@@ -971,7 +971,7 @@ def test_detect_in_scope_dedupes_a_box_found_in_two_overlapping_regions():
     两遍，同一个目标就出两份。`detect_in_scope` 的 ROI 分支已经把各区域结果
     交给 `merge_scope_results` 按 IoU 合并，这里钉住端到端确实生效。
     """
-    from pastelabel.engine.inference_task import detect_in_scope
+    from labelforge.engine.inference_task import detect_in_scope
 
     # 区域 A=(0,0,200,200)、B=(100,100,200,200)，重叠区 100..200。
     # 目标放在重叠区正中：原图 (140,140) 尺寸 40x40 -> 两个区域都看得见。
@@ -1009,7 +1009,7 @@ def test_detect_in_scope_dedupes_a_box_found_in_two_overlapping_regions():
 
 def test_detect_in_scope_keeps_distinct_targets_in_overlapping_regions():
     """反向要求：重叠区里**两个不同**目标不能被误合成一个。"""
-    from pastelabel.engine.inference_task import detect_in_scope
+    from labelforge.engine.inference_task import detect_in_scope
 
     origins = [(0, 0), (100, 100)]
     calls = {"n": 0}
@@ -1040,7 +1040,7 @@ def test_detect_in_scope_drops_boxes_whose_center_is_outside_every_region():
     这条与去重合起来才是「重叠区域」的完整语义：**先在各自区域内取框、再去重**。
     顺序反了（先合并后过滤）会把区域外的框留下来。
     """
-    from pastelabel.engine.inference_task import detect_in_scope
+    from labelforge.engine.inference_task import detect_in_scope
 
     class Detector:
         def detect(self, rgb, resize_fn):

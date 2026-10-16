@@ -53,7 +53,7 @@ from PyQt5.QtTest import QTest
 from PyQt5.QtCore import Qt
 import json
 app = QApplication([])
-from pastelabel.ui.dialogs import LabelSelectionDialog
+from labelforge.ui.dialogs import LabelSelectionDialog
 
 d = LabelSelectionDialog(None, ["drone", "Drone", "car"], title="修改标签",
                          initial_text="drone", show_group=True,
@@ -89,7 +89,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtTest import QTest
 from PyQt5.QtCore import Qt
 app = QApplication([])
-from pastelabel.ui.dialogs import LabelSelectionDialog
+from labelforge.ui.dialogs import LabelSelectionDialog
 
 d = LabelSelectionDialog(None, ["drone", "Drone", "car"], title="修改标签",
                          initial_text="drone", show_group=True,
@@ -119,7 +119,7 @@ def test_typing_in_the_box_still_wins_over_the_list():
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtTest import QTest
 app = QApplication([])
-from pastelabel.ui.dialogs import LabelSelectionDialog
+from labelforge.ui.dialogs import LabelSelectionDialog
 
 d = LabelSelectionDialog(None, ["drone", "Drone", "car"], title="修改标签",
                          initial_text="drone", show_group=True,
@@ -143,7 +143,7 @@ def test_confirming_without_touching_anything_keeps_the_current_label():
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication
 app = QApplication([])
-from pastelabel.ui.dialogs import LabelSelectionDialog
+from labelforge.ui.dialogs import LabelSelectionDialog
 
 d = LabelSelectionDialog(None, ["drone", "Drone", "car"], title="修改标签",
                          initial_text="drone", show_group=True,

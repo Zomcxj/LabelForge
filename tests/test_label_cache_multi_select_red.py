@@ -1,14 +1,14 @@
 """标签缓存多选复制的 RED 回归测试。"""
 from pathlib import Path
 
-from pastelabel.ui import i18n
-from pastelabel.ui.main_window import ImageEditor
-from pastelabel.ui.mixins.cache_menu import CacheMenuMixin
-from pastelabel.ui.mixins.label_cache_slot import LabelCacheSlotMixin
+from labelforge.ui import i18n
+from labelforge.ui.main_window import ImageEditor
+from labelforge.ui.mixins.cache_menu import CacheMenuMixin
+from labelforge.ui.mixins.label_cache_slot import LabelCacheSlotMixin
 
 
 def test_canvas_uses_selected_boxes_state_for_multi_selection():
-    source = Path("pastelabel/canvas/canvas.py").read_text(encoding="utf-8")
+    source = Path("labelforge/canvas/canvas.py").read_text(encoding="utf-8")
 
     assert "self.selected_boxes" in source
 

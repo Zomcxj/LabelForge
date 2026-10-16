@@ -21,7 +21,7 @@ import cv2
 import numpy as np
 import pytest
 
-from pastelabel.engine.video_io import (
+from labelforge.engine.video_io import (
     Manifest, ManifestFrame, VideoError, compose_video, output_dir_for,
     probe, read_image, write_image, write_manifest,
 )
@@ -141,14 +141,14 @@ class _FakeDraw:
 
 @pytest.fixture
 def fake_draw(monkeypatch):
-    import pastelabel.engine.video_render as video_render
+    import labelforge.engine.video_render as video_render
     fake = _FakeDraw()
     monkeypatch.setattr(video_render, "draw_boxes", fake)
     return fake
 
 
 def _spec(**kw):
-    from pastelabel.engine.video_render import RenderSpec
+    from labelforge.engine.video_render import RenderSpec
     return RenderSpec(**kw)
 
 
@@ -156,7 +156,7 @@ def _spec(**kw):
 
 def test_compose_without_render_does_not_read_sidecars(tmp_path, monkeypatch):
     """不给 render 时合成不该读任何 sidecar。"""
-    import pastelabel.engine.video_io as video_io
+    import labelforge.engine.video_io as video_io
 
     out_dir, manifest_path = _make_images(tmp_path, count=4)
     called = []
@@ -356,8 +356,8 @@ from PyQt5.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 import cv2
-from pastelabel.engine import video_io as vio
-from pastelabel.engine.video_render import RenderSpec
+from labelforge.engine import video_io as vio
+from labelforge.engine.video_render import RenderSpec
 
 TMP = tempfile.mkdtemp()
 # 画面不能太小、线不能太细：mp4v 有损，小图 + 1px 线会把类别色抹掉，

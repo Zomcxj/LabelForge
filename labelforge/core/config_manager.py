@@ -7,10 +7,41 @@ from . import config as config_module
 from .config import SHORTCUT_CONFIG, STATUSBAR_CONFIG, DETECTION_BOX_CONFIG, MAGNIFIER_CONFIG, LABEL_CACHE_SLOTS, NUDGE_CONFIG, DETECTION_BOX_WHEEL_CONFIG, CROSSHAIR_CONFIG, BOX_BORDER_CONFIG, LABEL_COLORS, OBB_CONFIG, normalized_fill_rgb
 
 
-CONFIG_PATH = os.environ.get('PASTELABEL_CONFIG_PATH') or os.path.join(
+LEGACY_CONFIG_PATH = os.path.join(
     os.path.expanduser("~"), '.pastelabel.json')
+
+
+def _resolve_config_path():
+    """配置文件路径。新环境变量优先，旧变量仍认（老排查脚本不至于失效）。"""
+    return (os.environ.get('LABELFORGE_CONFIG_PATH')
+            or os.environ.get('PASTELABEL_CONFIG_PATH')
+            or os.path.join(os.path.expanduser("~"), '.labelforge.json'))
+
+
+CONFIG_PATH = _resolve_config_path()
 MEMORY_LIMIT = 10
 DISABLED_SHORTCUT_ACTIONS = {'save', 'save_all'}
+
+
+def migrate_legacy_config():
+    """把旧版 `~/.pastelabel.json` 搬到 `~/.labelforge.json`，老用户无感升级。
+
+    只在两个前提下搬：新路径不存在、旧路径存在。旧文件保留不删——万一新版本
+    有问题，回退旧版本时设置还在。环境变量指定了路径就完全不碰。
+    """
+    if os.environ.get('LABELFORGE_CONFIG_PATH') or os.environ.get(
+            'PASTELABEL_CONFIG_PATH'):
+        return False
+    if os.path.exists(CONFIG_PATH) or not os.path.exists(LEGACY_CONFIG_PATH):
+        return False
+    try:
+        with open(LEGACY_CONFIG_PATH, 'rb') as src:
+            data = src.read()
+        with open(CONFIG_PATH, 'wb') as dst:
+            dst.write(data)
+    except OSError:
+        return False
+    return True
 
 
 def _normalize_label_cache_slots(slots):
@@ -53,7 +84,7 @@ def _normalize_lint_ignored_rules(rules):
 
 def _normalize_inference_settings(raw):
     """推理配置：只保留已知字段，避免旧配置里的杂项一直留在文件里。"""
-    from pastelabel.engine.inference_task import normalize_settings
+    from labelforge.engine.inference_task import normalize_settings
     if not isinstance(raw, dict):
         raw = {}
     normalized = normalize_settings(raw)
@@ -163,6 +194,7 @@ def get_config_path():
 
 def load_config():
     """加载完整配置"""
+    migrate_legacy_config()
     config = {}
     if os.path.exists(CONFIG_PATH):
         try:

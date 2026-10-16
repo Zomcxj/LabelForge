@@ -2,7 +2,7 @@
 import json
 import os
 
-from pastelabel.engine.image_loader import (
+from labelforge.engine.image_loader import (
     STATUS_ANNOTATED,
     STATUS_EMPTY,
     STATUS_UNANNOTATED,
