@@ -284,6 +284,9 @@ class SaveManager(QObject):
             from ..core.exception_hook import _write_log
             _write_log(f"删除空标注 JSON 失败：{json_path}：{exc}")
             return False
+        from ..core import json_trace
+        json_trace.trace_delete('save_manager._delete_sidecar_json',
+                                json_path, survived=os.path.exists(json_path))
         return True
     
     def save_all_canvas(self):

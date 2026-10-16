@@ -419,7 +419,12 @@ class ImageLoaderMixin:
                     item.setHidden(True)
                 bg_list.addItem(item)
                 self.canvas_items_dict[idx] = []
-                self.detection_boxes_dict[idx] = []
+                # **不要**在这里预置 `detection_boxes_dict[idx] = []`：缓存判据是
+                # 「下标在不在字典里」（空列表也是有效缓存），预置空列表等于告诉
+                # `_load_detection_boxes_for_index()`「这张已加载过、结果就是空的」，
+                # 磁盘上的框永远读不进来——用户报的「加载数据集把标签吃掉、
+                # 绿点变橙点再变空心」就是这个（大文件夹走这条流式加载路径）。
+                # 缓存由 `_load_detection_boxes_for_index()` 自己填。
                 self._pending_image_index += 1
                 if time.perf_counter() >= deadline:
                     break
@@ -627,11 +632,16 @@ class ImageLoaderMixin:
         连带 `detection_boxes_dict[index]` 也被旧内容覆盖——用户报的
         「一键推理跑完不更新结果，切到那张图又恢复原样」就是这个。
         """
-        if index in self.detection_boxes_dict:
+        from_cache = index in self.detection_boxes_dict
+        if from_cache:
             self.detection_boxes = self.detection_boxes_dict[index].copy()
         else:
             self.detection_boxes = self.load_detection_boxes(file_path)
             self.detection_boxes_dict[index] = self.detection_boxes.copy()
+
+        from ...core import json_trace
+        json_trace.trace_load_result(index, file_path, len(self.detection_boxes),
+                                     from_cache)
 
     def load_detection_boxes(self, file_path):
         """加载检测框 JSON 文件"""
@@ -700,6 +710,15 @@ class ImageLoaderMixin:
             if self.current_background_index >= 0:
                 self.canvas_items_dict[self.current_background_index] = self.canvas_items.copy()
                 self.detection_boxes_dict[self.current_background_index] = self.detection_boxes.copy()
+                # 诊断：切走之前先记下**上一张**的 json 状态。若它随后消失，
+                # 下面这次 save_current_json() 就是第一嫌疑人。
+                from ...core import json_trace
+                if 0 <= self.current_background_index < len(self.background_images):
+                    json_trace.trace(
+                        '切走前(即将 save_current_json)',
+                        f"{os.path.splitext(self.background_images[self.current_background_index])[0]}.json",
+                        idx=self.current_background_index,
+                        memory_boxes=len(self.detection_boxes))
                 self.save_current_json()
 
             self.current_background_index = index
@@ -717,6 +736,11 @@ class ImageLoaderMixin:
                 else:
                     self.current_background = None
                     self.detection_boxes = []
+                # 诊断：切到的新图，它盘上的 json 在不在、有几条 shape
+                from ...core import json_trace
+                json_trace.trace('切到', f"{os.path.splitext(file_path)[0]}.json",
+                                 index=index,
+                                 loaded_boxes=len(self.detection_boxes))
 
             self.update_label_list()
             self.canvas.reset_view()

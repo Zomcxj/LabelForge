@@ -534,6 +534,9 @@ def remove_empty_sidecar(image_path):
         os.remove(json_path)
     except OSError:
         return False
+    from pastelabel.core import json_trace
+    json_trace.trace_delete('inference_task.remove_empty_sidecar', json_path,
+                            survived=os.path.exists(json_path))
     return True
 
 
@@ -571,6 +574,10 @@ def write_sidecar_boxes(image_path, boxes, image_width=0, image_height=0):
         data["imageWidth"] = int(image_width)
     if image_height:
         data["imageHeight"] = int(image_height)
+
+    from pastelabel.core import json_trace
+    json_trace.trace('write_sidecar_boxes 即将覆盖', json_path,
+                     new_shapes=len(data["shapes"]))
 
     tmp_path = f"{json_path}.tmp"
     try:
