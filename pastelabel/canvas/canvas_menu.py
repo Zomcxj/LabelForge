@@ -287,16 +287,30 @@ class CanvasMenuMixin:
         return None
 
     def _region_handle_hit_size(self):
-        """区域手柄的命中边长（画布像素），**随缩放放大**、并留一个下限。
+        """区域手柄的命中边长（画布像素）；与绘制共用 `_region_handle_size()`。
 
-        图缩小时区域框在屏上变小，若命中区固定 8px 就会「看着在角上却点不
-        中」。这里取「设计尺寸 / 缩放」并夹一个合理区间：放太大（比如缩到
-        10%）会让整条边都变成手柄、想拖动内部也拖不动，所以上限 24px。
+        过去这里是「设计尺寸 / 缩放」，图缩小时会把命中区放大到 24px。但
+        用户要求手柄只比检测框大一点、且**看着别忽大忽小**，所以现在跟检测框
+        一样是恒定像素（`_region_handle_size()`），不再随 `background_scale`
+        变化。命中区与绘制必须同源，否则会出现「看着能抓却抓不到」。
         """
-        from ..core.config import REGION_CONFIG
-        base = REGION_CONFIG['handle_size']
-        scale = getattr(self, 'background_scale', 1.0) or 1.0
-        return max(base, min(24.0, base / scale))
+        return self._region_handle_size()
+
+    def _region_handle_size(self):
+        """区域句柄边长（画布像素）= **检测框句柄 + 3**，**不随缩放变化**。
+
+        用户要求「句柄只比检测框大一点」。关键点是**不能缩放**：检测框
+        `_draw_box_handles()` 用的是写死的 `DETECTION_BOX_CONFIG
+        ['resize_handle_size']`，无论 `background_scale` 是多少都是 8px。
+        区域过去按 `handle_size / scale` 放大（上限 24），于是图一缩小，区域
+        句柄就变成检测框的两三倍大——用户原话「我参数拉到 15 都没你的区域框
+        句柄大」，说的就是这个，跟基准值是 8 还是 9 完全无关。
+
+        定义放在这里（与命中判定同一个类），绘制端 `_region_handle_draw_size()`
+        转调它，保证「看到的」就是「抓得到的」。
+        """
+        from ..core.config import DETECTION_BOX_CONFIG, REGION_HANDLE_EXTRA
+        return DETECTION_BOX_CONFIG['resize_handle_size'] + REGION_HANDLE_EXTRA
 
     def _show_region_context_menu(self, mouse_pos):
         index = self._region_at(mouse_pos)

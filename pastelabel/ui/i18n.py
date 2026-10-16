@@ -225,6 +225,13 @@ _strings = {
         "逐帧推理：每一帧都推理并画框，速度比抽帧慢；框会烧进画面，之后不能再改。":
             "逐帧推理：每一帧都推理并画框，速度比抽帧慢；框会烧进画面，之后不能再改。",
         "类别名": "类别名",
+        "合成范围": "合成范围",
+        "到": "到",
+        "从第几张开始（含这张，从 0 数）": "从第几张开始（含这张，从 0 数）",
+        "合成到第几张（含这张）": "合成到第几张（含这张）",
+        "共": "共",
+        "张，将合成第": "张，将合成第",
+        "张": "张",
         "没有标注文件，不能叠加标签框": "没有标注文件，不能叠加标签框",
         "标注读不出来": "标注读不出来",
         "张图片没有标注，已按原画面写入": "张图片没有标注，已按原画面写入",
@@ -971,6 +978,14 @@ _strings = {
             "than extracting frames. Boxes are burned into the pixels and cannot "
             "be edited afterwards.",
         "类别名": "Label names",
+        "合成范围": "Range",
+        "到": "to",
+        "从第几张开始（含这张，从 0 数）":
+            "First image to include (0-based, inclusive)",
+        "合成到第几张（含这张）": "Last image to include (inclusive)",
+        "共": "of",
+        "张，将合成第": "images; composing",
+        "张": "images",
         "没有标注文件，不能叠加标签框": "No annotation files found, cannot overlay boxes",
         "标注读不出来": "Cannot read annotation",
         "张图片没有标注，已按原画面写入": " image(s) had no annotation and were written as-is",

@@ -779,3 +779,109 @@ print("RESULT", repr((res.cancelled, res.frames_written, decoded,
     assert named_partial is True, "半成品必须用 .partial 名，不能冒充正式产物"
     assert final_exists is False, "取消不能生成正式文件"
     assert decoded == written, f"半成品要能播且帧数对得上：{decoded} != {written}"
+
+
+# ---------- 第 12 轮：合成范围的两个输入框 ----------
+
+def test_compose_range_spins_default_to_first_and_last():
+    """范围输入默认「0 到最后一张」，来源选定后自动填好。"""
+    result = _run_qt('''
+import sys, os
+sys.path.insert(0, r"@@ROOT@@")
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QImage
+app = QApplication([])
+
+work = os.path.join(os.environ["TEMP"], "pastelabel_range_ui")
+os.makedirs(work, exist_ok=True)
+for name in os.listdir(work):
+    os.remove(os.path.join(work, name))
+for i in range(7):
+    img = QImage(320, 240, QImage.Format_RGB888)
+    img.fill(0x223344)
+    img.save(os.path.join(work, f"{i:03d}.png"))
+
+from pastelabel.ui.video_dialog import VideoDialog
+
+d = VideoDialog()
+d.set_compose_dir(work)
+app.processEvents()
+print("RESULT", repr((d.compose_start_spin.value(), d.compose_end_spin.value(),
+                     d.compose_start_spin.maximum(), d.compose_end_spin.maximum(),
+                     d.compose_range())))
+''')
+    start, end, start_max, end_max, rng = result
+    assert (start, end) == (0, 6), f"默认应为 0..6（7 张），实际 {start}..{end}"
+    assert (start_max, end_max) == (6, 6), (start_max, end_max)
+    assert rng == (0, 6)
+
+
+def test_compose_range_is_carried_into_the_settings():
+    """范围要进 `settings()`，否则界面上选了也不生效。"""
+    result = _run_qt('''
+import sys, os
+sys.path.insert(0, r"@@ROOT@@")
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QImage
+app = QApplication([])
+
+work = os.path.join(os.environ["TEMP"], "pastelabel_range_settings")
+os.makedirs(work, exist_ok=True)
+for name in os.listdir(work):
+    os.remove(os.path.join(work, name))
+for i in range(6):
+    img = QImage(320, 240, QImage.Format_RGB888)
+    img.fill(0x223344)
+    img.save(os.path.join(work, f"{i:03d}.png"))
+
+from pastelabel.ui.video_dialog import VideoDialog
+
+d = VideoDialog()
+d.set_compose_dir(work)
+d.compose_start_spin.setValue(2)
+d.compose_end_spin.setValue(4)
+# settings() 按当前 action 分派，不设成 compose 会返回 None
+from pastelabel.ui.video_dialog import ACTION_COMPOSE
+d.action = ACTION_COMPOSE
+app.processEvents()
+s = d.settings()
+print("RESULT", repr((s.get("start_index"), s.get("end_index"))))
+''')
+    start_index, end_index = result
+    assert (start_index, end_index) == (2, 4), (start_index, end_index)
+
+
+def test_compose_range_corrects_a_reversed_input():
+    """起始 > 结束 时纠回，不让用户带着非法范围点开始。"""
+    result = _run_qt('''
+import sys, os
+sys.path.insert(0, r"@@ROOT@@")
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QImage
+app = QApplication([])
+
+work = os.path.join(os.environ["TEMP"], "pastelabel_range_reverse")
+os.makedirs(work, exist_ok=True)
+for name in os.listdir(work):
+    os.remove(os.path.join(work, name))
+for i in range(6):
+    img = QImage(320, 240, QImage.Format_RGB888)
+    img.fill(0x223344)
+    img.save(os.path.join(work, f"{i:03d}.png"))
+
+from pastelabel.ui.video_dialog import VideoDialog
+
+d = VideoDialog()
+d.set_compose_dir(work)
+app.processEvents()
+# 先把起始拉到 4，再把结束拉回 1（越界）
+d.compose_start_spin.setValue(4)
+app.processEvents()
+d.compose_end_spin.setValue(1)
+app.processEvents()
+print("RESULT", repr((d.compose_start_spin.value(), d.compose_end_spin.value(),
+                     d.compose_range())))
+''')
+    start, end, rng = result
+    assert start <= end, f"起始({start}) 不该大于结束({end})"
+    assert rng == (start, end)

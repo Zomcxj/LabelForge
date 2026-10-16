@@ -210,7 +210,9 @@ class VideoMixin:
             manifest_path=settings.get("manifest_path"),
             images_dir=settings.get("images_dir"),
             output_fps=settings.get("output_fps"),
-            render=render, parent=self)
+            render=render, parent=self,
+            start_index=settings.get("start_index"),
+            end_index=settings.get("end_index"))
         self._compose_worker = worker
         self._compose_settings = dict(settings)
         self._busy = True

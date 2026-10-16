@@ -5,7 +5,10 @@ from PyQt5.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QFontMetrics
 from PyQt5.QtCore import Qt, QPointF, QRectF
 import numpy as np
 
-from ..core.config import DETECTION_BOX_CONFIG, PASTE_ITEM_CONFIG, GRID_CONFIG, MAGNIFIER_CONFIG, CROSSHAIR_CONFIG
+from ..core.config import (
+    DETECTION_BOX_CONFIG, PASTE_ITEM_CONFIG, GRID_CONFIG, MAGNIFIER_CONFIG,
+    CROSSHAIR_CONFIG, REGION_HANDLE_EXTRA,
+)
 from ..engine.inference_scope import ScopeError, iter_windows_with_index
 from ..ui.theme import ThemeManager
 
@@ -408,11 +411,17 @@ class CanvasRendererMixin:
         painter.restore()
 
     def _region_handle_draw_size(self):
-        """手柄的绘制边长，与 `_region_handle_hit_size()` 同口径。"""
-        from ..core.config import REGION_CONFIG
-        base = REGION_CONFIG['handle_size']
-        scale = getattr(self, 'background_scale', 1.0) or 1.0
-        return max(base, min(24.0, base / scale))
+        """手柄的绘制边长（画布像素）。
+
+        真源在 `canvas_menu._region_handle_size()`（与命中判定同一个类，避免
+        两处各算一遍）。这里转调；万一那个 mixin 不在（早期测试用的精简
+        Canvas），退回「检测框 + REGION_HANDLE_EXTRA」的同一口径。
+        """
+        shared = getattr(self, '_region_handle_size', None)
+        if callable(shared):
+            return shared()
+        from ..core.config import DETECTION_BOX_CONFIG, REGION_HANDLE_EXTRA
+        return DETECTION_BOX_CONFIG['resize_handle_size'] + REGION_HANDLE_EXTRA
 
     def _draw_paste_items(self, painter, background_rect):
         """绘制所有贴图"""
@@ -445,8 +454,9 @@ class CanvasRendererMixin:
         与 `_get_box_border_pen()` **同一套**「选中 ×1.5、夹在 1..4」的规则。
         两边算法一致，以后检测框改粗细，区域自动跟着走。
         """
-        from ..core.config import BOX_BORDER_CONFIG
-        base = max(1, min(4, float(BOX_BORDER_CONFIG['width']))) + 1
+        from ..core.config import BOX_BORDER_CONFIG, REGION_BORDER_EXTRA
+        base = (max(1, min(4, float(BOX_BORDER_CONFIG['width'])))
+                + REGION_BORDER_EXTRA)
         pen_width = base * 1.5 if is_selected else base
         pen_width = max(1, min(4, pen_width))
         return QPen(color, pen_width)

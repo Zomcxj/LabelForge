@@ -203,13 +203,16 @@ class VideoComposeWorker(QThread):
     failed = pyqtSignal(str)
 
     def __init__(self, output_path, manifest_path=None, images_dir=None,
-                 output_fps=None, render=None, parent=None):
+                 output_fps=None, render=None, parent=None,
+                 start_index=None, end_index=None):
         super().__init__(parent)
         self._output_path = output_path
         self._manifest_path = manifest_path
         self._images_dir = images_dir
         self._output_fps = output_fps
         self._render = render
+        self._start_index = start_index
+        self._end_index = end_index
         self._cancelled = False
 
     def run(self):
@@ -223,6 +226,8 @@ class VideoComposeWorker(QThread):
                 render=self._render,
                 cancel=lambda: self._cancelled,
                 progress=self.progress.emit,
+                start_index=self._start_index,
+                end_index=self._end_index,
             )
             self.finished_ok.emit(result)
         except Exception as exc:

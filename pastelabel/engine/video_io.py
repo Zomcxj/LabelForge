@@ -728,12 +728,42 @@ def scan_sidecar_labels(image_paths):
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
+def _slice_paths(paths, start_index=None, end_index=None):
+    """按「从第几张到第几张」裁出要合成的图片（**都是包含端点的下标**）。
+
+    用户要求「视频合成支持选择从哪张到哪张，默认 0 到最后」。裁在**建
+    plan 之前**：这样帧号、进度、清单时长全都基于裁过的序列，不需要在
+    循环里到处判范围（漏一处就会写出越界的帧）。
+
+    两端都可以为 None（= 不裁那一端）。越界不报错而是夹紧——界面上的
+    上限就是图片张数，用户手输超了不该让整次合成失败。`start > end`
+    是真的没得合成，返回空列表由调用方报错。
+    """
+    total = len(paths)
+    start = 0 if start_index is None else int(start_index)
+    end = total - 1 if end_index is None else int(end_index)
+    if total == 0:
+        return []
+    # 「空范围」要在夹紧**之前**判：夹紧会把 end=-1 抬成 0，那样 0..-1 就会
+    # 悄悄变成「只合成第一张」，用户选了空却拿到一帧，比报错更糟。
+    # 只把「真的没有重叠」当空：start 已经超过末张，或 end 还没到首张。
+    if start > total - 1 or end < 0 or start > end:
+        return []
+    start = max(0, min(total - 1, start))
+    end = max(0, min(total - 1, end))
+    return list(paths[start:end + 1])
+
+
 def compose_video(manifest_path=None, images_dir=None, output_path=None,
                   output_fps=None, one_frame_per_image=False,
-                  standard_fps=None, cancel=None, progress=None, render=None):
+                  standard_fps=None, cancel=None, progress=None, render=None,
+                  start_index=None, end_index=None):
     """把抽帧图片合成为视频（④B）。
 
     有清单按清单顺序与时长；没有清单则用 `output_fps`（每秒几帧）。
+    `start_index`/`end_index` 是**包含端点**的下标，用来只合成其中一段
+    （默认从第一张到最后一张）。时长按裁后的帧数等比折算，否则「选 10 张
+    却按整段时长出片」会变成极慢的播放。
     编码走同目录 `.partial.mp4` 临时文件，全部校验通过才 `os.replace`
     到正式名——失败或取消不留看似成功的输出。
 
@@ -743,6 +773,15 @@ def compose_video(manifest_path=None, images_dir=None, output_path=None,
     cv2 = _load_cv2()
     paths, manifest, duration = _compose_images_and_duration(
         manifest_path, images_dir, output_fps, None)
+
+    total_before = len(paths)
+    paths = _slice_paths(paths, start_index, end_index)
+    if not paths:
+        raise VideoError("选择的图片范围是空的，没有可合成的帧")
+
+    # 裁过的序列：时长按比例折，否则 10 张图会摊到整段视频的时长
+    if duration is not None and total_before:
+        duration = duration * (len(paths) / total_before)
 
     plan = compose_plan(image_count=len(paths), duration=duration,
                         output_fps=output_fps if duration is None else None,

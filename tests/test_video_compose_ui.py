@@ -631,3 +631,95 @@ def test_compose_finished_stops_early_when_cancelled():
     assert stub.infos == [], stub.infos
     assert stub.dialog_texts == ["已取消合成"], stub.dialog_texts
     assert stub._busy is False
+
+
+# ---------- 第 12 轮：合成范围（从第几张到第几张） ----------
+
+def test_compose_range_defaults_to_the_whole_series():
+    """范围默认 0 到最后一张（用户要求「默认 0 到最后」）。"""
+    from pastelabel.engine.video_io import _slice_paths
+
+    paths = [f"{i}.png" for i in range(8)]
+    assert _slice_paths(paths) == paths
+    assert _slice_paths(paths, None, None) == paths
+    assert _slice_paths(paths, 0, 7) == paths
+
+
+def test_slice_paths_is_inclusive_on_both_ends():
+    """两端都是**包含**的：3..7 是 5 张，不是 4 张。"""
+    from pastelabel.engine.video_io import _slice_paths
+
+    paths = [f"{i}.png" for i in range(10)]
+    assert _slice_paths(paths, 3, 7) == [f"{i}.png" for i in range(3, 8)]
+    assert len(_slice_paths(paths, 3, 7)) == 5
+    assert _slice_paths(paths, 0, 0) == ["0.png"]
+    assert _slice_paths(paths, 9, 9) == ["9.png"]
+
+
+def test_slice_paths_clamps_out_of_range():
+    """越界夹紧而不是报错：界面量程就是张数，手输超了不该让合成失败。"""
+    from pastelabel.engine.video_io import _slice_paths
+
+    paths = [f"{i}.png" for i in range(5)]
+    assert _slice_paths(paths, -3, 99) == paths
+    assert _slice_paths(paths, 3, 99) == ["3.png", "4.png"]
+    assert _slice_paths(paths, None, 1) == ["0.png", "1.png"]
+
+
+def test_slice_paths_rejects_an_empty_range():
+    """起始 > 结束 是真的没得合成，返回空让调用方报错（不静默出空片）。"""
+    from pastelabel.engine.video_io import _slice_paths
+
+    paths = [f"{i}.png" for i in range(5)]
+    assert _slice_paths(paths, 3, 1) == []
+    assert _slice_paths(paths, 0, -1) == []
+    assert _slice_paths([], 0, 3) == []
+
+
+def test_compose_video_writes_only_the_selected_range(tmp_path):
+    """真跑合成：选 3..7 就只出 5 帧，且是那 5 张的画面。"""
+    import numpy as np
+
+    cv2 = pytest.importorskip("cv2")
+    from pastelabel.engine import video_io
+
+    work = tmp_path / "range"
+    work.mkdir()
+    for i in range(10):
+        arr = np.full((120, 160, 3), i * 22, dtype=np.uint8)
+        cv2.imwrite(str(work / f"{i:03d}.png"), arr)
+
+    out = str(work / "mid.mp4")
+    video_io.compose_video(images_dir=str(work), output_path=out,
+                           output_fps=5, start_index=3, end_index=7)
+
+    cap = cv2.VideoCapture(out)
+    frames = []
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        frames.append(frame)
+    cap.release()
+    assert len(frames) == 5, f"选 3..7 应出 5 帧，实际 {len(frames)}"
+    # 编码有压缩，只核对「确实取到了不同的那几张」
+    grays = sorted({int(f[60, 80, 0]) for f in frames})
+    assert len(grays) == 5, grays
+    assert grays[0] < 70 and grays[-1] > 140, grays
+
+
+def test_compose_video_errors_on_an_empty_range(tmp_path):
+    """空范围必须报错，不能生成一个 0 帧的假成品。"""
+    cv2 = pytest.importorskip("cv2")
+    import numpy as np
+    from pastelabel.engine import video_io
+
+    work = tmp_path / "empty"
+    work.mkdir()
+    cv2.imwrite(str(work / "000.png"),
+                np.zeros((60, 60, 3), dtype=np.uint8))
+    out = str(work / "bad.mp4")
+    with pytest.raises(video_io.VideoError):
+        video_io.compose_video(images_dir=str(work), output_path=out,
+                               output_fps=5, start_index=2, end_index=0)
+    assert not Path(out).exists(), "报错时不该留下成品"

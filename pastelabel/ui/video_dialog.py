@@ -17,7 +17,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
     QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QProgressBar, QPushButton, QTabWidget,
+    QListWidgetItem, QProgressBar, QPushButton, QSpinBox, QTabWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -353,6 +353,28 @@ class VideoDialog(QDialog):
         self.compose_out_edit.setReadOnly(True)
         grid.addWidget(self.compose_out_edit, 1, 1)
 
+        # 合成范围：从第几张到第几张（包含两端），默认 0 到最后一张
+        self.compose_range_lbl = QLabel(tr("合成范围"))
+        grid.addWidget(self.compose_range_lbl, 2, 0)
+        range_row = QHBoxLayout()
+        range_row.setSpacing(6)
+        self.compose_start_spin = QSpinBox()
+        self.compose_start_spin.setRange(0, 0)
+        self.compose_start_spin.setValue(0)
+        self.compose_start_spin.setToolTip(tr("从第几张开始（含这张，从 0 数）"))
+        range_row.addWidget(self.compose_start_spin)
+        range_row.addWidget(QLabel(tr("到")))
+        self.compose_end_spin = QSpinBox()
+        self.compose_end_spin.setRange(0, 0)
+        self.compose_end_spin.setValue(0)
+        self.compose_end_spin.setToolTip(tr("合成到第几张（含这张）"))
+        range_row.addWidget(self.compose_end_spin)
+        range_row.addStretch()
+        grid.addLayout(range_row, 2, 1)
+        # 输入完就纠正越界（起始 > 结束这种）
+        self.compose_start_spin.valueChanged.connect(self._on_compose_range_changed)
+        self.compose_end_spin.valueChanged.connect(self._on_compose_range_changed)
+
         layout.addLayout(grid)
 
         layout.addWidget(self._build_overlay_group("compose"))
@@ -594,9 +616,12 @@ class VideoDialog(QDialog):
             return settings
 
         if self.action == ACTION_COMPOSE:
+            start_index, end_index = self.compose_range()
             settings = {
                 "images_dir": self._compose_dir,
                 "output_path": self.compose_out_edit.text(),
+                "start_index": start_index,
+                "end_index": end_index,
             }
             if self._compose_manifest is None:
                 settings["output_fps"] = self.compose_fps_spin.value()
@@ -780,6 +805,8 @@ class VideoDialog(QDialog):
             self.compose_fps_spin.setToolTip(tr("无清单时按每秒几帧合成"))
             self._compose_images = list(images)
 
+        # 来源定了才知道总共几张：范围重置为「0 到最后一张」
+        self._set_compose_frame_count(len(self._compose_images or []))
         self._load_compose_labels()
         self.compose_out_edit.setText(self._compose_output_for(path))
         self._sync_compose_enabled()
@@ -799,6 +826,60 @@ class VideoDialog(QDialog):
     def _fill_compose_labels(self, labels):
         """重建合成页的类别列表；有标注时主开关默认打开（用户就是要看框）。"""
         self._compose_overlay.fill(labels)
+
+    def _compose_frame_count(self):
+        """当前来源一共有多少张图；没有来源时 0。"""
+        return len(self._compose_images or [])
+
+    def _on_compose_range_changed(self, _value=None):
+        """范围输入变化：夹在有效区间内，并挡住「起始 > 结束」。"""
+        total = self._compose_frame_count()
+        if total <= 0:
+            return
+        start = self.compose_start_spin.value()
+        end = self.compose_end_spin.value()
+        if start > end:
+            # 谁被改成越界的就纠谁：把后改的那个拉回与另一个同值，而不是
+            # 一律重置成 0/最后——用户改哪一头就保留哪一头。
+            if self.sender() is self.compose_start_spin:
+                self.compose_start_spin.setValue(end)
+            else:
+                self.compose_end_spin.setValue(start)
+        self._update_compose_range_hint()
+
+    def _update_compose_range_hint(self):
+        total = self._compose_frame_count()
+        if total <= 0:
+            self.compose_range_lbl.setToolTip("")
+            return
+        start = self.compose_start_spin.value()
+        end = self.compose_end_spin.value()
+        self.compose_range_lbl.setToolTip(
+            f"{tr('共')} {total} {tr('张，将合成第')} {start}–{end} {tr('张')}")
+
+    def compose_range(self):
+        """当前选择的范围 `(start, end)`，**包含两端**；无来源时 `(None, None)`。"""
+        if self._compose_frame_count() <= 0:
+            return None, None
+        return self.compose_start_spin.value(), self.compose_end_spin.value()
+
+    def _set_compose_frame_count(self, total):
+        """来源变了：把范围重置为「0 到最后一张」（用户要的默认）。"""
+        total = int(total or 0)
+        last = max(0, total - 1)
+        # 先断开信号：这里只是重建量程，不该触发「越界纠正」把值改走
+        for spin in (self.compose_start_spin, self.compose_end_spin):
+            spin.blockSignals(True)
+        self.compose_start_spin.setRange(0, last)
+        self.compose_end_spin.setRange(0, last)
+        self.compose_start_spin.setValue(0)
+        self.compose_end_spin.setValue(last)
+        for spin in (self.compose_start_spin, self.compose_end_spin):
+            spin.blockSignals(False)
+        enabled = total > 0
+        self.compose_start_spin.setEnabled(enabled)
+        self.compose_end_spin.setEnabled(enabled)
+        self._update_compose_range_hint()
 
     def _on_overlay_toggled(self, _state=None):
         """两页的叠加主开关都会触发：各自刷新各自的可用状态。"""

@@ -4367,32 +4367,43 @@ print(round(r['x']), round(r['y']))
     assert y0 == 300, f"拖左边不该改 y：{lines[2]}"
 
 
-def test_real_region_handle_hit_area_is_scale_independent():
-    """③ 手柄命中区**随缩放放大**（下限 24px），保证缩小的图上也能抓。
+def test_real_region_handle_size_is_constant_box_plus_three():
+    """区域手柄 = 检测框 + 3，且**不随缩放变化**（用户第 12 轮口径）。
 
-    原来命中边长写死 8 **画布像素**，和 `background_scale` 无关；把图缩到
-    25% 时区域框在屏上只剩 50 像素，8px 的方框几乎点不中——这正是用户说的
-    「没办法调整大小」。
+    这条替换了早先的「命中区随缩放放大」：那个做法图一缩小就把手柄放大到
+    24px，于是区域句柄看着比检测框大两三倍，用户原话「我参数拉到 15 都没你的
+    区域框句柄大」。现在两边同一套尺度——恒定像素、随图缩放而缩放，只差 3。
+
+    绘制尺寸与命中尺寸必须同源，否则会出现「看着能抓却抓不到」。
     """
     out = _run_real_qt(_REGION_RESIZE_HOST + """
-# 命中边长必须随缩放变大，且不超过上限（不能大到把内部拖动吃掉）
+from pastelabel.core.config import DETECTION_BOX_CONFIG, REGION_HANDLE_EXTRA
+
+box = DETECTION_BOX_CONFIG['resize_handle_size']
 sizes = []
 for sc in (1.0, 0.5, 0.25, 0.1):
     canvas.background_scale = sc
     sizes.append(round(canvas._region_handle_hit_size(), 2))
-print(sizes)
-# 绘制尺寸与命中尺寸必须一致：看到的圆就是抓得到的圆
 canvas.background_scale = 0.25
-print(round(canvas._region_handle_hit_size()),
-      round(canvas._region_handle_draw_size()))
+print('sizes', sizes, box + REGION_HANDLE_EXTRA)
+# 绘制与命中必须一致
+print('draw_hit', round(canvas._region_handle_draw_size()),
+      round(canvas._region_handle_hit_size()))
 """)
     lines = _lines(out)
-    # 基准是 `REGION_CONFIG['handle_size']`（= 检测框 + 1，第 12 轮起为 9），
-    # 上限 24 不变；所以 scale 1.0/0.5/0.25/0.1 → 9 / 18 / 24 / 24。
-    assert lines[0] == "[9, 18.0, 24.0, 24.0]", (
-        f"手柄命中区没随缩放放大：{lines[0]}")
-    assert lines[1] == "24 24", (
-        f"手柄「看到的」和「抓得到的」不一致：{lines[1]}")
+    sizes_line = next(x for x in lines if x.startswith("sizes"))
+    draw_line = next(x for x in lines if x.startswith("draw_hit"))
+    # sizes_line 形如 `sizes [11, 11, 11, 11] 11`，列表里有空格，
+    # 不能按空白切分——用正则把列表和末尾的数字分开取。
+    import re as _re
+    match = _re.search(r"\[([^\]]*)\]\s+(\S+)\s*$", sizes_line)
+    assert match, f"解析不了这行：{sizes_line}"
+    sizes = [float(v) for v in match.group(1).split(",")]
+    expected = float(match.group(2))
+    assert sizes == [expected] * 4, (
+        f"区域手柄应恒为 {expected}px、不随缩放变，实际 {sizes}")
+    assert draw_line.split()[1:] == [str(int(expected))] * 2, (
+        f"手柄「看到的」和「抓得到的」必须一致：{draw_line}")
 
 
 def test_real_region_resize_never_shrinks_below_min_size():
