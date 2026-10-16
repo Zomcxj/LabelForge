@@ -88,9 +88,22 @@ class TranslationMixin:
         row = getattr(self, 'model_row', None)
         if row is not None and hasattr(row, 'retranslate'):
             row.retranslate()
+            # 筛选计数与范围摘要是主窗口按当前状态拼出来的（`类别筛选(2/80)`），
+            # `ModelRow.retranslate` 只刷静态文字，这两处得主窗口自己重设，
+            # 否则切语言后按钮还挂着中文。
+            if hasattr(self, '_refresh_filter_button'):
+                self._refresh_filter_button()
+            if hasattr(self, '_refresh_scope_button'):
+                self._refresh_scope_button()
         panel = getattr(self, '_class_filter_panel', None)
         if panel is not None and hasattr(panel, 'retranslate'):
             panel.retranslate()
+        # 范围面板是非模态的，可以一边开着一边切语言；不在刷新列表里就会停在
+        # 上一门语言。懒建的面板打开时自己会调 retranslate，这里管的是「正开
+        # 着的那个」。
+        scope_panel = getattr(self, '_scope_panel', None)
+        if scope_panel is not None and hasattr(scope_panel, 'retranslate'):
+            scope_panel.retranslate()
         for header_name in ('bg_list_header', 'label_group_header', 'paste_group_header'):
             header = getattr(self, header_name, None)
             if header is None:

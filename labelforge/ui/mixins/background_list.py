@@ -321,6 +321,12 @@ class BackgroundListMixin:
         decorate_background_list_item(item, image_path, idx)
         mode = getattr(self, '_bg_annotation_filter', 'all')
         status = item.data(BG_ROLE_STATUS)
+        # 同步状态缓存，否则切视图时会把刚存好的图又显示成扫描中。
+        cache = getattr(self, '_bg_status_by_path', None)
+        if cache is None:
+            cache = self._bg_status_by_path = {}
+        if status is not None:
+            cache[image_path] = status
         visible = (mode == 'all') or (status == mode)
         item.setHidden(not visible)
 
@@ -462,13 +468,21 @@ class BackgroundListMixin:
         self.background_list.clear()
         self._bg_item_index_cache = None
         from ...core.config import SUPPORTED_IMAGE_EXTENSIONS
-        from ...engine.image_loader import decorate_background_list_item
+        from ...engine.image_loader import (
+            apply_background_status_to_item, decorate_background_list_item,
+        )
+        status_cache = getattr(self, '_bg_status_by_path', None) or {}
         for i, path in enumerate(self.background_images):
             ext = os.path.splitext(path)[1].lower()
             if ext in SUPPORTED_IMAGE_EXTENSIONS:
                 from PyQt5.QtWidgets import QListWidgetItem
                 item = QListWidgetItem(self._display_path_for(path))
+                # 扫描过的图直接用已知状态；只对没扫过的做廉价判定，
+                # 否则切回工作路径时已标注的图会退回「扫描中」灰圈。
                 decorate_background_list_item(item, path, i, light=True)
+                resolved = status_cache.get(path)
+                if resolved is not None:
+                    apply_background_status_to_item(item, resolved)
                 self.background_list.addItem(item)
         self._refresh_bg_filter_button()
         self._apply_bg_annotation_filter(navigate=False)

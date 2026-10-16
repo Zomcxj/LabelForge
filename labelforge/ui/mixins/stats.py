@@ -216,13 +216,16 @@ class StatsMixin:
         dialog.setStyleSheet(f"""
             QDialog {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}
             QTableWidget {{ background-color: {t['widget_bg']}; color: {t['text_primary']};
-                border: 1px solid {t['border_color']}; gridline-color: {t['border_color']}; }}
+                border: 1px solid {t['border_color']}; border-radius: 4px;
+                gridline-color: {t['border_color']}; }}
             QTableWidget::item {{ padding: 4px; }}
             QTableWidget::item:selected {{ background-color: {t['accent_light']}; color: {t['accent']}; }}
             QHeaderView::section {{ background-color: {t['panel_bg']}; color: {t['text_primary']};
                 border: 1px solid {t['border_color']}; padding: 4px; font-weight: bold; }}
+            QHeaderView::section:first {{ border-top-left-radius: 4px; }}
+            QHeaderView::section:last {{ border-top-right-radius: 4px; }}
             QTableWidget QTableCornerButton::section {{ background-color: {t['panel_bg']};
-                border: 1px solid {t['border_color']}; }}
+                border: 1px solid {t['border_color']}; border-top-left-radius: 4px; }}
             QTabWidget::pane {{ background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']}; border-radius: 4px;
                 top: -1px; }}
@@ -235,7 +238,8 @@ class StatsMixin:
             QTabBar::tab:hover {{ background-color: {t['list_hover']}; }}
             QDockWidget {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}
             QDockWidget::title {{ background-color: {t['panel_bg']}; color: {t['text_primary']};
-                border: 1px solid {t['border_color']}; padding: 4px 8px; font-weight: bold; }}
+                border: 1px solid {t['border_color']}; border-top-left-radius: 4px;
+                border-top-right-radius: 4px; padding: 4px 8px; font-weight: bold; }}
         """)
         layout = QVBoxLayout(dialog)
         from PyQt5.QtWidgets import QMainWindow
@@ -908,7 +912,8 @@ class StatsMixin:
     def _set_label_color_button(self, button, color):
         button.setText(color)
         button.setStyleSheet(
-            f"QPushButton {{ background-color: {color}; color: #FFFFFF; border: 1px solid {color}; }}"
+            f"QPushButton {{ background-color: {color}; color: #FFFFFF;"
+            f" border: 1px solid {color}; border-radius: 4px; }}"
         )
 
     def _change_label_color(self, label, parent, color_button=None):

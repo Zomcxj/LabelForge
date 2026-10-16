@@ -867,6 +867,12 @@ class ImageLoaderMixin:
         bg_list = getattr(self, 'background_list', None)
         if bg_list is None:
             return
+        # 记下解析结果：切视图重建列表项时只能做廉价判定（只看 sidecar 在不在），
+        # 没有这份缓存就会把已标注的图重新显示成「扫描中」的灰圈，直到切图才恢复。
+        cache = getattr(self, '_bg_status_by_path', None)
+        if cache is None:
+            cache = self._bg_status_by_path = {}
+        cache.update({p: s for p, s in statuses.items() if s is not None})
         mode = getattr(self, '_bg_annotation_filter', 'all')
         mapping = self._bg_item_index_map()
         for image_path, status in statuses.items():

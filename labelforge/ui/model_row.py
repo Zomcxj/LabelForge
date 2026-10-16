@@ -343,6 +343,7 @@ class ModelRow(QWidget):
         self._refresh_replace_text()
         # 筛选按钮的计数文案由主窗口按当前选择重设
         self.filter_btn.setToolTip(tr("保留勾选的类别；没勾选的会被过滤掉"))
+        self.scope_btn.setText(tr("推理范围"))
         self.scope_btn.setToolTip(tr("全图 / 滑窗 / 区域"))
         # 摘要文字要由主窗口按当前模式重设（`_refresh_scope_button`），
         # 这里只把 tooltip 与当前文字对齐，避免切语言后 tooltip 与实际不符。
