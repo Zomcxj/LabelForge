@@ -352,7 +352,7 @@ class CanvasRendererMixin:
                 painter.drawEllipse(p, radius, radius)
 
     def _draw_region_handles(self, painter, x, y, w, h, color):
-        """区域缩放手柄：**四角 + 四边中点**，与检测框完全同一套画法。
+        """区域缩放手柄：**只画四角**，与检测框完全同一套画法。
 
         用户第 11 轮：「推理范围内的区域编辑要和检测框的编辑一致，检测框选中
         句柄会变成正方形」——所以这里不再自己画一套白圆圈，改成与
@@ -361,9 +361,11 @@ class CanvasRendererMixin:
         - **悬停**：白色正方形（`hover_region_handle` 命中的那一个）
         - **常态**：白色底圆减去区域内部，再叠一个区域色的实心圆
 
-        四边中点也一起画回来：检测框八个手柄全画，区域只画四角会让人以为
-        「边上不能拖」，而 `_region_handle_at()` 一直是认八处的——画出来的
-        才是真能抓的（用户要求「和检测框一致」）。
+        **只画四个角**：检测框 `_draw_box_handles()` 的 `corners` 就是四个角，
+        边中点一个都不画——这是逐像素核对过的，不是推断。四边中点虽然仍能
+        抓（`_region_handle_at()` 认八处），但**不画**，与检测框保持一致。
+
+        （第 11 轮曾错画成八个，用户当场纠正：「检测框也只有四个点」。）
 
         半径用 `_region_handle_draw_size()`：与命中判定同一套随缩放放大的
         口径，保证「看到的圆」就是「抓得到的圆」。
@@ -381,10 +383,6 @@ class CanvasRendererMixin:
             ('tr', QPointF(x + w, y)),
             ('bl', QPointF(x, y + h)),
             ('br', QPointF(x + w, y + h)),
-            ('t', QPointF(x + w / 2, y)),
-            ('b', QPointF(x + w / 2, y + h)),
-            ('l', QPointF(x, y + h / 2)),
-            ('r', QPointF(x + w, y + h / 2)),
         )
 
         painter.save()

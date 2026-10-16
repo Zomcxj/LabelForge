@@ -5012,15 +5012,15 @@ print('中间滚轮宽高都变大', a[0] > b[0] and a[1] > b[1])
         f"区域中间滚轮没有整体缩放：{lines[0]}")
 
 
-def test_real_region_border_draws_all_eight_handles():
-    """② 区域选中时画 **8 个**手柄（4 角 + 4 边中点），与检测框完全一致。
+def test_real_region_border_draws_corner_handles_only():
+    """② 区域选中时**只画四角**手柄，与检测框逐像素一致。
 
-    第 9 轮用户说过「区域编辑怎么边上还有点」，于是只画了四角。第 11 轮口径
-    改成「推理范围内的区域编辑要和检测框的编辑一致」，而检测框
-    `_draw_box_handles()` 一直是 8 个——两轮指令冲突，以后者为准。
+    检测框 `_draw_box_handles()` 的 `corners` 就是四个角，边中点一个都不画
+    （第 11 轮实测核对过）。区域过去只画四角是对的，第 11 轮中途一度被改成
+    八个边中点也画，用户当场纠正「检测框也只有四个点」，所以这里钉死：
+    **边中点的位置必须是空白**。
 
-    边中点也一起画，顺带解决「看得见的才敢抓」：`_region_handle_at()` 一直认
-    八处，只画四角会让人以为边上不能拖。
+    边中点仍可抓（`_region_handle_at()` 认八处），见下一条——不画只影响视觉。
     """
     out = _run_real_qt(_REGION_RESIZE_HOST + """
 from PyQt5.QtGui import QImage, QPainter
@@ -5057,16 +5057,55 @@ for klass in type(canvas).__mro__:
 src = inspect.getsource(fn)
 print('源码里还有四边中点', ('w / 2' in src) and ('h / 2' in src))
 print('四角坐标仍在', '(x, y + h)' in src or '(x + w, y + h)' in src)
+
+# 逐像素：边中点上必须是空白（与检测框同一套「只有四角」）
+r = w.region_boxes[0]
+canvas.hover_region_index = None
+canvas.hover_region_handle = None
+raw = QImage(canvas.width() or 100, canvas.height() or 100,
+             QImage.Format_RGB888)
+raw.fill(QColor(0, 0, 0))
+p = QPainter(raw)
+br = canvas.get_background_rect()
+sc = canvas.background_scale
+canvas._draw_region_handles(
+    p, br.left() + r['x'] * sc, br.top() + r['y'] * sc,
+    r['width'] * sc, r['height'] * sc, QColor('#FF3B30'))
+p.end()
+
+
+def has_pixels(cx, cy, half=6):
+    for dy in range(-half, half + 1):
+        for dx in range(-half, half + 1):
+            c = raw.pixelColor(int(cx) + dx, int(cy) + dy)
+            if c.red() or c.green() or c.blue():
+                return True
+    return False
+
+
+def px(ix, iy):
+    return br.left() + ix * sc, br.top() + iy * sc
+
+
+print('右边中点空白',
+      not has_pixels(*px(r['x'] + r['width'], r['y'] + r['height'] / 2)))
+print('上边中点空白',
+      not has_pixels(*px(r['x'] + r['width'] / 2, r['y'])))
+print('右下角有像素',
+      has_pixels(*px(r['x'] + r['width'], r['y'] + r['height'])))
 """)
     lines = _lines(out)
     assert lines[1].endswith("True"), f"没走到手柄绘制：{lines}"
-    # 第 11 轮改口径：用户要求「区域编辑要和检测框完全一致」，而检测框
-    # `_draw_box_handles()` 画的是 8 个手柄（4 角 + 4 边中点）。第 9 轮
-    # 「边上不要有点」被本轮指令覆盖，所以这里反过来钉「边中点必须画」。
-    assert lines[2].endswith("True"), (
-        f"区域手柄没画四边中点，与检测框不一致：{lines[2]}")
+    assert lines[2].endswith("False"), (
+        f"区域手柄仍在画四边中点，与检测框不一致：{lines[2]}")
     assert lines[3].endswith("True"), (
         f"四角手柄被误删：{lines[3]}")
+    assert lines[4].endswith("True"), (
+        f"右边中点位置不该有手柄：{lines[4]}")
+    assert lines[5].endswith("True"), (
+        f"上边中点位置不该有手柄：{lines[5]}")
+    assert lines[6].endswith("True"), (
+        f"右下角应该有手柄：{lines[6]}")
 
 
 def test_real_region_edge_drag_still_resizes_with_a_drawn_handle():
