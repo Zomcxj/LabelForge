@@ -782,7 +782,7 @@ class CropConfigDialog(QDialog):
         r, g, b = self._fill_rgb()
         self._fill_swatch.setStyleSheet(
             f"background-color: rgb({r},{g},{b});"
-            "border:1px solid rgba(128,128,128,180);border-radius:3px;")
+            "border:1px solid rgba(128,128,128,180);border-radius:4px;")
 
     def _on_fill(self, _checked):
         """填充开关改变网格口径（等步长可越界 vs 贴边不越界），须重排。"""

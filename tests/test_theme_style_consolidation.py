@@ -245,7 +245,8 @@ def test_log_area_font_is_one_step_up_from_default():
     assert "Consolas" in block, "日志框应保持等宽字体"
     assert "font-size: 12px;" in block
     assert "font-size: 11px;" not in block
-    assert "border-radius: 6px;" in block, "圆角样式不应被误改"
+    # 圆角跟全局一致（第 11 轮统一为 4px）；这条只盯「别又被单独改掉」
+    assert "border-radius: 4px;" in block, "圆角样式不应被误改"
 
 
 def test_real_qt_options_popup_paints_rounded_corners():

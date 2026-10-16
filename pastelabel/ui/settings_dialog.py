@@ -657,7 +657,7 @@ class SettingsDialog(QDialog):
     def _update_crosshair_color_button(self):
         self.crosshair_color_btn.setText(self._crosshair_color)
         self.crosshair_color_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {self._crosshair_color}; color: white; border: 1px solid {self._crosshair_color}; border-radius: 10px; padding: 3px 8px; font-size: 12px; font-weight: bold; }}"
+            f"QPushButton {{ background-color: {self._crosshair_color}; color: white; border: 1px solid {self._crosshair_color}; border-radius: 4px; padding: 3px 8px; font-size: 12px; font-weight: bold; }}"
         )
 
     def _choose_crosshair_color(self):

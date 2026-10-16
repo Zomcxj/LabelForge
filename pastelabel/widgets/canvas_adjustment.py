@@ -44,7 +44,7 @@ class CanvasAdjustmentWidget(QWidget):
         text = ThemeManager.get_theme()['text_primary']
         return (
             f"QPushButton {{ background: rgba(120, 120, 120, 60);"
-            f" border-radius: 3px; font-size: 11px; color: {text}; padding: 0; }}"
+            f" border-radius: 4px; font-size: 11px; color: {text}; padding: 0; }}"
             "QPushButton:hover { background: rgba(120, 120, 120, 110); }"
             "QPushButton:pressed { background: rgba(120, 120, 120, 150); }"
         )
@@ -72,7 +72,7 @@ class CanvasAdjustmentWidget(QWidget):
         self.toggle_button.setFocusPolicy(Qt.NoFocus)
         self.toggle_button.setStyleSheet(
             "QToolButton { background: transparent; border: none;"
-            " border-radius: 3px; padding: 4px; }"
+            " border-radius: 4px; padding: 4px; }"
             "QToolButton:hover { background: rgba(120, 120, 120, 60); }"
             "QToolButton:pressed { background: rgba(120, 120, 120, 100); }"
         )
@@ -136,7 +136,7 @@ class CanvasAdjustmentWidget(QWidget):
         #canvas_adjustment {{
             background: {theme['widget_bg']};
             border: none;
-            border-radius: 6px;
+            border-radius: 4px;
         }}
         #canvas_adjustment[collapsed="true"] {{
             background: transparent;

@@ -224,10 +224,14 @@ class StatsMixin:
             QTableWidget QTableCornerButton::section {{ background-color: {t['panel_bg']};
                 border: 1px solid {t['border_color']}; }}
             QTabWidget::pane {{ background-color: {t['widget_bg']};
-                border: 1px solid {t['border_color']}; }}
-            QTabBar::tab {{ background-color: {t['panel_bg']}; color: {t['text_primary']};
-                border: 1px solid {t['border_color']}; padding: 6px 18px; }}
-            QTabBar::tab:selected {{ background-color: {t['accent_light']}; color: {t['accent']}; }}
+                border: 1px solid {t['border_color']}; border-radius: 4px;
+                top: -1px; }}
+            QTabBar::tab {{ background-color: {t['panel_bg']}; color: {t['text_secondary']};
+                border: 1px solid {t['border_color']}; border-bottom: none;
+                border-top-left-radius: 4px; border-top-right-radius: 4px;
+                padding: 5px 16px; }}
+            QTabBar::tab:selected {{ background-color: {t['widget_bg']};
+                color: {t['text_primary']}; }}
             QTabBar::tab:hover {{ background-color: {t['list_hover']}; }}
             QDockWidget {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}
             QDockWidget::title {{ background-color: {t['panel_bg']}; color: {t['text_primary']};

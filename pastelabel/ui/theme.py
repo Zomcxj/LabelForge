@@ -209,7 +209,7 @@ class ThemeManager:
             }}
             QListWidget {{
                 border: 1px solid {t['border_color']};
-                border-radius: 8px;
+                border-radius: 4px;
                 background-color: {t['widget_bg']};
                 color: {t['text_primary']};
                 outline: none;
@@ -235,7 +235,7 @@ class ThemeManager:
             }}
             QLineEdit {{
                 border: 1px solid {t['border_color']};
-                border-radius: 6px;
+                border-radius: 4px;
                 padding: 3px 6px;
                 background-color: {t['widget_bg']};
                 color: {t['text_primary']};
@@ -249,7 +249,7 @@ class ThemeManager:
             }}
             QSpinBox, QDoubleSpinBox {{
                 border: 1px solid {t['border_color']};
-                border-radius: 6px;
+                border-radius: 4px;
                 padding: 3px 2px;
                 background-color: {t['widget_bg']};
                 color: {t['text_primary']};
@@ -288,7 +288,7 @@ class ThemeManager:
             QPushButton {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 8px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 color: {t['button_text']};
                 font-weight: bold;
@@ -307,7 +307,7 @@ class ThemeManager:
             }}
             QTextEdit#logArea {{
                 border: 1px solid {t['groupbox_border']};
-                border-radius: 6px;
+                border-radius: 4px;
                 background-color: {t['widget_bg']};
                 color: {t['text_secondary']};
                 font-family: Consolas, "Courier New", monospace;
@@ -316,7 +316,7 @@ class ThemeManager:
             }}
             QGroupBox {{
                 border: 1px solid {t['groupbox_border']};
-                border-radius: 6px;
+                border-radius: 4px;
                 margin-top: 8px;
                 padding-top: 12px;
                 font-weight: bold;
@@ -331,7 +331,7 @@ class ThemeManager:
             }}
             QFrame#sideCollapsible {{
                 border: 1px solid {t['groupbox_border']};
-                border-radius: 6px;
+                border-radius: 4px;
                 background-color: transparent;
             }}
             QToolTip {{
@@ -351,12 +351,12 @@ class ThemeManager:
             }}
             QScrollArea#canvasScroll {{
                 border: 1px solid {t['border_color']};
-                border-radius: 6px;
+                border-radius: 4px;
                 background-color: {t['widget_bg']};
             }}
             QComboBox {{
                 border: 1px solid {t['border_color']};
-                border-radius: 6px;
+                border-radius: 4px;
                 padding: 3px 6px;
                 background-color: {t['widget_bg']};
                 color: {t['text_primary']};
@@ -455,7 +455,7 @@ class ThemeManager:
             QPushButton#settingsBtn {{
                 background-color: transparent;
                 border: none;
-                border-radius: 6px;
+                border-radius: 4px;
                 padding: 4px;
                 font-size: 16px;
             }}
@@ -467,7 +467,7 @@ class ThemeManager:
             QPushButton#optionsBtn {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 6px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 11px;
                 font-weight: bold;
@@ -496,13 +496,13 @@ class ThemeManager:
             QMenu#optionsMenu {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 6px;
+                border-radius: 4px;
                 padding: 4px;
             }}
             QMenu {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 6px;
+                border-radius: 4px;
                 padding: 4px;
             }}
             QMenu::item {{
@@ -532,7 +532,7 @@ class ThemeManager:
             QPushButton#drawBoxBtn {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 10px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 12px;
                 font-weight: 600;
@@ -549,7 +549,7 @@ class ThemeManager:
             QPushButton#accentBtn {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 10px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 12px;
                 font-weight: bold;
@@ -566,7 +566,7 @@ class ThemeManager:
             QPushButton#warningBtn {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 10px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 12px;
                 font-weight: bold;
@@ -583,7 +583,7 @@ class ThemeManager:
             QPushButton#pasteListAccentBtn {{
                 background-color: {t['accent_light']};
                 border: none;
-                border-radius: 10px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 12px;
                 font-weight: bold;
@@ -600,7 +600,7 @@ class ThemeManager:
             QPushButton#pasteListWarningBtn {{
                 background-color: {t['warning_light']};
                 border: none;
-                border-radius: 10px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 12px;
                 font-weight: bold;
@@ -613,7 +613,7 @@ class ThemeManager:
             QPushButton#viewToggleBtn {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 10px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 12px;
                 font-weight: bold;
@@ -625,7 +625,7 @@ class ThemeManager:
             QPushButton#successBtn {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 10px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 12px;
                 font-weight: bold;
@@ -642,7 +642,7 @@ class ThemeManager:
             QPushButton#dangerBtn {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 10px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 12px;
                 font-weight: bold;
@@ -677,7 +677,7 @@ class ThemeManager:
             QFrame#modeSeg {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 5px;
+                border-radius: 4px;
             }}
             QPushButton#modeSegBtn {{
                 background: transparent;
@@ -701,7 +701,7 @@ class ThemeManager:
             QWidget#optionsPopup {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
-                border-radius: 8px;
+                border-radius: 4px;
             }}
             QWidget#optionsPopup QPushButton {{
                 background-color: {t['widget_bg']};
@@ -746,7 +746,7 @@ class ThemeManager:
         return f"""
             QListWidget {{
                 border: 1px solid {t['border_color']};
-                border-radius: 8px;
+                border-radius: 4px;
                 background-color: {t['widget_bg']};
                 color: {t['text_primary']};
             }}
@@ -789,7 +789,7 @@ class ThemeManager:
             QPushButton {{
                 background-color: {bg};
                 border: 1px solid {t['border_color']};
-                border-radius: 10px;
+                border-radius: 4px;
                 padding: 3px 8px;
                 font-size: {t['font_size']}px;
                 font-weight: bold;
