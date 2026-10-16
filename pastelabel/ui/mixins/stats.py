@@ -341,15 +341,12 @@ class StatsMixin:
                 item.setText(old_label)
                 bg_table.blockSignals(False)
                 return
-            existing = {
-                (bg_table.item(r, 0).text() if bg_table.item(r, 0) else '')
-                for r in range(bg_table.rowCount()) if r != item.row()
-            }
-            if new_label in existing:
-                bg_table.blockSignals(True)
-                item.setText(old_label)
-                bg_table.blockSignals(False)
-                return
+            # 故意**不拦重名**：改成已存在的标签 = 把这一类合并进那一类
+            # （用户场景：把 `drone` 并进 `Drone`）。底层
+            # `rename_detection_label` 本来就支持合并——它显式取
+            # `target_exists`，把两组的框合到一起、数量相加、保留目标颜色。
+            # 这里原先挡了一道「重名就弹回原名」，于是用户在统计窗口里怎么改都
+            # 改不动，还以为功能坏了。
             if self.label_manager.rename_detection_label(old_label, new_label):
                 item.setData(QtCore.UserRole, new_label)
                 self._health_scan_generation = getattr(self, '_health_scan_generation', 0) + 1
@@ -398,26 +395,17 @@ class StatsMixin:
                 item.setText(old_label)
                 paste_table.blockSignals(False)
                 return
-            existing = {
-                (paste_table.item(r, 0).text() if paste_table.item(r, 0) else '')
-                for r in range(paste_table.rowCount()) if r != item.row()
-            }
-            if new_label in existing:
-                paste_table.blockSignals(True)
-                item.setText(old_label)
-                paste_table.blockSignals(False)
-                return
+            # 与背景图表同一口径：不拦重名，重名走底层合并（`rename_paste_label`
+            # 会把旧名的全部项改成新名并归并颜色）。两处必须一致，否则「背景图
+            # 能合并、贴图不能合并」这种半修状态又要被用户抓到。
             if self.label_manager.rename_paste_label(old_label, new_label, rewrite_disk=True):
-                item.setData(QtCore.UserRole, new_label)
                 self._health_scan_generation = getattr(self, '_health_scan_generation', 0) + 1
-                color_btn = paste_table.cellWidget(item.row(), 2)
-                if color_btn is not None:
-                    try:
-                        color_btn.clicked.disconnect()
-                    except TypeError:
-                        pass
-                    color_btn.clicked.connect(lambda _, value=new_label, button=color_btn: self._change_label_color(value, dialog, button))
-                    self._set_label_color_button(color_btn, self.get_label_color(new_label))
+                # 必须**重建整张表**，不能只改当前行：改名到已存在的标签是
+                # 合并，两行要并成一行（旧的只改本行，于是出现两行同名的
+                # `badge` 各带一个计数——用户看到的「改不过去」的另一半）。
+                # 背景图表早就这么做了（`_reload_stats_bg_table`），贴图这边
+                # 先前漏了。
+                self._reload_stats_paste_table_from_session(paste_table, dialog)
                 self.canvas.update()
             else:
                 paste_table.blockSignals(True)
@@ -872,6 +860,34 @@ class StatsMixin:
         rows = [(str(e.get('label', '') or ''), int(e.get('count', 0) or 0))
                 for e in class_dist if isinstance(e, dict)]
         rows.sort(key=lambda x: (-x[1], x[0]))
+        table.blockSignals(True)
+        table.setRowCount(len(rows))
+        for row, (label, count) in enumerate(rows):
+            label_item = QTableWidgetItem(label)
+            label_item.setFlags(label_item.flags() | QtCore.ItemIsEditable)
+            label_item.setData(QtCore.UserRole, label)
+            table.setItem(row, 0, label_item)
+            count_item = QTableWidgetItem(str(count))
+            count_item.setFlags(count_item.flags() & ~QtCore.ItemIsEditable)
+            table.setItem(row, 1, count_item)
+            color_button = QPushButton()
+            self._set_label_color_button(color_button, self.get_label_color(label))
+            color_button.clicked.connect(
+                lambda _, value=label, button=color_button: self._change_label_color(value, dialog, button))
+            table.setCellWidget(row, 2, color_button)
+        table.blockSignals(False)
+
+    def _reload_stats_paste_table_from_session(self, table, dialog):
+        """按当前会话的贴图标签重建贴图表（改名/合并后调用）。
+
+        与 `_reload_stats_paste_table`（吃 worker 的 `class_dist`）分开：改名的
+        时候手上没有 worker payload，数据源就是 `canvas_items_dict` 里的贴图
+        标签，`_get_session_paste_stats()` 已经在按这个聚合了。
+        """
+        from PyQt5.QtWidgets import QTableWidgetItem, QPushButton
+        from PyQt5.QtCore import Qt as QtCore
+        stats = self._get_session_paste_stats()
+        rows = sorted(stats.items(), key=lambda x: (-x[1], x[0]))
         table.blockSignals(True)
         table.setRowCount(len(rows))
         for row, (label, count) in enumerate(rows):

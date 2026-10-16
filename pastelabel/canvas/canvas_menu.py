@@ -566,7 +566,22 @@ class CanvasMenuMixin:
         menu.exec_(QPoint(self.mapToGlobal(mouse_pos)))
 
     def _modify_box_label(self, box_index):
-        """修改检测框标签（按标签名全局改名：颜色 + 统计缓存一并更新）。"""
+        """修改**这一个**检测框的标签（不动同名的其它框）。
+
+        用户明确要求：「画布上右键修改标签怎么是改全部？我只是改一个啊」。
+        这里此前直接调 `rename_detection_label`，那是**按标签名全局改名**——
+        右键一个框会把当前图乃至整个数据集里所有同名框一起改掉，用户想只改
+        一个也做不到。
+
+        现在只改选中的那一个框，复用 `_change_box_label()`——那条路径（右键
+        菜单里直接点已有标签）本来就是「只改一个」，颜色迁移、统计缓存
+        delta=1、写盘都齐了，不再另写一套。分组（`group_id`）它不管，这里
+        单独处理。
+
+        注意：如果用户想给**整个类别**改名，入口是背景图标签列表的
+        「修改标签」（`LabelManager.modify_label`，stats 模式），那里才是
+        按名字全改的语义。
+        """
         if self._editor._is_delete_view:
             return
         if not (0 <= box_index < len(self._editor.detection_boxes)):
@@ -594,36 +609,26 @@ class CanvasMenuMixin:
         if not new_label or not str(new_label).strip():
             return
         new_label = str(new_label).strip()
-        box = self._editor.detection_boxes[box_index]
-        group_changed = box.get("group_id") != new_group
-        box["group_id"] = new_group
-        if self._editor.current_background_index >= 0:
-            self._editor.detection_boxes_dict[self._editor.current_background_index] = \
-                list(self._editor.detection_boxes)
-        if new_label == current_label:
-            if group_changed:
-                lm = getattr(self._editor, 'label_manager', None)
-                if lm is not None and hasattr(lm, '_save_detection_json_for_index'):
-                    lm._save_detection_json_for_index(self._editor.current_background_index)
-                self._editor.update_label_list()
-                self.update()
-            return
-        lm = getattr(self._editor, 'label_manager', None)
-        if lm is not None and hasattr(lm, 'rename_detection_label'):
-            lm.rename_detection_label(current_label, new_label, rewrite_disk=True)
-        else:
-            for box in self._editor.detection_boxes:
-                if box.get("label") == current_label:
-                    box["label"] = new_label
-            for idx in self._editor.detection_boxes_dict:
-                for box in self._editor.detection_boxes_dict[idx]:
-                    if box.get("label") == current_label:
-                        box["label"] = new_label
+
+        group_changed = self._editor.detection_boxes[box_index].get("group_id") != new_group
+        label_changed = new_label != current_label
+
+        if label_changed:
+            # 只改这一个框。`_change_box_label` 内部会同步 global_labels、
+            # 迁移颜色、按 delta=1 修正统计缓存并写盘。
+            self._change_box_label(box_index, new_label)
+
+        if group_changed:
+            self._editor.detection_boxes[box_index]["group_id"] = new_group
             if self._editor.current_background_index >= 0:
                 self._editor.detection_boxes_dict[self._editor.current_background_index] = \
                     list(self._editor.detection_boxes)
-        self._editor.update_label_list()
-        self.update()
+            # 只改了分组也要落盘，否则切图就丢
+            lm = getattr(self._editor, 'label_manager', None)
+            if lm is not None and hasattr(lm, '_save_detection_json_for_index'):
+                lm._save_detection_json_for_index(self._editor.current_background_index)
+            self._editor.update_label_list()
+            self.update()
 
     def _reset_box_rotation(self, box_index):
         """将 OBB 旋转角度归零，恢复水平矩形。"""

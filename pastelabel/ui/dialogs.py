@@ -44,6 +44,13 @@ class LabelSelectionDialog(QDialog):
         if initial_text:
             self.new_label_input.setText(str(initial_text))
             self.new_label_input.selectAll()
+        # 输入框里的预填值是**旧名**，不是用户的选择。用户如果去点列表里
+        # 另一个标签，那才是他要的结果——但旧代码只认「输入框非空」，于是
+        # 点了列表也没用（改名场景里表现为「怎么改都改不动」，因为返回的
+        # 还是旧名、判定为无变化）。这里记一下输入框**有没有被用户真正编辑
+        # 过**：编辑过就听输入框，没编辑过就听列表选中。
+        self._input_edited = False
+        self.new_label_input.textEdited.connect(self._on_input_edited)
         top_layout.addWidget(self.new_label_input, 1)
         layout.addLayout(top_layout)
 
@@ -83,6 +90,24 @@ class LabelSelectionDialog(QDialog):
 
         if self.label_list.count() > 0:
             self.label_list.setCurrentRow(current_row)
+        # 点列表 = 用户的明确选择，此后不该再被输入框里的旧名盖过。
+        # 连的是 currentRowChanged：点选会走它，setCurrentRow 也会，但
+        # `_input_edited` 只在用户真的敲了字之后才为真，所以在放好初始
+        # 选中之后再连、且这里只做「清空输入框编辑标记」这一件事。
+        self.label_list.itemClicked.connect(self._on_list_item_picked)
+
+    def _on_input_edited(self, _text):
+        """用户在输入框里敲过字：从此以输入框为准。"""
+        self._input_edited = True
+
+    def _on_list_item_picked(self, _item):
+        """用户点了列表里的标签：以列表为准。
+
+        只把「输入框被编辑过」的标记清掉，**不清空输入框内容**——用户可能
+        先在输入框里打了半截又改主意去点列表，这时候把他打的字抹掉更烦人。
+        取值优先级由 `get_selected_label()` 依据这个标记决定。
+        """
+        self._input_edited = False
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -122,13 +147,23 @@ class LabelSelectionDialog(QDialog):
         return extract_label_name(label_text)
     
     def get_selected_label(self):
-        """获取选中的标签"""
+        """获取选中的标签。
+
+        取值优先级按「用户最后动过谁」决定，而不是「输入框非空就用输入框」：
+
+        - 用户在输入框里敲过字（`_input_edited`）→ 用输入框的内容（打新标签）；
+        - 否则用户在列表里点了某项 → 用列表项（改名时从已有标签里挑一个，
+          这正是「把 drone 改成 Drone」走的路）；
+        - 都没有 → 退回输入框的原有内容（可能是预填的旧名），与旧行为一致。
+        """
         input_text = self.new_label_input.text().strip()
-        if input_text:
-            return input_text
         selected_items = self.label_list.selectedItems()
+        if self._input_edited and input_text:
+            return input_text
         if selected_items:
             return selected_items[0].text()
+        if input_text:
+            return input_text
         return ""
 
     def get_selected_group_id(self):

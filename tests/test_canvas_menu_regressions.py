@@ -186,7 +186,13 @@ def test_draw_label_choices_use_dataset_when_label_list_empty():
 
 
 def test_canvas_modify_box_label_updates_stats_like_label_manager(monkeypatch):
-    """Canvas '修改标签' must update stats cache same as 标签管理 rename."""
+    """Canvas「修改标签」只改**右键的那一个框**，统计缓存按 delta=1 修正。
+
+    这条原先断言的是「按标签名全局改名」的旧语义（三个 cat 一起变 kitty、
+    `kitty` 计数 3）。用户明确要求画布右键「我只是改一个」，所以现在是
+    「只改这一个」：当前图那一个 cat 变 kitty，另外两个 cat 保持不动。
+    想整类改名请走背景图标签列表的「修改标签」。
+    """
     from pastelabel.engine.label_manager import LabelManager
     from pastelabel.ui.main_window import ImageEditor
 
@@ -255,9 +261,13 @@ def test_canvas_modify_box_label_updates_stats_like_label_manager(monkeypatch):
     Canvas(editor)._modify_box_label(0)
 
     stats = ImageEditor._collect_bg_stats_for_dialog(editor)
-    assert stats.get("kitty") == 3
-    assert "cat" not in stats or stats.get("cat", 0) == 0
+    # 只有当前图那一个框改了：cat 3 -> 2，新增 kitty 1
+    assert stats.get("kitty") == 1
+    assert stats.get("cat") == 2
     assert stats.get("dog") == 1
+    # 别的图片里的框不能被殃及
+    assert [b.get("label") for b in editor.detection_boxes_dict[1]] == \
+        ["cat", "cat", "dog"]
 
 
 def test_change_box_label_syncs_stats_cache_and_keeps_target_color(monkeypatch):
