@@ -5196,17 +5196,77 @@ print('贴图模式下画布也认这条区域',
 
 # ---------- 第九轮：固定区域菜单项左对齐 ----------
 
-def test_real_region_menu_keeps_a_checkable_fix_item():
-    """⑥ 「固定区域」**仍然是可勾选项**（用户要的勾），文案也不改。
+def test_real_region_menu_items_are_left_aligned():
+    """⑥ 四项文字缩进必须一致（不再有「空了一个字」）。
 
-    用户明确「我不是固定区域左边有打钩吗，不勾选不就解除了」——所以修这条时
-    不能把它改成不可勾选、也不能另编「解除固定区域」文案。这条钉住勾还在、
-    文案不变，防止以后又「顺手」改成别的形态。
+    用 Qt 画菜单项的口径复算每项的文字缩进：可勾选项会被额外加一个
+    `PM_MenuButtonIndicator`（本主题 12px），于是「固定区域」比同菜单其它三项
+    多缩进一个字——用户报的「固定区域没有左对齐空了一个字」。
 
-    ⚠️ 缩进对齐本身（「空了一个字」）**尚未修好**：QSS 里加
-    `QMenu::indicator` 规则没能被验证出效果（offscreen 下量
-    `actionGeometry` / `sizeHint` 两类项宽度完全相同，像素探测也不可靠），
-    所以那条规则已撤回，不留没有依据的改动。真正原因待查。
+    ⚠️ 必须按**每项**算，不能看 `actionGeometry().width()`：菜单宽度会被最长项
+    撑满，几种写法都是同一个值，看宽度永远发现不了这个 bug。
+    """
+    out = _run_real_qt("""
+from PyQt5.QtWidgets import QApplication, QMenu, QStyle, QStyleOptionMenuItem
+from PyQt5.QtGui import QImage, QPixmap
+from pastelabel.ui.main_window import ImageEditor
+
+app = QApplication([])
+st = app.style()
+w = ImageEditor()
+w.resize(1000, 800)
+w.show()
+app.processEvents()
+w.current_background = QPixmap.fromImage(
+    QImage(600, 400, QImage.Format_RGB888))
+w.background_images = ['work.png']
+w.current_background_index = 0
+w.region_boxes = []
+w.region_fixed = False
+app.processEvents()
+
+
+def indents(fixed):
+    m = QMenu()
+    w.canvas._add_region_actions(m, fixed)
+    out = []
+    for a in m.actions():
+        opt = QStyleOptionMenuItem()
+        opt.initFrom(m)
+        opt.font = m.font()
+        opt.text = a.text()
+        opt.menuItemType = QStyleOptionMenuItem.Normal
+        opt.checkType = (QStyleOptionMenuItem.Exclusive if a.isCheckable()
+                         else QStyleOptionMenuItem.NotCheckable)
+        opt.checked = a.isChecked()
+        opt.rect = m.actionGeometry(a)
+        # Qt 只给 checkable 项加这一列
+        out.append(st.pixelMetric(QStyle.PM_MenuButtonIndicator, opt, m)
+                   if a.isCheckable() else 0)
+    return out
+
+
+i_off = indents(False)
+i_on = indents(True)
+print('未固定缩进:', i_off)
+print('已固定缩进:', i_on)
+print('没有可勾选项:', not any(
+    a.isCheckable() for a in (lambda m: (w.canvas._add_region_actions(m, False),
+                                         m.actions())[1])(QMenu())))
+""")
+    lines = _lines(out)
+    assert lines[0] == "未固定缩进: [0, 0, 0, 0]", (
+        f"未固定时四项没有齐平：{lines[0]}")
+    assert lines[1] == "已固定缩进: [0, 0, 0, 0]", (
+        f"已固定时四项没有齐平：{lines[1]}")
+    assert lines[2].endswith("True"), lines[2]
+
+
+def test_real_region_menu_keeps_a_visible_check_state():
+    """⑥ 勾**仍然看得见**，且在两种状态间切换。
+
+    用户明确「我不是固定区域左边有打钩吗，不勾选不就解除了」——修对齐不能把勾
+    去掉。勾现在画进文案（`✔ 固定区域`），点一下照样来回切。
     """
     out = _run_real_qt("""
 from PyQt5.QtWidgets import QApplication, QMenu
@@ -5226,31 +5286,24 @@ w.region_boxes = []
 w.region_fixed = False
 app.processEvents()
 
-def fix_action(fixed):
+
+def fix_text(fixed):
     menu = QMenu()
     w.canvas._add_region_actions(menu, fixed)
     for a in menu.actions():
         if '固定区域' in a.text():
-            return a
+            return a.text()
     return None
 
-a = fix_action(False)
-print('有固定区域项', a is not None)
-print('是可勾选的', a is not None and a.isCheckable())
-print('未固定时没勾', a is not None and not a.isChecked())
-print('文案就是固定区域', a is not None and a.text() == '固定区域')
 
-b = fix_action(True)
-print('已固定时打勾', b is not None and b.isChecked())
-print('文案不改成解除', b is not None and b.text() == '固定区域')
+print('未固定文案:', fix_text(False))
+print('已固定文案:', fix_text(True))
+print('已固定时带勾:', fix_text(True).startswith('✔'))
+print('未固定时不带勾:', not fix_text(False).startswith('✔'))
 """)
     lines = _lines(out)
-    assert lines[0].endswith("True"), lines[0]
-    assert lines[1].endswith("True"), (
-        f"「固定区域」不是可勾选项了（勾没了）：{lines[1]}")
+    assert lines[0] == "未固定文案: 固定区域", lines[0]
+    assert lines[1] == "已固定文案: ✔ 固定区域", (
+        f"已固定时没有显示勾：{lines[1]}")
     assert lines[2].endswith("True"), lines[2]
     assert lines[3].endswith("True"), lines[3]
-    assert lines[4].endswith("True"), (
-        f"已固定时没打勾：{lines[4]}")
-    assert lines[5].endswith("True"), (
-        f"文案被改成了「解除固定区域」这类额外文案：{lines[5]}")

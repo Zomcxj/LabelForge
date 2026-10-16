@@ -304,13 +304,17 @@ class CanvasMenuMixin:
         add_poly_action.triggered.connect(self._start_add_region_polygon)
         menu.addAction(add_poly_action)
 
-        # 保留勾选框：用户要的是「打得勾还在，只是别比别的项多缩进一个字」。
-        # Qt 默认给 checkable 项预留 indicator 那一列，同菜单里不可勾选的项没有，
-        # 于是「固定区域」看起来多缩进一个字宽。对齐靠 QSS 的
-        # `QMenu::indicator` 给一个固定宽度（见 `theme.py`），不靠改文案。
-        fix_action = QAction(tr("固定区域"), self)
-        fix_action.setCheckable(True)
-        fix_action.setChecked(bool(fixed))
+        # 「固定区域」**不用 `setCheckable`**：Qt 会给可勾选项的文字额外缩进
+        # 一个 `PM_MenuButtonIndicator` 的宽度（本主题下 12px），于是它比同菜单
+        # 里其它三项多空出一个字——用户报的「固定区域没有左对齐空了一个字」。
+        # 按 Qt 画菜单项的口径复算，四项缩进分别是 [0, 0, 12, 0]；去掉 checkable
+        # 后是 [0, 0, 0, 0]。
+        #
+        # 勾**仍然要有**（用户明确「我不是固定区域左边有打钩吗，不勾选不就解除了」），
+        # 所以把勾画进文案本身：未固定显示「固定区域」，已固定显示「✔ 固定区域」，
+        # 点一下照样来回切。这样勾看得见、四项也严格左对齐。
+        fix_action = QAction(
+            tr("✔ 固定区域") if fixed else tr("固定区域"), self)
         fix_action.triggered.connect(self._toggle_fix_regions)
         menu.addAction(fix_action)
 
