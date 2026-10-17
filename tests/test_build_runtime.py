@@ -311,7 +311,8 @@ def test_ci_pins_same_opencv_major_as_local():
     build_yml = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
     assert "opencv-python-headless>=4.10,<4.11" in requirements
     assert "-r requirements.txt" in test_yml
-    assert "opencv-python-headless>=4.10,<4.11" in build_yml
+    # 构建任务同样从 requirements.txt 取版本（Linux 在 Docker 里，路径带前缀）
+    assert "requirements.txt" in build_yml
 
 
 def test_ci_installs_video_dependency_and_caches_pip():
@@ -321,7 +322,7 @@ def test_ci_installs_video_dependency_and_caches_pip():
     # cv2 随 requirements.txt 一起装进来（唯一声明处），工作流不得另起清单
     assert "-r requirements.txt" in test_yml
     assert "cache: pip" in test_yml
-    assert "opencv-python-headless" in build_yml
+    assert "requirements.txt" in build_yml
     # Linux 构建在 Docker 里跑，缓存目录必须挂进容器才有效
     assert "/root/.cache/pip" in build_yml
 
