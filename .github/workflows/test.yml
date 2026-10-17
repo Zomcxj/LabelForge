@@ -26,9 +26,28 @@ jobs:
           cache: pip
           cache-dependency-path: requirements*.txt
 
+      # Qt6（PySide6）硬依赖 libEGL 等系统库；Qt5 时代（PyQt5）不需要，
+      # 迁移到 PySide6 后必须补上，否则 ubuntu runner 上连 import 都失败
+      - name: Install Qt runtime libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-sync1 libxcb-xfixes0 \
+            libxcb-xinerama0 libdbus-1-3 libfontconfig1
+
+      # runner 上没有显示服务；offscreen 这个配置在 WSL 侧已验证全量通过
+      - name: Point Qt at the offscreen platform (Linux)
+        if: runner.os == 'Linux'
+        run: echo "QT_QPA_PLATFORM=offscreen" >> "$GITHUB_ENV"
+
+      # 版本以 requirements.txt 为准：原本这里另起一份未限版本的清单，
+      # CI 会装到从没测过的 PySide6（6.12），与本机及发布范围都对不上。
+      # onnx 仅测试用：现场生成合成模型供端到端测试，运行时不需要
       - name: Install test dependencies
-        # onnx 仅测试用：现场生成合成模型供端到端测试，运行时不需要
-        run: pip install pytest numpy PySide6 onnxruntime onnx 'opencv-python-headless>=4.10,<4.11'
+        run: pip install -r requirements.txt -r requirements-dev.txt onnx
 
       - name: Run tests
         run: pytest tests/ -q
