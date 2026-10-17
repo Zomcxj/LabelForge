@@ -49,14 +49,14 @@ jobs:
           key: pip-linux-python312-${{ hashFiles('requirements*.txt') }}
           restore-keys: pip-linux-python312-
 
-      - name: Build with PyInstaller (Linux, Docker ubuntu:22.04)
+      - name: Build with PyInstaller (Linux, Docker ubuntu:20.04)
         if: runner.os == 'Linux'
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -v "${{ runner.temp }}/labelforge-pip-cache:/root/.cache/pip" \
             -w /workspace \
-            ubuntu:22.04 \
+            ubuntu:20.04 \
             bash -c "
               set -e
               export DEBIAN_FRONTEND=noninteractive

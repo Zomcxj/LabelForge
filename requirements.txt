@@ -1,4 +1,7 @@
-PySide6>=6.5
+# 上限卡在 6.10：PySide6 6.10 起 Linux wheel 是 manylinux_2_34（要求 glibc 2.34），
+# 6.9 及以前是 manylinux_2_28（glibc 2.28）。要支持 Ubuntu 20.04（glibc 2.31）
+# 就必须留在 6.9；CI 的构建镜像也因此固定在 ubuntu:20.04。
+PySide6>=6.5,<6.10
 numpy>=1.26.0
 # ONNX 推理运行时。CPU 包与 GPU 包都导入为 onnxruntime，二选一安装：
 # 只要 GPU 就用 onnxruntime-gpu 替换本行（需要匹配的 CUDA/cuDNN）。

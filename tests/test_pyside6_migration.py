@@ -193,24 +193,41 @@ def test_ci_mentions_pyside6():
     assert "PySide6" in text, "构建工作流里没有安装 PySide6"
 
 
-def test_linux_build_image_can_actually_host_pyside6():
-    """Linux 构建镜像不能退回 ubuntu:18.04。
+def test_linux_build_image_is_pinned_to_ubuntu_20_04():
+    """Linux 构建镜像固定在 ubuntu:20.04 —— 镜像的 glibc 就是产物的最低要求。
 
-    两条独立原因，任一条都会让 `set -e` 下的构建在装依赖阶段就死掉：
+    README 承诺 Linux 支持到 Ubuntu 20.04，所以三个边界都要对：
 
-    - PySide6 的 Linux wheel 是 `manylinux_2_28`（6.11 起为 `manylinux_2_34`），
-      bionic 的 glibc 是 2.27，pip 直接 `No matching distribution found`；
-    - 该 job 要装 `libxcb-cursor0`，而这个包在 Ubuntu 里**只有 jammy(22.04)
-      起**才有（`packages.ubuntu.com` 查证）。
+    - 18.04（glibc 2.27）装不上 PySide6：wheel 是 manylinux_2_28，`pip` 直接
+      拒绝（`libxcb-cursor0` 倒是 bionic 就没有，但那是次要原因）；
+    - 22.04（glibc 2.35）编出来的产物会引用 GLIBC_2.3x 符号，在 20.04 上起不来；
+    - 20.04（glibc 2.31）既装得上 wheel，产物的下限也正好落在 20.04。
 
-    用 PySide6 之前是 `conda install pyqt`（conda-forge 的 Qt5，glibc 2.17 即可），
-    所以这条约束是本次迁移新引入的。
+    这个 job 要装的 `libxcb-cursor0` / `libegl1-mesa` / `libxkbcommon-x11-0` 在
+    focal 都有（已核对 focal 的 `Packages.gz` 索引，而不是凭印象）。
     """
     text = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
     assert "ubuntu:18.04" not in text, (
-        "Linux 构建镜像仍是 18.04：glibc 2.27 装不上 PySide6，"
-        "且该发行版没有 libxcb-cursor0")
-    assert "ubuntu:22.04" in text, "Linux 构建镜像未固定到 22.04"
+        "构建镜像退回 18.04：glibc 2.27 装不上 PySide6（manylinux_2_28）")
+    assert "ubuntu:22.04" not in text, (
+        "构建镜像抬到 22.04：产物的 glibc 下限会跟着抬到 2.35，20.04 用户跑不起来")
+    assert "ubuntu:20.04" in text, "Linux 构建镜像未固定在 20.04"
+
+
+def test_pyside6_upper_bound_stays_below_the_glibc_bump():
+    """PySide6 上限必须在 6.10 以下。
+
+    6.10 起 Linux wheel 从 `manylinux_2_28` 变成 `manylinux_2_34`：在 20.04 上
+    pip 会直接拒绝安装（glibc 2.31 < 2.34）；就算在更新的机器上装成功，产物也会
+    要求 glibc 2.34，同样跑不了 20.04。所以上限是兼容性约束，不是洁癖。
+    """
+    text = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    lines = [l for l in text.splitlines()
+             if l.startswith("PySide6") and not l.lstrip().startswith("#")]
+    assert lines, "requirements.txt 里找不到 PySide6"
+    spec = lines[0].replace(" ", "")
+    assert "<6.10" in spec, (
+        f"PySide6 没有卡在 6.10 以下，6.10+ 的 wheel 要求 glibc 2.34：{lines[0]}")
 
 
 # ---------- 6. 兼容层已删除 ----------

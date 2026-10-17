@@ -14,7 +14,9 @@ LabelForge 是一个基于 PySide6 的图像标注工具，支持**贴图合成*
 
 ## 支持平台
 
-**Windows 10+** · **Linux (x86_64)**
+**Windows 10+** · **Linux (x86_64, Ubuntu 20.04+ / glibc 2.31+)**
+
+Linux 发行包需要 glibc 2.31 及以上（Ubuntu 20.04、Debian 11、RHEL 9 或更新），另需系统提供 `libxcb-cursor0`（Ubuntu 20.04 起在 `universe` 源内，`sudo apt install libxcb-cursor0`）。
 
 ## 功能特性
 
