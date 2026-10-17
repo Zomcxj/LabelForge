@@ -301,10 +301,16 @@ def test_requirements_install_headless_opencv_only():
 
 
 def test_ci_pins_same_opencv_major_as_local():
-    """CI 装的 OpenCV 必须与本机同版本，否则本地绿、CI 红时无从判断是谁的问题。"""
+    """CI 装的 OpenCV 必须与本机同版本，否则本地绿、CI 红时无从判断是谁的问题。
+
+    版本只在 requirements.txt 里声明一处，工作流按它安装（`-r requirements.txt`），
+    所以这里查「声明存在」+「CI 确实读它」，而不是要求工作流再抄一遍。
+    """
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     test_yml = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
     build_yml = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
-    assert "opencv-python-headless>=4.10,<4.11" in test_yml
+    assert "opencv-python-headless>=4.10,<4.11" in requirements
+    assert "-r requirements.txt" in test_yml
     assert "opencv-python-headless>=4.10,<4.11" in build_yml
 
 
@@ -312,7 +318,8 @@ def test_ci_installs_video_dependency_and_caches_pip():
     """CI 必须真装 cv2（不许靠 skip 拿绿），并配置依赖缓存。"""
     test_yml = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
     build_yml = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
-    assert "opencv-python-headless" in test_yml
+    # cv2 随 requirements.txt 一起装进来（唯一声明处），工作流不得另起清单
+    assert "-r requirements.txt" in test_yml
     assert "cache: pip" in test_yml
     assert "opencv-python-headless" in build_yml
     # Linux 构建在 Docker 里跑，缓存目录必须挂进容器才有效

@@ -26,7 +26,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements*.txt
 
-      # Qt6（PySide6）硬依赖 libEGL 等系统库；Qt5 时代（PyQt5）不需要，
+      # Qt6（PySide6）硬依赖 libEGL 等系统库，Qt5 时代不需要，
       # 迁移到 PySide6 后必须补上，否则 ubuntu runner 上连 import 都失败
       - name: Install Qt runtime libraries (Linux)
         if: runner.os == 'Linux'
