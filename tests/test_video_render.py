@@ -241,7 +241,8 @@ else:
     white = int((flat == (255, 255, 255)).all(axis=1).sum())
     print("RESULT", repr((red, black, white)))
 ''')
-    if result == "NOFONT":
+    # 脚本在找不到汉字字体时打印的是 1 元组 `("NOFONT",)`，不是裸字符串
+    if result == ("NOFONT",):
         pytest.skip("系统没有可画汉字的字体，无法验证中文渲染")
     red, black, white = result
     assert red > 20, f"标签条没画出来：{red}"

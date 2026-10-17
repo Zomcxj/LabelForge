@@ -786,13 +786,14 @@ print("RESULT", repr((res.cancelled, res.frames_written, decoded,
 def test_compose_range_spins_default_to_first_and_last():
     """范围输入默认「0 到最后一张」，来源选定后自动填好。"""
     result = _run_qt('''
-import sys, os
+import sys, os, tempfile
 sys.path.insert(0, r"@@ROOT@@")
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QImage
 app = QApplication([])
 
-work = os.path.join(os.environ["TEMP"], "labelforge_range_ui")
+# 用 tempfile.gettempdir()：Windows 有 TEMP，Linux 没有（只有 TMPDIR/RUNNER_TEMP）
+work = os.path.join(tempfile.gettempdir(), "labelforge_range_ui")
 os.makedirs(work, exist_ok=True)
 for name in os.listdir(work):
     os.remove(os.path.join(work, name))
@@ -819,13 +820,13 @@ print("RESULT", repr((d.compose_start_spin.value(), d.compose_end_spin.value(),
 def test_compose_range_is_carried_into_the_settings():
     """范围要进 `settings()`，否则界面上选了也不生效。"""
     result = _run_qt('''
-import sys, os
+import sys, os, tempfile
 sys.path.insert(0, r"@@ROOT@@")
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QImage
 app = QApplication([])
 
-work = os.path.join(os.environ["TEMP"], "labelforge_range_settings")
+work = os.path.join(tempfile.gettempdir(), "labelforge_range_settings")
 os.makedirs(work, exist_ok=True)
 for name in os.listdir(work):
     os.remove(os.path.join(work, name))
@@ -854,13 +855,13 @@ print("RESULT", repr((s.get("start_index"), s.get("end_index"))))
 def test_compose_range_corrects_a_reversed_input():
     """起始 > 结束 时纠回，不让用户带着非法范围点开始。"""
     result = _run_qt('''
-import sys, os
+import sys, os, tempfile
 sys.path.insert(0, r"@@ROOT@@")
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QImage
 app = QApplication([])
 
-work = os.path.join(os.environ["TEMP"], "labelforge_range_reverse")
+work = os.path.join(tempfile.gettempdir(), "labelforge_range_reverse")
 os.makedirs(work, exist_ok=True)
 for name in os.listdir(work):
     os.remove(os.path.join(work, name))

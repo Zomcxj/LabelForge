@@ -48,7 +48,10 @@ def test_older_runtime_entries_are_replaced_by_newest(fake_versions, tmp_path):
     old = _make_fake_runtime(tmp_path, (0xE001A, 0x70000000))
     new = _make_fake_runtime(tmp_path, (0xE0033, 0x8D000000))
     toc = [
-        (r"PySide6\msvcp140.dll", os.path.join(old, "msvcp140.dll"), "BINARY"),
+        # 包内路径要用 os.path.join：写死反斜杠的话 Linux 上 basename 取不到
+        # `msvcp140.dll`，去重逻辑认不出这两条是同一个文件。
+        (os.path.join("PySide6", "msvcp140.dll"),
+         os.path.join(old, "msvcp140.dll"), "BINARY"),
         ("msvcp140.dll", os.path.join(new, "msvcp140.dll"), "BINARY"),
     ]
 
@@ -63,7 +66,8 @@ def test_destination_paths_and_count_are_unchanged(fake_versions, tmp_path):
     old = _make_fake_runtime(tmp_path, (0xE001A, 0x1))
     new = _make_fake_runtime(tmp_path, (0xE0033, 0x2))
     toc = [
-        (r"PySide6\msvcp140.dll", os.path.join(old, "msvcp140.dll"), "BINARY"),
+        (os.path.join("PySide6", "msvcp140.dll"),
+         os.path.join(old, "msvcp140.dll"), "BINARY"),
         ("msvcp140.dll", os.path.join(new, "msvcp140.dll"), "BINARY"),
         ("labelforge/main.py", r"D:\x\main.py", "PYSOURCE"),
     ]

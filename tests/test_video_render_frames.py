@@ -641,9 +641,11 @@ else:
     black = int((above == (0, 0, 0)).all(axis=1).sum())
     print("RESULT", repr((chosen, black)))
 ''', video=video, out=str(out))
-    chosen, black = result
-    if chosen == "NOFONT":
+    # 先判「没字体」再解包：脚本那时打印的是 1 元组 `("NOFONT",)`，
+    # 直接解包会 ValueError，skip 分支反而永远走不到。
+    if result == ("NOFONT",):
         pytest.skip("系统没有可画汉字的字体")
+    chosen, black = result
     assert black > 5, f"标签条上没有字形笔画，中文可能没渲染：{black}"
 
 
