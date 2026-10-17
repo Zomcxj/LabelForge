@@ -263,7 +263,9 @@ a = Analysis(
     [${MAIN_SCRIPT_SPEC}],
     pathex=[${PROJECT_ROOT_SPEC}],
     binaries=[],
-    datas=[(${RESOURCE_DIR_SPEC}, 'ico_image'), (_os.path.join(${PROJECT_ROOT_SPEC}, 'LICENSE'), '.')],
+    datas=[(${RESOURCE_DIR_SPEC}, 'ico_image'),
+           (_os.path.join(${PROJECT_ROOT_SPEC}, 'LICENSE'), '.'),
+           (_os.path.join(${PROJECT_ROOT_SPEC}, 'THIRD-PARTY.md'), '.')],
     hiddenimports=[
         'labelforge',         'labelforge.ui', 'labelforge.ui.main_window', 'labelforge.ui.icons',
         'labelforge.ui.settings_dialog', 'labelforge.ui.theme', 'labelforge.ui.dwm',

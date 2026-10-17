@@ -14,7 +14,8 @@ LabelForge/
 ├── requirements-dev.txt       # 开发与测试依赖
 ├── requirements-build.txt     # PyInstaller 构建依赖
 ├── README.md                  # 项目说明
-├── LICENSE                    # GNU GPL v3.0 许可证（GPL-3.0-only）
+├── LICENSE                    # GNU LGPL v3.0 许可证（LGPL-3.0-only）
+├── THIRD-PARTY.md             # 第三方组件清单与 Qt 源码获取方式
 ├── ico_image/                 # 图标、演示图和字体资源
 ├── .github/
 │   └── workflows/

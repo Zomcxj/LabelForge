@@ -278,9 +278,10 @@ def test_build_script_checks_runtime_dependencies_before_building():
 
 @pytest.mark.parametrize("rel", ["build.sh", "labelforge/LabelForge.spec"])
 def test_build_entries_bundle_license_file(rel):
-    """GPL 要求随产物分发许可证正文，两个入口都要把 LICENSE 打进包。"""
+    """LGPL 要求随产物分发许可证正文与声明，两个入口都要打进包。"""
     source = (ROOT / rel).read_text(encoding="utf-8")
     assert "'LICENSE'" in source, f"{rel} 没有把 LICENSE 加进 datas"
+    assert "THIRD-PARTY.md" in source, f"{rel} 没有把 THIRD-PARTY.md 加进 datas"
 
 
 def test_requirements_install_headless_opencv_only():
@@ -318,13 +319,36 @@ def test_ci_installs_video_dependency_and_caches_pip():
     assert "/root/.cache/pip" in build_yml
 
 
-def test_license_is_gpl3_and_docs_agree():
+def test_license_is_lgpl3_and_docs_agree():
     """许可证正文与文档口径一致，避免仓库里同时出现两种说法。"""
     license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
-    assert license_text.lstrip().startswith("GNU GENERAL PUBLIC LICENSE")
+    assert license_text.lstrip().startswith("GNU LESSER GENERAL PUBLIC LICENSE")
     assert "Version 3, 29 June 2007" in license_text
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     structure = (ROOT / "docs/project_structure.md").read_text(encoding="utf-8")
-    assert "GPL-3.0-only" in readme
+    assert "LGPL-3.0-only" in readme
     assert "MIT License" not in readme
-    assert "GPL" in structure and "MIT" not in structure
+    assert "LGPL-3.0-only" in structure
+
+
+def test_third_party_notice_documents_qt_source():
+    """LGPL-3.0 §4a/§4d(0)：要声明用到 Qt，并给出 Qt 源码出口与替换途径。"""
+    notice = (ROOT / "THIRD-PARTY.md").read_text(encoding="utf-8")
+    assert "Qt" in notice and "LGPL-3.0" in notice
+    assert "code.qt.io" in notice or "download.qt.io" in notice
+    assert "pip install" in notice
+
+
+def test_no_stale_gpl_only_mentions():
+    """全仓库不得再出现 GPL-3.0-only 的说法，防漏改。
+
+    只扫仓库非测试文件：本文件自己被排除，否则断言里的字面量会命中自己。
+    `LGPL-3.0-only` 含 `GPL-3.0-only` 子串，故用否定后顾排除前面是 L 的情形。
+    """
+    stale = re.compile(r"(?<!L)GPL-3\.0-only")
+    targets = [ROOT / "README.md", ROOT / "docs/project_structure.md",
+               ROOT / "build.sh", ROOT / "labelforge/LabelForge.spec"]
+    targets += sorted((ROOT / "labelforge").rglob("*.py"))
+    offenders = [str(p.relative_to(ROOT)) for p in targets
+                 if stale.search(p.read_text(encoding="utf-8"))]
+    assert not offenders, f"仍写着 GPL-3.0-only: {offenders}"
