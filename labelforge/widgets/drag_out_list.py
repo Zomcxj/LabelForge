@@ -1,7 +1,7 @@
 import os
-from PyQt5.QtWidgets import QListWidget
-from PyQt5.QtGui import QDrag
-from PyQt5.QtCore import Qt, QMimeData, QUrl
+from PySide6.QtWidgets import QListWidget
+from PySide6.QtGui import QDrag
+from PySide6.QtCore import Qt, QMimeData, QUrl
 
 
 class DragOutListWidget(QListWidget):

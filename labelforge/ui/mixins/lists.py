@@ -1,7 +1,7 @@
 """Lists UI building mixin."""
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem, QCheckBox, QSpinBox, QFrame
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt, QSize, QTimer
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem, QCheckBox, QSpinBox, QFrame
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, QSize, QTimer
 from ...core.config import PASTE_PARAMS
 from ..i18n import t as tr
 from ..icons import SVG_REFRESH, _load_svg_icon

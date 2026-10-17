@@ -81,7 +81,7 @@ def test_label_color_uses_all_open_image_paste_labels_when_switching_current_ima
 
     root = Path(__file__).resolve().parents[1]
     script = '''
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication.instance() or QApplication([])

@@ -49,9 +49,9 @@ def _lines(out):
 
 
 _HOST = """
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel
-from PyQt5.QtCore import QPoint, Qt
-from PyQt5.QtGui import QMouseEvent, QPixmap
+from PySide6.QtWidgets import QApplication, QWidget, QLabel
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QMouseEvent, QPixmap
 from labelforge.canvas import Canvas
 
 class Editor(QWidget):

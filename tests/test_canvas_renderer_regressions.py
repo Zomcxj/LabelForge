@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from PyQt5.QtCore import QRectF
+from PySide6.QtCore import QRectF
 
 from labelforge.engine.paste_engine import PasteEngineMixin
 
@@ -77,9 +77,9 @@ def test_offset_overlapping_paste_group_keeps_boxes_inside_background_bounds():
 def test_point_brush_does_not_leak_into_later_rectangles():
     """画完关键点后残留的实心画刷不能污染后续矩形，否则矩形被填成实心色块。"""
     script = '''
-from PyQt5.QtCore import Qt, QRectF
-from PyQt5.QtGui import QImage, QPainter
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QImage, QPainter
+from PySide6.QtWidgets import QApplication
 from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
@@ -140,9 +140,9 @@ assert px.getRgb()[:3] == expected, (px.getRgb()[:3], expected)
 def test_point_with_zero_bbox_still_renders():
     """载入的关键点 width/height 为 0，不能被矩形的退化判断跳过而不显示。"""
     script = '''
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QImage, QPainter
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage, QPainter
+from PySide6.QtWidgets import QApplication
 from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
@@ -194,9 +194,9 @@ assert (px.red(), px.green(), px.blue()) != (255, 255, 255), px.getRgb()
 
 def test_keypoint_selected_state_is_visually_distinct_from_idle():
     script = '''
-from PyQt5.QtCore import Qt, QPointF
-from PyQt5.QtGui import QColor, QImage, QPainter
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtWidgets import QApplication
 from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
@@ -252,9 +252,9 @@ assert idle != selected, (idle, selected)
 def test_warned_keypoint_renders_as_square_with_white_outline():
     """异常关键点（无同组框/不在框内）画成方形 + 白色描边，与正常圆点不同。"""
     script = '''
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QImage, QPainter
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage, QPainter
+from PySide6.QtWidgets import QApplication
 from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
@@ -317,9 +317,9 @@ assert op == (255, 255, 255), op
 def test_keypoint_drawn_on_top_of_its_box():
     """关键点即使排在框之前，也要画在框上方（不被框填充遮盖）。"""
     script = '''
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QImage, QPainter
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage, QPainter
+from PySide6.QtWidgets import QApplication
 from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:
@@ -375,9 +375,9 @@ assert px.green() > px.blue(), px.getRgb()
 
 def test_boxes_use_label_color_fills_with_expected_alpha_states():
     script = '''
-from PyQt5.QtCore import Qt, QRectF
-from PyQt5.QtGui import QColor, QImage, QPainter, QPixmap
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
+from PySide6.QtWidgets import QApplication
 from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 
 class Check:

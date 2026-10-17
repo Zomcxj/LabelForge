@@ -1,5 +1,5 @@
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QApplication, QLineEdit
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QApplication, QLineEdit
 
 
 class HoverDismissPopup(QWidget):
@@ -14,8 +14,8 @@ class HoverDismissPopup(QWidget):
 
     def __init__(self, parent=None, flags=None):
         # `flags` 默认值不能直接写 `Qt.Popup`：默认参数在**类定义时**求值，
-        # 那一刻 `QtCore.Qt` 可能还没挂上 `Popup`（本项目的 PyQt5 在部分导入
-        # 顺序下模块是半初始化的），导入即 `AttributeError`。放到函数体里取。
+        # 而测试桩（`tests/conftest.py` 的假 Qt）只注册了用到的那几个枚举名，
+        # 没有 `Popup`，会以 `AttributeError` 让导入就失败。放到函数体里取。
         if flags is None:
             flags = Qt.Popup
         super().__init__(parent, flags)

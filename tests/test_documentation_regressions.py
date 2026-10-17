@@ -135,21 +135,72 @@ _LEGACY_ALLOWED = {
     "tests/test_config_manager.py",           # 迁移用例
 }
 
+# 旧名的三种大小写形态。只查前两种会漏掉 `PASTELABEL_SUBPROC_PYTHON` 这类
+# 常量——它一个 `.py` 文件就能藏住整个改名遗漏（真的漏过一个）。
+_LEGACY_FORMS = ("pastelabel", "PasteLabel", "PASTELABEL")
+
+# 除 .py 外还要查的文本文件：spec / shell / CI / 依赖清单里也可能挂着旧名。
+_LEGACY_SCAN_EXTRA = ("*.spec", "*.sh", "*.yml", "*.yaml", "*.txt", "*.cfg",
+                      "*.toml", "*.json")
+
+
+def _legacy_scan_files():
+    for path in sorted(ROOT.rglob("*.py")):
+        yield path
+    for pattern in _LEGACY_SCAN_EXTRA:
+        for path in sorted(ROOT.rglob(pattern)):
+            yield path
+
 
 def test_no_legacy_package_name_outside_allowlist():
     """包名与显示名不得在允许清单之外残留，否则改名不彻底。"""
     offenders = []
-    for path in sorted(ROOT.rglob("*.py")):
+    seen = set()
+    for path in _legacy_scan_files():
         rel = path.relative_to(ROOT).as_posix()
-        if rel.startswith((".superpowers/", "build/", "dist/")) or "__pycache__" in rel:
+        if rel in seen:
+            continue
+        seen.add(rel)
+        if (rel.startswith((".superpowers/", "build/", "dist/"))
+                or "__pycache__" in rel):
             continue
         if rel in _LEGACY_ALLOWED:
             continue
-        text = path.read_text(encoding="utf-8")
-        for old in ("pastelabel", "PasteLabel"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for old in _LEGACY_FORMS:
             if old in text:
                 offenders.append(f"{rel}: {old}")
     assert not offenders, offenders
+
+
+def test_legacy_guard_covers_the_all_caps_form():
+    """守卫必须认全大写旧名，否则 `PASTELABEL_*` 常量会整片溜过去。
+
+    这条是被真实遗漏逼出来的：`tests/conftest.py` 里长期留着
+    `PASTELABEL_SUBPROC_PYTHON`，而旧守卫只查小写与首字母大写。
+
+    直接按行为验：把三种形态分别塞进一段文本，都要被判为残留。
+    """
+    assert "PASTELABEL" in _LEGACY_FORMS, "全大写形态不在检查列表里"
+
+    def _flagged(text):
+        return [old for old in _LEGACY_FORMS if old in text]
+
+    assert _flagged("os.environ['PASTELABEL_SUBPROC_PYTHON']") == ["PASTELABEL"]
+    assert _flagged("from pastelabel.core import x") == ["pastelabel"]
+    assert _flagged("PasteLabel.exe") == ["PasteLabel"]
+
+
+def test_guard_scans_more_than_python_files():
+    """spec / shell / CI / 依赖清单里挂着旧名同样算改名不彻底。"""
+    exts = {p.suffix for p in _legacy_scan_files()}
+    assert ".spec" in exts or any(
+        p.suffix == ".spec" for p in (ROOT / "labelforge").iterdir()
+        if p.is_file()), f"未扫到 spec 文件，实际扫到 {exts}"
+    assert ".sh" in exts or (ROOT / "build.sh").exists()
 
 
 def test_spec_file_is_renamed_and_points_at_the_new_package():

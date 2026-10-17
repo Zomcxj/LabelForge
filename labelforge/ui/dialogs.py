@@ -2,11 +2,11 @@
 对话框模块 - 定义各种对话框
 """
 import os
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget,
     QLineEdit, QPushButton, QApplication
 )
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from ..core.utils import extract_label_name
 from . import i18n
@@ -70,7 +70,7 @@ class LabelSelectionDialog(QDialog):
         layout.addWidget(self.label_list)
 
         if show_group:
-            from PyQt5.QtWidgets import QSpinBox
+            from PySide6.QtWidgets import QSpinBox
             group_row = QHBoxLayout()
             group_row.addWidget(QLabel(tr("分组")))
             self.group_input = QSpinBox()
@@ -116,7 +116,7 @@ class LabelSelectionDialog(QDialog):
 
     def _position_dialog(self):
         """优先 anchor_rect（画布框）→ anchor_pos（光标）→ 父窗口居中。"""
-        from PyQt5.QtCore import QPoint
+        from PySide6.QtCore import QPoint
 
         if self.anchor_rect is not None and self.parent() is not None:
             anchor_pos = self.anchor_rect.bottomRight().toPoint()
@@ -198,7 +198,7 @@ class ProgressDialogFactory:
 
     @staticmethod
     def create_progress_dialog(parent, title, label_text, maximum):
-        from PyQt5.QtWidgets import QProgressDialog, QProgressBar
+        from PySide6.QtWidgets import QProgressDialog, QProgressBar
         from . import i18n  # noqa: F401
         t = ThemeManager.get_theme()
 
@@ -247,8 +247,8 @@ class SaveTipDialog:
 
     @staticmethod
     def show_save_tip(parent, file_path, success=True):
-        from PyQt5.QtWidgets import QLabel
-        from PyQt5.QtCore import QTimer
+        from PySide6.QtWidgets import QLabel
+        from PySide6.QtCore import QTimer
         from ..core.utils import PathUtils
 
         t = ThemeManager.get_theme()

@@ -6,7 +6,7 @@
 - COCO / LabelMe 用 json，Pascal VOC 用 xml.etree。
 
 设计约束（见 .superpowers/plans/2026-09-14-supervision-integration.md）：
-- 不依赖 PyQt5，可在无 GUI 环境下测试；
+- 不依赖 Qt，可在无 GUI 环境下测试；
 - 默认不覆盖原始数据，输出目录非空时必须显式 overwrite；
 - 转换前完成校验，失败时不写出半成品；
 - 所有解析 / 写出异常统一转换为 DatasetToolError。

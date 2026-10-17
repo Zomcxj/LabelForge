@@ -17,9 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RENDERER = ROOT / "labelforge" / "canvas" / "canvas_renderer.py"
 
 _HARNESS = '''
-from PyQt5.QtCore import Qt, QRectF, QPoint
-from PyQt5.QtGui import QPixmap, QColor, QImage
-from PyQt5.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import Qt, QRectF, QPoint
+from PySide6.QtGui import QPixmap, QColor, QImage
+from PySide6.QtWidgets import QApplication, QWidget
 app = QApplication([])
 from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 

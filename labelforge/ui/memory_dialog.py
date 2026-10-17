@@ -1,8 +1,8 @@
 """记忆记录弹窗。"""
 import os
 
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel
-from PyQt5.QtCore import QTimer
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel
+from PySide6.QtCore import QTimer
 
 from ..core import config_manager
 from . import i18n

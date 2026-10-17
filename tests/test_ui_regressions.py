@@ -13,7 +13,7 @@ def test_canvas_imports_qpixmap_for_brightness_contrast_updates():
     # 就假红（那是给滑窗格子标号用的，与亮度对比度无关）。
     imported = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "PyQt5.QtGui":
+        if isinstance(node, ast.ImportFrom) and node.module == "PySide6.QtGui":
             imported.update(a.name for a in node.names)
     for name in ("QPainter", "QPixmap", "QColor", "QPen", "QFontMetrics"):
         assert name in imported, f"canvas_renderer 没导入 {name}"

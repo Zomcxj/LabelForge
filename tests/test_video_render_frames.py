@@ -562,7 +562,7 @@ def test_render_video_draws_category_color_with_real_qt(tmp_path):
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"@@ROOT@@")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 import cv2
@@ -606,11 +606,11 @@ def test_render_video_chinese_label_is_drawn_with_real_qt(tmp_path):
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"@@ROOT@@")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 import cv2
-from PyQt5.QtGui import QFont, QFontMetrics
+from PySide6.QtGui import QFont, QFontMetrics
 from labelforge.engine.video_io import render_video
 from labelforge.engine.inference_image import resize_for_model
 from labelforge.engine.video_render import RenderSpec

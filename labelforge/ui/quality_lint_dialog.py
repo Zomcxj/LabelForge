@@ -5,12 +5,13 @@
 import math
 import os
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QProgressBar, QMenu,
-    QAction, QComboBox,
+    QComboBox,
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer
+from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, Signal, QTimer
 
 from .dialog_helpers import center_on_parent
 from .i18n import t as tr
@@ -27,11 +28,11 @@ def _progress_qss():
 
 
 class QualityLintDialog(QDialog):
-    issue_activated = pyqtSignal(object)
-    ignore_requested = pyqtSignal(object, str)   # (issue, scope: 'item' | 'kind')
-    ignore_many_requested = pyqtSignal(object, str)  # (issues list, scope)
-    delete_requested = pyqtSignal(object, str)  # (选中的问题列表, 目标类别)
-    mark_keep_requested = pyqtSignal(object)  # 小目标问题列表：写 flags.tiny_keep
+    issue_activated = Signal(object)
+    ignore_requested = Signal(object, str)   # (issue, scope: 'item' | 'kind')
+    ignore_many_requested = Signal(object, str)  # (issues list, scope)
+    delete_requested = Signal(object, str)  # (选中的问题列表, 目标类别)
+    mark_keep_requested = Signal(object)  # 小目标问题列表：写 flags.tiny_keep
 
     def __init__(self, parent=None, total=0):
         super().__init__(parent)

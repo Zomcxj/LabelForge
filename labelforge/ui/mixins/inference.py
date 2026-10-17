@@ -80,7 +80,7 @@ class InferenceMixin:
             return
         if getattr(self, '_model_worker', None) is not None:
             return
-        from PyQt5.QtWidgets import QFileDialog
+        from PySide6.QtWidgets import QFileDialog
 
         path, _ = QFileDialog.getOpenFileName(
             self, tr("选择 ONNX 模型"), "", "ONNX (*.onnx)")
@@ -356,7 +356,7 @@ class InferenceMixin:
         推到画布上（用户报过）。拿不到 `label_group` 时退回整条侧栏带；
         再拿不到返回 None，由调用方居中。
         """
-        from PyQt5.QtCore import QRect
+        from PySide6.QtCore import QRect
 
         label = getattr(self, 'label_group', None)
         bg = getattr(self, 'bg_list_group', None)

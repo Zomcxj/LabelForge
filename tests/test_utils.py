@@ -1,11 +1,11 @@
 """
-utils.py 单元测试 - 纯函数测试，不需要 PyQt5
+utils.py 单元测试 - 纯函数测试，不需要 PySide6
 """
 import sys
 import os
 import importlib.util
 
-# 直接从文件加载模块，绕过 __init__.py 的 PyQt5 导入
+# 直接从文件加载模块，绕过 __init__.py 的 PySide6 导入
 def _load_module(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)

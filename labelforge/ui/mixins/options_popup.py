@@ -1,6 +1,6 @@
 """Options Popup UI building mixin."""
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QFrame, QLineEdit
-from PyQt5.QtCore import Qt, QTimer, QPoint
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QFrame, QLineEdit
+from PySide6.QtCore import Qt, QTimer, QPoint
 from ..theme import ThemeManager
 from ..i18n import t as tr
 from ...widgets.hover_popup import HoverDismissPopup
@@ -42,7 +42,7 @@ class OptionsPopupMixin:
 
         self.mode_seg_ctrl = AnimatedSegmentedControl(self.mode_seg, self.btn_annotate_mode, self.btn_paste_mode)
         self.mode_seg_ctrl.set_accent(ThemeManager.get_theme()["interaction_active"])
-        from PyQt5.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         QTimer.singleShot(0, lambda: self.mode_seg_ctrl.update_position(animated=False))
         layout.addWidget(self.mode_seg)
 

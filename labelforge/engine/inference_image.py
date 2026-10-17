@@ -4,8 +4,8 @@
 同时把「显示缓冲 → 模型输入」的通道与步长处理集中在一处。
 """
 import numpy as np
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QImage
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage
 
 
 def qimage_to_rgb_array(image):
@@ -47,7 +47,6 @@ def _rgb888_rows(image, width, height):
     rgb = image.convertToFormat(QImage.Format_RGB888)
     stride = rgb.bytesPerLine()
     buf = rgb.constBits()
-    buf.setsize(stride * height)
     rows = np.frombuffer(bytes(buf), dtype=np.uint8).reshape(height, stride)
     return np.ascontiguousarray(rows[:, : width * 3].reshape(height, width, 3))
 

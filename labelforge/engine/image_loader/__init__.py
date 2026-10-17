@@ -8,7 +8,7 @@
 import json
 import os
 
-from PyQt5.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from .status import *
 from .status import _status_icon

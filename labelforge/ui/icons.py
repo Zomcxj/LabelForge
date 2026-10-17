@@ -1,9 +1,9 @@
 """Shared SVG icon rendering helpers and icon data."""
-from PyQt5.QtGui import QPixmap, QPainter
-from PyQt5.QtCore import Qt
+from PySide6.QtGui import QPixmap, QPainter
+from PySide6.QtCore import Qt
 
 try:
-    from PyQt5.QtSvg import QSvgRenderer
+    from PySide6.QtSvg import QSvgRenderer
     _has_svg = True
 except ImportError:
     _has_svg = False

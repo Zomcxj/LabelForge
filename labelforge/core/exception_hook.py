@@ -21,8 +21,19 @@ def _write_log(message):
         pass  # 无法写入日志时忽略
 
 
+# 已知无害、但每次启动都会写一行的 Qt6 告警：像素字号（QSS 的 `font-size: Npx`）
+# 会让 QFont.pointSize() 返回 -1，Qt6 内部再拿它调 setPointSize(-1) 并告警。
+# 字号本身是对的（pixelSize 正常、渲染不变），Qt 只是拒绝了非法值。PyQt5 时代没有。
+# 每次进程只发生一次；不记日志是因为这份日志是用户报障时发给我们的。
+_IGNORED_QT_MESSAGES = (
+    "QFont::setPointSize: Point size <= 0",
+)
+
+
 def _qt_message_handler(mode, context, message):
     """Qt 消息处理器 - 捕获 Qt 级别的警告/错误"""
+    if any(s in message for s in _IGNORED_QT_MESSAGES):
+        return
     _write_log(f"Qt [{mode}]: {message}")
 
 
@@ -31,7 +42,7 @@ def install_exception_hook():
     sys.excepthook = exception_hook
     # 安装 Qt 消息处理器
     try:
-        from PyQt5.QtCore import qInstallMessageHandler
+        from PySide6.QtCore import qInstallMessageHandler
         qInstallMessageHandler(_qt_message_handler)
     except Exception:
         pass
@@ -47,7 +58,7 @@ def exception_hook(exctype, value, tb):
     
     # 尝试使用 QMessageBox 显示错误
     try:
-        from PyQt5.QtWidgets import QMessageBox, QApplication
+        from PySide6.QtWidgets import QMessageBox, QApplication
         from ..ui import i18n
         from ..ui.dialog_helpers import ThemedMessageBox
         app = QApplication.instance()

@@ -50,8 +50,8 @@ def _lines(out):
 # 数据集宿主：图0 有 drone,drone,Drone；图1 有一个 drone。
 _HOST = """
 import os, json, shutil
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage
 from unittest.mock import patch
 app = QApplication([])
 from labelforge.ui.main_window import ImageEditor
@@ -192,9 +192,9 @@ def test_canvas_rename_through_the_real_dialog_still_hits_one_box():
     且只改右键的那一个框（这个 bug）。两头都修了才通得过。
     """
     script = _HOST.replace("@@WORK@@", "D:/tmp/_menu_real") + """
-from PyQt5.QtWidgets import QDialog
-from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtTest import QTest
+from PySide6.QtWidgets import QDialog
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtTest import QTest
 
 # 这条用真实对话框，不 patch select_label
 w, _unused = build([_box("drone", 10), _box("drone", 80), _box("Drone", 140)])

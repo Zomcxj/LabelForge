@@ -1,6 +1,6 @@
 """状态栏宽高占比 + 画布显示（亮度/对比度）常驻的回归测试。
 
-conftest 把 PyQt5 全部 mock 掉了，因此这里不实例化真实 Qt：
+conftest 把 PySide6 全部 mock 掉了，因此这里不实例化真实 Qt：
 - 纯函数走真实调用；
 - 画布行为用 stub 编辑器 + mock QPixmap 驱动真实方法体。
 """

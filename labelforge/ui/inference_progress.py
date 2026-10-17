@@ -3,8 +3,8 @@
 取消后已跑完的图结果仍然保留（worker 收到 cancel 后停止取下一张）。
 日志滚动显示，只留最近若干行；用户往上翻看历史时新结果不会把他拽回底部。
 """
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
     QTextEdit,
 )
@@ -21,7 +21,7 @@ LOG_LINES = 5
 class InferenceProgressDialog(QDialog):
     """批量推理进度；取消按钮发 cancelled 信号。"""
 
-    cancelled = pyqtSignal()
+    cancelled = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

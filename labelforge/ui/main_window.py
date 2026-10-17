@@ -3,9 +3,9 @@
 """
 import os
 import sys
-from PyQt5.QtWidgets import QMainWindow, QApplication
-from PyQt5.QtCore import QPoint, Qt, QUrl, QTimer, QRectF
-from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QDrag
+from PySide6.QtWidgets import QMainWindow, QApplication
+from PySide6.QtCore import QPoint, Qt, QUrl, QTimer, QRectF
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QDrag
 
 from ..core.config import WINDOW_CONFIG, THUMBNAIL_CONFIG, MAGNIFIER_CONFIG, DETECTION_BOX_WHEEL_CONFIG, CROSSHAIR_CONFIG, BOX_BORDER_CONFIG, DEFAULT_PREFIX
 from ..core.utils import create_app_icon
@@ -137,7 +137,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
 
     def _init_data(self):
         """初始化数据结构"""
-        from PyQt5.QtWidgets import QLineEdit
+        from PySide6.QtWidgets import QLineEdit
         from ..core.config import DEFAULT_PREFIX
 
         self.background_images = []
@@ -383,7 +383,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
             self.auto_save_p_checkbox.setChecked(not is_annotate)
             self.auto_save_b_checkbox.setText(f"{tr('自动保存B')}({tr('标注')})" if is_annotate else tr("自动保存B"))
             self.auto_save_p_checkbox.setText(f"{tr('自动保存P')}({tr('贴图')})" if not is_annotate else tr("自动保存P"))
-        from PyQt5.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         mode_text = "Annotate" if self.edit_mode == 'annotate' else "Paste"
         self.status_label.setText(f"Mode: {mode_text}")
         QTimer.singleShot(2000, lambda: self.status_label.setText(""))
@@ -510,8 +510,8 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
 
     def _show_export_menu(self):
         """顶部'导出'按钮弹出菜单: 增强划分 / Kmeans划分"""
-        from PyQt5.QtWidgets import QMenu
-        from PyQt5.QtCore import QPoint
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtCore import QPoint
 
         menu = QMenu(self)
         menu.setObjectName("optionsMenu")
@@ -542,7 +542,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
 
     def closeEvent(self, event):
         if hasattr(self, '_processing_panel') and self._processing_panel and any(w.isRunning() for w in self._processing_panel._workers):
-            from PyQt5.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             from .dwm import set_titlebar_dark
             from .i18n import t as _t
             box = QMessageBox(self)
@@ -657,8 +657,8 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
 
     def _append_background_images(self, files):
         """追加背景图片（不替换已有，自动去重）"""
-        from PyQt5.QtGui import QPixmap
-        from PyQt5.QtWidgets import QApplication
+        from PySide6.QtGui import QPixmap
+        from PySide6.QtWidgets import QApplication
         first_new = len(self.background_images)
         for file in files:
             if file in self.background_images:
@@ -668,7 +668,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
                 new_index = len(self.background_images)
                 self.background_images.append(file)
                 display_path = self._display_path_for(file)
-                from PyQt5.QtWidgets import QListWidgetItem
+                from PySide6.QtWidgets import QListWidgetItem
                 from ..engine.image_loader import decorate_background_list_item
                 item = QListWidgetItem(display_path)
                 decorate_background_list_item(item, file, new_index)
@@ -796,12 +796,15 @@ def main():
         print(f"LabelForge {__version__}")
         return
 
+    # 这两个属性在 Qt6 已弃用且是空操作（Qt6 默认就开启 high-DPI 缩放与
+    # 高分辨率 pixmap），设了不报错、只是发 DeprecationWarning——本项目启动时
+    # 已全局忽略 DeprecationWarning。保留是为了显式表达意图，删掉也不会变行为。
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     QApplication.setAttribute(Qt.AA_ShareOpenGLContexts, True)
     app = QApplication(sys.argv[:1])
 
-    from PyQt5.QtGui import QFontDatabase
+    from PySide6.QtGui import QFontDatabase
     if getattr(sys, 'frozen', False):
         base = sys._MEIPASS
     else:

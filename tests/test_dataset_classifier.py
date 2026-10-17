@@ -148,7 +148,7 @@ def test_dataset_classifier_dialog_defaults(tmp_path):
     script = f'''
 import os
 from pathlib import Path
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.dataset_classifier_dialog import DatasetClassifierDialog
 
 app = QApplication.instance() or QApplication([])

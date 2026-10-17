@@ -1587,8 +1587,8 @@ def test_settings_dialog_lint_ignored_rules_end_to_end(tmp_path):
     root = Path(__file__).resolve().parents[1]
     config_path = tmp_path / "config.json"
     script = '''
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
 from labelforge.core import config_manager
 from labelforge.ui.settings_dialog import SettingsDialog
 
@@ -2482,7 +2482,7 @@ def test_dialog_exposes_mark_keep_signal():
 def _fake_table_env(monkeypatch):
     """给弹窗注入记录型假表格/假 item。
 
-    conftest 把 PyQt5 整个 mock 掉：QTableWidgetItem 记不住 text，
+    conftest 把 PySide6 整个 mock 掉：QTableWidgetItem 记不住 text，
     表格内容只能靠记录型替身断言。弹窗里是模块级引用，
     必须 patch 模块属性才生效。（行不着色后不再需要记录型 QColor。)
     """

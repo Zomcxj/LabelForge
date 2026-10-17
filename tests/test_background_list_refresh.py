@@ -44,8 +44,8 @@ def _run_qt(script, timeout=180):
 
 _BOOT = '''
 import os, time
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.main_window import ImageEditor
 
@@ -125,8 +125,8 @@ def test_drop_folder_onto_canvas_loads_it_as_backgrounds(tmp_path):
     # 文件夹拖到画布/窗口 = 直接打开该数据集（替换语义，与文件夹按钮一致）；
     # 拖入单张图片才是追加。dragEnter 也要接受文件夹（否则光标显示禁止）。
     script = _BOOT.format(d=tmp_path.as_posix()) + '''
-from PyQt5.QtCore import QUrl, QPoint, Qt, QMimeData
-from PyQt5.QtGui import QImage, QDragEnterEvent, QDropEvent
+from PySide6.QtCore import QUrl, QPoint, Qt, QMimeData
+from PySide6.QtGui import QImage, QDragEnterEvent, QDropEvent
 
 other = os.path.join(d, "imgs2")
 os.makedirs(other, exist_ok=True)
@@ -176,8 +176,8 @@ def test_refresh_without_folder_or_without_change_is_noop(tmp_path):
     # 没加载过文件夹 → 提示且不崩；文件夹没变化 → 空操作，不动内存里的框。
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.main_window import ImageEditor
 

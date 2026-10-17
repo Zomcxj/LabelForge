@@ -4,8 +4,8 @@
 面板始终回传一个具体集合，是否真的过滤由调用方结合类别总数判断——
 全部勾选等于没有限制，不必走过滤逻辑。
 """
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QVBoxLayout, QWidget,
 )
@@ -18,7 +18,7 @@ from .theme import ThemeManager
 class ClassFilterPanel(QDialog):
     """类别勾选面板；确定后 selection_changed 带上选中的类别名。"""
 
-    selection_changed = pyqtSignal(object)
+    selection_changed = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)

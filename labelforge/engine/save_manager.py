@@ -5,9 +5,9 @@
 import os
 import json
 from typing import TYPE_CHECKING
-from PyQt5.QtCore import pyqtSignal, QObject, Qt, QRectF
-from PyQt5.QtGui import QPixmap, QPainter, QColor
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication
+from PySide6.QtCore import Signal, QObject, Qt, QRectF
+from PySide6.QtGui import QPixmap, QPainter, QColor
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication
 from ..core.config import LABELME_VERSION, DEFAULT_PREFIX
 from ..core.utils import PathUtils, calculate_iou
 from ..ui.i18n import t as tr
@@ -83,8 +83,8 @@ class SaveManager(QObject):
     """保存管理器 - 管理贴图的保存操作"""
 
     # 信号：保存完成后通知编辑器刷新 UI
-    save_completed = pyqtSignal()
-    label_list_changed = pyqtSignal()
+    save_completed = Signal()
+    label_list_changed = Signal()
 
     def __init__(self, editor: "EditorProtocol", parent=None):
         """

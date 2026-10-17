@@ -24,8 +24,8 @@
 （双向同步）。用户要求「推理滑窗不要模板了，也不与数据增强同步模板」，那排
 按钮与同步逻辑都已删除；滑窗参数只认当前输入框里的值。
 """
-from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -49,7 +49,7 @@ class WindowParamsWidget(QWidget):
     """窗口参数 + 预估 + 原图网格预览 + 模板按钮。"""
 
     # 参数或预览发生变化（宿主据此重画/校验）；也让宿主能挂自己的联动
-    changed = pyqtSignal()
+    changed = Signal()
 
     def __init__(self, reference_size=None, spec=None, parent=None):
         super().__init__(parent)

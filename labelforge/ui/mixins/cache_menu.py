@@ -1,6 +1,6 @@
 """Cache Menu UI building mixin."""
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QLineEdit, QWidgetAction
-from PyQt5.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QLineEdit, QWidgetAction
+from PySide6.QtCore import Qt
 from ..i18n import t as tr
 from ...widgets.hover_menu import HoverKeepMenu
 

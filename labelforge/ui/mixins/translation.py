@@ -11,7 +11,7 @@ class TranslationMixin:
         self._refresh_ui_texts()
         lang_name = "Chinese" if i18n.get_lang() == "zh" else "English"
         self.status_label.setText(f"Language: {lang_name}")
-        from PyQt5.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         QTimer.singleShot(2000, lambda: self.status_label.setText(""))
 
     def _refresh_ui_texts(self):

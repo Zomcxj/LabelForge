@@ -27,8 +27,8 @@ def _rule(style, selector):
 @pytest.mark.parametrize("mode, color", [("LIGHT", "#1f1f1f"), ("DARK", "#f5f5f5")])
 def test_real_qt_uses_theme_text_for_representative_normal_controls(mode, color):
     script = f'''
-from PyQt5.QtGui import QPalette
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 from labelforge.ui.settings_dialog import SettingsDialog
 from labelforge.ui.theme import ThemeManager, ThemeMode
@@ -91,8 +91,9 @@ def test_real_qt_context_menu_has_rounded_corners(mode):
     真的把菜单渲染一遍，然后检查四个角上的像素是不是透明的。
     """
     out = _menu_corner_probe(f'''
-from PyQt5.QtWidgets import QApplication, QMenu, QAction
-from PyQt5.QtGui import QImage, QPainter
+from PySide6.QtWidgets import QApplication, QMenu
+from PySide6.QtGui import QAction, QImage, QPainter
+from PySide6.QtCore import QPoint
 from labelforge.ui.theme import ThemeManager, ThemeMode
 
 app = QApplication.instance() or QApplication([])
@@ -111,7 +112,7 @@ menu.ensurePolished()
 img = QImage(160, 80, QImage.Format_ARGB32)
 img.fill(0)
 painter = QPainter(img)
-menu.render(painter)
+menu.render(painter, QPoint())
 painter.end()
 
 # 四角与中心：角应透明、中心应不透明

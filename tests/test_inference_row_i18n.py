@@ -35,7 +35,7 @@ def _run_real_qt(script, timeout=180):
 
 _SWITCH_TO_EN = '''
 import os, sys
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 
 from labelforge.ui import i18n
@@ -123,7 +123,7 @@ def test_open_scope_panel_actually_switches_text():
     """真实 Qt：面板开着时切语言，模式按钮与窗口标题都要变。"""
     script = '''
 import os, sys
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 
 from labelforge.ui import i18n

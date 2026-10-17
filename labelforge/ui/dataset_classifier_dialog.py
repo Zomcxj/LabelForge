@@ -9,8 +9,8 @@
 """
 import os
 
-from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import QThread, Signal
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QDoubleSpinBox, QSpinBox, QTextEdit, QFileDialog, QMessageBox, QApplication,
 )
@@ -30,9 +30,9 @@ tr = i18n.t
 
 class _ClassifyWorker(QThread):
     """后台执行数据集分析/分割任务的线程。"""
-    progress = pyqtSignal(int, int, object)
-    finished_ok = pyqtSignal(object)
-    failed = pyqtSignal(str)
+    progress = Signal(int, int, object)
+    finished_ok = Signal(object)
+    failed = Signal(str)
 
     def __init__(self, func, parent=None):
         super().__init__(parent)
@@ -55,7 +55,7 @@ def _run_with_progress(parent, title, label, task):
 
     返回 (result, error)；用户取消时 error 为 "canceled"。
     """
-    from PyQt5.QtCore import QEventLoop
+    from PySide6.QtCore import QEventLoop
 
     progress = ProgressDialogFactory.create_progress_dialog(parent, title, label, 100)
     worker = _ClassifyWorker(task, parent)

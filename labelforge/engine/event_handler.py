@@ -2,9 +2,8 @@
 事件处理混入 - 负责键盘、窗口事件和绘制模式切换
 """
 import os
-from PyQt5.QtGui import QPixmap, QKeySequence
-from PyQt5.QtCore import Qt, QEvent
-from PyQt5.QtWidgets import QShortcut
+from PySide6.QtGui import QPixmap, QKeySequence, QShortcut
+from PySide6.QtCore import Qt, QEvent
 
 from ..core.utils import extract_label_name
 from ..core.config import SHORTCUT_CONFIG, NUDGE_CONFIG

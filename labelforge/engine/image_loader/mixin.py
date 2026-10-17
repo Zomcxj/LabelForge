@@ -3,11 +3,11 @@ import os
 import json
 import time
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication, QFileDialog, QListWidgetItem, QMessageBox
 )
-from PyQt5.QtGui import QPixmap, QIcon
-from PyQt5.QtCore import Qt, QSize, QTimer
+from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtCore import Qt, QSize, QTimer
 
 from ...core.config import SUPPORTED_IMAGE_EXTENSIONS
 from ...core.utils import PathUtils, natural_sort_key, create_thumbnail

@@ -2,7 +2,7 @@
 
 测试分两层（同项目其它 Qt 相关测试的约定）：
 
-- **进程内**：conftest 把 PyQt5 换成了假模块，所以这里把
+- **进程内**：conftest 把 PySide6 换成了假模块，所以这里把
   `video_render.draw_boxes` 换成一个纯 numpy 的替身，专门验证**接线**——
   是否按需调用、传参对不对、计数是否准确、坏标注是否报错。
 - **子进程 + 真实 Qt**：验证真绘制（框的位置、类别色、筛选、中文标签）
@@ -352,7 +352,7 @@ def _run_real_qt(script):
 _COMMON = '''
 import json, os, sys, tempfile
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 import cv2

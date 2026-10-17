@@ -1,6 +1,6 @@
 """数据增强测试。
 
-`tests/conftest.py` 把 PyQt5 换成了 mock，像素级变换必须在真实 Qt 里跑，
+`tests/conftest.py` 把 PySide6 换成了 mock，像素级变换必须在真实 Qt 里跑，
 所以图像相关断言走 offscreen 子进程（与 test_theme_style_consolidation 同套路）；
 纯参数构造与 JSON 序列化可以直接测。
 """
@@ -167,7 +167,7 @@ def test_save_labelme_json_preserves_unicode_labels(tmp_path):
 
 def test_horizontal_and_vertical_flip_mirror_boxes():
     out = _run_real_qt('''
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter.flipt import HorizontalFlip, VerticalFlip
 
 img = QImage(100, 50, QImage.Format_RGB888)
@@ -195,7 +195,7 @@ print("OK")
 
 def test_translate_clips_boxes_and_drops_degenerate():
     out = _run_real_qt('''
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter.translate import RandomTranslate
 
 img = QImage(100, 100, QImage.Format_RGB888)
@@ -220,7 +220,7 @@ print("OK")
 
 def test_brightness_adds_delta_and_clamps():
     out = _run_real_qt('''
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter.color import Brightness
 
 img = QImage(4, 1, QImage.Format_RGB888)
@@ -244,7 +244,7 @@ print("OK")
 
 def test_contrast_scales_around_midpoint():
     out = _run_real_qt('''
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter.color import Contrast
 
 img = QImage(3, 1, QImage.Format_RGB888)
@@ -263,7 +263,7 @@ print("OK")
 
 def test_saturation_and_value_keep_boxes_untouched():
     out = _run_real_qt('''
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter.color import Saturation, Value, Hue
 
 img = QImage(2, 2, QImage.Format_RGB888)
@@ -286,7 +286,7 @@ print("OK")
 def test_gaussian_noise_is_deterministic_with_injected_rng():
     out = _run_real_qt('''
 import random
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter.noise import GaussianNoise
 
 img = QImage(8, 8, QImage.Format_RGB888)
@@ -307,7 +307,7 @@ print("OK")
 def test_salt_pepper_is_deterministic_with_injected_rng():
     out = _run_real_qt('''
 import random
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter.noise import SaltPepper
 
 img = QImage(20, 20, QImage.Format_RGB888)
@@ -330,7 +330,7 @@ print("OK")
 def test_rotation_enlarges_canvas_and_transforms_boxes():
     out = _run_real_qt('''
 import random
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter.rotate import RandomRotation
 
 img = QImage(100, 100, QImage.Format_RGB888)
@@ -355,7 +355,7 @@ print("OK")
 def test_scale_shrinks_centers_and_keeps_canvas_size():
     out = _run_real_qt('''
 import random
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter.scale import RandomScale
 
 img = QImage(100, 100, QImage.Format_RGB888)
@@ -381,7 +381,7 @@ print("OK")
 def test_augmenter_is_reproducible_for_same_seed_in_all_mode():
     out = _run_real_qt('''
 import hashlib, json, os, tempfile
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter import Augmenter
 from labelforge.engine.augmenter.color import Brightness
 from labelforge.engine.augmenter.rotate import RandomRotation
@@ -416,7 +416,7 @@ def test_augmenter_does_not_pollute_global_random():
     """seed 必须只作用于内部 RNG，不能影响调用方的全局 random 状态。"""
     out = _run_real_qt('''
 import os, random, tempfile
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter import Augmenter
 from labelforge.engine.augmenter.color import Brightness
 
@@ -443,7 +443,7 @@ print("OK")
 def test_augmenter_run_respects_skip_empty_and_include_original():
     out = _run_real_qt('''
 import os, tempfile
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter import Augmenter
 from labelforge.engine.augmenter.color import Brightness
 
@@ -483,7 +483,7 @@ print("OK")
 def test_augmenter_image_ratio_zero_skips_random_transforms():
     out = _run_real_qt('''
 import os, tempfile
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter import Augmenter
 from labelforge.engine.augmenter.color import Brightness
 
@@ -507,7 +507,7 @@ print("OK")
 def test_augmenter_stops_when_interrupted():
     out = _run_real_qt('''
 import os, tempfile
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter import Augmenter
 from labelforge.engine.augmenter.color import Brightness
 
@@ -532,7 +532,7 @@ print("OK")
 
 def test_transforms_preserve_shape_metadata():
     out = _run_real_qt('''
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter.flipt import HorizontalFlip
 from labelforge.engine.augmenter.scale import RandomScale
 from labelforge.engine.augmenter.translate import RandomTranslate
@@ -575,7 +575,7 @@ print("OK")
 def test_augmented_labelme_json_roundtrips_shape_types(tmp_path):
     out = _run_real_qt('''
 import json, os, tempfile
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter import Augmenter
 from labelforge.engine.augmenter.color import Brightness
 from labelforge.engine.shape_io import box_from_labelme_shape
@@ -653,7 +653,7 @@ def test_augmenter_include_original_stops_when_interrupted():
     """include_original 循环必须响应中断：标志恒 True 时不应写入任何原图/JSON。"""
     out = _run_real_qt('''
 import os, tempfile
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter import Augmenter
 
 src_dir = tempfile.mkdtemp()
@@ -683,7 +683,7 @@ def test_augmenter_include_original_stops_midway_when_interrupted():
     """复制中途中断：第 3 次检查起返回 True 时，写入数量应小于总图数。"""
     out = _run_real_qt('''
 import os, tempfile
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.augmenter import Augmenter
 
 src_dir = tempfile.mkdtemp()

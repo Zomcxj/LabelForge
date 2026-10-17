@@ -30,14 +30,18 @@ def _run_qt(script):
 # ---------- 模块契约 ----------
 
 def test_render_module_does_not_import_qt_at_module_level():
-    """渲染模块不在导入期拉 PyQt5，纯逻辑测试与无 Qt 环境才能导入。"""
+    """渲染模块不在导入期拉 Qt，纯逻辑测试与无 Qt 环境才能导入。
+
+    查 `PySide6` 而不是 `PyQt5`：迁移后文件里已无 `PyQt5` 字样，再搜它这条
+    测试就变成恒真空转（实测确认过）。
+    """
     from labelforge.engine import video_render
 
     src = Path(video_render.__file__).read_text(encoding="utf-8")
     top_level = [
         line for line in src.splitlines()
         if (line.startswith("import ") or line.startswith("from "))
-        and "PyQt5" in line
+        and "PySide6" in line
     ]
     assert not top_level, top_level
 
@@ -89,7 +93,7 @@ def test_draw_boxes_paints_border_and_returns_same_shape():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes
@@ -117,7 +121,7 @@ def test_draw_boxes_does_not_mutate_input():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes
@@ -138,7 +142,7 @@ def test_draw_boxes_handles_polygon_and_rotation():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes
@@ -175,7 +179,7 @@ def test_draw_boxes_handles_point_shape():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes
@@ -208,10 +212,10 @@ def test_chinese_label_text_is_drawn():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from PyQt5.QtGui import QFont, QFontMetrics
+from PySide6.QtGui import QFont, QFontMetrics
 from labelforge.engine.video_render import RenderSpec, draw_boxes
 
 CANDIDATES = ("Microsoft YaHei", "SimHei", "SimSun", "Noto Sans CJK SC",
@@ -267,10 +271,10 @@ def test_label_text_matches_the_label_bar_font():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
-from PyQt5.QtGui import QFont, QFontMetrics
+from PySide6.QtGui import QFont, QFontMetrics
 from labelforge.engine.video_render import (RenderSpec, draw_boxes,
                                             label_font_pixels)
 
@@ -325,7 +329,7 @@ def test_label_bar_uses_the_category_color():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes
@@ -361,7 +365,7 @@ def test_draw_boxes_result_owns_its_memory():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes
@@ -388,7 +392,7 @@ def test_score_shown_only_when_enabled():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from labelforge.engine.video_render import RenderSpec, label_text
 
@@ -409,7 +413,7 @@ def test_labels_off_means_no_text_drawn():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes
@@ -430,7 +434,7 @@ def test_bgr_and_rgb_are_not_swapped():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes
@@ -455,7 +459,7 @@ def test_out_of_bounds_boxes_do_not_crash():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes
@@ -488,7 +492,7 @@ def test_empty_boxes_returns_equivalent_image():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes
@@ -507,7 +511,7 @@ def test_non_contiguous_input_is_handled():
     result = _run_qt('''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.engine.video_render import RenderSpec, draw_boxes

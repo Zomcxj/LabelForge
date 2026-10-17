@@ -3,13 +3,13 @@
 """
 import json
 import os
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QGroupBox, QScrollArea, QWidget, QSpinBox, QStackedWidget,
     QComboBox, QDoubleSpinBox, QListWidget, QListWidgetItem, QAbstractItemView
 )
-from PyQt5.QtGui import QColor
-from PyQt5.QtCore import Qt, QEvent
+from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QEvent
 
 from ..core.config import SHORTCUT_CONFIG, LABEL_CACHE_SLOTS, BOX_BORDER_CONFIG
 from .theme import ThemeManager
@@ -492,7 +492,7 @@ class SettingsDialog(QDialog):
     def _reset_all_settings(self):
         """恢复出厂设置（需二次确认）。"""
         from .dialog_helpers import question, warning
-        from PyQt5.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox
         tr = i18n.t
         answer = question(
             self, tr("恢复默认设置"),

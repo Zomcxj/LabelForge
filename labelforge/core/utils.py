@@ -4,8 +4,8 @@
 import os
 import sys
 import re
-from PyQt5.QtGui import QPixmap, QIcon, QColor, QPainter
-from PyQt5.QtCore import Qt, QSize
+from PySide6.QtGui import QPixmap, QIcon, QColor, QPainter
+from PySide6.QtCore import Qt, QSize
 
 
 class PathUtils:

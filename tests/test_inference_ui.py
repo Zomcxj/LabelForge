@@ -869,7 +869,7 @@ def test_real_launch_ignores_saved_thresholds():
     """
     out = _run_real_qt("""
 import os, tempfile
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 
 from labelforge.core import config_manager
@@ -1125,7 +1125,7 @@ def test_real_log_line_shows_time_boxes_ms_and_no_date():
     时刻**不带年月日**（用户要求：一次批量只跑一趟，日期是噪声）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.inference_progress import InferenceProgressDialog
 
 app = QApplication([])
@@ -1211,7 +1211,7 @@ def test_real_row_shows_defaults_before_any_model_is_loaded():
     必须看真实控件的数值。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 from labelforge.engine.onnx_inference import DEFAULT_CONF, DEFAULT_IOU, DEFAULT_INPUT_SIZE
 
@@ -1231,7 +1231,7 @@ print(DEFAULT_CONF, DEFAULT_IOU, DEFAULT_INPUT_SIZE[0], DEFAULT_INPUT_SIZE[1])
 def test_real_row_populates_values_after_set_model():
     """真实控件：加载模型后填入的是传进来的值，不是占位数字。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -1247,7 +1247,7 @@ print(row.conf_spin.value(), row.iou_spin.value(),
 def test_real_row_clear_model_restores_defaults():
     """真实控件：清掉模型后回到默认值，不会残留上一个模型的值。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -1689,7 +1689,7 @@ def test_need_class_names_signal_carries_three_args():
     # 信号本身要是三元组，否则 emit 会丢参数
     sig = (ROOT / "labelforge" / "ui" / "inference_workers.py").read_text(
         encoding="utf-8")
-    assert "need_class_names = pyqtSignal(str, str, object)" in sig
+    assert "need_class_names = Signal(str, str, object)" in sig
 
 
 def test_guess_class_count_from_shapes():
@@ -1759,7 +1759,7 @@ def test_default_all_selected_needs_a_detector():
 def test_real_panel_defaults_to_everything_checked():
     """真实面板：首次填入类别表时默认全勾（用户要求「默认全选」）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.class_filter_panel import ClassFilterPanel
 app = QApplication([])
 names = ["car", "person", "bus", "truck"]
@@ -1781,7 +1781,7 @@ print("AFTER_RESEED", panel.current_selection() == {"car"})
 def test_real_multiline_dialog_drops_blank_lines():
     """真实多行框：空行和首尾空格要被丢掉，不能变成空类名。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.dialog_helpers import ThemedMultiLineDialog
 app = QApplication([])
 blank = chr(10) + "   " + chr(10)
@@ -1808,7 +1808,7 @@ def test_real_replace_button_defaults_to_overwrite():
     默认是补充的话，用户不点这个按钮跑第二遍就会把新旧框叠在一起。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 app = QApplication([])
 row = ModelRow()
@@ -2082,7 +2082,7 @@ def test_worker_emits_result_ready_per_image_before_finishing(tmp_path):
     out = _run_real_qt("""
 import sys, os, tempfile
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 from labelforge.ui.inference_workers import InferenceWorker

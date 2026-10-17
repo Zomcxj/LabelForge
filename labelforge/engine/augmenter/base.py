@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple
 import random
 
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 
 _registered_transforms: Dict[str, type] = {}
 
@@ -16,6 +16,20 @@ def register_transform(cls):
 
 def get_all_transforms() -> Dict[str, type]:
     return dict(_registered_transforms)
+
+
+def rgb888_buffer(image: QImage) -> bytearray:
+    """Format_RGB888 图的像素，拷成可写 bytearray。
+
+    PySide6 的 `bits()` 直接返回带长度的 `memoryview`：不要 `setsize`、没有
+    `asstring`，`bytes()` 就是整块像素的拷贝（PyQt5 那套 `setsize` +
+    `asstring(byteCount())` 在这里全都不存在）。
+
+    这里的 `bytes()` 拷贝是必须的另一个原因：`bits()` 返回的视图**不持有**
+    `image`，不拷贝而直接外泄会在 QImage 回收后指向垃圾内存。
+    """
+    img = image.convertToFormat(QImage.Format_RGB888)
+    return bytearray(bytes(img.bits()))
 
 
 def map_box_points(box: dict, fn) -> dict:

@@ -137,10 +137,10 @@ check_python_deps() {
         log_error "  PYTHON=/path/to/python ./build.sh"
         exit 1
     fi
-    log_ok "依赖自检通过 (cv2/PyQt5/numpy/onnxruntime)"
+    log_ok "依赖自检通过 (cv2/PySide6/numpy/onnxruntime)"
 }
 
-check_python_deps cv2 PyQt5 numpy onnxruntime
+check_python_deps cv2 PySide6 numpy onnxruntime
 
 # ==================== 构建辅助函数 ====================
 ensure_output_not_locked() {
@@ -185,7 +185,7 @@ ensure_output_not_locked() {
 # ==================== 前置检查 ====================
 log_info "执行前置检查..."
 
-# 检查 Python、pip、PyInstaller、PyQt5 是否来自同一个环境
+# 检查 Python、pip、PyInstaller、PySide6 是否来自同一个环境
 if ! PYTHON_PATH="$($PYTHON_CMD -c 'import sys; print(sys.executable)' 2>/dev/null)"; then
     log_error "当前 Python 不可用: $PYTHON_CMD"
     exit 1
@@ -203,12 +203,12 @@ if ! "$PYTHON_CMD" -m PyInstaller --version &> /dev/null; then
     exit 1
 fi
 
-if ! "$PYTHON_CMD" -c "import PyQt5" &> /dev/null; then
-    log_error "未找到 PyQt5，请执行: $PYTHON_CMD -m pip install -r requirements.txt"
+if ! "$PYTHON_CMD" -c "import PySide6" &> /dev/null; then
+    log_error "未找到 PySide6，请执行: $PYTHON_CMD -m pip install -r requirements.txt"
     exit 1
 fi
 log_ok "PyInstaller 可用"
-log_ok "PyQt5 可用"
+log_ok "PySide6 可用"
 
 # 检查主脚本是否存在
 MAIN_SCRIPT_PATH="${PROJECT_ROOT}${SEP}labelforge${SEP}main.py"
@@ -303,8 +303,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # 通用体积护栏：保留 PyQt5 / numpy / onnxruntime / cv2，排除未用的大型依赖
-    excludes=['tkinter', 'matplotlib', 'pandas', 'pytest', 'PySide6', 'sklearn', 'torch', 'torchvision', 'tensorflow', 'keras', 'av',
+    # 通用体积护栏：保留 PySide6 / numpy / onnxruntime / cv2，排除未用的大型依赖。
+    # 绝不能排除 PySide6（Qt 就是它，排掉则 exe 缺 Qt）；排掉 PyQt5 反而必要：
+    # PyInstaller 不允许同时收集两套 Qt bindings，残留 PyQt5 会打断构建。
+    excludes=['tkinter', 'matplotlib', 'pandas', 'pytest', 'PyQt5', 'PyQt6', 'PySide2', 'sklearn', 'torch', 'torchvision', 'tensorflow', 'keras', 'av',
               'IPython', 'ipykernel', 'jedi', 'prompt_toolkit', 'pygments', 'backcall', 'stack_data',
               'matplotlib_inline', 'notebook', 'nbformat', 'nbclient', 'traitlets', 'zmq',
               'pyreadline3', 'pickleshare', 'nest_asyncio', 'appnope', 'gevent', 'html5lib', 'bs4',

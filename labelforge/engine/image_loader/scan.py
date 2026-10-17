@@ -3,7 +3,7 @@ import os
 import json
 import concurrent.futures
 
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from .status import STATUS_UNANNOTATED, STATUS_ANNOTATED, STATUS_EMPTY
 from ...core.utils import shape_task_type
@@ -166,7 +166,7 @@ class DatasetStatsScanWorker(QThread):
     结果走 `labels_scanned` 缓存；这个只服务统计弹窗的一次性查询，结果直接
     回传，不改动任何缓存状态。
     """
-    stats_ready = pyqtSignal(object, object)
+    stats_ready = Signal(object, object)
 
     def __init__(self, image_paths, parent=None):
         super().__init__(parent)
@@ -275,8 +275,8 @@ def collect_background_label_tasks(image_paths, is_interrupted=None):
 
 class DatasetLabelScanWorker(QThread):
     """Scan a fixed dataset snapshot outside the UI thread."""
-    labels_scanned = pyqtSignal(int, tuple, object, object, object, object)
-    statuses_progress = pyqtSignal(int, tuple, object)
+    labels_scanned = Signal(int, tuple, object, object, object, object)
+    statuses_progress = Signal(int, tuple, object)
 
     def __init__(self, generation, image_paths, parent=None):
         super().__init__(parent)

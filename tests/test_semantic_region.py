@@ -3,7 +3,7 @@
 覆盖区域绘制、拖动/缩放、固定锁定、删除与命中，以及贴图引擎的
 区域中心采样（_sample_center_in_regions / random_paste_images）。
 
-conftest 已 mock 整个 PyQt5，故此处通过假对象（duck typing）直接
+conftest 已 mock 整个 PySide6，故此处通过假对象（duck typing）直接
 调用真实 mixin 逻辑，不实例化真实 Qt 控件。
 """
 import random

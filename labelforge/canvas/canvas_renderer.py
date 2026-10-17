@@ -1,8 +1,8 @@
 """
 Canvas 绘制混入 - 负责所有绘制逻辑（背景、贴图、检测框、临时框、网格）
 """
-from PyQt5.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QFontMetrics
-from PyQt5.QtCore import Qt, QPointF, QRectF
+from PySide6.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QFontMetrics
+from PySide6.QtCore import Qt, QPointF, QRectF
 import numpy as np
 
 from ..core.config import (
@@ -335,7 +335,7 @@ class CanvasRendererMixin:
     def _draw_region_polygon(self, painter, region, background_rect, color, is_selected):
         """绘制多边形区域；选中时显示顶点圆点手柄。"""
         from ..core.config import REGION_CONFIG
-        from PyQt5.QtGui import QPainterPath
+        from PySide6.QtGui import QPainterPath
         pts = self._image_to_canvas_points(region['points'], background_rect)
         if len(pts) < 2:
             return
@@ -373,7 +373,7 @@ class CanvasRendererMixin:
         半径用 `_region_handle_draw_size()`：与命中判定同一套随缩放放大的
         口径，保证「看到的圆」就是「抓得到的圆」。
         """
-        from PyQt5.QtGui import QPainterPath
+        from PySide6.QtGui import QPainterPath
         size = self._region_handle_draw_size()
         radius = size / 2
         hovered = getattr(self, 'hover_region_handle', None)
@@ -533,7 +533,7 @@ class CanvasRendererMixin:
             painter.drawRect(QRectF(br_handle.x() - radius, br_handle.y() - radius, size, size))
         else:
             # 1. 白色底层——减去贴图区域，只留贴图外部分
-            from PyQt5.QtGui import QPainterPath
+            from PySide6.QtGui import QPainterPath
             circle = QPainterPath()
             circle.addEllipse(br_handle, radius * 1.3, radius * 1.3)
             item = QPainterPath()
@@ -738,7 +738,7 @@ class CanvasRendererMixin:
                 painter.drawRect(QRectF(corner.x() - radius, corner.y() - radius, size, size))
             else:
                 # 1. 白色底层——减去框区域，只留框外部分
-                from PyQt5.QtGui import QPainterPath
+                from PySide6.QtGui import QPainterPath
                 circle = QPainterPath()
                 circle.addEllipse(corner, radius * 1.3, radius * 1.3)
                 box = QPainterPath()
@@ -769,7 +769,7 @@ class CanvasRendererMixin:
         ]
 
     def _draw_polygon_shape(self, painter, box, background_rect, is_selected, is_pressed_label):
-        from PyQt5.QtGui import QPainterPath
+        from PySide6.QtGui import QPainterPath
         pts = self._image_to_canvas_points(box.get("points") or [], background_rect)
         if len(pts) < 2:
             return
@@ -886,7 +886,7 @@ class CanvasRendererMixin:
     def _draw_temp_polygon(self, painter, background_rect):
         if not background_rect or not getattr(self, 'temp_polygon_points', None):
             return
-        from PyQt5.QtGui import QPainterPath
+        from PySide6.QtGui import QPainterPath
         pts = self._image_to_canvas_points(self.temp_polygon_points, background_rect)
         crosshair = CROSSHAIR_CONFIG.get('color', '#00FF80')
         painter.setPen(QPen(QColor(crosshair), 2, Qt.DashLine))
@@ -920,7 +920,7 @@ class CanvasRendererMixin:
         """绘制中的多边形区域预览（青色虚线）。"""
         if not background_rect or not getattr(self, 'temp_region_points', None):
             return
-        from PyQt5.QtGui import QPainterPath
+        from PySide6.QtGui import QPainterPath
         from ..core.config import REGION_CONFIG
         color = QColor(REGION_CONFIG['border_color'])
         pts = self._image_to_canvas_points(self.temp_region_points, background_rect)
@@ -1039,11 +1039,10 @@ class CanvasRendererMixin:
         c_factor = contrast / 50.0
         if b_factor == 1.0 and c_factor == 1.0:
             return source
-        from PyQt5.QtGui import QImage
+        from PySide6.QtGui import QImage
         img = source.toImage().convertToFormat(QImage.Format_ARGB32)
         w, h = img.width(), img.height()
         ptr = img.bits()
-        ptr.setsize(w * h * 4)
         pixels = np.frombuffer(ptr, dtype=np.uint8).reshape(h, w, 4)
         rgb = (pixels[:, :, :3].astype(np.float32) - 128.0) * \
             (b_factor * c_factor) + 128.0

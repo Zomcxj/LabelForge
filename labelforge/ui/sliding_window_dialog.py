@@ -11,7 +11,7 @@
 点击模板只回填输入框并刷新预览，**不生效**：与面板的确定/取消语义一致，
 必须点「确定」才写回范围。本窗口自身不写模板——写模板由调用方在确定之后做。
 """
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QHBoxLayout, QPushButton, QVBoxLayout,
 )
 
@@ -100,11 +100,7 @@ class SlidingWindowDialog(QDialog):
         """(行数, 列数)；与 `iter_windows()` 用同一份窗口数学。"""
         return self.params.window_grid()
 
-    # 预览与输入框直接暴露出去，既有测试与调用方按这些名字取用
-    @property
-    def preview(self):
-        return self.params.preview
-
+    # 输入框直接暴露出去，既有测试与调用方按这些名字取用
     @property
     def _w(self):
         return self.params._w
@@ -127,6 +123,3 @@ class SlidingWindowDialog(QDialog):
 
     def _refresh_estimate(self, _value=None):
         self.params._refresh_estimate(_value)
-
-    def _apply_template(self, spec):
-        self.params._apply_template(spec)

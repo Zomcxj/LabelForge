@@ -328,7 +328,7 @@ def test_dialog_end_to_end_with_real_qt(tmp_path):
     script = '''
 import os, sys, tempfile
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog
 app = QApplication(sys.argv)
 import cv2, numpy as np
 from labelforge.ui.video_dialog import VideoDialog
@@ -349,7 +349,7 @@ before = d.start_btn.isEnabled()          # 未选视频：不能开始
 started = []
 d.start_requested.connect(lambda a, s: started.append((a, s)))
 d._on_start_extract()
-blocked = not started and d.result() != d.Accepted
+blocked = not started and d.result() != QDialog.Accepted
 hint = d.hint_label.text()
 
 d.set_video(video)
@@ -370,7 +370,7 @@ spin_fps = d.fps_spin.value()
 d._on_start_extract()
 # 合法参数：发信号但不关窗（弹窗要留着显示进度条）
 signalled = len(started) == 1 and started[0][0] == "extract"
-not_closed = d.result() != d.Accepted
+not_closed = d.result() != QDialog.Accepted
 run_action, run_settings = started[0] if started else (None, {})
 
 bad = VideoDialog()
@@ -446,7 +446,7 @@ def test_video_frames_appear_in_background_list_with_real_qt(tmp_path):
     script = '''
 import os, sys, tempfile
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import cv2, numpy as np
 from labelforge.ui.main_window import ImageEditor
@@ -670,7 +670,7 @@ def test_dialog_settings_uses_real_attribute_names(tmp_path):
     script = '''
 import os, sys, tempfile
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import cv2, numpy as np
 from labelforge.ui.video_dialog import VideoDialog
@@ -745,7 +745,7 @@ def test_compose_fps_disabled_and_shows_manifest_rate(tmp_path):
     script = '''
 import os, re, sys, tempfile
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import cv2, numpy as np
 from labelforge.ui.video_dialog import VideoDialog
@@ -809,7 +809,7 @@ def test_extract_fps_cap_follows_the_cached_video(tmp_path):
     script = '''
 import os, sys, tempfile
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import cv2, numpy as np
 from labelforge.ui.video_dialog import VideoDialog
@@ -879,7 +879,7 @@ def test_dialog_progress_bar_hidden_until_run():
     script = '''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from labelforge.ui.video_dialog import VideoDialog
 
@@ -917,7 +917,7 @@ def test_dialog_progress_uses_compose_verb_on_compose_tab():
     script = '''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from labelforge.ui.video_dialog import VideoDialog
 
@@ -935,7 +935,7 @@ def test_dialog_locks_params_while_running():
     script = '''
 import sys, tempfile, os
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import cv2, numpy as np
 from labelforge.ui.video_dialog import VideoDialog
@@ -972,7 +972,7 @@ def test_dialog_cancel_button_cancels_while_running():
     script = '''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog
 app = QApplication([])
 from labelforge.ui.video_dialog import VideoDialog
 
@@ -985,7 +985,7 @@ during = (len(cancels), d.result(), d.progress_label.text())
 
 d.set_running(False)
 d._on_cancel_clicked()
-idle = (len(cancels), d.result() != d.Accepted)
+idle = (len(cancels), d.result() != QDialog.Accepted)
 
 print("RESULT", repr((during, idle)))
 ''' % str(ROOT)
@@ -1174,7 +1174,7 @@ def test_all_progress_bars_share_one_rounded_style():
     script = '''
 import sys
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication, QProgressBar
+from PySide6.QtWidgets import QApplication, QProgressBar
 app = QApplication([])
 from labelforge.ui.theme import ThemeManager
 from labelforge.ui import dialogs, inference_progress, quality_lint_dialog

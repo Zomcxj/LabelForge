@@ -387,7 +387,7 @@ def test_chart_paint_offscreen_real_qt(tmp_path):
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     script = '''
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.health_charts import HealthBarChart, _fmt_num
 app = QApplication.instance() or QApplication([])
 assert _fmt_num(1200) == "1.2k"
@@ -400,8 +400,8 @@ c.set_histogram([0.0, 0.5, 1.0], [4, 6], xlabel="面积", ylabel="框数")
 c.paintEvent(None)
 c.set_placeholder("暂无数据")
 c.paintEvent(None)
-from PyQt5.QtGui import QImage
-from PyQt5.QtCore import Qt
+from PySide6.QtGui import QImage
+from PySide6.QtCore import Qt
 
 img = QImage(200, 60, QImage.Format_ARGB32)
 img.fill(Qt.white)
@@ -901,8 +901,8 @@ def test_health_source_switch_routes_payload_real_qt(tmp_path):
 
     root = Path(__file__).resolve().parents[1]
     script = '''
-from PyQt5.QtCore import QObject
-from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout
+from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout
 from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
@@ -985,7 +985,7 @@ assert charts["iou"]._placeholder == "分析失败", charts["iou"]._placeholder
 # 健康区不折叠：标题为普通 QLabel，数据源与建议始终可见
 dialog.show()
 app.processEvents()
-from PyQt5.QtWidgets import QPushButton, QLabel
+from PySide6.QtWidgets import QPushButton, QLabel
 assert dialog._health_source_label.text() != ""
 assert dialog._health_advice_label.text() != ""
 assert not dialog._health_source_label.isHidden()
@@ -1020,8 +1020,8 @@ def test_stats_dialog_table_wiring_and_worker_payload_real_qt(tmp_path):
 
     root = Path(__file__).resolve().parents[1]
     script = '''
-from PyQt5.QtCore import QObject
-from PyQt5.QtWidgets import QApplication, QDialog, QWidget
+from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QApplication, QDialog, QWidget
 from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
@@ -1149,8 +1149,8 @@ def test_stats_total_label_payload_paste_count_real_qt(tmp_path):
 
     root = Path(__file__).resolve().parents[1]
     script = '''
-from PyQt5.QtCore import QObject
-from PyQt5.QtWidgets import QApplication, QDialog
+from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QApplication, QDialog
 from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
@@ -1267,7 +1267,7 @@ def test_stats_total_bg_count_matches_bg_table_with_disk_paste_real_qt(tmp_path)
     }, ensure_ascii=False), encoding="utf-8")
     script = '''
 import json
-from PyQt5.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication, QDialog
 from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
@@ -1310,7 +1310,7 @@ captured = {}
 def _capture_exec(self):
     captured["dialog"] = self
     # ⑦ 起后台扫描之后，等它落地再读表：统计现在是「先弹窗、后填充」。
-    from PyQt5.QtCore import QEventLoop, QTimer
+    from PySide6.QtCore import QEventLoop, QTimer
     loop = QEventLoop()
     tm = QTimer()
     tm.timeout.connect(
@@ -1364,8 +1364,8 @@ def test_stats_dialog_tabs_and_docks_real_qt(tmp_path):
 
     root = Path(__file__).resolve().parents[1]
     script = '''
-from PyQt5.QtCore import QObject
-from PyQt5.QtWidgets import QApplication, QDialog, QDockWidget
+from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QApplication, QDialog, QDockWidget
 from labelforge.ui.mixins.stats import StatsMixin
 
 app = QApplication.instance() or QApplication([])
@@ -1438,7 +1438,7 @@ for dock in docks.values():
 
 # 右侧图表区 : 左侧表格区 ≈ 2:1（showEvent 延时到 dock 布局完成后应用）
 dialog.show()
-from PyQt5.QtTest import QTest
+from PySide6.QtTest import QTest
 QTest.qWait(120)
 for _ in range(5):
     app.processEvents()
@@ -1489,7 +1489,7 @@ finally:
     app.processEvents()
 
 # 单列布局：拖动重排成单列后高度自动 1:1
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 host.splitDockWidget(docks['class'], docks['size'], Qt.Vertical)
 host.splitDockWidget(docks['size'], docks['aspect'], Qt.Vertical)
 host.splitDockWidget(docks['aspect'], docks['iou'], Qt.Vertical)

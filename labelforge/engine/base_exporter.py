@@ -50,7 +50,7 @@ class BaseExporter:
             if skip_empty and not boxes:
                 continue
             try:
-                from PyQt5.QtGui import QImage as _QImage
+                from PySide6.QtGui import QImage as _QImage
                 img = _QImage(img_path)
                 w, h = img.width(), img.height()
             except Exception:

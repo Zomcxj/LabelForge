@@ -1,7 +1,7 @@
 """Theme and title-bar behavior for the main window."""
 
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication
 
 from ..dwm import set_titlebar_dark
 from ..theme import ThemeManager
@@ -12,7 +12,7 @@ class ThemeMixin:
     def showEvent(self, event):
         """窗口显示后设置标题栏颜色（winId 必须在 show 之后获取）"""
         super().showEvent(event)
-        from PyQt5.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         is_dark = ThemeManager.get_mode().value == "dark"
         QTimer.singleShot(30, lambda: self._set_titlebar_dark(is_dark))
 
@@ -41,7 +41,7 @@ class ThemeMixin:
         if app is None:
             return
         try:
-            from PyQt5.QtGui import QPalette, QColor
+            from PySide6.QtGui import QPalette, QColor
         except ImportError:
             return
         t = ThemeManager.get_theme()
@@ -115,7 +115,7 @@ class ThemeMixin:
         self._update_mode_seg_style()
         is_dark = ThemeManager.get_mode().value == "dark"
         self._sync_all_titlebars(is_dark, force_refresh=True)
-        from PyQt5.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         QTimer.singleShot(80, lambda: self._sync_all_titlebars(is_dark, force_refresh=True))
         config_manager.save_theme('dark' if is_dark else 'light')
         self.status_label.setText(f"Theme: {'Dark' if is_dark else 'Light'}")

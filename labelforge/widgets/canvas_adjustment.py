@@ -9,8 +9,8 @@ underlying image are displayed:
 - ``Contrast``   : contrast of the image, same range/mapping as brightness.
 """
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer, Signal, QSize
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QSlider, QPushButton, QToolButton
 )
@@ -21,9 +21,9 @@ from ..ui.i18n import t as tr
 class CanvasAdjustmentWidget(QWidget):
     """Three-slider panel for label opacity, image brightness and contrast."""
 
-    opacity_changed = pyqtSignal(int)
-    brightness_contrast_changed = pyqtSignal(int, int)
-    geometry_changed = pyqtSignal()
+    opacity_changed = Signal(int)
+    brightness_contrast_changed = Signal(int, int)
+    geometry_changed = Signal()
 
     SLIDER_WIDTH = 120
     BC_UPDATE_INTERVAL_MS = 33

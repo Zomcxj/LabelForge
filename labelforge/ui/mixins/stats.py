@@ -185,16 +185,16 @@ class StatsMixin:
     def _show_label_stats(self):
         """显示标签统计弹窗"""
         self._close_health_worker()
-        from PyQt5.QtWidgets import (
+        from PySide6.QtWidgets import (
             QDialog, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
             QHeaderView, QPushButton, QWidget, QAbstractItemView,
             QMainWindow, QTabWidget,
         )
-        from PyQt5.QtCore import Qt as QtCore
+        from PySide6.QtCore import Qt as QtCore
         from ..dialog_helpers import center_on_parent
         from ..theme import ThemeManager
         from .. import i18n
-        from PyQt5.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         tr = i18n.t
 
         class _StatsDialog(QDialog):
@@ -242,7 +242,7 @@ class StatsMixin:
                 border-top-right-radius: 4px; padding: 4px 8px; font-weight: bold; }}
         """)
         layout = QVBoxLayout(dialog)
-        from PyQt5.QtWidgets import QMainWindow
+        from PySide6.QtWidgets import QMainWindow
 
         class _DockHost(QMainWindow):
             """dock 容器：尺寸稳定后重新应用左右比例。
@@ -525,8 +525,8 @@ class StatsMixin:
 
     def _build_health_section(self, dialog, layout):
         """构建「数据集健康」区：4 个可拖拽 dock 面板 + 建议，切换标签页切换数据源。"""
-        from PyQt5.QtCore import Qt
-        from PyQt5.QtWidgets import (
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import (
             QLabel, QWidget, QVBoxLayout, QDockWidget)
         from ..i18n import t as tr
         from ..theme import ThemeManager
@@ -666,7 +666,7 @@ class StatsMixin:
 
             # 拖动重排后恢复行内 1:1（去抖；mock 下 QTimer 不可用时直接跳过）
             try:
-                from PyQt5.QtCore import QTimer
+                from PySide6.QtCore import QTimer
                 norm_timer = QTimer(host)
                 norm_timer.setSingleShot(True)
                 norm_timer.setInterval(120)
@@ -691,7 +691,7 @@ class StatsMixin:
             # topLevelChanged 只在最初触发一次且此时 winId 还是旧句柄，
             # 所以监听 WinIdChange/Show，每次都用当前 winId 重设深色。
             try:
-                from PyQt5.QtCore import QObject, QEvent
+                from PySide6.QtCore import QObject, QEvent
 
                 class _DockTitlebarFilter(QObject):
                     def eventFilter(self, obj, event):
@@ -830,8 +830,8 @@ class StatsMixin:
 
     def _reload_stats_bg_table(self, bg_table, dialog):
         """Rebuild stats dialog background table from live cache after rename/color."""
-        from PyQt5.QtWidgets import QTableWidgetItem, QPushButton
-        from PyQt5.QtCore import Qt as QtCore
+        from PySide6.QtWidgets import QTableWidgetItem, QPushButton
+        from PySide6.QtCore import Qt as QtCore
         bg_stats = self._collect_bg_stats_for_dialog()
         bg_tasks = self._collect_bg_label_tasks_for_dialog()
         rows = sorted(bg_stats.items(), key=lambda x: (-x[1], x[0]))
@@ -856,8 +856,8 @@ class StatsMixin:
 
     def _reload_stats_paste_table(self, dialog, class_dist):
         """用整库贴图统计重建贴图表格（worker payload 到达后调用）。"""
-        from PyQt5.QtWidgets import QTableWidgetItem, QPushButton
-        from PyQt5.QtCore import Qt as QtCore
+        from PySide6.QtWidgets import QTableWidgetItem, QPushButton
+        from PySide6.QtCore import Qt as QtCore
         table = getattr(dialog, '_paste_table', None)
         if table is None:
             return
@@ -888,8 +888,8 @@ class StatsMixin:
         时候手上没有 worker payload，数据源就是 `canvas_items_dict` 里的贴图
         标签，`_get_session_paste_stats()` 已经在按这个聚合了。
         """
-        from PyQt5.QtWidgets import QTableWidgetItem, QPushButton
-        from PyQt5.QtCore import Qt as QtCore
+        from PySide6.QtWidgets import QTableWidgetItem, QPushButton
+        from PySide6.QtCore import Qt as QtCore
         stats = self._get_session_paste_stats()
         rows = sorted(stats.items(), key=lambda x: (-x[1], x[0]))
         table.blockSignals(True)
@@ -919,7 +919,7 @@ class StatsMixin:
     def _change_label_color(self, label, parent, color_button=None):
         """修改指定类别的颜色。"""
         from ...core import config_manager
-        from PyQt5.QtGui import QColor
+        from PySide6.QtGui import QColor
         from ..dialog_helpers import ThemedColorDialog
         from ..i18n import t as tr
         if not label:

@@ -1,6 +1,6 @@
 """QImage ↔ 推理内核的桥接测试。
 
-`tests/conftest.py` 把 PyQt5 换成了 mock，像素与步长必须在真实 Qt 里跑，
+`tests/conftest.py` 把 PySide6 换成了 mock，像素与步长必须在真实 Qt 里跑，
 所以断言走 offscreen 子进程（与 test_augmenter 同套路）。
 """
 import os
@@ -39,7 +39,7 @@ def _run_real_qt(script, timeout=120):
 def test_qimage_to_rgb_array_strips_stride_padding():
     """宽度非 4 倍数时 Qt 每行有填充，取图必须剥掉，否则逐行错位。"""
     out = _run_real_qt('''
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.inference_image import qimage_to_rgb_array
 
 # 7px 宽 ARGB32：bytesPerLine=28 无填充；用 5px 宽 RGB888 逼出对齐填充
@@ -61,7 +61,7 @@ print("OK_STRIDE")
 def test_qimage_to_rgb_array_converts_argb32_to_rgb_channel_order():
     """显示缓冲是 ARGB32（小端 BGRA），取图必须转成 RGB 而不是直接读内存。"""
     out = _run_real_qt('''
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.inference_image import qimage_to_rgb_array
 
 img = QImage(4, 2, QImage.Format_ARGB32)
@@ -77,7 +77,7 @@ print("OK_ORDER")
 
 def test_qimage_to_rgb_array_returns_none_for_null_image():
     out = _run_real_qt('''
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 from labelforge.engine.inference_image import qimage_to_rgb_array
 
 assert qimage_to_rgb_array(None) is None
@@ -176,7 +176,7 @@ def test_letterbox_to_array_matches_reference_geometry():
     """
     out = _run_real_qt('''
 import numpy as np
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
 from labelforge.engine.inference_image import qimage_to_rgb_array, letterbox_to_array
 
@@ -210,7 +210,7 @@ def test_letterbox_to_array_scales_non_square_input_preserving_aspect():
     """等比缩放：4:1 的图缩到 64x64 画布后内容高度应为 16，上下各补 24。"""
     out = _run_real_qt('''
 import numpy as np
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
 from labelforge.engine.inference_image import qimage_to_rgb_array, letterbox_to_array
 
@@ -236,7 +236,7 @@ def test_qimage_and_letterbox_roundtrip_through_detector_resize_fn():
     """生产路径：QImage → RGB → letterbox → NCHW 张量形状正确。"""
     out = _run_real_qt('''
 import numpy as np
-from PyQt5.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor
 from labelforge.engine.onnx_inference import letterbox_geometry, LETTERBOX_FILL
 from labelforge.engine.inference_image import qimage_to_rgb_array, resize_for_model
 

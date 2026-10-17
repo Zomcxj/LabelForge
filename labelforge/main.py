@@ -15,7 +15,7 @@ else:
 if base_dir not in sys.path:
     sys.path.insert(0, base_dir)
 
-# 安装全局异常钩子（必须在导入 PyQt5 之前）
+# 安装全局异常钩子（必须在导入 Qt 之前）
 from labelforge.core.exception_hook import install_exception_hook
 install_exception_hook()
 

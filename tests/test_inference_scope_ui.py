@@ -1,7 +1,7 @@
 """推理范围 UI 的接线测试：面板、窗口弹窗、参数行入口、快照与配置持久化。
 
 纯逻辑部分用假控件；真实控件行为（显隐、真实数值、预估文本）走
-`_run_real_qt` 子进程，避免 conftest 的 mock PyQt5 把结论带偏。
+`_run_real_qt` 子进程，避免 conftest 的 mock PySide6 把结论带偏。
 """
 import ast
 import os
@@ -64,7 +64,7 @@ def _spec_size(line):
 def test_real_row_has_scope_button_disabled_until_model_loads():
     """真实控件：没加载模型时范围按钮禁用，加载后启用。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -84,7 +84,7 @@ print(row.scope_btn.isEnabled(), row.scope_btn.text())
 def test_real_row_scope_summary_shows_mode_next_to_button():
     """真实控件：摘要写在按钮右侧的常驻 label 上，按钮文字不自带摘要。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -103,7 +103,7 @@ for name in ('全图', '滑窗', '区域'):
 def test_real_row_scope_summary_sits_right_of_button_in_same_row():
     """摘要 label 必须在**同一行**且紧贴按钮右侧（不能被 stretch 推到行尾）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -133,7 +133,7 @@ print(gap >= 0 and gap <= 20)
 def test_real_row_scope_summary_label_is_visible_and_nonempty():
     """摘要标签可见且有文字（不能是个隐藏或空的占位）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -153,7 +153,7 @@ print(row.scope_summary_label.objectName())
 def test_real_row_scope_summary_resets_with_model():
     """真实控件：清掉模型后摘要回到全图。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -169,7 +169,7 @@ print(row.scope_summary_label.text())
 def test_real_row_scope_summary_ignores_detail_argument():
     """`detail` 保留但本轮不拼进摘要文字（模式名足够）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -191,7 +191,7 @@ def test_real_row_scope_summary_treats_empty_name_as_full_image():
     `scope_summary_text()` 的既有调用方也期望拿到一个真模式名。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -213,7 +213,7 @@ print(repr(row.scope_summary_text()))
 def test_real_row_scope_summary_text_matches_label():
     """`scope_summary_text()` 读的必须是 label（它是既有调用方的取值口）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -230,7 +230,7 @@ print(row.scope_summary_text() == row.scope_summary_label.text())
 def test_real_row_scope_button_emits_request():
     """真实控件：点范围按钮会发出请求信号。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -254,7 +254,7 @@ print(len(got))
 def test_real_window_dialog_estimate_matches_plan_baseline():
     """真实控件：3840×2160、640×640、重叠 200 → 9×5 = 45 窗/图（计划 §3.4）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
@@ -277,7 +277,7 @@ def test_real_window_dialog_disables_ok_when_count_explodes():
     20000² 图配 64 窗口、重叠 64 → 步长 1 → 3.9 亿窗，列表没建完就 OOM。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
@@ -296,7 +296,7 @@ print(d._estimate.text())
 def test_real_window_dialog_small_image_collapses_to_one_window():
     """真实控件：图比窗口小 → 自动缩为整图，只有 1 个窗口。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
@@ -309,7 +309,7 @@ print(d.window_count(), d.window_grid())
 def test_real_window_dialog_survives_broken_saved_spec():
     """真实控件：配置里存了坏窗口参数也不能崩，回退到默认值。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
@@ -328,7 +328,7 @@ for bad in ({'w': 'abc', 'h': None, 'overlap': 'x'},
 def test_real_window_dialog_roundtrips_spec_through_engine():
     """真实控件：弹窗给的 spec 能被引擎直接接受并排出同样数量的窗口。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 from labelforge.engine.inference_scope import iter_windows, normalize_scope
 
@@ -353,7 +353,7 @@ def test_real_scope_panel_warns_when_region_mode_has_no_regions():
     仍会拦，但用户必须先在面板上看到为什么。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_FULL, MODE_ROI
 
@@ -383,7 +383,7 @@ def test_real_scope_panel_shows_controls_per_mode():
     （当前窗口尺寸/模板、区域条数与明细）。可编辑性仍由模式决定。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
@@ -422,7 +422,7 @@ def test_real_scope_params_are_disabled_unless_window_mode_selected():
     钉输入框。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
@@ -471,7 +471,7 @@ def test_real_scope_panel_never_shows_a_thumbnail_preview():
     `WindowOverlayPreview` 这类控件——留着就会又出现一个「单独小窗显示全图」。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 from labelforge.engine.inference_scope import MODE_WINDOW
@@ -492,15 +492,21 @@ print(len(p.window_params.findChildren(WindowOverlayPreview)))
     assert lines[1] == "0", lines[1]
 
 
-def test_real_scope_panel_anchors_between_the_two_lists():
-    """面板竖直位置落在「背景图列表」与「标签列表」之间。
+def test_real_scope_panel_top_aligns_to_the_label_group():
+    """面板顶边对齐「标签管理」区顶边；放不下时被钳制上移，但绝不越过锚点。
 
-    用户澄清「上面是层级不是位置」——它指的是插入层级/顺序上处在两者中间，
-    而不是像素上贴着列表顶端。这里用两个真实列表控件的几何来钉：弹窗的
-    竖直中心必须落在背景图列表底边与标签列表顶边之间。
+    契约来自 `_scope_anchor_rect`（用户明确要求「范围推理窗口左上角始终对齐
+    标签管理区域的左上角」）。此处断言它，并钉住下面这条不变量：屏幕上装不下
+    整个面板时，面板整体上移，**不会被裁掉**。
+
+    这条测试原来断言「面板竖直中心落在两个列表之间」——那是 35f9c3c 改用左上角
+    对齐**之前**的契约，之后没跟着更新，只因 PyQt5 离屏屏幕只有 600 高、把面板
+    从 567 压到 433 才碰巧成立。离屏屏幕尺寸在两代 Qt 下不同（Qt5 800x600、
+    Qt6 800x800），这个巧合随之消失，于是暴露出来。此处改为直接断言真实契约，
+    两个分支都不依赖屏幕尺寸。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -521,13 +527,13 @@ bg_top = bg.mapTo(w, bg.rect().topLeft()).y()
 bg_bottom = bg_top + bg.height()
 lb_top = lb.mapTo(w, lb.rect().topLeft()).y()
 p_top = panel.mapTo(w, panel.rect().topLeft()).y()
-p_center = p_top + panel.height() // 2
+p_bottom = p_top + panel.height()
+screen_bottom = app.primaryScreen().availableGeometry().bottom()
 print('bg', bg_top, bg_bottom)
 print('label_top', lb_top)
 print('panel_top', p_top)
-print('panel_center', p_center)
-print('panel_top >= bg_top', p_top >= bg_top)
-print('panel_center <= lb_top', p_center <= lb_top)
+print('panel_bottom', p_bottom)
+print('screen_bottom', screen_bottom)
 panel.close()
 app.processEvents()
 """)
@@ -535,12 +541,77 @@ app.processEvents()
     bg_top, bg_bottom = (int(v) for v in lines[0].split()[1:])
     lb_top = int(lines[1].split()[1])
     p_top = int(lines[2].split()[1])
-    p_center = int(lines[3].split()[1])
-    assert lines[4] == "panel_top >= bg_top True", lines[4]
-    assert lines[5] == "panel_center <= lb_top True", lines[5]
+    p_bottom = int(lines[3].split()[1])
+    screen_bottom = int(lines[4].split()[1])
+
     # 量的是「确实有列表」而不是退化成 0 高度
     assert bg_bottom > bg_top, lines[0]
     assert lb_top > bg_top, (bg_top, lb_top)
+
+    # 顶边不会落到锚点下方（对齐，或被钳制到更上面）
+    assert p_top <= lb_top, f"面板顶边低于标签区顶边：{p_top} > {lb_top}"
+    # 放得下就必须精确对齐
+    panel_h = p_bottom - p_top
+    if lb_top + panel_h <= screen_bottom:
+        assert p_top == lb_top, (
+            f"屏幕放得下时面板顶边应与标签区顶边对齐：{p_top} != {lb_top}")
+    # 装不下时上移，但不能被裁掉
+    assert p_bottom <= screen_bottom, (
+        f"面板底边超出屏幕（被裁掉）：{p_bottom} > {screen_bottom}")
+
+
+def test_place_within_top_left_aligns_vertically_and_clamps_at_the_bottom():
+    """`place_within(align="top-left")` 的两个分支，都不依赖离屏屏幕尺寸。
+
+    上面那条面板级测试在离屏屏幕（800x800）上**永远走不到**「精确对齐」分支：
+    面板 511 高、锚点在 ~399，必然被钳到屏幕上移。这里直接喂一个装得下的
+    锚点，把「顶边精确对齐锚点顶边」和「装不下时上移但不被裁掉」都钉住。
+    """
+    out = _run_real_qt("""
+from PySide6.QtWidgets import QApplication, QWidget, QDialog
+from PySide6.QtCore import QRect
+from labelforge.ui.dialog_helpers import place_within
+
+app = QApplication([])
+screen = app.primaryScreen().availableGeometry()
+
+parent = QWidget()
+parent.resize(600, 600)
+parent.move(20, 20)
+parent.show()
+app.processEvents()
+origin = parent.mapToGlobal(parent.rect().topLeft())
+
+# ① 装得下：顶边精确对齐锚点顶边
+fits_rect = QRect(50, 20, 200, 100)
+d1 = QDialog(parent)
+d1.resize(120, 80)
+place_within(d1, fits_rect, align='top-left')
+app.processEvents()
+print('FIT_Y', d1.y(), origin.y() + fits_rect.y())
+print('FIT_IN_SCREEN', d1.frameGeometry().bottom() <= screen.bottom())
+
+# ② 装不下：整体上移，但底边仍在屏幕内
+tall = QDialog(parent)
+tall.resize(120, screen.height() - 40)
+tall.show()
+app.processEvents()
+low_rect = QRect(50, screen.height() - 60, 200, 100)
+place_within(tall, low_rect, align='top-left')
+app.processEvents()
+print('CLAMP_BOTTOM_IN_SCREEN',
+      tall.frameGeometry().bottom() <= screen.bottom())
+print('CLAMP_TOP_ABOVE_ANCHOR', tall.y() <= origin.y() + low_rect.y())
+d1.close()
+tall.close()
+""")
+    lines = _lines(out)
+    _, got_y, want_y = lines[0].split()
+    assert got_y == want_y, (
+        f"装得下时顶边没有精确对齐锚点顶边：{got_y} != {want_y}")
+    assert lines[1] == "FIT_IN_SCREEN True", lines[1]
+    assert lines[2] == "CLAMP_BOTTOM_IN_SCREEN True", lines[2]
+    assert lines[3] == "CLAMP_TOP_ABOVE_ANCHOR True", lines[3]
 
 
 def test_real_scope_panel_embeds_window_params_without_second_dialog():
@@ -550,7 +621,7 @@ def test_real_scope_panel_embeds_window_params_without_second_dialog():
     宽/高/重叠输入框，而不是一个再弹窗的按钮。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QSpinBox, QPushButton
+from PySide6.QtWidgets import QApplication, QSpinBox, QPushButton
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_WINDOW
 
@@ -580,7 +651,7 @@ print(len(old_btn))
 def test_real_scope_panel_inline_params_track_edits():
     """真实控件：**面板内**改参数，窗口数立刻跟着变（不需要开第二个窗）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_WINDOW
 
@@ -614,7 +685,7 @@ def test_real_scope_panel_asks_the_canvas_to_redraw_on_change():
     信号真的会发，且切模式也会发。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
@@ -654,8 +725,9 @@ def test_real_canvas_draws_scope_grid_when_window_mode_selected():
     ——后者才是「滑窗与区域各自的内容分开显示」的证据。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtCore import QPoint
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_WINDOW, MODE_ROI
 
@@ -686,7 +758,7 @@ def count_grid():
     im = QImage(canvas.size(), QImage.Format_ARGB32)
     im.fill(QColor('white'))
     pnt = QPainter(im)
-    canvas.render(pnt)
+    canvas.render(pnt, QPoint())
     pnt.end()
     n = 0
     for y in range(im.height()):
@@ -726,8 +798,9 @@ def test_real_canvas_scope_grid_follows_the_parameters():
     时把新参数取过去，否则用户改完宽高，画面还是旧格子。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtCore import QPoint
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_WINDOW
 
@@ -747,7 +820,7 @@ app.processEvents()
 canvas = w.canvas
 canvas.resize(1000, 700)
 app.processEvents()
-from PyQt5.QtWidgets import QSpinBox
+from PySide6.QtWidgets import QSpinBox
 
 w._open_scope_panel()
 app.processEvents()
@@ -759,7 +832,7 @@ def count_grid():
     im = QImage(canvas.size(), QImage.Format_ARGB32)
     im.fill(QColor('white'))
     pnt = QPainter(im)
-    canvas.render(pnt)
+    canvas.render(pnt, QPoint())
     pnt.end()
     return sum(1 for y in range(im.height()) for x in range(im.width())
                if im.pixelColor(x, y).blue() > 150
@@ -787,7 +860,7 @@ app.processEvents()
 def test_real_scope_panel_selection_reports_windows_only_when_needed():
     """真实控件：全图/区域不带窗口参数，滑窗类带。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
@@ -808,7 +881,7 @@ for mode in (MODE_FULL, MODE_ROI, MODE_WINDOW):
 def test_real_scope_panel_window_summary_text():
     """真实控件：窗口摘要带上尺寸与重叠；没传参数时用控件默认值。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
@@ -831,7 +904,7 @@ def test_real_scope_panel_roi_mode_offers_the_add_region_button():
     态（会独占左键，标签框点不到）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
@@ -872,7 +945,7 @@ def test_real_scope_panel_retranslates():
     文案：模式单选按钮、段标题、区域计数与「添加区域」按钮。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.ui import i18n
 from labelforge.engine.inference_scope import MODE_FULL, MODE_ROI
@@ -904,7 +977,7 @@ def test_real_scope_panel_region_row_has_lock_button_in_both_languages():
     「锁定」，已锁时写「解锁」，切语言两边都要跟着变。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.ui import i18n
 from labelforge.engine.inference_scope import MODE_ROI
@@ -935,7 +1008,7 @@ i18n.set_lang('zh')
 def test_real_scope_panel_lock_button_emits_index_and_target_state():
     """点某行的锁按钮 → 发出 (该行下标, 目标状态)，不是别的行、也不是空信号。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -1119,8 +1192,8 @@ def test_scope_mode_defaults_to_full_when_unset():
 
 _MIXIN_HOST = """
 import os
-from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtGui import QImage
 app = QApplication([])
 from labelforge.ui.mixins.inference import InferenceMixin
 # 圆点刷新（`_refresh_background_item_status`）在列表 mixin 里；范围刷新用例要
@@ -1206,7 +1279,7 @@ class _Host(InferenceMixin, _BackgroundListMixin, QWidget):
         # 圆点刷新要向 `background_list` 写 BG_ROLE_STATUS，`_sync_current_boxes_from_cache`
         # 还要 `update_label_list`。给真控件（QListWidget）而不是替身：状态图标是
         # 通过 `setData/setIcon` 落到 item 上的，替身会把断言变成「测替身」。
-        from PyQt5.QtWidgets import QListWidget
+        from PySide6.QtWidgets import QListWidget
         self.background_list = QListWidget()
         self.update_label_list = lambda: None
         self.save_undo_state = lambda: None
@@ -1218,11 +1291,11 @@ class _Host(InferenceMixin, _BackgroundListMixin, QWidget):
                 self._r = (x, y, w, h)
 
             def rect(self):
-                from PyQt5.QtCore import QRect
+                from PySide6.QtCore import QRect
                 return QRect(0, 0, self._r[2], self._r[3])
 
             def mapTo(self, parent, point):
-                from PyQt5.QtCore import QPoint
+                from PySide6.QtCore import QPoint
                 return QPoint(self._r[0] + point.x(), self._r[1] + point.y())
 
             def width(self):
@@ -1242,7 +1315,7 @@ class _Host(InferenceMixin, _BackgroundListMixin, QWidget):
         self.label_group = _Rect(20, 350, 760, 300)
 
     def _side_panel_geometry(self):
-        from PyQt5.QtCore import QRect
+        from PySide6.QtCore import QRect
         return QRect(20, 40, 760, 610)
 
     def _set_edit_mode(self, mode, animated=False):
@@ -1305,7 +1378,7 @@ def test_real_mixin_open_scope_panel_constructs_non_modal_panel():
     模态会吃掉发往画布的鼠标事件，让就地画区域失效。
     """
     out = _run_real_qt(_MIXIN_HOST + """
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 h = _Host()
 h._on_model_loaded(_Detector(), (640, 640), "model")
@@ -1520,7 +1593,7 @@ for mode in (MODE_ROI, MODE_WINDOW):
 def test_real_window_dialog_warns_when_many_windows():
     """真实控件：窗口数很多时给耗时提醒，但仍允许确定。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
@@ -1605,8 +1678,8 @@ def test_real_scope_panel_positions_on_its_anchor():
     `test_real_scope_panel_clamps_anchor_to_screen` 的事）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtCore import QRect
+from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import QRect
 from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
@@ -1641,8 +1714,8 @@ def test_real_scope_panel_clamps_anchor_to_screen():
     给的是父窗坐标，拿去和屏幕可用区比是两套坐标系，会假红。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtCore import QRect
+from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import QRect
 from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
@@ -1668,7 +1741,7 @@ panel.close()
 def test_real_scope_panel_without_anchor_centers_on_parent():
     """没给锚点（取不到右侧栏）时退回居中，行为与改动前一致。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
@@ -1699,7 +1772,7 @@ def test_real_sliding_dialog_count_follows_params():
     重叠清零后 500×640/重叠 0 得 8 窗。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 from labelforge.engine.inference_scope import iter_windows
 
@@ -1724,7 +1797,7 @@ print(after == len(iter_windows(2000, 1000, d.spec())))
 def test_real_sliding_dialog_count_matches_engine_count():
     """窗口数必须等于 iter_windows()：画面上的网格就是实际会跑的窗口。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 from labelforge.engine.inference_scope import iter_windows
 
@@ -1743,7 +1816,7 @@ def test_real_sliding_dialog_count_unusable_without_reference():
     按不可用禁掉确定反而是错的（用户可能先配参数、后加载图）。这条只钉
     「算不出数目但不崩」，不把 is_valid 的口径写死在这。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 
 app = QApplication([])
@@ -1765,7 +1838,7 @@ def test_real_sliding_dialog_has_no_template_buttons():
     该被这里的操作写坏。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 from labelforge.core import config_manager
 
@@ -1793,7 +1866,7 @@ print(d.spec())
 def test_real_sliding_dialog_does_not_write_the_shared_template_list():
     """弹窗的操作**绝不**改数据增强的模板列表（两边已脱钩）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.sliding_window_dialog import SlidingWindowDialog
 from labelforge.core import config_manager
 
@@ -1820,7 +1893,7 @@ def test_real_window_params_defaults_are_640_visible_80_no_fill():
     的话，另两个改回旧值照样绿。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import (
     WindowParamsWidget, DEFAULT_WINDOW, DEFAULT_OVERLAP, DEFAULT_MIN_VISIBLE)
 
@@ -1844,7 +1917,7 @@ def test_real_window_params_reads_a_stale_min_visible_from_old_config():
     （字符串/越界）仍要退回新默认 0.8。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import WindowParamsWidget
 
 app = QApplication([])
@@ -1872,7 +1945,7 @@ def test_real_window_params_never_reads_the_shared_templates():
     默认值——否则「模板同步」就又从别处溜回来了。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import WindowParamsWidget
 from labelforge.core import config_manager
 
@@ -1902,7 +1975,7 @@ def test_real_mixin_panel_close_drops_pending_region_draw_on_every_path():
     还在」——面板只是调范围时的参照，关掉就不该继续叠加在画布上。
     """
     out = _run_real_qt(_MIXIN_HOST + """
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.engine.inference_scope import MODE_ROI
 
 for call in ('accept', 'reject', 'close'):
@@ -1928,7 +2001,7 @@ for call in ('accept', 'reject', 'close'):
 def test_real_mixin_scope_panel_closing_never_leaves_a_pending_draw():
     """无论以哪条路径关闭，都不能留下「下次拖动画区域」的待命态。"""
     out = _run_real_qt(_MIXIN_HOST + """
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 h = _Host()
 h._on_model_loaded(_Detector(), (640, 640), "model")
@@ -1966,8 +2039,9 @@ def test_real_mixin_switching_to_window_hides_the_region_outlines():
     RGB：描边叠在背景上同样是混合色。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtCore import QPoint
 from labelforge.ui.main_window import ImageEditor
 from labelforge.core.config import REGION_CONFIG
 from labelforge.engine.inference_scope import MODE_WINDOW, MODE_ROI
@@ -1997,7 +2071,7 @@ def count_region_edge():
     im = QImage(canvas.size(), QImage.Format_ARGB32)
     im.fill(QColor('white'))
     pnt = QPainter(im)
-    canvas.render(pnt)
+    canvas.render(pnt, QPoint())
     pnt.end()
     n = 0
     for y in range(im.height()):
@@ -2037,7 +2111,7 @@ def test_real_scope_params_stay_visible_but_locked_outside_window_mode():
     免得一个变了另一个跟着"看起来对"。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
@@ -2072,7 +2146,7 @@ def test_real_scope_panel_mode_selection_is_single_choice():
     只测一条的话，另一条的实现被删掉也照样绿。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
@@ -2138,7 +2212,7 @@ def test_real_scope_panel_lists_region_coordinates_with_delete_buttons():
     把面板构造炸掉。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QLabel, QPushButton
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -2190,7 +2264,7 @@ def test_real_scope_panel_delete_removes_the_right_region():
     而界面上看起来「按钮都在」，很容易漏掉。
     """
     out = _run_real_qt(_MIXIN_HOST + """
-from PyQt5.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QPushButton
 from labelforge.engine.inference_scope import MODE_ROI
 
 h = _Host()
@@ -2229,8 +2303,9 @@ def test_real_mixin_confirming_the_panel_clears_region_outlines():
     断言确定后归零（不是只看 `_show_scope_regions` 这个中间标记）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtCore import QPoint
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -2262,7 +2337,7 @@ def count_edges():
     im = QImage(canvas.size(), QImage.Format_ARGB32)
     im.fill(QColor('white'))
     pnt = QPainter(im)
-    canvas.render(pnt)
+    canvas.render(pnt, QPoint())
     pnt.end()
     n = 0
     for y in range(im.height()):
@@ -2303,7 +2378,7 @@ print(after_cancel)
 
 
 def test_real_scope_panel_floats_over_the_side_panel_not_the_canvas():
-    """① 范围面板要浮在**右侧侧栏**上层、竖直居中，不能压到画布上。
+    """① 范围面板要浮在**右侧侧栏**上层，不能压到画布上。
 
     用户报的现象：「推理范围窗口怎么在屏幕左边了？如果我软件移过去不就遮挡
     画布了」。根因有两个，这里一并钉住：
@@ -2315,8 +2390,8 @@ def test_real_scope_panel_floats_over_the_side_panel_not_the_canvas():
     量的是 `frameGeometry()`（全局）与侧栏的实际全局位置，两者同构。
     """
     out = _run_real_qt(_MIXIN_HOST + """
-from PyQt5.QtGui import QPixmap, QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtWidgets import QApplication
 
 h = _Host()
 h.resize(1200, 800)
@@ -2335,19 +2410,29 @@ panel = h._scope_panel
 
 side = h._side_panel_geometry()
 side_left = h.mapToGlobal(side.topLeft()).x()
-side_center_y = h.mapToGlobal(side.center()).y()
 frame = panel.frameGeometry()
+screen_bottom = app.primaryScreen().availableGeometry().bottom()
+# 竖直契约：顶边对齐锚点（`_scope_anchor_rect` =「标签管理」区左上角），
+# 放不下时上移。锚点由宿主提供，这里直接问它，比猜 label_group 更稳。
+anchor = h._scope_anchor_rect()
+label_top = h.mapToGlobal(anchor.topLeft()).y()
 
-# 面板要落在侧栏这块的左边界起、竖直居中；「不压画布」由锚点 x 不是 0 保证
+# 面板要落在侧栏这块的左边界起；「不压画布」由锚点 x 不是 0 保证
 # （画布在主窗左侧，x=0 就是画布左端）。
 #
 # 水平用「中心线对齐侧栏中心」而不是只判左右边界：锚点够宽时，把 gx 整体
 # 平移某个量后左边界仍可能落在 side_left 右侧（被 `gx = left` 兜住或屏幕钳住），
 # 只判边界的话『面板左移』这类变异会存活（实测）。
+#
+# 竖直**不再**断言「居中」：那是 35f9c3c 改用左上角对齐之前的契约；当时这条
+# 之所以绿，是因为 PyQt5 离屏屏幕只有 600 高把面板压扁、中心恰好落在侧栏中心
+# 附近。离屏屏幕尺寸在 Qt6 变成 800x800，巧合没了。改成钉真实不变量：
+# 顶边不越过锚点、底边不被屏幕裁掉。
 side_center_x = h.mapToGlobal(side.center()).x()
 print(frame.x() >= side_left)
 print(abs(side_left - frame.x()) < side.width())
-print(abs(frame.center().y() - side_center_y) < 40)
+print(frame.top() <= label_top)
+print(frame.bottom() <= screen_bottom)
 print(abs(frame.center().x() - side_center_x) < 8)
 """)
     lines = _lines(out)
@@ -2356,8 +2441,10 @@ print(abs(frame.center().x() - side_center_x) < 8)
     assert lines[1] == "True", (
         f"面板整个跑出侧栏那一块了（{lines}）")
     assert lines[2] == "True", (
-        f"面板没有对齐侧栏的竖直中心（{lines}）")
+        f"面板顶边越过了「标签管理」区顶边（{lines}）：应左上角对齐或上移")
     assert lines[3] == "True", (
+        f"面板底边被屏幕裁掉了（{lines}）")
+    assert lines[4] == "True", (
         f"面板没有对齐侧栏的水平中心（{lines}）：整体平移能被这条抓住")
 
 
@@ -2368,8 +2455,8 @@ def test_real_scope_panel_anchor_uses_the_real_side_panel_x():
     断言锚点矩形与侧栏左边界对齐。
     """
     out = _run_real_qt(_MIXIN_HOST + """
-from PyQt5.QtGui import QPixmap, QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtWidgets import QApplication
 
 h = _Host()
 h.resize(1200, 800)
@@ -2444,7 +2531,7 @@ for value in (300, 100, 0, 200):
 def test_real_batch_target_spin_is_spinnable_and_typable():
     """② 输入框要「可滚动可输入」，并且上限跟着数据集张数收窄。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -2479,7 +2566,7 @@ print(spin.value())
 def test_real_size_fields_hidden_for_static_shown_for_dynamic():
     """③ 输入尺寸：静态模型整组不显示，动态模型才显示。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -2512,7 +2599,7 @@ print(row.size_spin_w.isEnabled(), row.size_spin_h.isEnabled())
 def test_real_threshold_spins_step_by_one_hundredth():
     """③ 置信度 / NMS 的步长是 0.01，且宽度收窄到 58px。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -2544,7 +2631,7 @@ def test_real_batch_cancel_refreshes_rows_without_switching_images():
 import os
 import tempfile
 
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 from labelforge.engine.image_loader.mixin import BG_ROLE_STATUS
 from labelforge.engine.image_loader.status import (
     STATUS_ANNOTATED, STATUS_UNANNOTATED)
@@ -2566,7 +2653,7 @@ h.detection_boxes_dict = {i: [] for i in range(len(paths))}
 h.canvas_items_dict = {i: [] for i in range(len(paths))}
 # 建出列表行（真控件），否则圆点无处可刷
 from labelforge.engine.image_loader.status import decorate_background_list_item
-from PyQt5.QtWidgets import QListWidgetItem
+from PySide6.QtWidgets import QListWidgetItem
 for i, p in enumerate(paths):
     item = QListWidgetItem(os.path.basename(p))
     decorate_background_list_item(item, p, i)
@@ -2629,8 +2716,8 @@ import os
 import tempfile
 import json
 
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QListWidgetItem
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QListWidgetItem
 from labelforge.engine.image_loader.status import decorate_background_list_item
 from labelforge.engine.inference_task import ImageResult
 
@@ -2692,7 +2779,7 @@ def test_real_batch_target_has_a_prefix_label():
     那个序号输入框，前缀加在它自己左边。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 app = QApplication([])
 row = ModelRow()
@@ -2710,7 +2797,7 @@ print(row.batch_to_label.parent() is row)
 def test_real_batch_target_label_retranslates():
     """切语言后前缀名要跟着变，不能留在旧语言。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 from labelforge.ui import i18n
 app = QApplication([])
@@ -2732,7 +2819,7 @@ def test_real_batch_target_defaults_to_the_last_image():
     换数据集后上限与默认值都要跟着走，否则会留一个指向旧数据集的张号。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 app = QApplication([])
 row = ModelRow()
@@ -2749,7 +2836,7 @@ print(row.batch_to_spin.value())
 def test_real_batch_target_keeps_a_user_edited_value():
     """用户手动改过就不该被默认值覆盖——否则改完一换数据集就被抹掉。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 app = QApplication([])
 row = ModelRow()
@@ -2764,7 +2851,7 @@ print(row.batch_to_spin.value())
 def test_real_batch_target_ceiling_and_default_track_a_new_dataset():
     """换数据集：上限与默认值同时跟着新数据集走。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 app = QApplication([])
 row = ModelRow()
@@ -2783,7 +2870,7 @@ print(row.batch_to_spin.maximum(), row.batch_to_spin.value())
 def test_real_window_params_carry_min_visible():
     """窗口参数要带上「最低可见比例」，默认 0.8、按百分比显示。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import WindowParamsWidget
 app = QApplication([])
 w = WindowParamsWidget(reference_size=(1000, 1000),
@@ -2802,7 +2889,7 @@ print(w.min_visible_spin.value())
 def test_real_min_visible_is_locked_when_window_mode_is_not_selected():
     """未选中滑窗时「最低可见比例」也要禁用（与其他窗口参数一致）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import WindowParamsWidget
 app = QApplication([])
 w = WindowParamsWidget(reference_size=(1000, 1000))
@@ -2824,7 +2911,7 @@ def test_real_min_visible_is_never_overwritten_by_the_augment_templates():
     反转：共用模板里有一条 0.85 的，推理侧的默认仍必须是 0.8。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import WindowParamsWidget
 from labelforge.core import config_manager
 
@@ -2847,7 +2934,7 @@ print(hasattr(w, '_apply_template'))
 def test_real_min_visible_accepts_a_value_written_by_an_older_version():
     """旧配置没这个键时退回默认，不能让整个控件崩掉。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import WindowParamsWidget
 app = QApplication([])
 w = WindowParamsWidget(reference_size=(1000, 1000),
@@ -2871,7 +2958,7 @@ def test_real_panel_shows_all_three_sections_with_their_contents():
     能看到另外两种模式当前的参数/区域，不用来回切。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_FULL
 
@@ -2902,7 +2989,7 @@ print(p.region_label.isEnabled())
 def test_real_panel_sections_track_the_selected_mode():
     """选中哪段，那段就可编辑，其余置灰。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_WINDOW, MODE_ROI
 
@@ -2930,7 +3017,7 @@ def test_real_panel_sections_are_grouped_in_three_blocks():
     确实包含自己那份内容。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
@@ -2978,7 +3065,7 @@ def test_real_panel_section_titles_follow_the_language():
     东西；只改按钮不改标题的话，中文界面里段标题会留着上一门语言。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.ui import i18n
 
@@ -3015,7 +3102,7 @@ def test_real_panel_open_flag_tracks_the_panel_lifetime():
     区域框。三条关闭路径（确定 / 取消 / 直接 close）都要清干净。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -3072,7 +3159,7 @@ def test_real_closing_the_panel_drops_a_pending_region_draw():
     就自动进入）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -3119,7 +3206,7 @@ def test_real_panel_flag_is_independent_of_region_drawing_state():
     态收掉。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -3168,9 +3255,9 @@ def test_real_scope_panel_open_allows_label_box_editing():
     且不可改），面板本身不再拦标签框。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import QPoint, Qt, QPointF
-from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint, Qt, QPointF
+from PySide6.QtGui import QMouseEvent, QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -3206,7 +3293,7 @@ w._save_current_detection_boxes = lambda *a, **k: None
 w.save_json = lambda *a, **k: None
 
 # 框在画布上的中心点（背景图坐标 -> 画布坐标）
-from PyQt5.QtCore import QRectF
+from PySide6.QtCore import QRectF
 rect = canvas.get_background_rect()
 scale = canvas.background_scale
 px = int(rect.x() + 300 * scale)
@@ -3269,9 +3356,9 @@ def test_real_scope_panel_open_allows_drawing_a_new_label_box():
     本来就不是靠那个标记画矩形的，盯它等于空转（变异体会活下来）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QPointF
-from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QMouseEvent, QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -3353,9 +3440,9 @@ def test_real_panel_open_still_allows_panning():
     拖动底图看位置；点在空白处应当进入平移。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QPointF
-from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QMouseEvent, QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -3408,9 +3495,9 @@ def test_real_panel_open_allows_dragging_a_region_box():
     方向相反：同一时刻标签框锁住、区域框可动。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QPointF
-from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QMouseEvent, QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -3482,9 +3569,9 @@ print(w.region_boxes[0] != before)
 def test_real_panel_open_allows_resizing_a_region_box():
     """③ 区域框还要能**改大小**（拖右下角手柄）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QPointF
-from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QMouseEvent, QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -3560,9 +3647,9 @@ def test_real_region_is_not_editable_when_the_panel_is_closed():
     不能把它拖走（那会误改用户画好的区域）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QPointF
-from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QMouseEvent, QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -3634,9 +3721,9 @@ def test_real_closing_the_panel_mid_drag_does_not_corrupt_the_region():
     边调。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QPointF
-from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QMouseEvent, QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -3725,7 +3812,7 @@ def test_real_panel_window_edits_reach_the_run_scope():
     这条把面板 → 范围快照这条链接上（含 `min_visible`，它是新加的一项）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_WINDOW
 
@@ -3767,7 +3854,7 @@ def test_real_default_window_spec_carries_min_visible():
     这里钉住「默认表与界面默认一致」。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 from labelforge.ui.widgets.window_params import DEFAULT_MIN_VISIBLE
 
@@ -3800,7 +3887,7 @@ def test_real_scope_panel_has_no_ok_or_cancel_button():
     按钮删掉后，唯一剩下的关闭方式是右上角 X（`close()`）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.scope_panel import ScopePanel
 
 app = QApplication([])
@@ -3810,7 +3897,7 @@ app.processEvents()
 print(hasattr(p, 'ok_btn'), hasattr(p, 'cancel_btn'))
 # 按钮文字也不该还留在任何子控件上
 texts = [w.text() for w in p.findChildren(type(p.findChild(
-    __import__('PyQt5.QtWidgets', fromlist=['QPushButton']).QPushButton)))]
+    __import__('PySide6.QtWidgets', fromlist=['QPushButton']).QPushButton)))]
 print('确定' in texts, '取消' in texts)
 """)
     lines = _lines(out)
@@ -3823,7 +3910,7 @@ print('确定' in texts, '取消' in texts)
 def test_real_switching_mode_applies_without_confirming():
     """③ 换推理方式立刻写入宿主状态，不必点确定。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_WINDOW, MODE_ROI
 
@@ -3874,7 +3961,7 @@ def test_real_window_edits_apply_without_confirming():
     「面板开着」升级为「面板开着且即时」——不再依赖任何确认动作。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_WINDOW
 
@@ -3919,7 +4006,7 @@ def test_real_batch_target_spin_is_a_quarter_narrower():
     用户要求「目标张号输入框宽度减少 1/4」：原宽 84 → 63。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -3944,7 +4031,7 @@ def test_real_input_size_spins_match_threshold_width():
     之后不能把它截断成省略号——那样就成「改了宽度、坏了读数」。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -3982,7 +4069,7 @@ def test_real_param_row_groups_are_separated_by_dashes():
     所以中间应有 **6** 个分隔符，且「置信度」和「NMS」之间**没有**分隔符。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QLabel
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -4022,7 +4109,7 @@ def test_real_static_model_hides_input_size_without_doubling_dashes():
     内容」，而不是数分隔符个数——数个数反而会在动态模型下误判。
     """
     script = """
-from PyQt5.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QLabel
 from labelforge.ui.model_row import ModelRow
 
 app = QApplication([])
@@ -4083,7 +4170,7 @@ def test_real_conf_label_reads_conf_in_both_languages():
     （它用的是另一套键），所以这里只钉参数行。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui import i18n
 from labelforge.ui.model_row import ModelRow
 
@@ -4109,7 +4196,7 @@ def test_real_video_overlay_confidence_label_is_untouched():
     英文值本来就是 `Confidence`（`i18n` 里另有一条），改键名才不会连累它。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QCheckBox
+from PySide6.QtWidgets import QApplication, QCheckBox
 from labelforge.ui import i18n
 from labelforge.ui.video_dialog import VideoDialog
 
@@ -4133,8 +4220,9 @@ def test_real_canvas_grid_labels_each_window_with_row_col():
     字体/抗锯齿而不稳，数调用才是「真的标了号」。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtCore import QPoint
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_WINDOW
 
@@ -4189,8 +4277,9 @@ def test_real_canvas_grid_labels_shift_with_window_params():
     1600x1200 配 400x300、重叠 0 → 4 行 x 4 列 = 16 窗，最大号 `r4c4`。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtCore import QPoint
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_WINDOW
 
@@ -4234,9 +4323,9 @@ print(all_lbl[0], all_lbl[-1], len(all_lbl))
 # ---------- ③ 区域框缩放：四边手柄 + 更大的命中区 ----------
 
 _REGION_RESIZE_HOST = """
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QPointF
-from PyQt5.QtGui import QMouseEvent, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QMouseEvent, QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_scope import MODE_ROI
 
@@ -4522,9 +4611,9 @@ release(cx, cy)
 
 
 _LAYER_ORDER_HOST = """
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel
-from PyQt5.QtCore import QPoint, Qt
-from PyQt5.QtGui import QPixmap
+from PySide6.QtWidgets import QApplication, QWidget, QLabel
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QPixmap
 from labelforge.canvas import Canvas
 from labelforge.canvas import canvas_renderer as _cr
 
@@ -4661,8 +4750,8 @@ def test_real_region_wheel_scale_works_while_scope_panel_is_open():
     「区域不能像标签那样缩放」。
     """
     out = _run_real_qt(_REGION_LOCK_HOST + """
-from PyQt5.QtGui import QWheelEvent
-from PyQt5.QtCore import QPointF, QPoint
+from PySide6.QtGui import QWheelEvent
+from PySide6.QtCore import QPointF, QPoint
 
 def wheel(x, y, up=True):
     canvas.mouse_pos = QPointF(x, y)
@@ -4695,8 +4784,8 @@ print('编辑模式 ->', w.edit_mode)
 def test_real_region_lock_keeps_wheel_scale_inert():
     """② 的边界：锁定的区域滚轮也不该缩放（锁 = 不可修改）。"""
     out = _run_real_qt(_REGION_LOCK_HOST + """
-from PyQt5.QtGui import QWheelEvent
-from PyQt5.QtCore import QPointF, QPoint
+from PySide6.QtGui import QWheelEvent
+from PySide6.QtCore import QPointF, QPoint
 
 def wheel(x, y):
     canvas.mouse_pos = QPointF(x, y)
@@ -4769,8 +4858,8 @@ def test_real_replace_mode_clears_hand_drawn_boxes_too():
     ——只测 `merge_boxes()` 的话，中间任何一层把 `replace_auto` 丢了都测不到。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_task import ImageResult
 
@@ -4828,8 +4917,8 @@ def test_real_region_wheel_on_edge_resizes_only_that_edge():
     区域侧原先只有「绕中心等比缩放」。这里钉住四条边各自的效果。
     """
     out = _run_real_qt(_REGION_RESIZE_HOST + """
-from PyQt5.QtGui import QWheelEvent
-from PyQt5.QtCore import QPoint
+from PySide6.QtGui import QWheelEvent
+from PySide6.QtCore import QPoint
 
 def wheel(x, y, up=True):
     canvas.mouse_pos = QPointF(x, y)
@@ -4886,8 +4975,8 @@ def test_real_region_wheel_accepts_the_mouse_outside_the_edge():
     这条钉住：边线上、外侧 20、外侧 60 三处都能单边调整。
     """
     out = _run_real_qt(_REGION_RESIZE_HOST + """
-from PyQt5.QtGui import QWheelEvent
-from PyQt5.QtCore import QPoint
+from PySide6.QtGui import QWheelEvent
+from PySide6.QtCore import QPoint
 
 def wheel(x, y):
     canvas.mouse_pos = QPointF(x, y)
@@ -4935,8 +5024,8 @@ def test_real_region_handles_show_a_white_square_on_hover():
     - 圆    ：对角线方向比水平方向更早退出（勾股）
     """
     out = _run_real_qt(_REGION_RESIZE_HOST + """
-from PyQt5.QtGui import QWheelEvent, QPainter
-from PyQt5.QtCore import QPoint, QSize
+from PySide6.QtGui import QWheelEvent, QPainter
+from PySide6.QtCore import QPoint, QSize
 
 r = w.region_boxes[0]
 canvas.selected_region = 0
@@ -5003,8 +5092,8 @@ print('hover 记录', canvas.hover_region_handle, canvas.hover_region_index)
 def test_real_region_wheel_in_the_middle_scales_both_axes():
     """② 的边界：鼠标在区域**中间**时仍是整体等比缩放（不误判成单边）。"""
     out = _run_real_qt(_REGION_RESIZE_HOST + """
-from PyQt5.QtGui import QWheelEvent
-from PyQt5.QtCore import QPoint
+from PySide6.QtGui import QWheelEvent
+from PySide6.QtCore import QPoint
 
 def wheel(x, y):
     canvas.mouse_pos = QPointF(x, y)
@@ -5036,7 +5125,7 @@ def test_real_region_border_draws_corner_handles_only():
     边中点仍可抓（`_region_handle_at()` 认八处），见下一条——不画只影响视觉。
     """
     out = _run_real_qt(_REGION_RESIZE_HOST + """
-from PyQt5.QtGui import QImage, QPainter
+from PySide6.QtGui import QImage, QPainter
 
 # `_draw_regions` 只在**选中**该区域时才画手柄（`is_selected`）
 w.region_fixed = False
@@ -5151,8 +5240,8 @@ print('边上拖动只改宽', after[2] > before[2], after[3] == before[3],
 def test_real_model_row_is_hidden_and_inference_disabled_in_paste_mode():
     """④ 切到贴图模式：参数行自动收起，两个推理按钮随之不可用。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -5203,8 +5292,8 @@ print('切回标注能推理', w.model_single_btn.isEnabled())
 def test_real_model_row_not_restored_if_user_had_closed_it():
     """④ 的边界：用户自己在标注模式下收了参数行，切一圈回来仍是收起的。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -5242,8 +5331,8 @@ print('没有被强行展开', row.isVisible())
 def test_real_start_inference_is_refused_in_paste_mode():
     """④ 绕过按钮直接调 `_start_inference` 也要被挡（快捷键/代码路径）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -5289,10 +5378,9 @@ def test_real_region_menu_is_reachable_only_in_paste_mode():
     贴图模式的入口必须保留：贴图区域没有面板，右键是它唯一的编辑入口。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QMenu
-from PyQt5.QtGui import QImage, QColor, QPixmap
-from PyQt5.QtCore import QPoint
-from PyQt5.QtWidgets import QAction
+from PySide6.QtWidgets import QApplication, QMenu
+from PySide6.QtGui import QAction, QImage, QColor, QPixmap
+from PySide6.QtCore import QPoint
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -5320,7 +5408,7 @@ w._open_scope_panel()
 app.processEvents()
 
 captured = {}
-orig_exec = QMenu.exec_
+orig_exec_ = QMenu.exec_
 def fake_exec(self, *a, **k):
     captured['texts'] = [act.text() for act in self.actions()]
     return None
@@ -5335,7 +5423,7 @@ try:
         texts = captured.get('texts') or []
         print(mode, any('添加区域' in t for t in texts))
 finally:
-    QMenu.exec_ = orig_exec
+    QMenu.exec_ = orig_exec_
 """)
     lines = _lines(out)
     assert lines[0].endswith("False"), (
@@ -5347,8 +5435,8 @@ finally:
 def test_real_region_menu_uses_the_same_region_list_in_both_modes():
     """⑤ 两种模式共用同一份 `region_boxes`（不是两套区域）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage, QColor, QPixmap
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -5375,7 +5463,7 @@ print('两种模式读的是同一个列表',
       len(a) == 1 and a[0] is w.region_boxes[0])
 rect = w.canvas.get_background_rect()
 sc = w.canvas.background_scale
-from PyQt5.QtCore import QPointF
+from PySide6.QtCore import QPointF
 ctr = QPointF(rect.x() + 35 * sc, rect.y() + 35 * sc)   # 区域中心 (10+25, 10+25)
 print('贴图模式下画布也认这条区域',
       w.canvas._region_at(ctr) is not None)
@@ -5401,8 +5489,8 @@ def test_real_region_menu_items_are_left_aligned():
     第 11 轮去掉多边形区域后菜单只剩三项（添加矩形/固定/清空）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QMenu, QStyle, QStyleOptionMenuItem
-from PyQt5.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import QApplication, QMenu, QStyle, QStyleOptionMenuItem
+from PySide6.QtGui import QImage, QPixmap
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -5463,8 +5551,8 @@ def test_real_region_menu_keeps_a_visible_check_state():
     去掉。勾现在画进文案（`✔ 固定区域`），点一下照样来回切。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QMenu
-from PyQt5.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import QApplication, QMenu
+from PySide6.QtGui import QImage, QPixmap
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -5577,8 +5665,8 @@ canvas._select_hovered_detection_box(br)
 box_cursor = canvas.cursor().shape()
 
 print('handles', canvas.hover_region_handle, canvas.hover_resize_handle)
-print('cursors', int(region_cursor), int(box_cursor),
-      int(Qt.PointingHandCursor), int(Qt.CrossCursor))
+print('cursors', region_cursor.value, box_cursor.value,
+      Qt.PointingHandCursor.value, Qt.CrossCursor.value)
 """)
     lines = _lines(out)
     handle_line = next(x for x in lines if x.startswith("handles"))

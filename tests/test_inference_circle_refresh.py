@@ -50,8 +50,8 @@ def test_one_key_inference_without_detections_settles_disk_and_circle_immediatel
     """
     out = _run_real_qt("""
 import json, os, tempfile
-from PyQt5.QtWidgets import QApplication, QListWidgetItem
-from PyQt5.QtGui import QPixmap, QImage
+from PySide6.QtWidgets import QApplication, QListWidgetItem
+from PySide6.QtGui import QPixmap, QImage
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.image_loader.status import (
     BG_ROLE_STATUS, STATUS_UNANNOTATED, STATUS_ANNOTATED)
@@ -118,8 +118,8 @@ def test_one_key_inference_without_detections_never_leaves_a_stale_sidecar():
     """
     out = _run_real_qt("""
 import json, os, tempfile
-from PyQt5.QtWidgets import QApplication, QListWidgetItem
-from PyQt5.QtGui import QPixmap, QImage
+from PySide6.QtWidgets import QApplication, QListWidgetItem
+from PySide6.QtGui import QPixmap, QImage
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_task import ImageResult, sidecar_path
 
@@ -174,8 +174,8 @@ def test_inference_replace_mode_clears_manual_annotations_too():
     """
     out = _run_real_qt("""
 import json, os, tempfile
-from PyQt5.QtWidgets import QApplication, QListWidgetItem
-from PyQt5.QtGui import QPixmap, QImage
+from PySide6.QtWidgets import QApplication, QListWidgetItem
+from PySide6.QtGui import QPixmap, QImage
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_task import ImageResult, sidecar_path
 
@@ -227,7 +227,7 @@ def test_inference_never_deletes_paste_shapes():
     """
     out = _run_real_qt("""
 import json, os, tempfile
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.engine.inference_task import ImageResult, write_one_result
 
 tmp = tempfile.mkdtemp(prefix="pl-paste-")

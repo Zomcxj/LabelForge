@@ -4,8 +4,9 @@
 
 import os
 from typing import TYPE_CHECKING
-from PyQt5.QtCore import pyqtSignal, QObject
-from PyQt5.QtWidgets import QMenu, QAction, QListWidgetItem
+from PySide6.QtCore import Signal, QObject
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QMenu, QListWidgetItem
 
 from ..core.utils import extract_label_name, shape_task_type, TASK_DATA_ROLE
 from ..ui import dialog_helpers
@@ -19,8 +20,8 @@ class LabelManager(QObject):
     """标签管理器 - 管理全局标签和贴图标签"""
 
     # 信号：数据变更后通知编辑器刷新 UI
-    data_changed = pyqtSignal()
-    label_list_changed = pyqtSignal()
+    data_changed = Signal()
+    label_list_changed = Signal()
 
     def __init__(self, editor: "EditorProtocol", parent=None):
         """
@@ -172,7 +173,7 @@ class LabelManager(QObject):
 
         anchor = None
         try:
-            from PyQt5.QtGui import QCursor
+            from PySide6.QtGui import QCursor
             anchor = QCursor.pos()
         except Exception:
             anchor = None
@@ -482,7 +483,7 @@ class LabelManager(QObject):
         image_width = None
         image_height = None
         try:
-            from PyQt5.QtGui import QImageReader
+            from PySide6.QtGui import QImageReader
             image_size = QImageReader(file_path).size()
             if image_size.isValid():
                 image_width = image_size.width()

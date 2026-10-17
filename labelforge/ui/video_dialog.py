@@ -13,8 +13,8 @@
 """
 import os
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
     QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QProgressBar, QPushButton, QSpinBox, QTabWidget,
@@ -100,8 +100,8 @@ class VideoDialog(QDialog):
     `settings()` 按当前动作返回对应参数。
     """
 
-    start_requested = pyqtSignal(str, dict)
-    cancel_requested = pyqtSignal()
+    start_requested = Signal(str, dict)
+    cancel_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

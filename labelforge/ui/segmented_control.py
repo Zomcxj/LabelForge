@@ -1,7 +1,7 @@
-"""分段按钮动画控件（PyQt5版本，参考ScanVerse）"""
+"""分段按钮动画控件（参考ScanVerse）"""
 
-from PyQt5.QtWidgets import QFrame, QWidget, QPushButton
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect
+from PySide6.QtWidgets import QFrame, QWidget, QPushButton
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect
 
 
 class AnimatedSegmentedControl(QFrame):

@@ -3,7 +3,7 @@
 import os
 from datetime import datetime
 
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from ..i18n import t as tr
 

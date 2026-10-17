@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from PyQt5.QtCore import QRectF
+from PySide6.QtCore import QRectF
 
 from ..i18n import t as tr
 

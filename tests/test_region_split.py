@@ -19,8 +19,8 @@ from tests.test_inference_scope_ui import _run_real_qt, _lines
 def test_paste_mode_hard_blocks_inference_even_if_the_row_is_opened():
     """① 贴图模式下**不能**靠参数行图标把推理弄回来（要"禁用"不是"收起"）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage, QPixmap
 from labelforge.ui.main_window import ImageEditor
 
 
@@ -91,9 +91,9 @@ print('切回标注 按钮可用:', w.model_single_btn.isEnabled())
 def test_inference_and_paste_regions_are_separate_lists():
     """② 两份区域互不可见：标注模式只认推理那份，贴图模式只认贴图那份。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtCore import QPoint
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QPoint
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -159,9 +159,9 @@ def test_editing_a_region_refreshes_the_panel_coordinates():
     在标注模式下改推理区域（范围面板开着），断言它拿到的是**刷新后的坐标**。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage, QPixmap, QWheelEvent
-from PyQt5.QtCore import QPoint, QPointF, Qt
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage, QPixmap, QWheelEvent
+from PySide6.QtCore import QPoint, QPointF, Qt
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -221,9 +221,9 @@ print('空松手增量:', len(snapshots) - before)
 def test_wheel_resizes_a_region_edge_from_outside_too():
     """④ 滚轮贴边（含**外侧**）单边调整，与检测框手感一致。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage, QPixmap, QWheelEvent
-from PyQt5.QtCore import QPoint, QPointF, Qt
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage, QPixmap, QWheelEvent
+from PySide6.QtCore import QPoint, QPointF, Qt
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -285,9 +285,9 @@ def test_region_section_only_appears_in_paste_mode():
     管理」）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QMenu
-from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtCore import QPoint
+from PySide6.QtWidgets import QApplication, QMenu
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QPoint
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])

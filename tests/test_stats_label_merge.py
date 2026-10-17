@@ -46,7 +46,7 @@ def _lines(out):
 # 造一个数据集：既有 drone 也有 Drone，用来复现「改成已存在的标签」
 _DATASET_HELPER = """
 import os, json, shutil
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 
 WORK = r"@@WORK@@"
 if os.path.isdir(WORK):
@@ -75,8 +75,8 @@ write_sidecar(2, [_box("Drone", 10), _box("Drone", 50)])
 def test_rename_merges_into_an_existing_label():
     """底层：把 `drone` 改成已存在的 `Drone` = 合并，数量相加、旧标签消失。"""
     out = _run_real_qt(_DATASET_HELPER.replace("@@WORK@@", "D:/tmp/_merge_label_a") + """
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage
 app = QApplication([])
 from labelforge.ui.main_window import ImageEditor
 
@@ -106,9 +106,9 @@ def test_stats_dialog_rename_into_an_existing_label_merges():
     表格纹丝不动。
     """
     out = _run_real_qt(_DATASET_HELPER.replace("@@WORK@@", "D:/tmp/_merge_label_b") + """
-from PyQt5.QtWidgets import QApplication, QDialog
-from PyQt5.QtGui import QImage
-from PyQt5.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtGui import QImage
+from PySide6.QtCore import QTimer
 app = QApplication([])
 from labelforge.ui.main_window import ImageEditor
 
@@ -150,9 +150,9 @@ print("rows", json.dumps(out.get("rows")))
 def test_stats_dialog_rename_still_blocks_an_empty_name():
     """放行重名不等于放行空名：清空标签名仍要回退，不能让标签变无名。"""
     out = _run_real_qt(_DATASET_HELPER.replace("@@WORK@@", "D:/tmp/_merge_label_c") + """
-from PyQt5.QtWidgets import QApplication, QDialog
-from PyQt5.QtGui import QImage
-from PyQt5.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtGui import QImage
+from PySide6.QtCore import QTimer
 app = QApplication([])
 from labelforge.ui.main_window import ImageEditor
 
@@ -193,9 +193,9 @@ def test_paste_table_also_merges_into_an_existing_label():
     """
     script = """
 import os, json
-from PyQt5.QtWidgets import QApplication, QDialog
-from PyQt5.QtGui import QPixmap, QImage, QPainter
-from PyQt5.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtGui import QPixmap, QImage, QPainter
+from PySide6.QtCore import QTimer
 app = QApplication([])
 from labelforge.ui.main_window import ImageEditor
 
@@ -205,7 +205,7 @@ w = ImageEditor(); w.resize(1200, 900); w.show(); app.processEvents()
 w.background_images = ["a.png", "b.png"]
 w.current_background_index = 0
 pm = QPixmap.fromImage(QImage(20, 20, QImage.Format_RGB888))
-from PyQt5.QtCore import QRect
+from PySide6.QtCore import QRect
 w.canvas_items = [(pm, QRect(0, 0, 20, 20), "logo"),
                   (pm, QRect(30, 0, 20, 20), "badge")]
 w.canvas_items_dict = {0: list(w.canvas_items), 1: []}

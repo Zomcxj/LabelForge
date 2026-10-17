@@ -2,7 +2,7 @@
 
 import os
 
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from ..i18n import t as tr
 from ...engine.image_loader import BG_ROLE_INDEX, BG_ROLE_PATH, BG_ROLE_STATUS
@@ -25,7 +25,7 @@ class BackgroundListMixin:
         self.group_filter_btn.setMenu(self._group_filter_menu)
 
     def _rebuild_task_filter_menu(self):
-        from PyQt5.QtWidgets import QAction
+        from PySide6.QtGui import QAction
         menu = self._task_filter_menu
         menu.clear()
         current = set(getattr(self, '_task_filter', set()))
@@ -42,7 +42,7 @@ class BackgroundListMixin:
         menu.addAction(clear)
 
     def _rebuild_group_filter_menu(self):
-        from PyQt5.QtWidgets import QAction
+        from PySide6.QtGui import QAction
         menu = self._group_filter_menu
         menu.clear()
         current = set(getattr(self, '_group_filter', set()))
@@ -144,8 +144,8 @@ class BackgroundListMixin:
         btn = getattr(self, 'bg_label_mode_btn', None)
         if btn is None:
             return
-        from PyQt5.QtCore import QSize
-        from PyQt5.QtGui import QIcon
+        from PySide6.QtCore import QSize
+        from PySide6.QtGui import QIcon
         mode = getattr(self, '_bg_label_list_mode', 'stats')
         # stats: show "rows" icon (click → list); list: show "bars" icon (click → stats)
         if mode == 'all':
@@ -159,8 +159,8 @@ class BackgroundListMixin:
 
     def _bg_label_mode_icon(self, kind):
         """Paint a tiny mode glyph: list rows or count bars."""
-        from PyQt5.QtGui import QPixmap, QPainter, QColor, QPen
-        from PyQt5.QtCore import Qt
+        from PySide6.QtGui import QPixmap, QPainter, QColor, QPen
+        from PySide6.QtCore import Qt
         size = 14
         pm = QPixmap(size, size)
         pm.fill(Qt.transparent)
@@ -210,7 +210,7 @@ class BackgroundListMixin:
             'unannotated': tr("筛选：未标注"),
             'empty': tr("筛选：空标签"),
         }
-        from PyQt5.QtCore import QSize
+        from PySide6.QtCore import QSize
         from ...engine.image_loader import _status_icon
         icon_key = mode if mode in ('all', 'annotated', 'unannotated', 'empty') else 'all'
         btn.setText("")
@@ -372,7 +372,7 @@ class BackgroundListMixin:
             self._refresh_bg_filter_button()
             if self.background_images and saved < len(self.background_images):
                 self.current_background_index = saved
-                from PyQt5.QtGui import QPixmap
+                from PySide6.QtGui import QPixmap
                 pixmap = QPixmap(self.background_images[saved])
                 if not pixmap.isNull():
                     self.current_background = pixmap
@@ -389,14 +389,14 @@ class BackgroundListMixin:
                 sc.setEnabled(True)
             if hasattr(self, 'draw_box_btn'):
                 self.draw_box_btn.setEnabled(True)
-        from PyQt5.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         mode_text = "Removed" if self._is_delete_view else "Work"
         self.status_label.setText(f"Path: {mode_text}")
         QTimer.singleShot(2000, lambda: self.status_label.setText(""))
 
     def _on_refresh_bg_list(self):
         """刷新按钮：就地重扫文件夹增删列表项，不重新导入、不丢未保存标注。"""
-        from PyQt5.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         changed, added, removed = self.refresh_background_list()
         if not hasattr(self, 'status_label'):
             return
@@ -454,8 +454,8 @@ class BackgroundListMixin:
         path = self._bg_path_for_item(item, lst.row(item), files)
         if not path:
             return
-        from PyQt5.QtWidgets import QMenu
-        from PyQt5.QtGui import QGuiApplication
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QGuiApplication
         from ..i18n import t as tr
         menu = QMenu(self)
         copy_action = menu.addAction(tr("复制图片路径"))
@@ -475,7 +475,7 @@ class BackgroundListMixin:
         for i, path in enumerate(self.background_images):
             ext = os.path.splitext(path)[1].lower()
             if ext in SUPPORTED_IMAGE_EXTENSIONS:
-                from PyQt5.QtWidgets import QListWidgetItem
+                from PySide6.QtWidgets import QListWidgetItem
                 item = QListWidgetItem(self._display_path_for(path))
                 # 扫描过的图直接用已知状态；只对没扫过的做廉价判定，
                 # 否则切回工作路径时已标注的图会退回「扫描中」灰圈。
@@ -494,7 +494,7 @@ class BackgroundListMixin:
         elif self.background_images:
             self.current_background_index = 0
             self.background_list.setCurrentRow(0)
-            from PyQt5.QtGui import QPixmap
+            from PySide6.QtGui import QPixmap
             pixmap = QPixmap(self.background_images[0])
             if not pixmap.isNull():
                 self.current_background = pixmap
@@ -547,7 +547,7 @@ class BackgroundListMixin:
 
     def _load_delete_image(self, idx):
         """加载移除路径图片到画布"""
-        from PyQt5.QtGui import QPixmap
+        from PySide6.QtGui import QPixmap
         if 0 <= idx < len(self._delete_files):
             pixmap = QPixmap(self._delete_files[idx])
             if not pixmap.isNull():
@@ -587,7 +587,7 @@ class BackgroundListMixin:
         new_idx = min(idx, len(self.background_images) - 1)
         if self.background_images:
             self.current_background_index = new_idx
-            from PyQt5.QtGui import QPixmap
+            from PySide6.QtGui import QPixmap
             pixmap = QPixmap(self.background_images[new_idx])
             if not pixmap.isNull():
                 self.current_background = pixmap

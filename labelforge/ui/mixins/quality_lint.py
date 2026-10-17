@@ -208,7 +208,7 @@ class QualityLintMixin:
         timer = getattr(self, '_lint_refresh_timer', None)
         if timer is None:
             try:
-                from PyQt5.QtCore import QTimer
+                from PySide6.QtCore import QTimer
                 timer = QTimer(self)
                 timer.setSingleShot(True)
                 timer.setInterval(250)

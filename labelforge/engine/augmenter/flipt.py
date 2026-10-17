@@ -1,6 +1,6 @@
 from typing import List, Tuple
 
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 
 from .base import BaseTransform, register_transform
 

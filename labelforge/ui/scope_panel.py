@@ -8,15 +8,16 @@
 区域沿用画布上的临时区域（`region_boxes`），「编辑区域」直接在背景图上画。
 
 **只有选中「滑窗」时滑窗参数才可用**，选中「区域」时同理只有区域相关可用；
-未选中的那一组禁用且隐藏（用户要求「未选中滑窗时不能修改点击」）。
+未选中的那一组**置灰但不隐藏**——用户要的是「未选中滑窗时不能修改点击」，
+同时还能一眼看到另外两种模式当前的参数与区域，不必来回切换核对。
 
 面板是**非模态**的：弹窗开着时用户仍要点画布画区域，模态会吃掉发往画布的
 鼠标事件（Qt 只把输入送给模态窗及其子窗口），那样「点编辑区域直接在图上画」
 根本用不了。面板只负责收集选择，校验与快照由 `mixins/inference.py` 在启动
 任务前完成。
 """
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
     QDialog, QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QPushButton, QRadioButton, QVBoxLayout, QWidget,
 )
@@ -45,19 +46,19 @@ class ScopePanel(QDialog):
 
     # 关闭（只剩直接关这一条路径）时让宿主收尾：结束区域绘制会话、撤掉画布
     # 上的范围提示。非模态后不再有 `exec_()` 的返回值可看，改由信号通知。
-    finished_ok = pyqtSignal(bool)
+    finished_ok = Signal(bool)
     # 面板状态变了（切模式/改窗口参数/区域数变化）→ 宿主重画主画布上的
     # 网格与区域轮廓。网格不再有面板内的小预览图，只能靠这条信号驱动。
-    overlay_changed = pyqtSignal()
+    overlay_changed = Signal()
     # 点了某条区域右侧的删除：带区域下标回宿主（由宿主删真身并刷新画布）。
     # 面板不直接改 `region_boxes`——它拿到的只是一份用于显示的拷贝，
     # 自己删改会和画布上的真身脱节。
-    region_delete_requested = pyqtSignal(int)
+    region_delete_requested = Signal(int)
     # 点了「添加区域」：请宿主在画布上进入一次性绘制态（点一下画一个）。
     # 面板自己不画——绘制要拿画布坐标、还要临时框预览，只有画布能做。
-    add_region_requested = pyqtSignal()
+    add_region_requested = Signal()
     # 某条区域的锁被切换：(区域下标, 是否锁定)。同样回宿主落到真身上。
-    region_lock_toggled = pyqtSignal(int, bool)
+    region_lock_toggled = Signal(int, bool)
 
     def __init__(self, windows=None, mode=MODE_FULL, region_count=0,
                  reference_size=None, parent=None):
@@ -243,8 +244,8 @@ class ScopePanel(QDialog):
         三个按钮各占一行、父控件不同就已经不自动互斥了；改成三段分组框后更是
         各在各自的 `QGroupBox` 里，互斥彻底失效。
 
-        也不用 QButtonGroup：本项目的 PyQt5 在某些导入路径下 `QtWidgets` 是
-        半初始化模块（`QButtonGroup` 取不到），显式写反而更稳。
+        也不用 QButtonGroup：测试桩（`tests/conftest.py` 的假 QtWidgets）没注册
+        `QButtonGroup`，所以显式维护三个按钮的选中状态。
 
         这里**不能**按「保留 checked[0]、清掉其余」来写：`checked` 是按字典序
         （full, window, roi）收集的，从「滑窗」点「区域」时得到

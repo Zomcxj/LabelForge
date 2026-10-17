@@ -43,8 +43,8 @@ def _lines(out):
 
 _LOADED = """
 import os, shutil, tempfile
-from PyQt5.QtWidgets import QApplication, QListWidgetItem
-from PyQt5.QtGui import QPixmap, QImage
+from PySide6.QtWidgets import QApplication, QListWidgetItem
+from PySide6.QtGui import QPixmap, QImage
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])
@@ -145,7 +145,7 @@ def test_refresh_still_works_when_the_folder_exists():
     """
     out = _run_real_qt(_LOADED + """
 import os
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 w, tmp, paths = make_editor()
 
 # 1) 无变化：不动

@@ -2,7 +2,8 @@
 
 背景：Qt 与 onnxruntime 各带一份 MSVC 运行时。版本不一致时先加载的那份会留在
 进程里，之后加载的库只能绑到它身上；旧运行时缺新符号，调用即 0xC0000005。
-PyQt5 的 Qt5\\bin\\MSVCP140.dll 是 2020 年的 14.26，正好踩中这一点，
+Qt 附带的那份曾经停在 2020 年的 14.26（PyQt5 时代的 `Qt5\\bin\\MSVCP140.dll`；
+PySide6 放在包根 `PySide6\\msvcp140.dll`）正好踩中这一点，
 表现为打包后点「推理」直接闪退、日志里没有 Python traceback。
 """
 import os
@@ -43,11 +44,11 @@ def fake_versions(monkeypatch):
 
 
 def test_older_runtime_entries_are_replaced_by_newest(fake_versions, tmp_path):
-    """旧版本（如 PyQt5 自带的 14.26）必须被换成包内最高版本。"""
+    """旧版本（如 Qt 自带的 14.26）必须被换成包内最高版本。"""
     old = _make_fake_runtime(tmp_path, (0xE001A, 0x70000000))
     new = _make_fake_runtime(tmp_path, (0xE0033, 0x8D000000))
     toc = [
-        (r"PyQt5\Qt5\bin\MSVCP140.dll", os.path.join(old, "msvcp140.dll"), "BINARY"),
+        (r"PySide6\msvcp140.dll", os.path.join(old, "msvcp140.dll"), "BINARY"),
         ("msvcp140.dll", os.path.join(new, "msvcp140.dll"), "BINARY"),
     ]
 
@@ -62,7 +63,7 @@ def test_destination_paths_and_count_are_unchanged(fake_versions, tmp_path):
     old = _make_fake_runtime(tmp_path, (0xE001A, 0x1))
     new = _make_fake_runtime(tmp_path, (0xE0033, 0x2))
     toc = [
-        (r"PyQt5\Qt5\bin\MSVCP140.dll", os.path.join(old, "msvcp140.dll"), "BINARY"),
+        (r"PySide6\msvcp140.dll", os.path.join(old, "msvcp140.dll"), "BINARY"),
         ("msvcp140.dll", os.path.join(new, "msvcp140.dll"), "BINARY"),
         ("labelforge/main.py", r"D:\x\main.py", "PYSOURCE"),
     ]
@@ -263,7 +264,7 @@ def test_build_script_checks_runtime_dependencies_before_building():
 
     assert "check_python_deps" in source
     # 四个运行时依赖都要查：cv2 漏收最隐蔽，其余缺了会当场炸但也一并挡掉
-    for name in ("cv2", "PyQt5", "numpy", "onnxruntime"):
+    for name in ("cv2", "PySide6", "numpy", "onnxruntime"):
         assert name in source, name
     # 自检必须在真正调用 PyInstaller 之前（第 350 行那处 echo "$PYINSTALLER_CMD"）
     check_at = source.index("check_python_deps cv2")

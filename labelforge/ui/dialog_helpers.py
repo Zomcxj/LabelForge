@@ -1,6 +1,6 @@
 """对话框辅助函数：统一标题栏主题和按钮文字。"""
-from PyQt5.QtCore import QTimer, QPoint
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import QTimer, QPoint
+from PySide6.QtWidgets import (
     QDialog, QInputDialog, QMessageBox, QColorDialog, QLabel, QPushButton, QApplication,
 )
 
@@ -210,7 +210,7 @@ class ThemedMultiLineDialog(QDialog):
         self._build_ui()
 
     def _build_ui(self):
-        from PyQt5.QtWidgets import (
+        from PySide6.QtWidgets import (
             QDialogButtonBox, QPlainTextEdit, QVBoxLayout,
         )
         self._theme = ThemeManager.get_theme()

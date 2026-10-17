@@ -1,7 +1,7 @@
 """数据集健康自绘图表：QPainter 条形图 / 直方图，无第三方依赖。"""
-from PyQt5.QtWidgets import QWidget
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPainter, QColor, QPen
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPainter, QColor, QPen
 
 from ..theme import ThemeManager
 
@@ -123,9 +123,9 @@ class HealthBarChart(QWidget):
             row_h = max(text_h, h // max(1, len(self._items)))
             labels = [str(i.get('label', '')) for i in self._items]
             value_labels = [_bar_label(v, total) for v in values]
-            left_w = min(max([fm.width(s) for s in labels] + [0]) + 8,
+            left_w = min(max([fm.horizontalAdvance(s) for s in labels] + [0]) + 8,
                          max(20, w // 3))
-            right_w = min(max([fm.width(s) for s in value_labels] + [0]) + 8,
+            right_w = min(max([fm.horizontalAdvance(s) for s in value_labels] + [0]) + 8,
                           max(20, w // 3))
             bar_area_w = max(10, w - left_w - right_w)
             for idx, item in enumerate(self._items):

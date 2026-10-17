@@ -5,7 +5,7 @@
 """
 import os
 
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from ..engine import inference_task
 from ..engine.inference_image import qimage_to_rgb_array, resize_for_model
@@ -15,7 +15,7 @@ from .i18n import t as tr
 
 def load_rgb(path):
     """读图并转成模型输入用的 RGB 数组；读不出来返回 None。"""
-    from PyQt5.QtGui import QImage
+    from PySide6.QtGui import QImage
     image = QImage(path)
     if image.isNull():
         return None
@@ -28,10 +28,10 @@ class ModelLoadWorker(QThread):
     need_class_names 表示模型同级没有同名 txt、模型自身也没有类别表，
     必须让用户提供；此时不加载模型，由界面收集后带着类别名重新发起。
     """
-    loaded = pyqtSignal(object, object, object)     # detector, size, class_source
+    loaded = Signal(object, object, object)     # detector, size, class_source
     # model_path, 建议的 txt 路径, 模型需要的类别数（推不出为 None）
-    need_class_names = pyqtSignal(str, str, object)
-    failed = pyqtSignal(str)
+    need_class_names = Signal(str, str, object)
+    failed = Signal(str)
 
     def __init__(self, model_path, class_names=None, settings=None, parent=None):
         super().__init__(parent)
@@ -92,10 +92,10 @@ class InferenceWorker(QThread):
     每张跑完就通过 `result_ready` 把结果发回主线程，由主线程立刻写盘并刷新
     列表圆点；worker 自己不动磁盘（Qt 对象与 editor 状态都归主线程）。
     """
-    progress = pyqtSignal(int, int, object, int, int)
-    result_ready = pyqtSignal(int, object)
-    finished_ok = pyqtSignal(object)
-    failed = pyqtSignal(str)
+    progress = Signal(int, int, object, int, int)
+    result_ready = Signal(int, object)
+    finished_ok = Signal(object)
+    failed = Signal(str)
 
     def __init__(self, paths, keys, detector, class_filter=None, scope=None,
                  parent=None):
@@ -158,9 +158,9 @@ def read_saved_class_names(path):
 
 class VideoExtractWorker(QThread):
     """后台抽帧。progress: (done, total)；完成后带回 ExtractionResult。"""
-    progress = pyqtSignal(int, int)
-    finished_ok = pyqtSignal(object)
-    failed = pyqtSignal(str)
+    progress = Signal(int, int)
+    finished_ok = Signal(object)
+    failed = Signal(str)
 
     def __init__(self, video_path, target_fps, start=None, end=None,
                  image_format="jpg", quality=95, parent=None):
@@ -198,9 +198,9 @@ class VideoComposeWorker(QThread):
     `render` 给一个 `video_render.RenderSpec` 时在画面上叠加标签框；
     类别色必须由主线程预先取好放进 spec，后台不能去读 editor 的取色。
     """
-    progress = pyqtSignal(int, int)
-    finished_ok = pyqtSignal(object)
-    failed = pyqtSignal(str)
+    progress = Signal(int, int)
+    finished_ok = Signal(object)
+    failed = Signal(str)
 
     def __init__(self, output_path, manifest_path=None, images_dir=None,
                  output_fps=None, render=None, parent=None,
@@ -244,9 +244,9 @@ class VideoRenderWorker(QThread):
     必须能取消。`render`/`scope`/`class_filter` 都由主线程定稿后传入——
     `get_label_color()` 会写缓存与配置，后台线程不能调用它。
     """
-    progress = pyqtSignal(int, int)
-    finished_ok = pyqtSignal(object)
-    failed = pyqtSignal(str)
+    progress = Signal(int, int)
+    finished_ok = Signal(object)
+    failed = Signal(str)
 
     def __init__(self, video_path, detector, output_path=None, resize_fn=None,
                  scope=None, render=None, class_filter=None, parent=None):

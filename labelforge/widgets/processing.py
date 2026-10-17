@@ -1,5 +1,5 @@
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtWidgets import QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QWidget
+from PySide6.QtCore import Qt, QTimer, QThread, Signal
+from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QWidget
 
 
 class _ScanSpinnerWidget(QLabel):
@@ -40,10 +40,10 @@ class _ScanSpinnerWidget(QLabel):
 
 
 class Worker(QThread):
-    log = pyqtSignal(str)
-    progress = pyqtSignal(int, int, str)
-    result_ready = pyqtSignal(object)
-    error = pyqtSignal(str)
+    log = Signal(str)
+    progress = Signal(int, int, str)
+    result_ready = Signal(object)
+    error = Signal(str)
 
     def __init__(self, func):
         super().__init__()

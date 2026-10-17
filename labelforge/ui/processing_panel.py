@@ -4,8 +4,8 @@ import shutil
 from datetime import datetime
 from typing import List
 
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (
     QApplication, QCheckBox, QDialog, QDoubleSpinBox, QFileDialog,
     QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
@@ -414,7 +414,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
 
     def _get_image_size(self, img_path):
         try:
-            from PyQt5.QtGui import QImage
+            from PySide6.QtGui import QImage
             img = QImage(img_path)
             if not img.isNull():
                 return img.width(), img.height()
@@ -478,7 +478,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         return True
 
     def _confirm_clear(self, path):
-        from PyQt5.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
         box.setWindowTitle(tr("清空"))

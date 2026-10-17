@@ -539,8 +539,8 @@ def test_stats_health_payload_discarded_after_rename_bump_real_qt():
 
     root = Path(__file__).resolve().parents[1]
     script = '''
-from PyQt5.QtCore import QObject, Qt
-from PyQt5.QtWidgets import (QApplication, QDialog, QVBoxLayout, QLabel,
+from PySide6.QtCore import QObject, Qt
+from PySide6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QLabel,
                              QTableWidget, QTableWidgetItem)
 from labelforge.ui.mixins.stats import StatsMixin
 

@@ -364,12 +364,12 @@ def health_advice(stats):
     return advice or [_advice_item("未发现明显失衡")]
 
 
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 
 class DatasetHealthWorker(QThread):
     """后台扫描数据集并计算健康统计。"""
-    health_ready = pyqtSignal(object)
+    health_ready = Signal(object)
 
     def __init__(self, image_paths, memory_boxes=None, canvas_items_dict=None,
                  parent=None):

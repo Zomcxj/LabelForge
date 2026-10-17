@@ -1,5 +1,5 @@
 """
-pytest conftest - 在收集测试前 mock PyQt5
+pytest conftest - 在收集测试前 mock PySide6
 使用真实类继承，避免 metaclass 冲突
 """
 import sys
@@ -23,7 +23,7 @@ del _os, _tempfile
 
 # 子进程默认使用当前测试解释器；需要指定其他解释器时显式设置环境变量
 import os as _os
-_sub = _os.environ.get('PASTELABEL_SUBPROC_PYTHON')
+_sub = _os.environ.get('LABELFORGE_SUBPROC_PYTHON')
 if _sub and _os.path.exists(_sub):
     sys.executable = _sub
 del _os, _sub
@@ -38,7 +38,7 @@ def _make_mock_module(name):
     for attr in [
         'QPoint', 'Qt', 'QUrl', 'QSize', 'QTimer', 'QRectF', 'QRect',
         'QPropertyAnimation', 'QEasingCurve',
-        'pyqtSignal', 'QObject', 'QPixmap', 'QPainter', 'QColor', 'QIcon',
+        'Signal', 'QObject', 'QPixmap', 'QPainter', 'QColor', 'QIcon',
         'QFont', 'QFontDatabase', 'QEvent', 'QKeySequence', 'QImage',
         'QStandardItem', 'QStandardItemModel', 'QSortFilterProxyModel',
         'QValidator', 'QRegExp', 'QDesktopWidget', 'QApplication',
@@ -347,7 +347,7 @@ class _MockQApplication:
 
 # ========== 构建 mock 模块 ==========
 
-qtcore = types.ModuleType('PyQt5.QtCore')
+qtcore = types.ModuleType('PySide6.QtCore')
 qtcore.Qt = type('Qt', (), {
     'Key_A': 0x41, 'Key_D': 0x44, 'Key_R': 0x52, 'Key_T': 0x54,
     'Key_W': 0x57, 'Key_Q': 0x51, 'Key_E': 0x45, 'Key_G': 0x47,
@@ -407,10 +407,10 @@ qtcore.QMimeData = type('QMimeData', (), {
     'setUrls': lambda self, *a: None,
 })
 qtcore.qInstallMessageHandler = lambda *a: None
-qtcore.pyqtSignal = lambda *a, **kw: type('Signal', (), {'connect': lambda self, f: None})()
+qtcore.Signal = lambda *a, **kw: type('Signal', (), {'connect': lambda self, f: None})()
 
 class _MockQObject:
-    """QObject mock - 支持继承和 pyqtSignal 作为类属性"""
+    """QObject mock - 支持继承和 Signal 作为类属性"""
     def __init__(self, *a, **kw):
         pass
     def connect(self, *a): pass
@@ -418,7 +418,7 @@ class _MockQObject:
 
 qtcore.QObject = _MockQObject
 
-qtgui = types.ModuleType('PyQt5.QtGui')
+qtgui = types.ModuleType('PySide6.QtGui')
 qtgui.QPixmap = type('QPixmap', (), {
     '__init__': lambda self, *a: None,
     'isNull': lambda self: False,
@@ -451,6 +451,7 @@ qtgui.QPainter = type('QPainter', (), {
     'end': lambda self: None,
     'font': lambda self: type('F', (), {'pointSize': lambda: 12})(),
     'fontMetrics': lambda self: type('FM', (), {
+        'horizontalAdvance': lambda s, *a: 50,
         'width': lambda s, *a: 50,
         'height': lambda s: 16,
         'elidedText': lambda s, text, *a: text,
@@ -462,6 +463,7 @@ qtgui.QPen = type('QPen', (), {
 })
 qtgui.QFontMetrics = type('QFontMetrics', (), {
     '__init__': lambda self, *a: None,
+    'horizontalAdvance': lambda self, *a: 50,
     'width': lambda self, *a: 50,
     'height': lambda self: 20,
 })
@@ -481,8 +483,16 @@ qtgui.QDropEvent = type('QDropEvent', (), {'__init__': lambda self, *a: None})
 qtgui.QDrag = type('QDrag', (), {'__init__': lambda self, *a: None, 'exec_': lambda self, *a: 0})
 qtgui.QFontDatabase = type('QFontDatabase', (), {'addApplicationFont': staticmethod(lambda *a: 0)})
 qtgui.QImage = type('QImage', (), {'Format_ARGB32': 5})
+# Qt6 把 QAction / QShortcut 从 QtWidgets 挪到了 QtGui；源码按新位置导入，
+# mock 也得跟着挪，否则 `from PySide6.QtGui import QAction` 在收集期就炸。
+qtgui.QAction = type('QAction', (), {'__init__': lambda self, *a: None})
+qtgui.QShortcut = type('QShortcut', (_MockQWidget,), {
+    '__init__': lambda self, *a, **kw: None,
+    'setContext': lambda self, *a: None,
+    'activated': type('Signal', (), {'connect': lambda self, f: None})(),
+})
 
-qtwidgets = types.ModuleType('PyQt5.QtWidgets')
+qtwidgets = types.ModuleType('PySide6.QtWidgets')
 qtwidgets.QWidget = _MockQWidget
 qtwidgets.QMainWindow = _MockQMainWindow
 qtwidgets.QDialog = _MockQDialog
@@ -599,7 +609,6 @@ qtwidgets.QMenu = type('QMenu', (_MockQWidget,), {
     'addSeparator': lambda self: None,
     'exec_': lambda self, *a: None,
 })
-qtwidgets.QAction = type('QAction', (), {'__init__': lambda self, *a: None})
 qtwidgets.QWidgetAction = type('QWidgetAction', (), {
     '__init__': lambda self, *a: None,
     'setDefaultWidget': lambda self, *a: None,
@@ -701,14 +710,8 @@ qtwidgets.QSlider = type('QSlider', (_MockQWidget,), {
     'blockSignals': lambda self, *a: None,
     'valueChanged': type('Signal', (), {'connect': lambda self, f: None})(),
 })
-qtwidgets.QShortcut = type('QShortcut', (_MockQWidget,), {
-    '__init__': lambda self, *a, **kw: None,
-    'setContext': lambda self, *a: None,
-    'activated': type('Signal', (), {'connect': lambda self, f: None})(),
-})
-
 # 注册模块
-sys.modules['PyQt5'] = types.ModuleType('PyQt5')
-sys.modules['PyQt5.QtCore'] = qtcore
-sys.modules['PyQt5.QtGui'] = qtgui
-sys.modules['PyQt5.QtWidgets'] = qtwidgets
+sys.modules['PySide6'] = types.ModuleType('PySide6')
+sys.modules['PySide6.QtCore'] = qtcore
+sys.modules['PySide6.QtGui'] = qtgui
+sys.modules['PySide6.QtWidgets'] = qtwidgets

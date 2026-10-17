@@ -97,7 +97,7 @@ def test_status_survives_a_view_switch(tmp_path):
 
     script = f'''
 import os
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 
 from labelforge.ui.main_window import ImageEditor
@@ -138,7 +138,7 @@ def test_saving_a_row_updates_the_cached_status(tmp_path):
         encoding='utf-8')
 
     script = f'''
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 
 from labelforge.ui.main_window import ImageEditor
@@ -152,7 +152,7 @@ ed.current_background_index = 0
 ed._bg_status_by_path = {{r"{img.as_posix()}": "pending"}}
 ed._show_work_view()
 
-from PyQt5.QtWidgets import QListWidgetItem
+from PySide6.QtWidgets import QListWidgetItem
 ed._refresh_background_item_status(0, r"{img.as_posix()}")
 assert ed._bg_status_by_path[r"{img.as_posix()}"] == "annotated", \
     ed._bg_status_by_path

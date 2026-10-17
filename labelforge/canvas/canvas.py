@@ -1,8 +1,8 @@
 """
 Canvas 控件 - 由 CanvasRendererMixin + CanvasInteractionMixin 组合而成
 """
-from PyQt5.QtWidgets import QWidget
-from PyQt5.QtCore import Qt, QPoint, QRectF
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Qt, QPoint, QRectF
 
 from ..core.config import BACKGROUND_SCALE_CONFIG, WINDOW_CONFIG
 from ..core.utils import format_size_ratio

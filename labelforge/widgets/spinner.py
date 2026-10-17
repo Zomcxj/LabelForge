@@ -1,6 +1,6 @@
-from PyQt5.QtWidgets import QWidget
-from PyQt5.QtGui import QPainter, QColor, QPen
-from PyQt5.QtCore import Qt, QTimer, QRectF
+from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QPainter, QColor, QPen
+from PySide6.QtCore import Qt, QTimer, QRectF
 
 
 class _SpinnerWidget(QWidget):
@@ -47,6 +47,6 @@ class _SpinnerWidget(QWidget):
 
     def adjustSize(self):
         fm = self.fontMetrics()
-        tw = fm.horizontalAdvance(self._text) if hasattr(fm, 'horizontalAdvance') else fm.width(self._text)
+        tw = fm.horizontalAdvance(self._text)
         w = max(180, 50 + tw + 20)
         self.setFixedSize(w, 60)

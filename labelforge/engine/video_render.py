@@ -4,7 +4,7 @@
 模块必须用 Qt——`cv2.putText` 画不出中文，只能 `QImage`/`QPainter` 离屏。
 
 两条硬约束：
-- **不在模块级导入 PyQt5**，让不需要绘制的路径（清单校验、纯逻辑测试）
+- **不在模块级导入 Qt**，让不需要绘制的路径（清单校验、纯逻辑测试）
   能在无 Qt 环境下导入。
 - **颜色必须由调用方预先取好传进来**：`editor.get_label_color()` 会写
   缓存和配置，后台线程不能碰它，主线程先算好 `label_colors` 再交给 worker。
@@ -142,20 +142,24 @@ def _rect_points(box):
 def _buffer(qimage, writable):
     """QImage 像素缓冲的 numpy 视图。
 
-    sip.voidptr 不带长度信息，`np.frombuffer` 前必须先 `setsize`，
-    否则报「unknown size」。
+    PySide6 的 `bits()` / `constBits()` 直接返回带长度的 `memoryview`，
+    `np.frombuffer` 可以直接用；PyQt5 那套「先 `setsize` 再 frombuffer」
+    在这里不存在（`memoryview` 没有 `setsize`）。
+
+    **返回的视图不持有 `qimage`**（实测 `memoryview.obj is None`）：调用方必须
+    在视图存活期间自己保活那张 QImage，否则内存回收后读到随机像素、且不报错。
+    本文件的使用者都在同一函数内用完，别再让视图外泄。
     """
     pointer = qimage.bits() if writable else qimage.constBits()
-    pointer.setsize(qimage.byteCount())
     return np.frombuffer(pointer, np.uint8)
 
 
 def _copy_into_qimage(qimage, canvas):
     """把 HxWx3 连续 RGB 拷贝进 QImage 自己的内存。
 
-    不能写 `QImage(canvas.data, ...)`：PyQt5 在那个构造下会隐式脱离外部
-    缓冲（copy-on-write），QPainter 画进的是 QImage 内部的副本，numpy
-    数组一个像素都不会变，而且不报错。只能拷贝进去、画完再读回来。
+    `QImage(canvas.data, ...)` 是**零拷贝**：QImage 只是包住那块外部缓冲，
+    像素所有权不在 QImage 手上。这里显式拷进去、画完再读回结果，让像素
+    归属 QImage，不依赖调用方是否保活那块数组。
 
     行步长 `bytesPerLine` 可能有尾部补齐，逐行只拷贝有效像素。
     """
@@ -195,8 +199,8 @@ def _draw_label(painter, anchor_x, anchor_y, text, bg_color, font):
     字比条小一大截——1080p 下条子 27px 高、字只有十几像素。
     画布那条路（`_draw_label_above_rect`）设了字体，只有这里漏了。
     """
-    from PyQt5.QtCore import QRectF, Qt
-    from PyQt5.QtGui import QColor, QFontMetrics
+    from PySide6.QtCore import QRectF, Qt
+    from PySide6.QtGui import QColor, QFontMetrics
 
     metrics = QFontMetrics(font)
     text_width = metrics.horizontalAdvance(text)
@@ -220,8 +224,8 @@ def draw_boxes(image_rgb, boxes, spec=None):
     再传进来，否则颜色会红蓝颠倒。
     """
     spec = spec or RenderSpec()
-    from PyQt5.QtCore import QPointF, QRectF, Qt
-    from PyQt5.QtGui import (QColor, QFont, QImage, QPainter, QPen,
+    from PySide6.QtCore import QPointF, QRectF, Qt
+    from PySide6.QtGui import (QColor, QFont, QImage, QPainter, QPen,
                              QPolygonF)
 
     # 输入必须转成连续 uint8 副本：非连续数组（切片视图）行步长对不上，

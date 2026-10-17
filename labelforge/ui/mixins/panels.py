@@ -1,7 +1,7 @@
 """Panels UI building mixin."""
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QPushButton
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt, QTimer, QRect
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QPushButton
+from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QTimer, QRect
 from ...canvas import Canvas
 from ...widgets.canvas_adjustment import CanvasAdjustmentWidget
 from ...widgets.spinner import _SpinnerWidget
@@ -13,7 +13,7 @@ class PanelsMixin:
 
     def _create_splitter(self):
         """创建分割器"""
-        from PyQt5.QtWidgets import QSizePolicy
+        from PySide6.QtWidgets import QSizePolicy
 
         canvas_widget = QWidget()
         canvas_layout = QVBoxLayout(canvas_widget)
@@ -87,9 +87,12 @@ class PanelsMixin:
             self.canvas.apply_brightness_contrast(brightness, contrast)
 
     def eventFilter(self, obj, event):
+        # 枚举写成 `QEvent.Type.Resize`：PySide6 只把枚举挂在类上，实例上取不到
+        # （`event.Resize` 会 AttributeError），PyQt5 那套实例访问在这里不成立。
+        from PySide6.QtCore import QEvent
         if (hasattr(self, '_canvas_scroll_area') and
                 obj == self._canvas_scroll_area.viewport() and
-                event.type() == event.Resize):
+                event.type() == QEvent.Type.Resize):
             self._position_canvas_adjustment(self._canvas_scroll_area)
         return super().eventFilter(obj, event)
 
@@ -113,7 +116,7 @@ class PanelsMixin:
 
     def _update_side_panel_stretches(self):
         """Equal height among expanded sections; collapsed keep header only."""
-        from PyQt5.QtWidgets import QSizePolicy
+        from PySide6.QtWidgets import QSizePolicy
 
         layout = getattr(self, '_side_control_layout', None)
         sections = getattr(self, '_side_sections', None) or []

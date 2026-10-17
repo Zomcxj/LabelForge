@@ -49,14 +49,14 @@ jobs:
           key: pip-linux-python312-${{ hashFiles('requirements*.txt') }}
           restore-keys: pip-linux-python312-
 
-      - name: Build with PyInstaller (Linux, Docker ubuntu:18.04)
+      - name: Build with PyInstaller (Linux, Docker ubuntu:22.04)
         if: runner.os == 'Linux'
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -v "${{ runner.temp }}/labelforge-pip-cache:/root/.cache/pip" \
             -w /workspace \
-            ubuntu:18.04 \
+            ubuntu:22.04 \
             bash -c "
               set -e
               export DEBIAN_FRONTEND=noninteractive
@@ -68,8 +68,8 @@ jobs:
 
               curl -fsSL https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -o /tmp/miniforge.sh
               bash /tmp/miniforge.sh -b -p /opt/conda
-              /opt/conda/bin/conda install -y python=3.12 pyqt
-              /opt/conda/bin/python -m pip install -q pyinstaller numpy onnxruntime 'opencv-python-headless>=4.10,<4.11'
+              /opt/conda/bin/conda install -y python=3.12
+              /opt/conda/bin/python -m pip install -q pyinstaller PySide6 numpy onnxruntime 'opencv-python-headless>=4.10,<4.11'
 
               /opt/conda/bin/python -m PyInstaller labelforge/LabelForge.spec --noconfirm
             "

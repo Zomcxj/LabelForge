@@ -2,8 +2,9 @@
 Canvas 右键菜单 - 贴图标签管理
 """
 import os
-from PyQt5.QtWidgets import QMenu, QAction
-from PyQt5.QtCore import Qt, QPoint
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QMenu
+from PySide6.QtCore import Qt, QPoint
 
 from ..core.utils import extract_label_name
 from ..ui import dialog_helpers
@@ -431,7 +432,7 @@ class CanvasMenuMixin:
         background_rect = self.get_background_rect()
         if not background_rect:
             return None
-        from PyQt5.QtCore import QRectF
+        from PySide6.QtCore import QRectF
         from ..core.config import DETECTION_BOX_CONFIG
         from ..engine.shape_io import point_in_polygon
         mx, my = mouse_pos.x(), mouse_pos.y()
@@ -589,7 +590,7 @@ class CanvasMenuMixin:
         current_label = self._editor.detection_boxes[box_index].get("label", "")
         anchor = None
         try:
-            from PyQt5.QtGui import QCursor
+            from PySide6.QtGui import QCursor
             anchor = QCursor.pos()
         except Exception:
             anchor = None
@@ -886,7 +887,7 @@ class CanvasMenuMixin:
         new_idx = min(idx, len(self._editor.background_images) - 1)
         if self._editor.background_images:
             self._editor.current_background_index = new_idx
-            from PyQt5.QtGui import QPixmap
+            from PySide6.QtGui import QPixmap
             pixmap = QPixmap(self._editor.background_images[new_idx])
             if not pixmap.isNull():
                 self._editor.current_background = pixmap

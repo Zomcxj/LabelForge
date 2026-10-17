@@ -3,9 +3,9 @@
 """
 import os
 import random
-from PyQt5.QtWidgets import QProgressDialog, QApplication
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt, QRectF
+from PySide6.QtWidgets import QProgressDialog, QApplication
+from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QRectF
 
 from ..core.config import RANDOM_POSITION_CONFIG, PASTE_ITEM_CONFIG
 from ..core.utils import extract_label_name, calculate_iou

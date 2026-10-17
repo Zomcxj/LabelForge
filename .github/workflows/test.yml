@@ -28,7 +28,7 @@ jobs:
 
       - name: Install test dependencies
         # onnx 仅测试用：现场生成合成模型供端到端测试，运行时不需要
-        run: pip install pytest numpy PyQt5 onnxruntime onnx 'opencv-python-headless>=4.10,<4.11'
+        run: pip install pytest numpy PySide6 onnxruntime onnx 'opencv-python-headless>=4.10,<4.11'
 
       - name: Run tests
         run: pytest tests/ -q

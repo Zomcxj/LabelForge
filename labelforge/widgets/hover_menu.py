@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMenu
+from PySide6.QtWidgets import QMenu
 
 
 class HoverKeepMenu(QMenu):

@@ -215,7 +215,8 @@ def _run_qt(script):
 _PRELUDE = '''
 import json, os, sys, tempfile
 sys.path.insert(0, r"%s")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
 app = QApplication([])
 import numpy as np
 import cv2
@@ -278,7 +279,7 @@ dir1 = make_dir({"a.png": ["person", "car"], "b.png": ["person"]})
 d.set_compose_dir(dir1)
 names = [d.compose_label_list.item(i).text()
          for i in range(d.compose_label_list.count())]
-states = [d.compose_label_list.item(i).checkState()
+states = [d.compose_label_list.item(i).checkState().value
           for i in range(d.compose_label_list.count())]
 overlay_on = d.compose_overlay_check.isChecked()
 settings = compose_settings(d)
@@ -319,7 +320,7 @@ d = VideoDialog()
 d.set_compose_dir(make_dir({"a.png": ["person", "car"], "b.png": ["person"]}))
 # 列表按出现次数排序：person(2) 在前，car(1) 在后；取消 car（第 2 项）
 item = d.compose_label_list.item(1)
-item.setCheckState(0)
+item.setCheckState(Qt.Unchecked)
 render = compose_settings(d)["render"]
 print("RESULT", repr((render["labels"], d.compose_label_list.item(0).text())))
 ''')

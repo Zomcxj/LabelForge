@@ -1,8 +1,8 @@
 import random
 from typing import List, Tuple
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QImage, QPainter
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage, QPainter
 
 from .base import BaseTransform, register_transform, map_box_points
 

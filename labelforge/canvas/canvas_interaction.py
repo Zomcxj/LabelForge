@@ -2,8 +2,8 @@
 Canvas 交互混入 - 鼠标/键盘事件入口、拖拽、缩放
 """
 import os
-from PyQt5.QtCore import Qt, QRectF, QUrl, QMimeData
-from PyQt5.QtGui import QDrag
+from PySide6.QtCore import Qt, QRectF, QUrl, QMimeData
+from PySide6.QtGui import QDrag
 
 from ..core.config import BACKGROUND_SCALE_CONFIG, PASTE_ITEM_CONFIG, NUDGE_CONFIG, DETECTION_BOX_WHEEL_CONFIG, DETECTION_BOX_CONFIG
 from .canvas_drawing import CanvasDrawingMixin
@@ -770,7 +770,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if app is not None and hasattr(app, 'keyboardModifiers'):
             return app.keyboardModifiers()
 
-        from PyQt5.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         return QApplication.keyboardModifiers()
 
     def _do_canvas_drag_out(self):

@@ -10,7 +10,7 @@ import math
 import os
 import concurrent.futures
 
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from ..core.config import QUALITY_LINT_CONFIG
 from ..core.utils import calculate_iou
@@ -535,8 +535,8 @@ def lint_dataset(image_paths, memory_boxes=None, progress_cb=None,
 
 class QualityLintWorker(QThread):
     """后台质检扫描：进度 + 结果信号。"""
-    lint_progress = pyqtSignal(int, int)
-    lint_finished = pyqtSignal(object)
+    lint_progress = Signal(int, int)
+    lint_finished = Signal(object)
 
     def __init__(self, image_paths, memory_boxes=None, parent=None):
         super().__init__(parent)
@@ -896,8 +896,8 @@ def remove_selected_cross_overlaps(selected_issues, target_label, image_paths,
 
 class CrossLabelDeleteWorker(QThread):
     """后台删除选中的异类重叠框：进度 + 结果信号（中断也回报部分结果）。"""
-    delete_progress = pyqtSignal(int, int)
-    delete_finished = pyqtSignal(object)
+    delete_progress = Signal(int, int)
+    delete_finished = Signal(object)
 
     def __init__(self, selected_issues, target_label, image_paths,
                  memory_boxes=None, parent=None):

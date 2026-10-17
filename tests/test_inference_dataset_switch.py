@@ -41,8 +41,8 @@ def _lines(out):
 
 _HOST = """
 import os, json, tempfile
-from PyQt5.QtWidgets import QApplication, QListWidgetItem
-from PyQt5.QtGui import QPixmap, QImage
+from PySide6.QtWidgets import QApplication, QListWidgetItem
+from PySide6.QtGui import QPixmap, QImage
 from labelforge.ui.main_window import ImageEditor
 from labelforge.engine.inference_task import ImageResult, sidecar_path
 

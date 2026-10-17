@@ -2,8 +2,8 @@
 import os
 import json
 
-from PyQt5.QtGui import QPixmap, QIcon
-from PyQt5.QtCore import Qt
+from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtCore import Qt
 
 from ...ui.i18n import t as tr
 
@@ -68,7 +68,7 @@ def _status_icon(status, size=12):
     cache_key = (status, size)
     if cache_key in _STATUS_ICON_CACHE:
         return _STATUS_ICON_CACHE[cache_key]
-    from PyQt5.QtGui import QColor, QPainter, QPen
+    from PySide6.QtGui import QColor, QPainter, QPen
     pm = QPixmap(size, size)
     pm.fill(Qt.transparent)
     painter = QPainter(pm)

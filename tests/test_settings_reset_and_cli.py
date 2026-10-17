@@ -26,7 +26,7 @@ os._exit(0)
 def _run_real_qt(script):
     """在真 Qt offscreen 子进程里跑脚本：控件几何/文本断言必须走真 Qt。
 
-    进程内的假 PyQt5 没有布局与真实几何，`mapTo` 之类的比较没有意义。
+    进程内的假 PySide6 没有布局与真实几何，`mapTo` 之类的比较没有意义。
     """
     import os
     import subprocess
@@ -320,7 +320,7 @@ def test_real_settings_dialog_shows_version_at_bottom_left():
     （它比对的就是包常量），这里只管「位置与格式」。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
 from labelforge.ui.settings_dialog import SettingsDialog
 from labelforge import __version__
@@ -360,7 +360,7 @@ def test_real_settings_dialog_version_tracks_package_constant():
     """版本号的唯一来源是 `labelforge.__version__`：改常量即改显示。"""
     out = _run_real_qt("""
 import labelforge
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui import settings_dialog
 
 app = QApplication([])

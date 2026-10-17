@@ -87,7 +87,7 @@ def test_no_square_corner_left_in_the_stats_dialog_styles():
 def test_the_stats_window_actually_renders_with_the_qss():
     """真实 Qt：样式表能应用、对话框能构造出来。"""
     script = '''
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 
 from labelforge.ui.main_window import ImageEditor

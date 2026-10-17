@@ -1,6 +1,6 @@
 """Main window layout regressions (canvas vs side panel)."""
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout
 
 from labelforge.ui.mixins.panels import PanelsMixin
 

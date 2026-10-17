@@ -1,9 +1,9 @@
 import random
 from typing import List, Tuple
 
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 
-from .base import BaseTransform, register_transform
+from .base import BaseTransform, register_transform, rgb888_buffer
 
 
 @register_transform
@@ -20,9 +20,7 @@ class GaussianNoise(BaseTransform):
         image_width: int, image_height: int
     ) -> Tuple[QImage, List[dict]]:
         img = image.convertToFormat(QImage.Format_RGB888)
-        bits = img.bits()
-        bits.setsize(img.byteCount())
-        arr = bytearray(bits.asstring(img.byteCount()))
+        arr = rgb888_buffer(img)
         stride = img.bytesPerLine()
         for y in range(img.height()):
             offset = y * stride
@@ -48,9 +46,7 @@ class SaltPepper(BaseTransform):
         image_width: int, image_height: int
     ) -> Tuple[QImage, List[dict]]:
         img = image.convertToFormat(QImage.Format_RGB888)
-        bits = img.bits()
-        bits.setsize(img.byteCount())
-        arr = bytearray(bits.asstring(img.byteCount()))
+        arr = rgb888_buffer(img)
         stride = img.bytesPerLine()
         total = img.width() * img.height()
         n_salt = int(total * self.prob / 2)

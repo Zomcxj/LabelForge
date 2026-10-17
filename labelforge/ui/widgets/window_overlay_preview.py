@@ -12,9 +12,9 @@
 大图保护：窗口数可能上万（20000² 配小窗口），逐窗全量绘制会卡死，
 所以每个窗口先换算成画布矩形、与可见区求交，完全在外的一律跳过。
 """
-from PyQt5.QtCore import Qt, QRectF
-from PyQt5.QtGui import QPainter, QColor, QPen
-from PyQt5.QtWidgets import QWidget
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QPainter, QColor, QPen
+from PySide6.QtWidgets import QWidget
 
 from ...engine.augmenter.crop import window_starts
 from ...engine.inference_scope import ScopeError, iter_windows

@@ -58,9 +58,9 @@ def test_combined_scan_counts_match_the_old_single_purpose_path(tmp_path):
 
 _STATS_HOST = """
 import json, os, tempfile, time
-from PyQt5.QtWidgets import QApplication, QListWidgetItem, QDialog, QWidget
-from PyQt5.QtGui import QPixmap, QImage
-from PyQt5.QtCore import QEventLoop, QTimer
+from PySide6.QtWidgets import QApplication, QListWidgetItem, QDialog, QWidget
+from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtCore import QEventLoop, QTimer
 from labelforge.ui.main_window import ImageEditor
 
 app = QApplication([])

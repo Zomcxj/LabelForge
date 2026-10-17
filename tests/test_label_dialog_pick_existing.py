@@ -48,9 +48,9 @@ def _lines(out):
 
 
 _PICK_LIST = """
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtTest import QTest
-from PyQt5.QtCore import Qt
+from PySide6.QtWidgets import QApplication
+from PySide6.QtTest import QTest
+from PySide6.QtCore import Qt
 import json
 app = QApplication([])
 from labelforge.ui.dialogs import LabelSelectionDialog
@@ -85,9 +85,9 @@ def test_picking_an_existing_label_in_the_list_is_honoured():
 def test_picking_the_list_keeps_what_was_typed_in_the_box():
     """点列表不该把用户已输入的内容抹掉——只是让列表这一票作数。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtTest import QTest
-from PyQt5.QtCore import Qt
+from PySide6.QtWidgets import QApplication
+from PySide6.QtTest import QTest
+from PySide6.QtCore import Qt
 app = QApplication([])
 from labelforge.ui.dialogs import LabelSelectionDialog
 
@@ -116,8 +116,8 @@ print("picked", repr(d.get_selected_label()))
 def test_typing_in_the_box_still_wins_over_the_list():
     """反过来也要成立：用户在输入框里打的字优先于列表选中（打新标签）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtTest import QTest
+from PySide6.QtWidgets import QApplication
+from PySide6.QtTest import QTest
 app = QApplication([])
 from labelforge.ui.dialogs import LabelSelectionDialog
 
@@ -141,7 +141,7 @@ def test_confirming_without_touching_anything_keeps_the_current_label():
     此时列表选中与预填内容一致，返回值不变，不能因为修 bug 把它弄坏。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 from labelforge.ui.dialogs import LabelSelectionDialog
 

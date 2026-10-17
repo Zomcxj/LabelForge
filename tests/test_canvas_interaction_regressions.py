@@ -1,5 +1,5 @@
 """画布悬停状态回归测试。"""
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from labelforge.canvas import canvas_interaction
 from labelforge.canvas import canvas as canvas_module
@@ -538,7 +538,7 @@ def _enable_copy_drag_out(monkeypatch, canvas):
     """把拖出复制里那几样真 Qt 依赖换成假的，只观察有没有触发。"""
     import types
     monkeypatch.setitem(
-        __import__("sys").modules, "PyQt5.QtGui",
+        __import__("sys").modules, "PySide6.QtGui",
         types.SimpleNamespace(QCursor=types.SimpleNamespace(
             pos=lambda: Point(10, 10))))
     monkeypatch.setattr(canvas_interaction, "QDrag",

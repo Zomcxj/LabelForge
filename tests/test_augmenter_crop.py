@@ -274,7 +274,7 @@ def _run_real_qt(script, timeout=180):
 def test_augmenter_crop_all_mode_outputs_and_sidecar(tmp_path):
     script = f'''
 import json, os
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
@@ -302,7 +302,7 @@ def test_augmenter_crop_fill_pads_overflow_with_rgb_and_names_pad(tmp_path):
     # r2c2 窗口 [50,110]×[50,110] 右/下各越界 10px，须以 fill_rgb 补齐，命名加 _pad。
     script = f'''
 import json, os
-from PyQt5.QtGui import QColor, QImage
+from PySide6.QtGui import QColor, QImage
 from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
@@ -344,7 +344,7 @@ def test_augmenter_crop_fill_keeps_window_size_when_image_smaller(tmp_path):
     # 用非默认 RGB(0,255,0) 证明填充值确实按 spec 生效而非写死。
     script = f'''
 import os
-from PyQt5.QtGui import QColor, QImage
+from PySide6.QtGui import QColor, QImage
 from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
@@ -377,7 +377,7 @@ print("OK_FILL_SMALL")
 def test_augmenter_crop_image_smaller_than_window(tmp_path):
     script = f'''
 import os
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
@@ -398,7 +398,7 @@ print("OK_SMALL")
 def test_augmenter_crop_empty_source_writes_nothing(tmp_path):
     script = f'''
 import os
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
@@ -419,7 +419,7 @@ print("OK_EMPTY")
 def test_augmenter_crop_random_mode_pool(tmp_path):
     script = f'''
 import os
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 from labelforge.engine.augmenter import Augmenter
 from labelforge.engine.augmenter.color import Brightness
 
@@ -440,8 +440,8 @@ print("OK_RANDOM")
 def test_panel_crop_row_and_default_spec(tmp_path):
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.processing_panel import ProcessingPanel
 
@@ -478,8 +478,8 @@ def test_crop_dialog_lock_queue_rotates_oldest_out(tmp_path):
     # 锁按点击先后排队、最多 2 个：已锁 2 个再点第 3 个，最早锁的自动解锁
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 
@@ -512,8 +512,8 @@ def test_crop_dialog_lock_count_and_overlap_derives_size_in_range(tmp_path):
     # 改重叠 100 后：尺寸反推到 w=734、h=550（与旧行为一致，锁定项仍驱动派生项）。
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 from labelforge.engine.augmenter.crop import size_range_for_count, window_starts
@@ -555,8 +555,8 @@ def test_crop_dialog_lock_count_edit_width_syncs_overlap_and_height(tmp_path):
     # 再按新重叠反推高=(1000+350)/2=675，且行列数保持 3×2 不漂。
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 
@@ -583,8 +583,8 @@ def test_crop_dialog_lock_size_and_overlap_derives_readonly_count(tmp_path):
     # 锁「尺寸」(800×600) + 锁「重叠」(200) → 数量只读，且为真实网格数 3列2行
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 
@@ -607,8 +607,8 @@ def test_crop_dialog_lock_count_infeasible_clamps_and_warns(tmp_path):
     # 钳到 0 后实际只能切 4 列：数量写回真实值 4 并给出不可达提示
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 
@@ -636,8 +636,8 @@ def test_crop_dialog_locked_count_infeasible_shows_hint(tmp_path):
     # 3 窗只盖 1800 < 2000，实际需 4 列 → 数量按实际写回并给出不可达提示。
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 from labelforge.ui.i18n import t as tr
@@ -667,8 +667,8 @@ def test_crop_dialog_fill_defaults_and_spec(tmp_path):
     # spec 里没有 fill/fill_rgb 时：默认不填充，色值回落 114 灰，RGB 输入禁用。
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 
@@ -692,8 +692,8 @@ def test_crop_dialog_fill_toggle_rgb_and_swatch(tmp_path):
     # 勾选填充 → RGB 可编辑；改色值 → spec() 与色块同步。
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 
@@ -724,8 +724,8 @@ def test_crop_dialog_fill_spec_roundtrip(tmp_path):
     # 传入 fill=True + fill_rgb 列表 → UI 回填，spec() 原样吐回。
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 
@@ -751,8 +751,8 @@ def test_crop_dialog_fill_preview_uses_pad_grid_and_paints_fill(tmp_path):
     # 注：夹具不能用「大补边」（如 150/50 补 33%），那已被 30% 硬墙吸附。
     script = f'''
 import os
-from PyQt5.QtGui import QColor, QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QColor, QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 
@@ -795,8 +795,8 @@ print("OK_FILL_PREVIEW")
 def test_crop_dialog_linkage_and_preview(tmp_path):
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 from labelforge.engine.augmenter.crop import size_for_flush, window_starts
@@ -833,8 +833,8 @@ print("OK_DIALOG")
 def test_panel_crop_clamp_summary_and_path_reset(tmp_path):
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.processing_panel import ProcessingPanel
 from labelforge.engine.augmenter.crop import window_starts
@@ -875,8 +875,8 @@ print("OK_PANEL2")
 def test_crop_dialog_ov_cap_and_count_roundtrip(tmp_path):
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 from labelforge.engine.augmenter.crop import size_for_count, size_for_flush, window_starts
@@ -911,7 +911,7 @@ def test_augmenter_crop_random_mode_deterministic_crop_path(tmp_path):
     # r1c2/r2c1=400/1600=0.25、r2c2=100/1600=0.0625，均 <0.3 丢弃
     script = f'''
 import os
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
@@ -936,7 +936,7 @@ def test_augmenter_crop_random_mode_zero_windows_fallback(tmp_path):
     # 全部 <0.9 → 0 窗产出 → _apply_crop 返回 0 → 走 _save_original 兜底
     script = f'''
 import os
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 from labelforge.engine.augmenter import Augmenter
 
 out = r"{(tmp_path / "out").as_posix()}"
@@ -962,8 +962,8 @@ def test_crop_dialog_templates_row_apply_and_recompute(tmp_path):
     script = f'''
 import os
 os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication, QLabel, QPushButton
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 from labelforge.core.config_manager import add_crop_template
@@ -1016,8 +1016,8 @@ def test_panel_open_crop_config_records_template(tmp_path):
     script = f'''
 import os
 os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.processing_panel import ProcessingPanel
 from labelforge.core.config_manager import load_crop_templates
@@ -1109,8 +1109,8 @@ def test_panel_default_spec_and_summary_pad_marker(tmp_path):
     script = f'''
 import os
 os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication, QPushButton
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QPushButton
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.processing_panel import ProcessingPanel
 from labelforge.ui.crop_dialog import CropConfigDialog
@@ -1158,8 +1158,8 @@ def test_crop_dialog_apply_template_restores_fill(tmp_path):
     script = f'''
 import os
 os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication, QPushButton
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QPushButton
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 from labelforge.core.config_manager import add_crop_template
@@ -1188,9 +1188,9 @@ print("OK_TEMPLATE_RESTORE_FILL")
 
 _DIALOG_BOOT = '''
 import os
-from PyQt5.QtCore import QPoint
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication, QCheckBox, QPushButton
+from PySide6.QtCore import QPoint
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QCheckBox, QPushButton
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 from labelforge.ui.i18n import t as tr
@@ -1272,7 +1272,7 @@ def test_panel_crop_config_btn_not_clipped_in_english(tmp_path):
     # 「配置…」按钮不能是固定窄宽，否则英文 Config… 会被截断。
     script = f'''
 import os
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.processing_panel import ProcessingPanel
 from labelforge.ui.i18n import set_lang
@@ -1296,7 +1296,7 @@ def test_panel_uncheck_all_transforms_button(tmp_path):
     # 「跳过空标签」右侧新增一键取消全部增强方式的按钮。
     script = f'''
 import os
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.processing_panel import ProcessingPanel
 from labelforge.ui.i18n import t as tr
@@ -1362,8 +1362,8 @@ def test_panel_default_crop_spec_derives_two_by_three_from_reference(tmp_path):
     """面板默认 spec 不再是写死的 640×640/200，而是按首图反推出 2 行 3 列。"""
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.processing_panel import ProcessingPanel
 from labelforge.engine.augmenter.crop import window_starts
@@ -1394,8 +1394,8 @@ def test_crop_dialog_min_height_raised_by_100(tmp_path):
     """裁剪小窗高度 700 → 800，宽度不变。"""
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 
@@ -1422,8 +1422,8 @@ def test_crop_dialog_lock_buttons_aligned_at_any_width(tmp_path):
     """
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 
@@ -1611,7 +1611,7 @@ def test_panel_dataset_dir_follows_background_folder(tmp_path):
     """① 切换数据集后「数据集目录」无条件跟随，导出目录随之切换。"""
     script = f'''
 import os
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.processing_panel import ProcessingPanel
 
@@ -2220,8 +2220,8 @@ def test_crop_dialog_fill_on_template_over_cap_snaps_and_notifies(tmp_path):
     script = f'''
 import os
 os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication, QPushButton
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QPushButton
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 from labelforge.core.config_manager import add_crop_template
@@ -2286,8 +2286,8 @@ def test_crop_dialog_fill_on_prefers_moving_overlap_over_resizing(tmp_path):
     """
     script = f'''
 import os
-from PyQt5.QtGui import QImage
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from labelforge.ui.crop_dialog import CropConfigDialog
 from labelforge.engine.augmenter.crop import pad_overflow

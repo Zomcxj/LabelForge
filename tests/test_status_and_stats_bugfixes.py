@@ -6,7 +6,7 @@
 """
 import json
 
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 from labelforge.canvas import canvas_interaction
 from labelforge.canvas.canvas import Canvas, _rotation_angle_status_text

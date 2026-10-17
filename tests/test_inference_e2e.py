@@ -3,7 +3,7 @@
 模型输出是常量张量，期望框可以精确算出来；覆盖 mock 测不到的部分：
 真实 Session、张量喂入、元数据读取，以及「模糊形状必须拒绝而不是猜」。
 
-进程内跑（conftest 把 PyQt5 换成了 mock），所以注入 numpy 版 letterbox；
+进程内跑（conftest 把 PySide6 换成了 mock），所以注入 numpy 版 letterbox；
 生产用的 QImage 版绘制由 test_inference_image.py 在真实 Qt 子进程里验证。
 """
 from pathlib import Path
@@ -399,7 +399,7 @@ def test_real_model_matches_expected_output_shape(fmt):
 def test_real_model_detects_on_real_image(fmt):
     """真实图片跑通全链路：框在图内、非退化、分数与标签有效。
 
-    走真实 Qt 子进程：本文件进程内 PyQt5 是 mock，QImage 读不了图。
+    走真实 Qt 子进程：本文件进程内 PySide6 是 mock，QImage 读不了图。
 
     模型与图片都在测试体内检查：两者都是本地可选素材，缺任意一个都该跳过，
     只检查图片会让缺模型时变成失败（守卫与断言说的不是一回事）。
@@ -412,7 +412,7 @@ def test_real_model_detects_on_real_image(fmt):
     out = _run_real_qt(f'''
 import sys
 sys.path.insert(0, r"{REPO_ROOT}")
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 from labelforge.engine.inference_image import qimage_to_rgb_array, resize_for_model
 from labelforge.engine.inference_task import build_detector
 

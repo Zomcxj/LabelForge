@@ -21,7 +21,7 @@ os._exit(0)
 def _run_real_qt(script):
     """在真实 Qt（offscreen）子进程里跑断言，返回 stdout。
 
-    conftest 装的是进程内假 PyQt5（没有真实布局/像素），凡是涉及
+    conftest 装的是进程内假 PySide6（没有真实布局/像素），凡是涉及
     「真实控件长什么样」的断言都必须走这里。
     """
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT),
@@ -761,7 +761,7 @@ def test_delete_toggle_label_is_renamed_in_both_languages():
 def test_delete_toggle_menu_text_resolves_after_language_switch():
     """真实控件：切到英文后菜单项显示英文，切回中文显示中文。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from labelforge.ui import i18n
 
 app = QApplication([])

@@ -53,7 +53,8 @@ def _spec_size(line):
 def test_real_preview_window_count_matches_engine():
     """预览算出的窗口数必须等于 iter_windows() 的长度。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 from labelforge.engine.inference_scope import iter_windows
 
@@ -78,7 +79,8 @@ def test_real_preview_clamps_overlap_like_engine():
     每轴 400/1 → 101 个起点，101×101 = 10201 窗。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 from labelforge.engine.inference_scope import iter_windows
 
@@ -98,7 +100,8 @@ print(p.window_count() == len(iter_windows(500, 500,
 def test_real_preview_rejects_window_size_out_of_range():
     """窗口尺寸超上限：引擎抛 ScopeError，预览必须显示为不可用而不是崩溃。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
@@ -117,7 +120,8 @@ print('ok')
 def test_real_preview_rejects_zero_and_negative_window():
     """窗口尺寸为 0 / 负数：同样显示为不可用，不抛异常。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
@@ -138,7 +142,8 @@ print('ok')
 def test_real_preview_rejects_too_many_windows():
     """窗口数超 MAX_WINDOWS：引擎抛错，预览必须给「参数非法」而不是画几万个框。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
@@ -157,7 +162,8 @@ print('ok')
 def test_real_preview_without_image_is_not_valid():
     """没加载图片时预览不可用，但仍能重绘不崩。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
@@ -175,7 +181,8 @@ print('ok')
 def test_real_preview_without_spec_is_not_valid():
     """参数还没设过时不可用（弹窗刚建、还没填参数）。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
@@ -199,8 +206,10 @@ def test_real_preview_draws_grid_over_image():
     抗锯齿噪点）。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtGui import QPainter, QColor, QImage
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QPainter, QColor, QImage
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 from labelforge.ui.theme import ThemeManager
 
@@ -214,7 +223,7 @@ grid = QColor(ThemeManager.get_theme()['accent'])
 img = QImage(400, 300, QImage.Format_ARGB32)
 img.fill(QColor('white'))
 painter = QPainter(img)
-p.render(painter)
+p.render(painter, QPoint())
 painter.end()
 
 def is_grid(c):
@@ -242,8 +251,10 @@ def test_real_preview_grid_density_tracks_window_count():
     后者在 `_draw_grid` 成 no-op 时也为真（底色 fillRect 就够），是空转。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtGui import QPainter, QImage, QColor
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QPainter, QImage, QColor
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 from labelforge.ui.theme import ThemeManager
 
@@ -259,7 +270,7 @@ def count_grid(spec):
     img = QImage(400, 300, QImage.Format_ARGB32)
     img.fill(QColor('white'))
     painter = QPainter(img)
-    p.render(painter)
+    p.render(painter, QPoint())
     painter.end()
     return p.window_count(), sum(
         1 for y in range(300) for x in range(400)
@@ -300,8 +311,10 @@ def test_real_preview_skips_offscreen_windows_when_clipping():
     对渲染结果无可见影响，所以这里改为直接检查 `_draw_grid` 的调用集合。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtCore import QRectF
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QRectF
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
@@ -349,8 +362,10 @@ def test_real_preview_survives_large_window_count():
     这里只保证大规模输入下不崩、数目正确。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtGui import QPainter, QImage
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QPainter, QImage
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
@@ -363,7 +378,7 @@ print('windows:', p.window_count())
 img = QImage(400, 300, QImage.Format_ARGB32)
 img.fill(0)
 painter = QPainter(img)
-p.render(painter)
+p.render(painter, QPoint())
 painter.end()
 print('rendered ok')
 """)
@@ -384,8 +399,9 @@ def test_real_preview_paints_the_background_image_not_just_a_fill():
     （左偏绿、右偏蓝）才是「图真的画了」的判别量。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QPainter, QImage, QColor, QPixmap
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
+from PySide6.QtGui import QPainter, QImage, QColor, QPixmap
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
@@ -402,7 +418,7 @@ p.set_spec({'w': 400, 'h': 400, 'overlap': 0})
 out = QImage(200, 200, QImage.Format_ARGB32)
 out.fill(QColor('white'))
 painter = QPainter(out)
-p.render(painter)
+p.render(painter, QPoint())
 painter.end()
 
 def green_ish(c): return c.green() > 120 and c.red() < 100 and c.blue() < 100
@@ -424,8 +440,10 @@ print('right is blue', any(blue_ish(c) for c in right))
 def test_real_preview_without_pixmap_falls_back_to_placeholder():
     """没有原图时退回纯色占位并仍画网格：预览是调参参照，缺图不该报错。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtGui import QPainter, QImage, QColor
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QPainter, QImage, QColor
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
@@ -439,13 +457,13 @@ print('count', p.window_count())
 img = QImage(200, 200, QImage.Format_ARGB32)
 img.fill(QColor('white'))
 painter = QPainter(img)
-p.render(painter)
+p.render(painter, QPoint())
 painter.end()
 n = sum(1 for y in range(0, 200, 2) for x in range(0, 200, 2)
         if img.pixelColor(x, y) != QColor('white'))
 print('drew something', n > 0)
 # 传空 pixmap 等于没有：退回占位而不是画一片空白
-from PyQt5.QtGui import QPixmap
+from PySide6.QtGui import QPixmap
 p.set_pixmap(QPixmap())
 print('null pixmap ignored', p._pixmap is None)
 """)
@@ -459,7 +477,8 @@ print('null pixmap ignored', p._pixmap is None)
 def test_real_params_widget_estimates_and_validates_like_dialog():
     """参数控件是滑窗弹窗与范围面板的共同内核，口径必须一致。"""
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
 from labelforge.ui.widgets.window_params import WindowParamsWidget
 
 app = QApplication([])
@@ -495,7 +514,8 @@ print(w2.spec())
     异常——它以后若改成抛 TypeError，这里就该红，逼我们回来收敛。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])
@@ -524,7 +544,8 @@ def test_real_preview_survives_malformed_spec_types():
     异常——它以后若改成抛 TypeError，这里就该红，逼我们回来收敛。
     """
     out = _run_real_qt("""
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint
 from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 
 app = QApplication([])

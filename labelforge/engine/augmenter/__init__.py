@@ -4,7 +4,7 @@ import os
 import random
 from typing import Callable, Dict, List, Tuple, Type
 
-from PyQt5.QtGui import QColor, QImage, QPainter
+from PySide6.QtGui import QColor, QImage, QPainter
 
 from .base import BaseTransform, get_all_transforms, register_transform
 from .crop import (

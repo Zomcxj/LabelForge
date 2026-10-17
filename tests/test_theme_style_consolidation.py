@@ -116,8 +116,8 @@ def test_progress_dialog_uses_global_button_states_and_color_swatch_keeps_its_co
 @pytest.mark.parametrize("mode, color", [("LIGHT", "#1f1f1f"), ("DARK", "#f5f5f5")])
 def test_real_qt_theme_switch_styles_settings_and_label_dialog_inputs(mode, color):
     script = f'''
-from PyQt5.QtGui import QPalette
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QApplication
 from labelforge.ui.dialogs import LabelSelectionDialog
 from labelforge.ui.main_window import ImageEditor
 from labelforge.ui.settings_dialog import SettingsDialog
@@ -151,9 +151,9 @@ for widget, role in (
 
 def test_real_qt_canvas_keeps_business_overlay_colors_across_a_light_to_dark_switch():
     script = '''
-from PyQt5.QtCore import QPoint, QRectF, Qt
-from PyQt5.QtGui import QColor, QImage, QPixmap
-from PyQt5.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import QPoint, QRectF, Qt
+from PySide6.QtGui import QColor, QImage, QPixmap
+from PySide6.QtWidgets import QApplication, QWidget
 from labelforge.canvas.canvas_renderer import CanvasRendererMixin
 from labelforge.ui.main_window import ImageEditor
 from labelforge.ui.theme import ThemeManager, ThemeMode
@@ -260,9 +260,9 @@ def test_real_qt_options_popup_paints_rounded_corners():
     `widget.grab()`/`render()` 都拿不到 QSS 背景（量出来全 0，会假绿）。
     """
     script = '''
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QImage, QPainter
-from PyQt5.QtWidgets import QApplication, QStyle, QStyleOption
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOption
 from labelforge.ui.main_window import ImageEditor
 from labelforge.ui.theme import ThemeManager
 

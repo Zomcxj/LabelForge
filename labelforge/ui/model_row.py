@@ -3,8 +3,8 @@
 工具栏第一个图标负责显示/隐藏这一行；关闭后两个推理图标会禁用，重新点开即恢复。
 阈值与尺寸改动即时写回 detector，不重建会话，所以调参不用重新加载模型。
 """
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QLabel, QPushButton, QDoubleSpinBox, QSpinBox,
     QToolButton,
 )
@@ -20,14 +20,14 @@ _THRESHOLD_SPIN_WIDTH = 58
 class ModelRow(QWidget):
     """模型信息行；控件改动通过信号交给主窗口写回 detector。"""
 
-    thresholds_changed = pyqtSignal(float, float)
-    input_size_changed = pyqtSignal(int, int)
-    replace_mode_changed = pyqtSignal(bool)
-    load_requested = pyqtSignal()
-    filter_requested = pyqtSignal()
-    scope_requested = pyqtSignal()
-    batch_to_changed = pyqtSignal(int)
-    closed = pyqtSignal()
+    thresholds_changed = Signal(float, float)
+    input_size_changed = Signal(int, int)
+    replace_mode_changed = Signal(bool)
+    load_requested = Signal()
+    filter_requested = Signal()
+    scope_requested = Signal()
+    batch_to_changed = Signal(int)
+    closed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

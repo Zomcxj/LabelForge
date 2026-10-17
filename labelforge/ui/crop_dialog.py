@@ -1,9 +1,9 @@
 """滑窗裁剪配置小窗：左参数（双向联动），右分离小图预览（绿=保留，红=空窗丢弃）。"""
 import os
 
-from PyQt5.QtCore import Qt, QRect, QTimer
-from PyQt5.QtGui import QColor, QImage, QPainter, QPen
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, QRect, QTimer
+from PySide6.QtGui import QColor, QImage, QPainter, QPen
+from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton,
     QSpinBox, QVBoxLayout, QWidget,
 )

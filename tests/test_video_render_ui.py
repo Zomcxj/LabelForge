@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _run_qt(script):
-    """子进程跑真实 Qt（本项目约定：进程内 PyQt5 是假模块）。"""
+    """子进程跑真实 Qt（本项目约定：进程内 PySide6 是假模块）。"""
     script = script.replace("@@ROOT@@", str(ROOT))
     proc = subprocess.run([sys.executable, "-c", script], capture_output=True,
                           text=True, encoding="utf-8", errors="replace",
@@ -51,7 +51,7 @@ def test_render_worker_passes_everything_to_engine(monkeypatch):
     worker = VideoRenderWorker("in.mp4", "DET", output_path="out.mp4",
                                scope={"mode": "full"}, render=spec,
                                class_filter=filt)
-    # 进程内的假 pyqtSignal 只有 connect、没有 emit（conftest 的最薄替身），
+    # 进程内的假 Signal 只有 connect、没有 emit（conftest 的最薄替身），
     # 而 run() 要真的 emit。就地换成带 emit 的替身，避免动 conftest 影响
     # 全仓 2000+ 用例。真实信号接线由真实 Qt 子进程用例覆盖。
     done, failed = [], []
@@ -371,7 +371,7 @@ def test_cancel_covers_render_worker():
 _PRELUDE = '''
 import os, sys, tempfile
 sys.path.insert(0, r"@@ROOT@@")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 app = QApplication([])
 import numpy as np
 import cv2
@@ -788,8 +788,8 @@ def test_compose_range_spins_default_to_first_and_last():
     result = _run_qt('''
 import sys, os
 sys.path.insert(0, r"@@ROOT@@")
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage
 app = QApplication([])
 
 work = os.path.join(os.environ["TEMP"], "labelforge_range_ui")
@@ -821,8 +821,8 @@ def test_compose_range_is_carried_into_the_settings():
     result = _run_qt('''
 import sys, os
 sys.path.insert(0, r"@@ROOT@@")
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage
 app = QApplication([])
 
 work = os.path.join(os.environ["TEMP"], "labelforge_range_settings")
@@ -856,8 +856,8 @@ def test_compose_range_corrects_a_reversed_input():
     result = _run_qt('''
 import sys, os
 sys.path.insert(0, r"@@ROOT@@")
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QImage
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage
 app = QApplication([])
 
 work = os.path.join(os.environ["TEMP"], "labelforge_range_reverse")
