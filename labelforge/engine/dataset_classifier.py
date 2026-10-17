@@ -268,7 +268,6 @@ def write_classes_txt(path, labels):
 def write_yaml(path, dataset_root, train_rel, val_rel, labels):
     sorted_labels = sorted(labels)
     lines = [
-        f"# Ultralytics AGPL-3.0 License",
         f"#",
         f"# Train/val sets",
         f"path: {dataset_root}",
