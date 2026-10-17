@@ -5,7 +5,9 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-*.spec
+# build.sh 生成的 spec（labelforge/LabelForge_build.spec）不入库；
+# 手写的 labelforge/LabelForge.spec 是要入库的 —— CI 构建与测试都读它
+*_build.spec
 .pytest_cache/
 
 # 由 CI 在构建机上生成，不进仓库
