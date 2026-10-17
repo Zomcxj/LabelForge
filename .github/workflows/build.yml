@@ -69,7 +69,10 @@ jobs:
               curl -fsSL https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -o /tmp/miniforge.sh
               bash /tmp/miniforge.sh -b -p /opt/conda
               /opt/conda/bin/conda install -y python=3.12
-              /opt/conda/bin/python -m pip install -q pyinstaller PySide6 numpy onnxruntime 'opencv-python-headless>=4.10,<4.11'
+              # 版本以 requirements.txt 为准，与 Windows 任务保持一致。
+              # 裸装 PySide6 会选 6.10+（manylinux_2_34），20.04 上装不上、只能
+              # 靠 pip 的平台标签兜底退回 6.9.x —— 正确性不该押在这上面。
+              /opt/conda/bin/python -m pip install -q -r /workspace/requirements.txt -r /workspace/requirements-build.txt
 
               /opt/conda/bin/python -m PyInstaller labelforge/LabelForge.spec --noconfirm
             "
