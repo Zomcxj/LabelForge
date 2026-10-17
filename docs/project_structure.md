@@ -8,6 +8,7 @@ LabelForge/
 ├── .gitignore                 # Git 忽略规则
 ├── .python-version            # 项目 Python 版本锚点
 ├── build.sh                   # 跨平台 PyInstaller 构建脚本
+├── labelforge_debug_main.py   # 诊断启动器：与 main.py 相同但强制开启 json 追踪探针
 ├── paste_label.txt            # 默认贴图标签文件
 ├── requirements.txt           # 运行期依赖
 ├── requirements-dev.txt       # 开发与测试依赖
@@ -24,7 +25,6 @@ LabelForge/
 │   ├── main.py                # 程序入口
 │   ├── LabelForge.spec        # PyInstaller spec
 │   ├── build_support.py       # 打包辅助：统一 MSVC 运行库版本（Windows 专用，Linux 上为空操作）
-│   ├── sip.py                 # PyInstaller 的 PyQt5 SIP 兼容模块
 │   ├── canvas/                # 画布绘制与交互
 │   │   ├── __init__.py
 │   │   ├── canvas.py
@@ -38,6 +38,7 @@ LabelForge/
 │   │   ├── config_manager.py
 │   │   ├── editor_protocol.py
 │   │   ├── exception_hook.py
+│   │   ├── json_trace.py      # 临时诊断探针：环境变量 LABELFORGE_TRACE_JSON=1 开启
 │   │   └── utils.py
 │   ├── engine/                # 图片、标签、保存、事件与数据处理
 │   │   ├── __init__.py
@@ -63,7 +64,7 @@ LabelForge/
 │   │   ├── shape_io.py         # 形状编解码、置信度显示与 YOLO 行生成（矩形/多边形/关键点/旋转框）
 │   │   ├── splitter.py
 │   │   ├── video_io.py       # 视频探测/抽帧时间轴/解码导出/映射清单/合成/逐帧推理编码 render_video（cv2 延迟导入，无 Qt 依赖）
-│   │   ├── video_render.py   # 叠加标签框：QPainter 离屏绘制（延迟导入 PyQt5，纯函数；合成页与推理成片页共用）
+│   │   ├── video_render.py   # 叠加标签框：QPainter 离屏绘制（延迟导入 PySide6，纯函数；合成页与推理成片页共用）
 │   │   ├── undo_manager.py
 │   │   ├── voc_exporter.py
 │   │   ├── yolo_exporter.py
@@ -98,28 +99,33 @@ LabelForge/
 │   │   ├── scope_panel.py    # 推理范围选择面板（全图/滑窗/区域）；**非模态**，滑窗参数内嵌其中
 │   │   ├── segmented_control.py
 │   │   ├── settings_dialog.py
-│   │   ├── sliding_window_dialog.py # 滑窗参数窗口（独立窗口形态；参数控件本体在 widgets/window_params.py）
+│   │   ├── sliding_window_dialog.py # 滑窗参数窗口（独立窗口形态；参数控件本体在 ui/widgets/window_params.py）
 │   │   ├── theme.py
 │   │   ├── video_dialog.py   # 视频弹窗：抽帧 / 合成（含叠加标签框）/ 推理成片 三个标签页
-│   │   └── mixins/
+│   │   ├── mixins/
+│   │   │   ├── __init__.py
+│   │   │   ├── background_list.py
+│   │   │   ├── cache_menu.py
+│   │   │   ├── dataset_classifier.py
+│   │   │   ├── dataset_tools.py
+│   │   │   ├── inference.py
+│   │   │   ├── label_cache_slot.py
+│   │   │   ├── lists.py
+│   │   │   ├── memory_record.py
+│   │   │   ├── options_popup.py
+│   │   │   ├── panels.py
+│   │   │   ├── processing_panel_builder.py
+│   │   │   ├── quality_lint.py
+│   │   │   ├── video.py         # 视频抽帧/合成/推理成片入口、后台任务生命周期、加载为数据集
+│   │   │   ├── stats.py
+│   │   │   ├── theme.py
+│   │   │   ├── toolbar.py
+│   │   │   └── translation.py
+│   │   └── widgets/           # ui 层自绘控件
 │   │       ├── __init__.py
-│   │       ├── background_list.py
-│   │       ├── cache_menu.py
-│   │       ├── dataset_classifier.py
-│   │       ├── dataset_tools.py
-│   │       ├── inference.py
-│   │       ├── label_cache_slot.py
-│   │       ├── lists.py
-│   │       ├── memory_record.py
-│   │       ├── options_popup.py
-│   │       ├── panels.py
-│   │       ├── processing_panel_builder.py
-│   │       ├── quality_lint.py
-│   │       ├── video.py         # 视频抽帧/合成/推理成片入口、后台任务生命周期、加载为数据集
-│   │       ├── stats.py
-│   │       ├── theme.py
-│   │       ├── toolbar.py
-│   │       └── translation.py
+│   │       ├── health_charts.py # 数据集健康图表（QPainter 条形图 / 直方图）
+│   │       ├── window_overlay_preview.py # 原图叠加滑窗网格预览（画真实原图再叠网格；无图时退回纯色占位）
+│   │       └── window_params.py # 滑窗参数控件（宽/高/重叠/最低可见比例 + 窗口数预估），被范围面板内嵌、也被滑窗弹窗复用
 │   └── widgets/               # 可复用 Qt 控件
 │       ├── canvas_adjustment.py
 │       ├── drag_out_list.py
@@ -127,9 +133,7 @@ LabelForge/
 │       ├── hover_popup.py
 │       ├── processing.py      # 扫描提示、Worker 与折叠区控件
 │       ├── spinner.py
-│       ├── task_badge.py      # 标签行任务徽标（det / seg / pose / obb）
-│       ├── window_overlay_preview.py # 原图叠加滑窗网格预览（画真实原图再叠网格；无图时退回纯色占位）
-│       └── window_params.py   # 滑窗参数控件（宽/高/重叠 + 预估 + 原图网格预览 + 模板按钮），被范围面板内嵌、也被滑窗弹窗复用
+│       └── task_badge.py      # 标签行任务徽标（det / seg / pose / obb）
 ├── tests/                     # pytest 回归测试
 │   ├── __init__.py
 │   ├── conftest.py
@@ -170,6 +174,9 @@ LabelForge/
 │   ├── test_save_dedup_regressions.py  # 保存前同类框去重；画布清空时切图删除 sidecar
 │   ├── test_theme_text_palette_regressions.py # 主题文字色与右键悬浮菜单圆角（真实 Qt 渲染像素）
 │   └── ...                     # 其他领域回归测试
+├── tools/                     # 开发辅助脚本（不参与打包）
+│   ├── compare_archived_bytecode.py # 比对源码字节码与归档 PYZ 内字节码
+│   └── probe_packed_deps.py   # 解包 exe 归档，用解出的 cv2 / onnxruntime 实跑
 └── docs/
     ├── project_structure.md   # 本文档
     ├── settings_guide.md      # 设置指南
