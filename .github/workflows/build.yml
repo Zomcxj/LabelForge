@@ -116,6 +116,9 @@ jobs:
             chmod +x "staging/LabelForge-${TAG}-Linux"
             file "staging/LabelForge-${TAG}-Linux"
           fi
+          # LGPL 要求许可证正文与声明随产物分发；单文件包把它们封在 exe 内部，
+          # 只下载 exe 的人读不到，所以在这里单独发一份。
+          cp LICENSE THIRD-PARTY.md staging/
 
       - name: Create or upload to release
         env:
