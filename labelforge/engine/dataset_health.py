@@ -6,8 +6,8 @@
 import json
 import math
 import os
-import concurrent.futures
 
+from .parallel_scan import scan_images
 from .quality_lint import _bbox
 from ..core.utils import calculate_iou, output_sidecar_paths, PathUtils
 from ..core.config import QUALITY_LINT_CONFIG
@@ -143,38 +143,31 @@ def collect_shape_geometry(image_paths, memory_boxes=None, is_interrupted=None):
             return index, None
         return index, _merge_shapes(original, output)
 
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=8)
-    interrupted = False
-    try:
-        futures = [pool.submit(_one, i, p) for i, p in enumerate(image_paths)]
-        for future in concurrent.futures.as_completed(futures):
-            if is_interrupted and is_interrupted():
-                interrupted = True
-                break
-            index, shapes = future.result()
-            if shapes is None:
+    def _consume(result):
+        nonlocal images_scanned
+        index, shapes = result
+        if shapes is None:
+            return
+        images_scanned += 1
+        for shape in shapes:
+            if not isinstance(shape, dict):
                 continue
-            images_scanned += 1
-            for shape in shapes:
-                if not isinstance(shape, dict):
+            if (shape.get('shape_type') or 'rectangle') == 'point':
+                continue
+            try:
+                rect = _bbox(shape)
+                if rect is None:
                     continue
-                if (shape.get('shape_type') or 'rectangle') == 'point':
-                    continue
-                try:
-                    rect = _bbox(shape)
-                    if rect is None:
-                        continue
-                    geo = _geometry_of(shape.get('label', ''), rect)
-                except Exception:
-                    continue
-                if geo is None:
-                    continue
-                geo['image_index'] = index
-                is_paste = _shape_is_paste(shape) or bool(shape.get('is_paste'))
-                (paste_boxes if is_paste else boxes).append(geo)
-    finally:
-        # 中断时放弃排队中的读盘任务，避免 requestInterruption 后仍被拖住
-        pool.shutdown(wait=not interrupted, cancel_futures=interrupted)
+                geo = _geometry_of(shape.get('label', ''), rect)
+            except Exception:
+                continue
+            if geo is None:
+                continue
+            geo['image_index'] = index
+            is_paste = _shape_is_paste(shape) or bool(shape.get('is_paste'))
+            (paste_boxes if is_paste else boxes).append(geo)
+
+    scan_images(image_paths, _one, _consume, is_interrupted=is_interrupted)
     return {'boxes': boxes, 'paste_boxes': paste_boxes,
             'images_scanned': images_scanned}
 

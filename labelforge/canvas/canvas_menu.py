@@ -432,34 +432,12 @@ class CanvasMenuMixin:
         background_rect = self.get_background_rect()
         if not background_rect:
             return None
-        from PySide6.QtCore import QRectF
         from ..core.config import DETECTION_BOX_CONFIG
-        from ..engine.shape_io import point_in_polygon
-        mx, my = mouse_pos.x(), mouse_pos.y()
+        from .hit_test import box_hit_by_cursor
         eps = DETECTION_BOX_CONFIG['resize_handle_size']
         for i, box in enumerate(self._editor.detection_boxes):
-            if box.get("shape_type") == "point" and box.get("points"):
-                cx = box["points"][0][0] * self.background_scale + background_rect.left()
-                cy = box["points"][0][1] * self.background_scale + background_rect.top()
-                if (mx - cx) ** 2 + (my - cy) ** 2 <= eps * eps:
-                    return i
-                continue
-            if box.get("shape_type") in ("polygon", "rotation") and box.get("points"):
-                canvas_pts = [
-                    [
-                        p[0] * self.background_scale + background_rect.left(),
-                        p[1] * self.background_scale + background_rect.top(),
-                    ]
-                    for p in box["points"]
-                ]
-                if point_in_polygon(mx, my, canvas_pts):
-                    return i
-                continue
-            box_x = box["x"] * self.background_scale + background_rect.left()
-            box_y = box["y"] * self.background_scale + background_rect.top()
-            box_w = box["width"] * self.background_scale
-            box_h = box["height"] * self.background_scale
-            if QRectF(box_x, box_y, box_w, box_h).contains(mouse_pos):
+            if box_hit_by_cursor(box, mouse_pos, background_rect,
+                                 self.background_scale, eps):
                 return i
         return None
 

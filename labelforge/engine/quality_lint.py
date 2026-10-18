@@ -8,12 +8,12 @@ import bisect
 import json
 import math
 import os
-import concurrent.futures
 
 from PySide6.QtCore import QThread, Signal
 
 from ..core.config import QUALITY_LINT_CONFIG
 from ..core.utils import calculate_iou
+from .parallel_scan import scan_images
 
 
 KIND_LABELS = {
@@ -501,34 +501,29 @@ def lint_dataset(image_paths, memory_boxes=None, progress_cb=None,
         ratios, exempt = collect_tiny_ratios(shapes, img_w, img_h)
         return index, path, shapes, img_w, img_h, ratios, exempt
 
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=8)
-    interrupted = False
-    try:
-        futures = [pool.submit(_one, i, p) for i, p in enumerate(image_paths)]
-        for future in concurrent.futures.as_completed(futures):
-            if is_interrupted and is_interrupted():
-                interrupted = True
-                break
-            (index, path, shapes, img_w, img_h,
-             ratios, exempt) = future.result()
-            done += 1
-            tiny_ratios.extend(ratios)
-            tiny_exempt += exempt
-            for issue in lint_image_shapes(path, shapes, img_w, img_h):
-                issue['image_index'] = index
-                issue['image_path'] = path
-                issues.append(issue)
-                summary[issue['kind']] = summary.get(issue['kind'], 0) + 1
-            if shapes is not None:
-                summary['scanned_images'] += 1
-            if progress_cb is not None and (done % 50 == 0 or done == total):
-                try:
-                    progress_cb(done, total)
-                except Exception:
-                    pass
-    finally:
-        # 中断时放弃排队中的读盘任务，避免 wait() 被未开始的 future 拖住
-        pool.shutdown(wait=not interrupted, cancel_futures=interrupted)
+    def _consume(result):
+        nonlocal done, tiny_exempt
+        (index, path, shapes, img_w, img_h,
+         ratios, exempt) = result
+        done += 1
+        tiny_ratios.extend(ratios)
+        tiny_exempt += exempt
+        for issue in lint_image_shapes(path, shapes, img_w, img_h):
+            issue['image_index'] = index
+            issue['image_path'] = path
+            issues.append(issue)
+            summary[issue['kind']] = summary.get(issue['kind'], 0) + 1
+        if shapes is not None:
+            summary['scanned_images'] += 1
+        if progress_cb is not None and (done % 50 == 0 or done == total):
+            try:
+                progress_cb(done, total)
+            except Exception as exc:
+                # 回调是外部传进来的；它挂了不该拖垮扫描，但要让用户查到
+                from ..core.exception_hook import _write_log
+                _write_log(f"质检进度回调失败: {exc}")
+
+    scan_images(image_paths, _one, _consume, is_interrupted=is_interrupted)
     return {'issues': issues, 'summary': summary,
             'tiny_report': tiny_report(tiny_ratios, tiny_exempt)}
 

@@ -15,19 +15,6 @@ __all__ = [
 ]
 
 
-def _report_scan_error(message):
-    """把扫描期的非致命错误写进日志。
-
-    扫描是后台跑的，失败若只吞掉，用户看到的就是「列表一直是空的」而无从
-    排查。日志写入本身失败时不再抛，避免递归。
-    """
-    try:
-        from ...core.exception_hook import _write_log
-        _write_log(message)
-    except Exception:
-        pass
-
-
 def _scan_single_json(json_path):
     """Parse a single LabelMe JSON and return its labels, or None on error."""
     try:
@@ -145,13 +132,15 @@ def scan_dataset_full(image_paths, is_interrupted=None, progress_cb=None,
                     progress_cb(dict(batch))
                 except Exception as exc:
                     # 回调是外部传进来的；它挂了不该拖垮扫描，但要让用户查到
-                    _report_scan_error(f"进度回调失败: {exc}")
+                    from ...core.exception_hook import _write_log
+                    _write_log(f"扫描进度回调失败: {exc}")
                 batch = {}
     if progress_cb is not None and batch:
         try:
             progress_cb(dict(batch))
         except Exception as exc:
-            _report_scan_error(f"进度回调失败: {exc}")
+            from ...core.exception_hook import _write_log
+            _write_log(f"扫描进度回调失败: {exc}")
     labels = {lbl for lbl, n in counts.items() if n > 0}
     return labels, counts, statuses
 

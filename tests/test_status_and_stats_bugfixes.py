@@ -9,6 +9,7 @@ import json
 from PySide6.QtCore import Qt
 
 from labelforge.canvas import canvas_interaction
+from labelforge.canvas import hit_test
 from labelforge.canvas.canvas import Canvas, _rotation_angle_status_text
 from labelforge.engine.image_loader import ImageLoaderMixin, scan_dataset_full
 
@@ -37,6 +38,19 @@ class Rect:
     def top(self): return self._y
     def contains(self, point):
         return self._x <= point.x() <= self._x + self._w and self._y <= point.y() <= self._y + self._h
+
+
+def _patch_rect(monkeypatch):
+    """把命中判定要用的 QRectF 换成可控的 Rect 桩。
+
+    conftest 给的 QRectF 桩 contains() 恒为 True，做不了命中判定，所以这些
+    用例自带一个 Rect。几何换算现在住在 canvas.hit_test 里，两处都要换掉，
+    否则补丁打在旧位置、命中判定仍走真 QRectF（离线模式下的结果不可控）。
+    """
+    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    monkeypatch.setattr(hit_test, "QRectF", Rect)
+
+
 
 
 class Background:
@@ -131,7 +145,7 @@ class CanvasStub(canvas_interaction.CanvasInteractionMixin):
 
 def test_wheel_edge_adjustment_refreshes_status_label(monkeypatch):
     """滚轮调整单边框后必须刷新状态栏宽高（回归：只有 update() 没有文字刷新）。"""
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG, 'edge_step', 4)
     canvas = CanvasStub()
 
@@ -144,7 +158,7 @@ def test_wheel_edge_adjustment_refreshes_status_label(monkeypatch):
 
 def test_wheel_box_scale_refreshes_status_label(monkeypatch):
     """滚轮缩放整框后同样必须刷新状态栏宽高。"""
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG,
                         'detection_box_scale_step', 0.1)
     canvas = CanvasStub()

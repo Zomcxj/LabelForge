@@ -315,6 +315,28 @@ def box_visible(editor, box):
     )
 
 
+def parse_label_stat_item(item):
+    """把一条标签统计项解析成 (label, count, color)。
+
+    label 为空或不是 dict 时返回 None（调用方跳过）。count 一律取非负整数，
+    坏值按 0 处理；color 去空白后可能是空串。
+
+    背景标签统计同时出现在两处：记忆记录的持久化，和统计弹窗读缓存。两处
+    口径必须一致，否则同一份数据在两个界面上读数不同。
+    """
+    if not isinstance(item, dict):
+        return None
+    label = str(item.get('label', '') or '').strip()
+    if not label:
+        return None
+    try:
+        count = max(0, int(item.get('count', 0) or 0))
+    except (TypeError, ValueError):
+        count = 0
+    color = str(item.get('color', '') or '').strip()
+    return label, count, color
+
+
 def calculate_iou(box1, box2):
     """
     计算两个矩形的 IoU（交并比）

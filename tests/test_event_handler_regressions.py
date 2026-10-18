@@ -105,8 +105,12 @@ def test_switch_background_to_index_clears_stale_box_selection():
 
 def test_switch_and_close_save_current_json_after_syncing_current_objects():
     source = Path('labelforge/engine/event_handler.py').read_text(encoding='utf-8')
+    main_source = Path('labelforge/ui/main_window.py').read_text(encoding='utf-8')
 
     switch_block = source.split('def switch_background_to_index', 1)[1].split('def on_labels_checkbox_changed', 1)[0]
-    close_block = source.split('def closeEvent', 1)[1]
+    # closeEvent 只在 ImageEditor 里有一份：EventHandlerMixin 原先也有一份，
+    # 被 MRO 遮蔽、永远不会执行，两份还会各自改到分叉。这里断言的是真正
+    # 跑起来的那一份。
+    close_block = main_source.split('def closeEvent', 1)[1]
     assert switch_block.index('self.detection_boxes_dict[self.current_background_index] = self.detection_boxes.copy()') < switch_block.index('self.save_current_json()')
     assert 'self.save_current_json()' in close_block

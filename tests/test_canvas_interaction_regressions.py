@@ -2,6 +2,7 @@
 from PySide6.QtCore import Qt
 
 from labelforge.canvas import canvas_interaction
+from labelforge.canvas import hit_test
 from labelforge.canvas import canvas as canvas_module
 from labelforge.canvas.canvas import Canvas as RealCanvas
 from labelforge.canvas.canvas_interaction import CanvasInteractionMixin
@@ -40,6 +41,19 @@ class Rect:
     def bottomRight(self): return Point(self._x + self._w, self._y + self._h)
     def contains(self, point):
         return self._x <= point.x() <= self._x + self._w and self._y <= point.y() <= self._y + self._h
+
+
+def _patch_rect(monkeypatch):
+    """把命中判定要用的 QRectF 换成可控的 Rect 桩。
+
+    conftest 给的 QRectF 桩 contains() 恒为 True，做不了命中判定，所以这些
+    用例自带一个 Rect。几何换算现在住在 canvas.hit_test 里，两处都要换掉，
+    否则补丁打在旧位置、命中判定仍走真 QRectF（离线模式下的结果不可控）。
+    """
+    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    monkeypatch.setattr(hit_test, "QRectF", Rect)
+
+
 
 
 class Background:
@@ -157,7 +171,7 @@ def test_reset_view_keeps_background_adaptive_to_canvas_resize(monkeypatch):
 
 
 def test_paste_hover_selects_paste_without_selecting_detection_box(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     canvas = Canvas("paste")
 
     canvas._check_hover()
@@ -168,7 +182,7 @@ def test_paste_hover_selects_paste_without_selecting_detection_box(monkeypatch):
 
 
 def test_annotate_hover_clears_paste_item_edit_state(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     canvas = Canvas("annotate")
     canvas._editor.selected_item = 0
     canvas.selected_item_size = (10, 10)
@@ -182,7 +196,7 @@ def test_annotate_hover_clears_paste_item_edit_state(monkeypatch):
 
 
 def test_paste_hover_does_not_select_detection_box_without_click(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     canvas = Canvas("paste")
     canvas._editor.canvas_items = []
 
@@ -193,7 +207,7 @@ def test_paste_hover_does_not_select_detection_box_without_click(monkeypatch):
 
 
 def test_paste_click_still_selects_detection_box(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     canvas = Canvas("paste")
     canvas._editor.canvas_items = []
 
@@ -205,7 +219,7 @@ def test_paste_click_still_selects_detection_box(monkeypatch):
 
 def test_click_prefers_keypoint_over_enclosing_group_box(monkeypatch):
     """关键点画在框上层，点击时应优先选中关键点而不是框。"""
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     canvas = Canvas("annotate")
     canvas._editor.canvas_items = []
     canvas._editor.detection_boxes = [
@@ -222,7 +236,7 @@ def test_click_prefers_keypoint_over_enclosing_group_box(monkeypatch):
 
 def test_click_prefers_topmost_overlapping_point(monkeypatch):
     """两个重叠关键点：后画的在上层，点击应选中它。"""
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     canvas = Canvas("annotate")
     canvas._editor.canvas_items = []
     canvas._editor.detection_boxes = [
@@ -267,7 +281,7 @@ def test_mode_switch_clears_paste_and_detection_box_selection():
 
 
 def test_ctrl_hover_adds_detection_box_to_selected_boxes_without_click(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     canvas = Canvas("annotate")
     canvas.selected_box = 0
     canvas.selected_boxes = [0]
@@ -282,7 +296,7 @@ def test_ctrl_hover_adds_detection_box_to_selected_boxes_without_click(monkeypat
 
 
 def test_scale_selected_box_uses_detection_box_scale_step(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG, 'detection_box_scale_step', 0.1)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG, 'paste_item_scale_step', 0.2)
     canvas = Canvas("annotate")
@@ -299,7 +313,7 @@ def test_scale_selected_box_uses_detection_box_scale_step(monkeypatch):
 
 
 def test_scale_selected_item_uses_paste_item_scale_step(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG, 'detection_box_scale_step', 0.1)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG, 'paste_item_scale_step', 0.2)
     canvas = Canvas("paste")
@@ -313,7 +327,7 @@ def test_scale_selected_item_uses_paste_item_scale_step(monkeypatch):
 
 
 def test_adjust_selected_box_edge_moves_only_nearest_edge(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG, 'edge_step', 5)
     canvas = Canvas("annotate")
     canvas.selected_box = 0
@@ -331,7 +345,7 @@ def test_adjust_selected_box_edge_moves_only_nearest_edge(monkeypatch):
 
 
 def test_wheel_event_uses_edge_adjustment_when_mouse_is_outside_selected_box(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG, 'edge_step', 4)
     canvas = Canvas("annotate")
     canvas.selected_box = 0
@@ -348,7 +362,7 @@ def test_wheel_event_uses_edge_adjustment_when_mouse_is_outside_selected_box(mon
 
 
 def test_wheel_edge_adjustment_keeps_opposite_edge_fixed_across_scrolls(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG, 'edge_step', 5)
     canvas = Canvas("annotate")
     canvas.selected_box = 0
@@ -366,7 +380,7 @@ def test_wheel_edge_adjustment_keeps_opposite_edge_fixed_across_scrolls(monkeypa
 
 
 def test_wheel_event_uses_image_coords_for_right_edge_adjustment_when_scaled(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG, 'edge_step', 4)
     canvas = Canvas("annotate")
     canvas.selected_box = 0
@@ -384,7 +398,7 @@ def test_wheel_event_uses_image_coords_for_right_edge_adjustment_when_scaled(mon
 
 
 def test_delete_view_ignores_detection_box_edits_and_preserves_work_cache(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     monkeypatch.setitem(canvas_interaction.DETECTION_BOX_WHEEL_CONFIG, 'detection_box_scale_step', 0.1)
     canvas = Canvas("annotate")
     canvas._editor._is_delete_view = True
@@ -400,7 +414,7 @@ def test_delete_view_ignores_detection_box_edits_and_preserves_work_cache(monkey
 
 
 def test_delete_view_ignores_box_drawing(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     canvas = Canvas("annotate")
     canvas._editor._is_delete_view = True
 
@@ -410,7 +424,7 @@ def test_delete_view_ignores_box_drawing(monkeypatch):
 
 
 def test_delete_view_release_does_not_save_removed_image_labels_to_work_path(monkeypatch):
-    monkeypatch.setattr(canvas_interaction, "QRectF", Rect)
+    _patch_rect(monkeypatch)
     canvas = Canvas("annotate")
     canvas._editor._is_delete_view = True
     work_boxes = [canvas._editor.detection_boxes[0].copy()]

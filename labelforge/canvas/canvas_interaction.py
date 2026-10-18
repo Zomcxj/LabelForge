@@ -8,6 +8,8 @@ from PySide6.QtGui import QDrag
 from ..core.config import BACKGROUND_SCALE_CONFIG, PASTE_ITEM_CONFIG, NUDGE_CONFIG, DETECTION_BOX_WHEEL_CONFIG, DETECTION_BOX_CONFIG
 from .canvas_drawing import CanvasDrawingMixin
 from .canvas_menu import CanvasMenuMixin
+from .hit_test import (box_hit_by_cursor, canvas_rect_of,
+                       canvas_rect_of_bounds)
 
 # 画布上「按住拖动 = 把当前图拖出去」的触发阈值（像素）。
 # 与背景图列表 `DragOutListWidget` 的 20px 一致：两边是同一个功能，
@@ -649,28 +651,11 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         # 第二遍：按顺序检查框内命中
         # 命中顺序与绘制顺序相反：关键点在最上层，先于框被命中；
         # 其余框后画的在上层，故倒序遍历。
-        from ..engine.shape_io import point_in_polygon
         eps = DETECTION_BOX_CONFIG['resize_handle_size']
 
         def _hit(i, box):
-            if box.get("shape_type") == "point" and box.get("points"):
-                cx = box["points"][0][0] * self.background_scale + background_rect.left()
-                cy = box["points"][0][1] * self.background_scale + background_rect.top()
-                return (mouse_pos.x() - cx) ** 2 + (mouse_pos.y() - cy) ** 2 <= eps * eps
-            if box.get("shape_type") in ("polygon", "rotation") and box.get("points"):
-                canvas_pts = [
-                    [
-                        p[0] * self.background_scale + background_rect.left(),
-                        p[1] * self.background_scale + background_rect.top(),
-                    ]
-                    for p in box["points"]
-                ]
-                return point_in_polygon(mouse_pos.x(), mouse_pos.y(), canvas_pts)
-            box_x = box["x"] * self.background_scale + background_rect.left()
-            box_y = box["y"] * self.background_scale + background_rect.top()
-            box_width = box["width"] * self.background_scale
-            box_height = box["height"] * self.background_scale
-            return QRectF(box_x, box_y, box_width, box_height).contains(mouse_pos)
+            return box_hit_by_cursor(
+                box, mouse_pos, background_rect, self.background_scale, eps)
 
         indexed = [
             (i, box) for i, box in enumerate(self._editor.detection_boxes)
@@ -1094,39 +1079,17 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             self.setCursor(Qt.PointingHandCursor)
             return True
 
-        from ..engine.shape_io import point_in_polygon
         eps = DETECTION_BOX_CONFIG['resize_handle_size']
         for i, box in enumerate(self._editor.detection_boxes):
             if not self._box_visible(box):
                 continue
-            if box.get("shape_type") == "point" and box.get("points"):
-                cx = box["points"][0][0] * self.background_scale + background_rect.left()
-                cy = box["points"][0][1] * self.background_scale + background_rect.top()
-                hit = ((self.mouse_pos.x() - cx) ** 2 +
-                       (self.mouse_pos.y() - cy) ** 2) <= eps * eps
-            elif box.get("shape_type") in ("polygon", "rotation") and box.get("points"):
-                canvas_pts = [
-                    [
-                        p[0] * self.background_scale + background_rect.left(),
-                        p[1] * self.background_scale + background_rect.top(),
-                    ]
-                    for p in box["points"]
-                ]
-                hit = point_in_polygon(self.mouse_pos.x(), self.mouse_pos.y(), canvas_pts)
-                box_rect = QRectF(
-                    box["x"] * self.background_scale + background_rect.left(),
-                    box["y"] * self.background_scale + background_rect.top(),
-                    box["width"] * self.background_scale,
-                    box["height"] * self.background_scale,
-                )
-            else:
-                box_rect = QRectF(
-                    box["x"] * self.background_scale + background_rect.left(),
-                    box["y"] * self.background_scale + background_rect.top(),
-                    box["width"] * self.background_scale,
-                    box["height"] * self.background_scale,
-                )
-                hit = box_rect.contains(self.mouse_pos)
+            hit = box_hit_by_cursor(
+                box, self.mouse_pos, background_rect, self.background_scale, eps)
+            # 三种形状都要算出自己的外接矩形：命中后要用它定位手柄。
+            # 原先把这一步只写在多边形/矩形分支里，关键点分支漏了 —— 于是
+            # 点中关键点时要么 box_rect 未赋值报 NameError，要么沿用上一个框
+            # 的矩形，手柄判定落在错误的框上。
+            box_rect = canvas_rect_of(box, background_rect, self.background_scale)
 
             if hit:
                 handle = self._box_handle_at_pos(
@@ -1183,12 +1146,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if background_rect is None:
             return False
 
-        item_rect = QRectF(
-            rect.x() * self.background_scale + background_rect.left(),
-            rect.y() * self.background_scale + background_rect.top(),
-            rect.width() * self.background_scale,
-            rect.height() * self.background_scale,
-        )
+        item_rect = canvas_rect_of_bounds(
+            rect.x(), rect.y(), rect.width(), rect.height(),
+            background_rect, self.background_scale)
         return item_rect.contains(mouse_pos)
 
     def _box_rect_contains(self, box_index, mouse_pos):
@@ -1200,13 +1160,8 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             return False
 
         box = self._editor.detection_boxes[box_index]
-        box_rect = QRectF(
-            box["x"] * self.background_scale + background_rect.left(),
-            box["y"] * self.background_scale + background_rect.top(),
-            box["width"] * self.background_scale,
-            box["height"] * self.background_scale,
-        )
-        return box_rect.contains(mouse_pos)
+        return canvas_rect_of(
+            box, background_rect, self.background_scale).contains(mouse_pos)
 
     def _drag_item(self):
         if not self._can_edit_canvas():

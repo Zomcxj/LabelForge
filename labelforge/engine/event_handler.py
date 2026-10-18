@@ -547,15 +547,3 @@ class EventHandlerMixin:
                 label_list.scrollToItem(item)
         finally:
             label_list.blockSignals(False)
-
-    def closeEvent(self, event):
-        """关闭窗口事件 - 直接关闭，不弹确认框"""
-        if hasattr(self, '_processing_panel') and self._processing_panel:
-            self._processing_panel.close()
-        if self.current_background_index >= 0:
-            self.canvas_items_dict[self.current_background_index] = self.canvas_items.copy()
-            self.detection_boxes_dict[self.current_background_index] = self.detection_boxes.copy()
-            self.save_current_json()
-        if hasattr(self, '_save_memory_record_on_close'):
-            self._save_memory_record_on_close()
-        event.accept()

@@ -4,6 +4,7 @@
 import os
 import json
 from . import config as config_module
+from .utils import parse_label_stat_item
 from .config import SHORTCUT_CONFIG, STATUSBAR_CONFIG, DETECTION_BOX_CONFIG, MAGNIFIER_CONFIG, LABEL_CACHE_SLOTS, NUDGE_CONFIG, DETECTION_BOX_WHEEL_CONFIG, CROSSHAIR_CONFIG, BOX_BORDER_CONFIG, LABEL_COLORS, OBB_CONFIG, normalized_fill_rgb
 
 
@@ -279,16 +280,10 @@ def _normalize_bg_label_stats(value):
         return []
     result = []
     for item in value:
-        if not isinstance(item, dict):
+        parsed = parse_label_stat_item(item)
+        if parsed is None:
             continue
-        label = str(item.get('label', '') or '').strip()
-        if not label:
-            continue
-        try:
-            count = max(0, int(item.get('count', 0) or 0))
-        except (TypeError, ValueError):
-            count = 0
-        color = str(item.get('color', '') or '').strip()
+        label, count, color = parsed
         result.append({'label': label, 'count': count, 'color': color})
     return result
 

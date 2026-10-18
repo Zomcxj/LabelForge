@@ -1,18 +1,6 @@
 """Label statistics behavior for the main window."""
 
 
-def _stats_log(message):
-    """统计相关的非致命错误写进日志。
-
-    写日志本身失败时不再抛，否则错误处理会把程序拖死。
-    """
-    try:
-        from ...core.exception_hook import _write_log
-        _write_log(message)
-    except Exception:
-        pass
-
-
 def _equalize_dock_sizes(host, docks, last_norm, qt):
     """同一行的 dock 等宽（1:1）；单列时等高。
 
@@ -117,19 +105,14 @@ class StatsMixin:
         current_path = getattr(self, '_memory_background_path', '') or ''
         # Prefer any non-empty live cache (renames/canvas edits update it without path).
         if cached:
+            from ...core.utils import parse_label_stat_item
             bg_stats = {}
             for item in cached:
-                if not isinstance(item, dict):
+                parsed = parse_label_stat_item(item)
+                if parsed is None:
                     continue
-                label = str(item.get('label', '') or '').strip()
-                if not label:
-                    continue
-                try:
-                    count = max(0, int(item.get('count', 0) or 0))
-                except (TypeError, ValueError):
-                    count = 0
+                label, count, color = parsed
                 bg_stats[label] = count
-                color = str(item.get('color', '') or '').strip()
                 if color and hasattr(self, 'label_color_map'):
                     self.label_color_map.setdefault(label, color)
             if bg_stats:
@@ -239,7 +222,8 @@ class StatsMixin:
                 previous.requestInterruption()
             except Exception as exc:
                 # 中断失败会让上一次扫描的 worker 继续跑，两组结果可能互相覆盖
-                _stats_log(f"中断上一次统计扫描失败: {exc}")
+                from ...core.exception_hook import _write_log
+                _write_log(f"中断上一次统计扫描失败: {exc}")
             self._stats_scan_worker = None
 
         images = list(getattr(self, 'background_images', None) or [])
@@ -603,7 +587,8 @@ class StatsMixin:
                         pass
             except Exception as exc:
                 # 停不掉 worker 会残留后台线程，下次统计可能读到旧结果
-                _stats_log(f"停止统计扫描 worker 失败: {exc}")
+                from ...core.exception_hook import _write_log
+                _write_log(f"停止统计扫描 worker 失败: {exc}")
 
     def _build_health_section(self, dialog, layout):
         """构建「数据集健康」区：4 个可拖拽 dock 面板 + 建议，切换标签页切换数据源。"""
@@ -843,7 +828,6 @@ class StatsMixin:
 
     def _start_health_scan(self, dialog, charts, source_label, advice_label):
         """起后台 worker 算健康度；关掉弹窗就停。"""
-        from ..i18n import t as tr
         from ...engine.dataset_health import DatasetHealthWorker
 
         self._close_health_worker()
