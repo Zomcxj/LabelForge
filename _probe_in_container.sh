@@ -1,35 +1,25 @@
 #!/usr/bin/env bash
-# 临时探针（验证完就删）：ubuntu:20.04 容器里，PyInstaller 到底能不能 import Qt。
+# 临时探针（验证完就删）：在 ubuntu:20.04 + conda 里真跑一次 PyInstaller，
+# 看产物里到底有没有 Qt 平台插件（libqxcb 等）。
 #
-# PyInstaller 收集 Qt 平台插件靠的是在构建环境里真的 import Qt。import 不成功时
-# 它只打一条 warning 就继续，产物缺插件、启动即崩。这个脚本用三种 apt 组合看
-# 哪种能让 Qt 导入成功，并打出 Qt 自己认为的插件目录。
+# 为什么必须真跑：PyInstaller 收集 Qt 插件靠的是在构建环境里 import Qt；
+# 失败时只打一条 warning 就继续，构建「成功」但产物零插件（rc1 就是这样）。
 set -u
 
-MODE="${1:-baselibs}"
 export DEBIAN_FRONTEND=noninteractive
 
-apt-get update -qq >/dev/null 2>&1
-apt-get install -y -qq curl bzip2 fontconfig binutils >/dev/null 2>&1
-
 XCB="libxcb-cursor0 libxkbcommon-x11-0 libegl1-mesa"
-BASE="libglib2.0-0 libdbus-1-3 libx11-6 libxext6 libxrender1 libxi6 libxtst6 libsm6 libice6"
+BASE="libglib2.0-0 libdbus-1-3 libx11-6 libxext6 libxrender1 libxi6 libxtst6 libsm6 libice6 libgl1"
 
-case "$MODE" in
-  original) apt-get install -y -qq $XCB >/dev/null 2>&1 ;;
-  baselibs) apt-get install -y -qq $XCB $BASE >/dev/null 2>&1 ;;
-  sysfirst)
-    apt-get install -y -qq $XCB $BASE >/dev/null 2>&1
-    export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}
-    ;;
-esac
+apt-get update -qq >/dev/null 2>&1
+apt-get install -y -qq curl bzip2 fontconfig binutils $XCB $BASE >/dev/null 2>&1
 
 curl -fsSL -o /tmp/mf.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
 bash /tmp/mf.sh -b -p /opt/conda >/dev/null 2>&1
 /opt/conda/bin/conda install -y python=3.12 >/dev/null 2>&1
 /opt/conda/bin/python -m pip install -q "PySide6==6.9.3" pyinstaller >/dev/null 2>&1
 
-echo "===== MODE=$MODE ====="
+echo "===== 1) 各模块能不能导入 ====="
 for m in QtCore QtGui QtWidgets QtSvg QtNetwork; do
   if /opt/conda/bin/python -c "import PySide6.$m" >/tmp/e.txt 2>&1; then
     echo "  import PySide6.$m  OK"
@@ -38,11 +28,28 @@ for m in QtCore QtGui QtWidgets QtSvg QtNetwork; do
   fi
 done
 
-/opt/conda/bin/python - <<'PY' 2>&1 | tail -4
-import os
-from PySide6.QtCore import QLibraryInfo
-p = QLibraryInfo.path(QLibraryInfo.LibraryPath.PluginsPath)
-d = os.path.join(p, "platforms")
-print("  PluginsPath =", p)
-print("  platforms 目录 =", sorted(os.listdir(d)) if os.path.isdir(d) else "<不存在>")
+echo "===== 2) 真跑 PyInstaller（排除 QtNetwork）====="
+cat > /tmp/app.py <<'PY'
+from PySide6.QtWidgets import QApplication, QLabel
+app = QApplication([])
+print("probe ok", QLabel("x").text())
 PY
+cd /tmp
+rm -rf /tmp/bdist /tmp/dist
+/opt/conda/bin/python -m PyInstaller --onefile --name probe --noconfirm \
+  --exclude-module PySide6.QtNetwork \
+  --exclude-module PySide6.QtQml --exclude-module PySide6.QtQuick \
+  --exclude-module PySide6.QtPdf --exclude-module PySide6.Qt3DCore \
+  --log-level WARN /tmp/app.py > /tmp/build.log 2>&1
+echo "  pyinstaller 退出码: $?"
+grep -c "failed to obtain Qt library info" /tmp/build.log | sed 's/^/  Qt 探测失败 warning 次数: /'
+tail -3 /tmp/build.log | sed 's/^/  build.log 尾: /'
+
+echo "===== 3) 产物里有没有插件 ====="
+for k in libqxcb platforms libglib-2.0; do
+  printf "  %-14s %s 处命中\n" "$k" "$(grep -ac "$k" /tmp/dist/probe 2>/dev/null)"
+done
+
+echo "===== 4) 产物能不能跑（offscreen）====="
+QT_QPA_PLATFORM=offscreen timeout 30 /tmp/dist/probe 2>&1 | tail -3 | sed 's/^/  /'
+echo "  退出码: $?"

@@ -1,8 +1,8 @@
 name: Linux build probe
 
-# 临时工作流（验证完就删）：只跑「容器里能不能 import Qt」这一个探针，
-# 不打包、不建 release。用来定下 Linux 构建镜像该装哪些库，而不是靠打正式
-# 标签去试 —— 标签会走 release 作业，那是会动发布的。
+# 临时工作流（验证完就删）：在 ubuntu:20.04 里真跑一次 PyInstaller，检查产物
+# 有没有 Qt 平台插件。不打包发布、不建 release —— 打标签会走 release 作业，
+# 那是会动发布的，不适合拿来试环境。
 on:
   push:
     paths:
@@ -13,14 +13,10 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [original, baselibs, sysfirst]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Probe Qt import in ubuntu:20.04
+      - name: Build a throwaway bundle and inspect it
         run: |
           docker run --rm -v "$PWD:/w" -w /w ubuntu:20.04 \
-            bash /w/_probe_in_container.sh ${{ matrix.mode }}
+            bash /w/_probe_in_container.sh
