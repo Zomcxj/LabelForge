@@ -70,7 +70,7 @@ class ClassFilterPanel(QDialog):
         theme = ThemeManager.get_theme()
         self.setStyleSheet(f"""
             {ThemeManager.get_dialog_style()}
-            QLabel {{ color: {theme['text_primary']}; }}
+            {ThemeManager.get_label_style()}
             QLabel#classFilterHint {{ color: {theme['text_secondary']}; }}
             QScrollArea {{ border: 1px solid {theme['border_color']}; border-radius: 4px; }}
             QCheckBox {{ color: {theme['text_primary']}; padding: 2px; }}

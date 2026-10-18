@@ -182,7 +182,7 @@ class ScopePanel(QDialog):
         theme = ThemeManager.get_theme()
         self.setStyleSheet(f"""
             {ThemeManager.get_dialog_style()}
-            QLabel {{ color: {theme['text_primary']}; }}
+            {ThemeManager.get_label_style()}
             QLabel#scopeHint {{ color: {theme['text_secondary']}; }}
             QLabel#scopeWarn {{ color: {theme['accent']}; }}
             /* 三段分组框：一眼分得清全图/滑窗/区域各自的内容。置灰时

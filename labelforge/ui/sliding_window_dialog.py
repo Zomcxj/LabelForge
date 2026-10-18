@@ -68,7 +68,7 @@ class SlidingWindowDialog(QDialog):
         theme = ThemeManager.get_theme()
         self.setStyleSheet(f"""
             {ThemeManager.get_dialog_style()}
-            QLabel {{ color: {theme['text_primary']}; }}
+            {ThemeManager.get_label_style()}
             QPushButton {{
                 background-color: {theme['panel_bg']}; color: {theme['text_primary']};
                 border: 1px solid {theme['border_color']}; border-radius: 4px;

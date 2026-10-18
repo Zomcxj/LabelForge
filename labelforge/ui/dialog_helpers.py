@@ -248,7 +248,7 @@ class ThemedMultiLineDialog(QDialog):
         t = self._theme
         self.setStyleSheet(f"""
             {ThemeManager.get_dialog_style()}
-            QLabel {{ color: {t['text_primary']}; }}
+            {ThemeManager.get_label_style()}
             QLabel#multiLineCount {{ color: {t['text_secondary']}; }}
             QPlainTextEdit {{ background-color: {t['panel_bg']}; color: {t['text_primary']};
                 border: 1px solid {t['border_color']}; border-radius: 4px; padding: 4px; }}

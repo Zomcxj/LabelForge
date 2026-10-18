@@ -820,6 +820,16 @@ class ThemeManager:
                 f"color: {t['text_primary']}; }}")
 
     @classmethod
+    def get_label_style(cls):
+        """对话框/面板里标签的正文色。
+
+        主样式表已经给 QLabel 设过这一条，但小窗是独立顶层窗口，样式不一定
+        继承下来，所以各处又写了一遍 —— 六个地方。收在这里，改配色只改一处。
+        """
+        t = cls._current_theme
+        return f"QLabel {{ color: {t['text_primary']}; }}"
+
+    @classmethod
     def get_list_style(cls):
         t = cls._current_theme
         return f"""

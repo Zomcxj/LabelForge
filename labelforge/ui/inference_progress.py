@@ -64,7 +64,7 @@ class InferenceProgressDialog(QDialog):
         theme = ThemeManager.get_theme()
         self.setStyleSheet(f"""
             {ThemeManager.get_dialog_style()}
-            QLabel {{ color: {theme['text_primary']}; }}
+            {ThemeManager.get_label_style()}
             QLabel#inferenceSummary {{ color: {theme['text_secondary']}; }}
             {ThemeManager.get_progress_style()}
             QPushButton {{ background-color: {theme['panel_bg']}; color: {theme['text_primary']};
