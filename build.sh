@@ -218,8 +218,13 @@ if [ ! -f "$MAIN_SCRIPT_PATH" ]; then
 fi
 log_ok "主脚本 '$MAIN_SCRIPT_PATH' 存在"
 
-# 检查图标文件
-ICON_FILE="${PROJECT_ROOT}${SEP}ico_image${SEP}icoo.png"
+# 检查图标文件。Windows 用多尺寸 .ico，资源管理器与任务栏才不会糊；
+# 其他平台 PyInstaller 不接受 ico，退回 png。
+if [ "$PLATFORM" = "windows" ]; then
+    ICON_FILE="${PROJECT_ROOT}${SEP}ico_image${SEP}labelforge.ico"
+else
+    ICON_FILE="${PROJECT_ROOT}${SEP}ico_image${SEP}icoo.png"
+fi
 if [ ! -f "$ICON_FILE" ]; then
     log_warn "图标文件 '$ICON_FILE' 不存在，构建将继续但可能缺少图标"
 else

@@ -12,7 +12,7 @@ _binaries = []
 if os.path.exists(_ffi_dll):
     _binaries.append((_ffi_dll, '.'))
 
-_icon = [os.path.join(_root, 'ico_image', 'icoo.png')] if sys.platform == 'win32' else []
+_icon = [os.path.join(_root, 'ico_image', 'labelforge.ico')] if sys.platform == 'win32' else []
 
 # 格式转换（自研实现，零外部依赖，仅用标准库 + numpy）
 _extra_hiddenimports = [

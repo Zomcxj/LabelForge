@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LabelForge application icon source.
+
+  Colour: warm orange to magenta.
+  Shape: three capsules (two arms plus a stem). Every stroke is a rect with
+  rx = ry = half its thickness, so BOTH ends of each stroke are perfect
+  semicircles. No chamfer: a chamfer is a flat cut, which is a different
+  silhouette from a capsule.
+  Stacking merges the seams naturally; a single evenodd path leaves gaps
+  where the inner contour is subtracted (hit that mistake once).
+
+  Thick strokes, so the layout is rebalanced rather than fattened in place:
+  growing the arms without moving them would have closed the two white gaps.
+    stem      width 278   rx 139
+    upper arm y    0..243   h 243   rx 122
+    mid arm   y  453..685   h 232   rx 116
+    gaps      210 above the mid arm, 445 below it (32 : 68)
+
+  The mid arm is shorter than the upper one (0.938 of the canvas width), as
+  in the reference. Both arms span from the left edge so their left caps sit
+  exactly under the stem's cap.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 1130" width="780" height="1130">
+  <defs>
+    <!--
+      userSpaceOnUse matters: the default objectBoundingBox restarts the
+      gradient for every shape, which turns the stack into three colour bands.
+    -->
+    <linearGradient id="g" gradientUnits="userSpaceOnUse"
+                    x1="60" y1="0" x2="560" y2="1130">
+      <stop offset="0"    stop-color="#F5A012"/>
+      <stop offset="0.28" stop-color="#F65B36"/>
+      <stop offset="0.58" stop-color="#EC156F"/>
+      <stop offset="1"    stop-color="#ED1882"/>
+    </linearGradient>
+  </defs>
+
+  <g fill="url(#g)">
+    <!-- Stem: full height capsule -->
+    <rect x="0" y="0" width="278" height="1130" rx="139" ry="139"/>
+
+    <!-- Upper arm: capsule, both ends semicircular -->
+    <rect x="0" y="0" width="780" height="243" rx="121.5" ry="121.5"/>
+
+    <!-- Mid arm: capsule, ends at 0.938 of the width -->
+    <rect x="0" y="453" width="732" height="232" rx="116" ry="116"/>
+  </g>
+</svg>
