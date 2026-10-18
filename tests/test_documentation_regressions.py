@@ -143,6 +143,12 @@ _LEGACY_FORMS = ("pastelabel", "PasteLabel", "PASTELABEL")
 _LEGACY_SCAN_EXTRA = ("*.spec", "*.sh", "*.yml", "*.yaml", "*.txt", "*.cfg",
                       "*.toml", "*.json")
 
+# 扫描时跳过的目录：生成物，以及 .gitignore「Data」段里的本地数据目录。
+# 后者不是仓库残留 —— 应用默认把导出写到 `exports/`，而导出的 yaml 里会写
+# 本机的绝对路径，本地目录还叫 PasteLabel 时就会被判成遗漏（假阳性）。
+_LEGACY_SKIP_PREFIXES = (".superpowers/", "build/", "dist/", "exports/",
+                         "images/", "model/")
+
 
 def _legacy_scan_files():
     for path in sorted(ROOT.rglob("*.py")):
@@ -161,8 +167,8 @@ def test_no_legacy_package_name_outside_allowlist():
         if rel in seen:
             continue
         seen.add(rel)
-        if (rel.startswith((".superpowers/", "build/", "dist/"))
-                or "__pycache__" in rel):
+        if (rel.startswith(_LEGACY_SKIP_PREFIXES)
+                or "__pycache__" in rel or "_paste_output/" in rel):
             continue
         if rel in _LEGACY_ALLOWED:
             continue
