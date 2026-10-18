@@ -170,6 +170,24 @@ def test_requirements_declares_pyside6_not_pyqt5():
     assert not any(l.lower().startswith("pyqt") for l in code), code
 
 
+def _without_inline_release_notes(text):
+    """去掉「创建 release」那一步的内联发行说明。
+
+    发行说明是 `printf` 的参数，里面写什么都不可能被 shell 执行；而它天生要
+    点出旧绑定（「界面框架由 PyQt5 迁到 PySide6」），否则那句话读不通。这个
+    守卫要管的是**装了什么**，所以只把这段文字排除掉，工作流其余部分照旧全查
+    （`pip install` / `conda install` 一行也没漏）。
+    """
+    start = text.find("printf '%s")
+    if start == -1:
+        return text
+    end = text.find('> release-notes.md', start)
+    if end == -1:
+        return text
+    end = text.find(chr(10), end)
+    return text[:start] + (text[end:] if end != -1 else '')
+
+
 def test_ci_installs_pyside6():
     """CI 里不能还装 PyQt5。
 
@@ -177,7 +195,8 @@ def test_ci_installs_pyside6():
     只匹配 `PyQt5` 会漏掉它——实测就漏了一次，PySide6 压根没被装上。
     """
     for rel in (".github/workflows/test.yml", ".github/workflows/build.yml"):
-        text = (ROOT / rel).read_text(encoding="utf-8")
+        text = _without_inline_release_notes(
+            (ROOT / rel).read_text(encoding="utf-8"))
         lowered = text.lower()
         assert "pyqt5" not in lowered, f"{rel} 仍装着 PyQt5"
         assert "pyqt6" not in lowered, f"{rel} 仍装着 PyQt6"

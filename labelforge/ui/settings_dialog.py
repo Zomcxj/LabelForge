@@ -483,7 +483,7 @@ class SettingsDialog(QDialog):
     def _version_text():
         """左下角版本串；取不到 `__version__` 时不显示假版本号。
 
-        只显示 `v1.5.3`，不带应用名前缀——对话框标题里已经有应用名了，重复。
+        只显示 `v2.0.0`，不带应用名前缀——对话框标题里已经有应用名了，重复。
         """
         from .. import __version__
 

@@ -129,6 +129,7 @@ def test_pipeline_recipe_feature_fully_removed():
 
 # 这些位置允许出现旧名：它们是「旧名兼容」的实现或断言，不是遗漏。
 _LEGACY_ALLOWED = {
+    ".github/workflows/build.yml",            # 发行说明要点出旧名并说明旧配置会沿用
     "labelforge/core/config_manager.py",      # LEGACY_CONFIG_PATH 常量
     "labelforge/core/json_trace.py",          # 旧探针环境变量的回退
     "tests/test_documentation_regressions.py",  # 本文件的断言
