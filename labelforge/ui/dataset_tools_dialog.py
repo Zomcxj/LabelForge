@@ -9,7 +9,9 @@
 默认不覆盖原始数据，取消或失败不保留半成品。
 """
 import os
+from datetime import datetime
 
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QComboBox, QCheckBox, QTextEdit, QFileDialog,
@@ -275,10 +277,11 @@ class DatasetToolsDialog(QDialog):
     # ---------- 日志 ----------
 
     def _log(self, msg):
-        from datetime import datetime
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cursor = self._log_area.textCursor()
-        cursor.movePosition(cursor.End)
+        # 枚举要走类：PySide6 不在实例上暴露 End，`cursor.End` 会
+        # AttributeError（PyQt5 允许，迁移时漏改）。
+        cursor.movePosition(QTextCursor.MoveOperation.End)
         self._log_area.setTextCursor(cursor)
         self._log_area.append(f"[{ts}] {msg}")
         sb = self._log_area.verticalScrollBar()

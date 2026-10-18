@@ -483,6 +483,14 @@ qtgui.QDropEvent = type('QDropEvent', (), {'__init__': lambda self, *a: None})
 qtgui.QDrag = type('QDrag', (), {'__init__': lambda self, *a: None, 'exec_': lambda self, *a: 0})
 qtgui.QFontDatabase = type('QFontDatabase', (), {'addApplicationFont': staticmethod(lambda *a: 0)})
 qtgui.QImage = type('QImage', (), {'Format_ARGB32': 5})
+# 日志框把光标移到末尾要用 `QTextCursor.MoveOperation.End`；桩里缺这个类，
+# 凡导入 processing_panel / dataset_tools_dialog 的测试都会在收集期炸。
+qtgui.QTextCursor = type('QTextCursor', (), {
+    'MoveOperation': type('MoveOperation', (), {'Start': 0, 'End': 14}),
+    'End': 14,
+    'textCursor': lambda self: self,
+    'movePosition': lambda self, *a: True,
+})
 # Qt6 把 QAction / QShortcut 从 QtWidgets 挪到了 QtGui；源码按新位置导入，
 # mock 也得跟着挪，否则 `from PySide6.QtGui import QAction` 在收集期就炸。
 qtgui.QAction = type('QAction', (), {'__init__': lambda self, *a: None})

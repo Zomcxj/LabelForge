@@ -9,7 +9,7 @@ from ..core.config import BACKGROUND_SCALE_CONFIG, PASTE_ITEM_CONFIG, NUDGE_CONF
 from .canvas_drawing import CanvasDrawingMixin
 from .canvas_menu import CanvasMenuMixin
 from .hit_test import (box_hit_by_cursor, canvas_rect_of,
-                       canvas_rect_of_bounds)
+                       canvas_rect_of_bounds, iter_boxes_by_hit_priority)
 
 # 画布上「按住拖动 = 把当前图拖出去」的触发阈值（像素）。
 # 与背景图列表 `DragOutListWidget` 的 20px 一致：两边是同一个功能，
@@ -648,29 +648,18 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 self.selected_box = i
                 return True
 
-        # 第二遍：按顺序检查框内命中
-        # 命中顺序与绘制顺序相反：关键点在最上层，先于框被命中；
-        # 其余框后画的在上层，故倒序遍历。
+        # 第二遍：按顺序检查框内命中。顺序由 hit_test 统一给出 —— 右键菜单
+        # 必须与这里一致，否则会出现「能点中、右键却选到下面那个框」。
         eps = DETECTION_BOX_CONFIG['resize_handle_size']
-
-        def _hit(i, box):
-            return box_hit_by_cursor(
-                box, mouse_pos, background_rect, self.background_scale, eps)
-
-        indexed = [
-            (i, box) for i, box in enumerate(self._editor.detection_boxes)
-            if self._box_visible(box)
-        ]
-        points_first = [(i, b) for i, b in indexed if b.get("shape_type") == "point"]
-        rest = [(i, b) for i, b in indexed if b.get("shape_type") != "point"]
-        # 与绘制一致：已选中的点在最上层，优先命中；其余点后画的在上层。
         selected = set(getattr(self, 'selected_boxes', []) or [])
         if self.selected_box is not None:
             selected.add(self.selected_box)
-        points_first.sort(key=lambda item: item[0] in selected)
-        points_first = list(reversed(points_first))
-        for i, box in points_first + list(reversed(rest)):
-            hit = _hit(i, box)
+        for i, box in iter_boxes_by_hit_priority(
+                self._editor.detection_boxes,
+                selected=selected,
+                visible=self._box_visible):
+            hit = box_hit_by_cursor(
+                box, mouse_pos, background_rect, self.background_scale, eps)
             if hit:
                 self.hover_resize_target = None
                 self.hover_resize_handle = None

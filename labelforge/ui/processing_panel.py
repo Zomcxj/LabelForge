@@ -5,10 +5,11 @@ from datetime import datetime
 from typing import List
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QDialog, QDoubleSpinBox, QFileDialog,
     QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
+    QPushButton, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from .i18n import t as tr
@@ -551,7 +552,9 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
     def _log(self, msg):
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cursor = self._log_area.textCursor()
-        cursor.movePosition(cursor.End)
+        # 枚举要走类：PySide6 不在实例上暴露 End，`cursor.End` 会
+        # AttributeError（PyQt5 允许，迁移时漏改）。
+        cursor.movePosition(QTextCursor.MoveOperation.End)
         self._log_area.setTextCursor(cursor)
         self._log_area.append(f"[{ts}] {msg}")
         sb = self._log_area.verticalScrollBar()

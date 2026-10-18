@@ -1,11 +1,28 @@
 """Label statistics behavior for the main window."""
 
 
+def _side_by_side(g1, g2):
+    """两个 dock 是否并排：同一行、水平不相交。"""
+    v_overlap = min(g1.bottom(), g2.bottom()) - max(g1.top(), g2.top())
+    x_disjoint = g1.right() < g2.left() or g2.right() < g1.left()
+    return x_disjoint and v_overlap > min(g1.height(), g2.height()) * 0.5
+
+
+def _stacked(g1, g2):
+    """两个 dock 是否上下堆叠：同一列、垂直不相交。"""
+    h_overlap = min(g1.right(), g2.right()) - max(g1.left(), g2.left())
+    y_disjoint = g1.bottom() < g2.top() or g2.bottom() < g1.top()
+    return y_disjoint and h_overlap > min(g1.width(), g2.width()) * 0.5
+
+
 def _equalize_dock_sizes(host, docks, last_norm, qt):
     """同一行的 dock 等宽（1:1）；单列时等高。
 
-    `last_norm` 记住上次归一化后的尺寸，避免每轮布局都触发一次 resize
-    （会把用户刚拖的比例弹回去）。
+    `last_norm` 记的是上一次**观察到的宽度组合**，用来挡住「布局还没生效、
+    又读到同一份旧几何」造成的重复 resizeDocks。不能按目标宽度记：把一行
+    拖成 200/400 时平均值还是原来的 300，会被判成「已经归一化过」而永远
+    跳过，这一行再也回不到 1:1 —— 用户报的「无法一比一划分」就是这个。
+    读到已均衡就删掉记录，用户下次再拖偏仍能纠正。
     """
     if len(docks) < 2:
         return
@@ -18,10 +35,7 @@ def _equalize_dock_sizes(host, docks, last_norm, qt):
     for dock, g in items:
         placed = False
         for row in rows:
-            g0 = row[0][1]
-            v_overlap = min(g0.bottom(), g.bottom()) - max(g0.top(), g.top())
-            x_disjoint = g.right() < g0.left() or g0.right() < g.left()
-            if x_disjoint and v_overlap > min(g0.height(), g.height()) * 0.5:
+            if _side_by_side(row[0][1], g):
                 row.append((dock, g))
                 placed = True
                 break
@@ -31,14 +45,15 @@ def _equalize_dock_sizes(host, docks, last_norm, qt):
         if len(row) < 2:
             continue
         row.sort(key=lambda t: t[1].x())
-        widths = [g.width() for _, g in row]
+        key = tuple(id(dock) for dock, _ in row)
+        widths = tuple(g.width() for _, g in row)
         if max(widths) - min(widths) <= 1:
+            last_norm.pop(key, None)
             continue
         width = int(sum(widths) / len(widths))
-        key = tuple(id(dock) for dock, _ in row)
-        if width <= 0 or last_norm.get(key) == width:
+        if width <= 0 or last_norm.get(key) == widths:
             continue
-        last_norm[key] = width
+        last_norm[key] = widths
         host.resizeDocks([dock for dock, _ in row],
                          [width] * len(row), qt.Horizontal)
 
@@ -47,10 +62,7 @@ def _equalize_dock_sizes(host, docks, last_norm, qt):
     for dock, g in items:
         placed = False
         for col in columns:
-            g0 = col[0][1]
-            h_overlap = min(g0.right(), g.right()) - max(g0.left(), g.left())
-            y_disjoint = g.bottom() < g0.top() or g0.bottom() < g.top()
-            if y_disjoint and h_overlap > min(g0.width(), g.width()) * 0.5:
+            if _stacked(col[0][1], g):
                 col.append((dock, g))
                 placed = True
                 break
@@ -58,14 +70,16 @@ def _equalize_dock_sizes(host, docks, last_norm, qt):
             columns.append([(dock, g)])
     if len(columns) == 1 and len(columns[0]) >= 2:
         col = sorted(columns[0], key=lambda t: t[1].y())
-        heights = [g.height() for _, g in col]
-        if max(heights) - min(heights) > 1:
-            height = int(sum(heights) / len(heights))
-            key = tuple(id(dock) for dock, _ in col) + ("v",)
-            if height > 0 and last_norm.get(key) != height:
-                last_norm[key] = height
-                host.resizeDocks([dock for dock, _ in col],
-                                 [height] * len(col), qt.Vertical)
+        key = tuple(id(dock) for dock, _ in col) + ("v",)
+        heights = tuple(g.height() for _, g in col)
+        if max(heights) - min(heights) <= 1:
+            last_norm.pop(key, None)
+            return
+        height = int(sum(heights) / len(heights))
+        if height > 0 and last_norm.get(key) != heights:
+            last_norm[key] = heights
+            host.resizeDocks([dock for dock, _ in col],
+                             [height] * len(col), qt.Vertical)
 
 
 class StatsMixin:
@@ -252,7 +266,7 @@ class StatsMixin:
         from PySide6.QtWidgets import (
             QDialog, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
             QHeaderView, QPushButton, QWidget, QAbstractItemView,
-            QMainWindow, QTabWidget,
+            QTabWidget,
         )
         from PySide6.QtCore import Qt as QtCore
         from ..dialog_helpers import center_on_parent
@@ -708,9 +722,14 @@ class StatsMixin:
             反映到 dock.width()，此时读到的是旧宽度，归一化会用旧平均值再次
             resizeDocks，把刚设好的比例覆盖掉。行内等宽由 dockLocationChanged
             触发的防抖归一化负责。
+
+            只在 class/iou 仍并排时应用：用户若把面板重排成上下堆叠，
+            resizeDocks 会按行分别改宽度，把重排结果弄乱。
             """
             total = host.width()
             if total <= 0 or not d:
+                return
+            if not _side_by_side(d['class'].geometry(), d['iou'].geometry()):
                 return
             docks_w = int(total * 2 / 3)
             host.resizeDocks(

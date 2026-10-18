@@ -428,14 +428,18 @@ class CanvasMenuMixin:
         self.update()
 
     def _find_detection_box_at(self, mouse_pos):
-        """查找鼠标位置下的检测框"""
+        """查找鼠标位置下的检测框。
+
+        顺序与画布点选一致（关键点在最上层）。用正序遍历会先撞上包含关键点的
+        那个检测框，于是右键改的是框而不是点 —— 用户报的就是这个。
+        """
         background_rect = self.get_background_rect()
         if not background_rect:
             return None
         from ..core.config import DETECTION_BOX_CONFIG
-        from .hit_test import box_hit_by_cursor
+        from .hit_test import box_hit_by_cursor, iter_boxes_by_hit_priority
         eps = DETECTION_BOX_CONFIG['resize_handle_size']
-        for i, box in enumerate(self._editor.detection_boxes):
+        for i, box in iter_boxes_by_hit_priority(self._editor.detection_boxes):
             if box_hit_by_cursor(box, mouse_pos, background_rect,
                                  self.background_scale, eps):
                 return i

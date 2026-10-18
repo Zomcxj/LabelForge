@@ -70,6 +70,29 @@ print("POLY_CORNER", hit(tri, cx, cy))
 
 # 退化多边形（点不足）：不命中，也不抛
 print("POLY_DEGEN", hit(box(shape_type="polygon", points=[[0, 0], [1, 1]]), 20, 30))
+
+# 命中顺序：关键点必须排在检测框之前
+from labelforge.canvas.hit_test import iter_boxes_by_hit_priority
+
+nested = [box(x=0, y=0, width=10, height=10),          # 下标 0：矩形，盖住下面
+          box(shape_type="point", points=[[5, 5]])]     # 下标 1：关键点，在矩形里
+print("ORDER_DEFAULT", ",".join(
+    str(i) for i, _b in iter_boxes_by_hit_priority(nested)))
+
+# 「右键找框」必须选到关键点而不是矩形
+found = None
+for i, b in iter_boxes_by_hit_priority(nested):
+    if box_hit_by_cursor(b, QPointF(20, 30), RECT, SCALE, EPS):
+        found = i
+        break
+print("FIND_NESTED", found)
+
+two_points = [box(shape_type="point", points=[[5, 5]]),
+              box(shape_type="point", points=[[5, 5]])]
+print("ORDER_TWO_POINTS", ",".join(
+    str(i) for i, _b in iter_boxes_by_hit_priority(two_points)))
+print("ORDER_SELECTED0", ",".join(
+    str(i) for i, _b in iter_boxes_by_hit_priority(two_points, selected={0})))
 """
 
 
@@ -122,3 +145,28 @@ def test_polygon_hit_follows_the_outline_not_the_bbox():
 def test_degenerate_polygon_is_not_a_hit():
     out = _run()
     assert out["POLY_DEGEN"] == ["False"]
+
+
+def test_keypoint_is_hit_before_the_box_that_covers_it():
+    """关键点落在检测框里时，「找鼠标下的框」要选关键点。
+
+    用户报的：「关键点在检测框内能点击拖动，但右击修改无法选中，选的还是
+    检测框」。右键菜单原来正序遍历、返回第一个命中，于是先撞上包住关键点的
+    那个框。绘制顺序里关键点在最上层，命中顺序必须与之一致。
+    """
+    out = _run()
+    assert out["FIND_NESTED"] == ["1"], (
+        f"右键应当选到关键点（下标 1），实际 {out['FIND_NESTED']}")
+
+
+def test_hit_priority_puts_keypoints_first_then_later_boxes():
+    out = _run()
+    assert out["ORDER_DEFAULT"] == ["1,0"], out["ORDER_DEFAULT"]
+    # 两个关键点：后画的（下标大的）在上层
+    assert out["ORDER_TWO_POINTS"] == ["1,0"], out["ORDER_TWO_POINTS"]
+
+
+def test_hit_priority_lifts_a_selected_keypoint_above_the_others():
+    """已选中的关键点画在最上层，命中也要最先轮到它。"""
+    out = _run()
+    assert out["ORDER_SELECTED0"] == ["0,1"], out["ORDER_SELECTED0"]
