@@ -399,7 +399,7 @@ qtcore.QThread = type('QThread', (), {'__init__': lambda self, *a, **kw: None})
 qtcore.QTimer = type('QTimer', (), {'singleShot': staticmethod(lambda *a: None)})
 qtcore.QPropertyAnimation = type('QPropertyAnimation', (), {'__init__': lambda self, *a: None})
 qtcore.QEasingCurve = type('QEasingCurve', (), {'OutCubic': 0})
-qtcore.QEvent = type('QEvent', (), {'KeyPress': 6})
+qtcore.QEvent = type('QEvent', (), {'KeyPress': 6, 'Resize': 14, 'Move': 13})
 qtcore.QUrl = type('QUrl', (), {'fromLocalFile': staticmethod(lambda f: f)})
 qtcore.QMimeData = type('QMimeData', (), {
     '__init__': lambda self, *a, **kw: None,

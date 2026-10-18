@@ -57,7 +57,10 @@ def _equalize_dock_sizes(host, docks, last_norm, qt):
         host.resizeDocks([dock for dock, _ in row],
                          [width] * len(row), qt.Horizontal)
 
-    # 单列（全部竖向堆叠）→ 高度自动 1:1
+    # 每一列的 dock 等高（1:1）。
+    # 这一分支原先只在「四个 dock 全部堆成一列」时才生效，而默认排布是
+    # 2×2（左列 class/size，右列 iou/aspect），于是同一列上下两个图表被拖成
+    # 1:2 / 2:1 后再也没人纠正 —— 用户报的「右侧每次都是 1:2 或者 2:1」。
     columns = []
     for dock, g in items:
         placed = False
@@ -68,13 +71,15 @@ def _equalize_dock_sizes(host, docks, last_norm, qt):
                 break
         if not placed:
             columns.append([(dock, g)])
-    if len(columns) == 1 and len(columns[0]) >= 2:
-        col = sorted(columns[0], key=lambda t: t[1].y())
+    for col in columns:
+        if len(col) < 2:
+            continue
+        col.sort(key=lambda t: t[1].y())
         key = tuple(id(dock) for dock, _ in col) + ("v",)
         heights = tuple(g.height() for _, g in col)
         if max(heights) - min(heights) <= 1:
             last_norm.pop(key, None)
-            return
+            continue
         height = int(sum(heights) / len(heights))
         if height > 0 and last_norm.get(key) != heights:
             last_norm[key] = heights
@@ -710,7 +715,7 @@ class StatsMixin:
 
     def _install_health_dock_layout(self, dialog, host):
         """右侧图表区占 2/3，并为拖动重排装上防抖的等宽归一化。"""
-        from PySide6.QtCore import Qt
+        from PySide6.QtCore import QEvent, QObject, Qt
 
         d = dialog._health_docks
         last_norm = {}
@@ -725,6 +730,9 @@ class StatsMixin:
 
             只在 class/iou 仍并排时应用：用户若把面板重排成上下堆叠，
             resizeDocks 会按行分别改宽度，把重排结果弄乱。
+
+            已经到位就不再 resize：这个函数会在归一化之后被再调一次，反复
+            resizeDocks 会持续产生 Resize 事件，自激成一个转不停的定时器循环。
             """
             total = host.width()
             if total <= 0 or not d:
@@ -732,12 +740,17 @@ class StatsMixin:
             if not _side_by_side(d['class'].geometry(), d['iou'].geometry()):
                 return
             docks_w = int(total * 2 / 3)
-            host.resizeDocks(
-                [d['class'], d['iou']],
-                [docks_w // 2, docks_w - docks_w // 2], Qt.Horizontal)
+            want = [docks_w // 2, docks_w - docks_w // 2]
+            have = [d['class'].width(), d['iou'].width()]
+            if all(abs(a - b) <= 2 for a, b in zip(want, have)):
+                return
+            host.resizeDocks([d['class'], d['iou']], want, Qt.Horizontal)
 
         def normalize():
             _equalize_dock_sizes(host, list(d.values()), last_norm, Qt)
+            # 排布动过就把左右比例也拉回默认（表格 1/3 : 图表 2/3）。用户拖标题
+            # 栏本意是想调比例，结果把面板搬走了，事后比例会跟着乱掉。
+            apply_ratio()
 
         dialog._apply_dock_ratio = apply_ratio
         host._ratio_fn = apply_ratio
@@ -758,7 +771,28 @@ class StatsMixin:
             else:
                 normalize()
 
+        # 拖分隔条只改几何、不发 dockLocationChanged，光靠那个信号的话「同一列
+        # 上下两个图表被拖成 1:2」永远等不到纠正。监听面板自身的 Resize/Move，
+        # 拖动停手 120ms 后归一化。归一化自己引起的 resize 也会走到这里，但那时
+        # 几何已经均衡，normalize 会直接空跑，不会自激。
+        class _DockGeometryFilter(QObject):
+            def eventFilter(self, obj, event):
+                try:
+                    if event.type() in (QEvent.Resize, QEvent.Move):
+                        schedule_normalize()
+                except Exception:
+                    pass
+                return False
+
+        try:
+            geometry_filter = _DockGeometryFilter(host)
+        except Exception:
+            geometry_filter = None
+        dialog._dock_geometry_filter = geometry_filter
+
         for dock in d.values():
+            if geometry_filter is not None:
+                dock.installEventFilter(geometry_filter)
             signal = getattr(dock, 'dockLocationChanged', None)
             if signal is not None:
                 signal.connect(schedule_normalize)
