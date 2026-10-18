@@ -62,7 +62,16 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
 
               apt-get update -qq
+              # 这些库不只是运行时要的，构建时也必须有：PyInstaller 收集 Qt
+              # 平台插件的方式是在构建环境里真的 import Qt、问它插件在哪。
+              # 探测失败时它只打一条 warning 就继续，构建照样「成功」，产物
+              # 却一个平台插件都没有，启动才报 Could not find the Qt platform
+              # plugin —— v2.0.0 的 rc 就这么发出去过一次。缺的就是下面这几组。
               apt-get install -y -qq curl fontconfig binutils \
+                libglib2.0-0 libdbus-1-3 libx11-6 libxext6 libxrender1 \
+                libxi6 libxtst6 libsm6 libice6 \
+                libxcb1 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+                libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xkb1 \
                 libxcb-cursor0 libxkbcommon-x11-0 libegl1-mesa
               apt-get install -y -qq upx-ucl 2>/dev/null || true
 

@@ -233,6 +233,24 @@ def test_linux_build_image_is_pinned_to_ubuntu_20_04():
     assert "ubuntu:20.04" in text, "Linux 构建镜像未固定在 20.04"
 
 
+def test_linux_build_image_installs_the_libraries_qt_needs_to_import():
+    """构建镜像里必须能 import Qt，否则平台插件会被静默丢光。
+
+    PyInstaller 收集 Qt 插件的方式是在构建环境里**真的导入 Qt**、问它插件在哪
+    （`_read_qt_library_info()`）。缺 libglib2.0-0 / libdbus-1-3 / libx11-6 时
+    这个探测失败，PyInstaller 只打一条 warning 就继续：构建照样成功，产物却
+    连一个平台插件都没有，运行到启动才报「Could not find the Qt platform
+    plugin "xcb"」并 abort —— v2.0.0 的 rc 就这么发出去过一次，本地 Windows
+    打包看不出来（Windows 上探测正常）。
+    """
+    text = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    linux_step = text[text.index("Build with PyInstaller (Linux"):]
+    for lib in ("libglib2.0-0", "libdbus-1-3", "libx11-6",
+                "libxcb-cursor0", "libxkbcommon-x11-0"):
+        assert lib in linux_step, (
+            f"Linux 构建镜像没装 {lib}：Qt 探测会失败，平台插件静默丢失")
+
+
 def test_pyside6_upper_bound_stays_below_the_glibc_bump():
     """PySide6 上限必须在 6.10 以下。
 

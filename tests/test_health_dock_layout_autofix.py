@@ -25,6 +25,8 @@ os._exit(0)
 '''
 
 _SCRIPT = '''
+import time
+
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog
@@ -90,13 +92,6 @@ assert dialog._dock_norm_timer is not None, "防抖归一化定时器没装上"
 assert dialog._dock_geometry_filter is not None, "几何过滤器没装上"
 
 
-def settle():
-    """等防抖定时器（120ms）跑完并让布局落定。"""
-    QTest.qWait(260)
-    for _ in range(20):
-        app.processEvents()
-
-
 def groups(axis):
     """按 y（行）或 x（列）分组，只留同组 ≥2 个的。"""
     out = {}
@@ -104,6 +99,48 @@ def groups(axis):
         key = v.y() if axis == "row" else v.x()
         out.setdefault(key, []).append(v)
     return [g for g in out.values() if len(g) > 1]
+
+
+def heights():
+    return {k: v.height() for k, v in docks.items()}
+
+
+def widths():
+    return {k: v.width() for k, v in docks.items()}
+
+
+def balanced():
+    for g in groups("row"):
+        w = [v.width() for v in g]
+        if max(w) - min(w) > 3:
+            return False
+    for g in groups("col"):
+        h = [v.height() for v in g]
+        if max(h) - min(h) > 3:
+            return False
+    return True
+
+
+def wait_until(pred, what, timeout_s=8.0):
+    """轮询到条件成立；超时就报出条件名，而不是留个看不懂的断言。
+
+    不能只固定等 260ms —— 120ms 防抖 + 布局收敛在慢机器上会超出这个时间，
+    实测 Windows 3.11 红了、3.12 绿了（同一份代码）。轮询与机器速度无关。
+    """
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        QTest.qWait(60)
+        for _ in range(10):
+            app.processEvents()
+        if pred():
+            return True
+    return False
+
+
+def geom_sig():
+    return tuple(sorted(
+        (v.objectName(), v.x(), v.y(), v.width(), v.height())
+        for v in docks.values()))
 
 
 def check_one_to_one(what):
@@ -140,9 +177,8 @@ col = sorted([v for v in docks.values()
              key=lambda w: w.y())
 assert len(col) == 2, [w.objectName() for w in col]
 host.resizeDocks(col, [300, 100], Qt.Vertical)
-for _ in range(10):
-    app.processEvents()
-settle()
+assert wait_until(lambda: not balanced(), "拖成不等高没生效"), heights()
+assert wait_until(balanced, "同一列高度没被纠正回 1:1"), heights()
 check_one_to_one("拖高后")
 
 # ② 同一行左右两个拖成宽度 2:1 —— 同时表格:图表 应回到默认 1:2
@@ -151,17 +187,18 @@ top = sorted([v for v in docks.values()
              key=lambda w: w.x())
 assert len(top) == 2, [w.objectName() for w in top]
 host.resizeDocks(top, [200, 500], Qt.Horizontal)
-for _ in range(10):
-    app.processEvents()
-settle()
+assert wait_until(lambda: not balanced(), "拖成不等宽没生效"), widths()
+assert wait_until(balanced, "同一行宽度没被纠正回 1:1"), widths()
 check_one_to_one("拖宽后")
 print("  拖过宽高 OK  表格:图表=", check_ratio("拖动后比例没回默认"))
 
 # ③ 面板被搬走（水平方向重排）后，也应全部回到 1:1 + 默认比例
+before = geom_sig()
 host.splitDockWidget(docks['aspect'], docks['size'], Qt.Horizontal)
-for _ in range(10):
-    app.processEvents()
-settle()
+# 必须「排布真的变了」且「回到均衡」都等到：只看均衡的话，重排尚未落定
+# 那一瞬也可能碰巧均衡，测试就白跑了。
+assert wait_until(lambda: geom_sig() != before and balanced(),
+                  "重排后没回到 1:1"), widths()
 check_one_to_one("重排后")
 print("  重排后 OK  表格:图表=", check_ratio("重排后比例没回默认"))
 
