@@ -171,13 +171,23 @@ print("OK")
 
 
 def _run():
-    env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)}
+    env = os.environ | {
+        "QT_QPA_PLATFORM": "offscreen",
+        "PYTHONPATH": str(ROOT),
+        # 子进程按 UTF-8 写、父进程按 UTF-8 读，不看本机 locale：CI 的 Windows
+        # 是 cp1252，用 text=True 时子进程输出的中文会让读取线程抛
+        # UnicodeDecodeError，stdout 直接变成 None（本地是 cp936 解得了，所以
+        # 这个坑只在 CI 暴露，报出来还是个看不懂的 TypeError）。
+        "PYTHONIOENCODING": "utf-8",
+    }
     result = subprocess.run(
         [sys.executable, "-c", _SCRIPT + _QT_EXIT_GUARD],
-        cwd=ROOT, env=env, text=True, capture_output=True, timeout=180,
+        cwd=ROOT, env=env, capture_output=True, timeout=180,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
-    return result.stdout
+    out = result.stdout.decode("utf-8", "replace")
+    err = result.stderr.decode("utf-8", "replace")
+    assert result.returncode == 0, out + err
+    return out
 
 
 def test_dock_layout_recovers_one_to_one_and_default_ratio():
