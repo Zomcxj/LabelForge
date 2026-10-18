@@ -6,9 +6,7 @@
 LabelForge/
 ├── .gitattributes             # 文本属性（Shell 脚本使用 LF）
 ├── .gitignore                 # Git 忽略规则
-├── .python-version            # 项目 Python 版本锚点
 ├── build.sh                   # 跨平台 PyInstaller 构建脚本
-├── labelforge_debug_main.py   # 诊断启动器：与 main.py 相同但强制开启 json 追踪探针
 ├── paste_label.txt            # 默认贴图标签文件
 ├── requirements.txt           # 运行期依赖
 ├── requirements-dev.txt       # 开发与测试依赖
