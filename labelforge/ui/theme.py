@@ -133,9 +133,32 @@ class ThemeManager:
         return cls._current_theme
 
     @classmethod
+    @classmethod
     def get_stylesheet(cls):
+        """整份 QSS，按界面区域拼装；每段见对应的 _qss_* 方法。
+
+        原先是一个 600 多行的 f-string，改一处样式得在整份里翻。
+        这里只做切分：各段的顺序与内容都不变，顺序本身有语义
+        （同名规则后者胜），重排会改变外观。
+        """
         t = cls._current_theme
-        return f"""
+        parts = (
+            cls._qss_base_widgets(t),
+            cls._qss_button_base(t),
+            cls._qss_containers(t),
+            cls._qss_toolbar_buttons(t),
+            cls._qss_menus(t),
+            cls._qss_list_buttons(t),
+            cls._qss_action_buttons(t),
+            cls._qss_toolbar(t),
+            cls._qss_overrides(t),
+        )
+        return "\n" + "\n".join(parts) + "\n        "
+
+    @classmethod
+    def _qss_base_widgets(cls, t):
+        """基础控件：窗口、滚动条、状态栏、标签、列表、输入框、复选框。"""
+        return f"""\
             QMainWindow {{
                 background-color: {t['window_bg']};
             }}
@@ -284,7 +307,12 @@ class ThemeManager:
             }}
             QCheckBox::indicator:hover {{
                 border-color: {t['accent']};
-            }}
+            }}"""
+
+    @classmethod
+    def _qss_button_base(cls, t):
+        """QPushButton 的默认外观，含 :hover / :pressed / :disabled。"""
+        return f"""\
             QPushButton {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
@@ -304,7 +332,12 @@ class ThemeManager:
             QPushButton:disabled {{
                 background-color: {t['scrollbar_bg']};
                 color: {t['text_disabled']};
-            }}
+            }}"""
+
+    @classmethod
+    def _qss_containers(cls, t):
+        """日志框、分组框、侧栏、提示、滚动区、下拉框。"""
+        return f"""\
             QTextEdit#logArea {{
                 border: 1px solid {t['groupbox_border']};
                 border-radius: 4px;
@@ -375,7 +408,13 @@ class ThemeManager:
                 selection-background-color: {t['list_selected_bg']};
                 selection-color: {t['list_selected_text']};
             }}
+"""
 
+    @classmethod
+    @classmethod
+    def _qss_toolbar_buttons(cls, t):
+        """工具栏上的具名按钮：图标、翻页、背景/贴图、标签、主题、设置、选项。"""
+        return f"""\
             /* objectName specific styles */
             QPushButton#iconBtn {{
                 background-color: transparent;
@@ -492,7 +531,12 @@ class ThemeManager:
             QPushButton#optionsBtn::menu-indicator {{
                 width: 0px;
                 height: 0px;
-            }}
+            }}"""
+
+    @classmethod
+    def _qss_menus(cls, t):
+        """选项菜单本体与菜单项。"""
+        return f"""\
             QMenu#optionsMenu {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
@@ -515,7 +559,12 @@ class ThemeManager:
             QMenu#optionsMenu::item:selected {{
                 background-color: {t['accent_light']};
                 color: {t['accent']};
-            }}
+            }}"""
+
+    @classmethod
+    def _qss_list_buttons(cls, t):
+        """列表页与弹窗里的语言、绘制、强调、警告、贴图列表按钮。"""
+        return f"""\
             QPushButton#langBtn {{
                 background-color: transparent;
                 border: none;
@@ -609,7 +658,12 @@ class ThemeManager:
             QPushButton#pasteListWarningBtn:hover, QPushButton#pasteListWarningBtn:pressed {{
                 background-color: {t['warning']};
                 color: {t['widget_bg']};
-            }}
+            }}"""
+
+    @classmethod
+    def _qss_action_buttons(cls, t):
+        """视图切换、成功、危险三类操作按钮。"""
+        return f"""\
             QPushButton#viewToggleBtn {{
                 background-color: {t['widget_bg']};
                 border: 1px solid {t['border_color']};
@@ -655,7 +709,13 @@ class ThemeManager:
                 background-color: {t['interaction_active']};
                 border: 1px solid {t['interaction_active']};
                 color: {t['interaction_active_text']};
-            }}
+            }}"""
+
+
+    @classmethod
+    def _qss_toolbar(cls, t):
+        """工具栏分隔线、文件计数、前缀输入框、模式分段控件、选项弹窗。"""
+        return f"""\
             QFrame#toolbarSep {{
                 background-color: transparent;
                 border-left: 1px solid {t['border_color']};
@@ -717,7 +777,12 @@ class ThemeManager:
                 background-color: {t['interaction_active']};
                 border-color: {t['interaction_active']};
                 color: {t['interaction_active_text']};
-            }}
+            }}"""
+
+    @classmethod
+    def _qss_overrides(cls, t):
+        """末尾对工具栏右上角三个按钮的统一覆盖。"""
+        return f"""\
             QPushButton#iconBtn, QPushButton#navBtn, QPushButton#bgBtn,
             QPushButton#pasteBtn, QPushButton#labelBtn, QPushButton#datasetBtn,
             QPushButton#themeBtn, QPushButton#settingsBtn, QPushButton#langBtn {{
@@ -737,8 +802,8 @@ class ThemeManager:
                 background-color: {t['interaction_active']};
                 border: 1px solid {t['interaction_active']};
                 color: {t['interaction_active_text']};
-            }}
-        """
+            }}"""
+
 
     @classmethod
     def get_list_style(cls):

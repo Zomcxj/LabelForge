@@ -33,10 +33,11 @@ def test_create_control_panel_top_margin_matches_canvas():
 
 def test_label_list_item_padding_matches_bg_list():
     """Background / label / paste list rows share the same item padding."""
-    import inspect
     from labelforge.ui.theme import ThemeManager
 
-    src = inspect.getsource(ThemeManager.get_stylesheet)
+    # 读**渲染后的**样式表而不是源码：get_stylesheet 现在按界面区域拼装，
+    # 读源码会依赖「那段字符串写在哪个方法里」，一挪就误报。
+    css = ThemeManager.get_stylesheet()
     # No tighter override for labelList/pasteLabelList item padding.
-    assert "QListWidget#labelList::item, QListWidget#pasteLabelList::item" not in src
-    assert "QListWidget::item" in src
+    assert "QListWidget#labelList::item, QListWidget#pasteLabelList::item" not in css
+    assert "QListWidget::item" in css
