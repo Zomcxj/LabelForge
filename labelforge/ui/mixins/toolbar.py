@@ -2,13 +2,11 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QFrame
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt
-from ...core.config import WINDOW_CONFIG, PASTE_PARAMS, THUMBNAIL_CONFIG, DEFAULT_PREFIX
 from ..icons import (
     _load_svg_icon, SVG_FILE, SVG_FOLDER, SVG_IMPORT, SVG_PASTE_LABEL, SUN_SVG,
     SVG_MODEL_SLIDERS, SVG_MODEL_SINGLE, SVG_MODEL_ALL, SVG_VIDEO,
 )
 from ..i18n import t as tr
-from ..segmented_control import AnimatedSegmentedControl
 
 
 class ToolbarMixin:

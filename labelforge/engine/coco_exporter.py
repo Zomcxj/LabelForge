@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import datetime
-from typing import Callable, Dict, List, Optional
+from typing import List
 
 from .base_exporter import BaseExporter
 

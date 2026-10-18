@@ -200,8 +200,14 @@ def load_config():
         try:
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-        except Exception:
-            pass
+        except Exception as exc:
+            # 配置读不出来就退回默认值，但那意味着用户的设置全部失效。
+            # 静默会让人以为设置本来就是空的，所以留一条线索在日志里。
+            try:
+                from .exception_hook import _write_log
+                _write_log(f"配置文件读取失败，已回退默认值: {CONFIG_PATH} ({exc})")
+            except Exception:
+                pass
     
     # 迁移旧版快捷键：delete_label 从 Ctrl+Shift+Delete 改为 Ctrl+Shift+Z
     shortcuts = config.get('shortcuts', {})

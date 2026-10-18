@@ -1,7 +1,7 @@
 """标签列表行右侧的标注任务徽标（det / seg / pose / obb）。"""
 from PySide6.QtCore import Qt, QRect, QSize
 from PySide6.QtGui import QColor, QPainter, QPen, QFontMetrics
-from PySide6.QtWidgets import QStyledItemDelegate, QStyle
+from PySide6.QtWidgets import QStyledItemDelegate
 
 from ..core.utils import TASK_DATA_ROLE
 

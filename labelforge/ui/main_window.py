@@ -2,12 +2,11 @@
 主窗口模块 - ImageEditor 主窗口逻辑（协调器）
 """
 import os
-import sys
 from PySide6.QtWidgets import QMainWindow, QApplication
-from PySide6.QtCore import QPoint, Qt, QUrl, QTimer, QRectF
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QDrag
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
 
-from ..core.config import WINDOW_CONFIG, THUMBNAIL_CONFIG, MAGNIFIER_CONFIG, DETECTION_BOX_WHEEL_CONFIG, CROSSHAIR_CONFIG, BOX_BORDER_CONFIG, DEFAULT_PREFIX
+from ..core.config import WINDOW_CONFIG, THUMBNAIL_CONFIG, MAGNIFIER_CONFIG, DEFAULT_PREFIX
 from ..core.utils import create_app_icon
 from ..engine.save_manager import SaveManager
 from ..engine.label_manager import LabelManager
@@ -15,8 +14,7 @@ from ..engine.image_loader import ImageLoaderMixin
 from ..engine.paste_engine import PasteEngineMixin
 from ..engine.event_handler import EventHandlerMixin
 from .i18n import t as tr
-from .theme import ThemeManager, ThemeMode
-from .dwm import set_titlebar_dark
+from .theme import ThemeManager
 from .settings_dialog import SettingsDialog
 from .processing_panel import ProcessingPanel
 from .mixins.label_cache_slot import LabelCacheSlotMixin
@@ -660,7 +658,6 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
     def _append_background_images(self, files):
         """追加背景图片（不替换已有，自动去重）"""
         from PySide6.QtGui import QPixmap
-        from PySide6.QtWidgets import QApplication
         first_new = len(self.background_images)
         for file in files:
             if file in self.background_images:

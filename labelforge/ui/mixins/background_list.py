@@ -2,7 +2,6 @@
 
 import os
 
-from PySide6.QtCore import Qt
 
 from ..i18n import t as tr
 from ...engine.image_loader import BG_ROLE_INDEX, BG_ROLE_PATH, BG_ROLE_STATUS
@@ -407,7 +406,6 @@ class BackgroundListMixin:
 
     def _refresh_background_path_texts(self):
         """开关切换后原地刷新列表项文本，无需重载数据集。"""
-        from ...core.utils import PathUtils
         try:
             if getattr(self, '_is_delete_view', False):
                 files = list(getattr(self, '_delete_files', []) or [])

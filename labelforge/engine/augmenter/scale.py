@@ -1,4 +1,3 @@
-import random
 from typing import List, Tuple
 
 from PySide6.QtCore import Qt

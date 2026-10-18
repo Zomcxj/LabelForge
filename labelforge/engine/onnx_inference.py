@@ -3,7 +3,7 @@
 onnxruntime 延迟导入，缺少该依赖时本模块仍可导入，纯计算部分可独立测试。
 """
 import ast
-from typing import List, NamedTuple, Optional, Sequence, Tuple
+from typing import List, NamedTuple
 
 import numpy as np
 

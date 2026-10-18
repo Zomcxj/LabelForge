@@ -5,7 +5,7 @@ import os
 import sys
 import re
 from PySide6.QtGui import QPixmap, QIcon, QColor, QPainter
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt
 
 
 class PathUtils:
@@ -108,7 +108,6 @@ class PathUtils:
         :param prefix: 文件名前缀
         :return: (完整路径，基础文件名，前缀)
         """
-        from .config import DEFAULT_PREFIX
         
         original_file_name = os.path.basename(original_file_path)
         output_dir = PathUtils.get_output_dir(original_file_path)

@@ -1,6 +1,18 @@
 """Label statistics behavior for the main window."""
 
 
+def _stats_log(message):
+    """统计相关的非致命错误写进日志。
+
+    写日志本身失败时不再抛，否则错误处理会把程序拖死。
+    """
+    try:
+        from ...core.exception_hook import _write_log
+        _write_log(message)
+    except Exception:
+        pass
+
+
 class StatsMixin:
     def _get_session_labels(self):
         """收集当前打开文件夹中用于共享色板的全部标签。"""
@@ -158,8 +170,9 @@ class StatsMixin:
         if previous is not None:
             try:
                 previous.requestInterruption()
-            except Exception:
-                pass
+            except Exception as exc:
+                # 中断失败会让上一次扫描的 worker 继续跑，两组结果可能互相覆盖
+                _stats_log(f"中断上一次统计扫描失败: {exc}")
             self._stats_scan_worker = None
 
         images = list(getattr(self, 'background_images', None) or [])
@@ -518,10 +531,12 @@ class StatsMixin:
                     # 超时未停：先断开信号再丢引用，避免 worker 向已销毁的弹窗发结果
                     try:
                         worker.health_ready.disconnect()
-                    except Exception:
+                    except (RuntimeError, TypeError):
+                        # 信号本就没连或已断开，正常情况
                         pass
-            except Exception:
-                pass
+            except Exception as exc:
+                # 停不掉 worker 会残留后台线程，下次统计可能读到旧结果
+                _stats_log(f"停止统计扫描 worker 失败: {exc}")
 
     def _build_health_section(self, dialog, layout):
         """构建「数据集健康」区：4 个可拖拽 dock 面板 + 建议，切换标签页切换数据源。"""

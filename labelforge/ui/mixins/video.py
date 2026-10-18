@@ -27,7 +27,7 @@ class VideoMixin:
         if not self._cv2_available():
             self._video_warn(tr("未安装 opencv（cv2），视频功能不可用"))
             return
-        from ..video_dialog import ACTION_COMPOSE, VideoDialog
+        from ..video_dialog import VideoDialog
 
         dialog = VideoDialog(self)
         # 推理成片页要列模型的类别；弹窗每次新建，所以每次灌一遍

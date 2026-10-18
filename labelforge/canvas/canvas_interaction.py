@@ -1371,36 +1371,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if not self._editor.current_background:
             return
 
-        region_wheeled = False
-        if event.modifiers() & Qt.ControlModifier:
-            self._scale_background(event)
-        elif (self._region_editable() and
-              self._wheel_target_region() is not None and
-              self.find_item_at_position(self.mouse_pos) is None and
-              not self._selected_box_takes_wheel()):
-            # 与检测框同一套分流：鼠标**贴边**时滚轮单边调整，在**中间**时
-            # 整体缩放（用户要求「单边调整包括滚轮，复用检测框的」）。
-            # 边上不再画手柄，所以这里要主动判一次位置，不能靠「有没有抓手柄」。
-            self._wheel_region(event)
-            region_wheeled = True
-        elif self._editor.selected_item is not None:
-            self._scale_selected_item(event)
-        elif self.selected_box is not None:
-            box = self._editor.detection_boxes[self.selected_box]
-            if box.get("shape_type") == "rotation":
-                # 旋转框整体缩放，不做 bbox 单边调整（否则与 points 失同步）
-                self._scale_selected_box(event)
-            else:
-                locked_target = getattr(self, '_wheel_edge_target', None)
-                if locked_target and locked_target[0] == self.selected_box:
-                    self._adjust_selected_box_edge(event, locked_target[1])
-                elif self._is_mouse_inside_selected_box():
-                    self._scale_selected_box(event)
-                else:
-                    edge = self._get_selected_box_edge()
-                    if edge:
-                        self._wheel_edge_target = (self.selected_box, edge)
-                        self._adjust_selected_box_edge(event, edge)
+        region_wheeled = self._route_wheel(event)
 
         # 滚轮不产生鼠标移动事件，必须主动刷新状态栏宽高
         self.update_status_label()
@@ -1409,6 +1380,65 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if region_wheeled:
             self._notify_region_changed()
         self.update()
+
+    def _route_wheel(self, event):
+        """把一次滚轮分给该处理的对象，返回是否由区域消费。
+
+        优先顺序（与用户确认过的交互一致）：
+        Ctrl -> 背景；
+        区域可编辑且鼠标落在区域边上 -> 区域（检测框没在管这件事时）；
+        选中了形状 -> 形状；
+        选中了检测框 -> 框（旋转框整体缩，其余按边或整体）。
+        """
+        if event.modifiers() & Qt.ControlModifier:
+            self._scale_background(event)
+            return False
+
+        if self._wheel_goes_to_region():
+            self._wheel_region(event)
+            return True
+
+        if self._editor.selected_item is not None:
+            self._scale_selected_item(event)
+            return False
+
+        if self.selected_box is not None:
+            self._wheel_selected_box(event)
+        return False
+
+    def _wheel_goes_to_region(self):
+        """滚轮是否该作用在区域上。
+
+        与检测框同一套分流：鼠标**贴边**时滚轮单边调整，在**中间**时整体
+        缩放（用户要求「单边调整包括滚轮，复用检测框的」）。边上不再画手柄，
+        所以这里要主动判一次位置，不能靠「有没有抓手柄」。
+        """
+        return (self._region_editable()
+                and self._wheel_target_region() is not None
+                and self.find_item_at_position(self.mouse_pos) is None
+                and not self._selected_box_takes_wheel())
+
+    def _wheel_selected_box(self, event):
+        """滚轮作用在当前选中的检测框上。"""
+        box = self._editor.detection_boxes[self.selected_box]
+        if box.get("shape_type") == "rotation":
+            # 旋转框整体缩放，不做 bbox 单边调整（否则与 points 失同步）
+            self._scale_selected_box(event)
+            return
+
+        locked_target = getattr(self, '_wheel_edge_target', None)
+        if locked_target and locked_target[0] == self.selected_box:
+            self._adjust_selected_box_edge(event, locked_target[1])
+            return
+
+        if self._is_mouse_inside_selected_box():
+            self._scale_selected_box(event)
+            return
+
+        edge = self._get_selected_box_edge()
+        if edge:
+            self._wheel_edge_target = (self.selected_box, edge)
+            self._adjust_selected_box_edge(event, edge)
 
     def _selected_box_takes_wheel(self):
         """当前选中的检测框是否应当**优先**吃掉这次滚轮。

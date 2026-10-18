@@ -3,7 +3,7 @@
 """
 import os
 import random
-from PySide6.QtWidgets import QProgressDialog, QApplication
+from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt, QRectF
 
@@ -387,7 +387,11 @@ class PasteEngineMixin:
                 processed_count += 1
 
                 progress_dialog.setValue(processed_count)
-                progress_dialog.setLabelText(f"{tr('正在处理第')} {i+1} {tr('张图片，共')} {total_count} {tr('张')}")
+                # 末尾的单位在英文里是空（images 已在「张图片」里出现），
+                # 用独立键，免得和「共 N 张」里的 images 抢同一个 "张"
+                progress_dialog.setLabelText(
+                    f"{tr('正在处理第')} {i+1} {tr('张图片，共')} "
+                    f"{total_count} {tr('张_计数')}")
 
                 QApplication.processEvents()
 

@@ -393,7 +393,6 @@ class InferenceMixin:
             # 装配期间面板停在构造默认值，写回宿主会把「上次选的模式」冲掉；
             # 那时只重画画布，状态由 `_open_scope_panel` 装配完统一落。
             if not getattr(self, '_scope_panel_configuring', False):
-                from ...engine.inference_scope import MODE_WINDOW
 
                 self._scope_window_spec = panel.window_spec()
                 self._scope_mode = panel.mode()

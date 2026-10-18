@@ -5,7 +5,6 @@
 import os
 from typing import TYPE_CHECKING
 from PySide6.QtCore import Signal, QObject
-from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu, QListWidgetItem
 
 from ..core.utils import extract_label_name, shape_task_type, TASK_DATA_ROLE

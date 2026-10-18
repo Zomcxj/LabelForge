@@ -16,7 +16,6 @@ from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QPainter, QColor, QPen
 from PySide6.QtWidgets import QWidget
 
-from ...engine.augmenter.crop import window_starts
 from ...engine.inference_scope import ScopeError, iter_windows
 from ..i18n import t as tr
 from ..theme import ThemeManager

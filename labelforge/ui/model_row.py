@@ -3,7 +3,7 @@
 工具栏第一个图标负责显示/隐藏这一行；关闭后两个推理图标会禁用，重新点开即恢复。
 阈值与尺寸改动即时写回 detector，不重建会话，所以调参不用重新加载模型。
 """
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QLabel, QPushButton, QDoubleSpinBox, QSpinBox,
     QToolButton,

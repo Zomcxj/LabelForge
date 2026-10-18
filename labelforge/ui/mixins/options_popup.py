@@ -1,5 +1,5 @@
 """Options Popup UI building mixin."""
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QFrame, QLineEdit
+from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QPushButton, QFrame
 from PySide6.QtCore import Qt, QTimer, QPoint
 from ..theme import ThemeManager
 from ..i18n import t as tr

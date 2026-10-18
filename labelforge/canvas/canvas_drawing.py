@@ -1,7 +1,6 @@
 """
 Canvas 绘制逻辑 - 检测框的创建、拖动、缩放
 """
-from PySide6.QtWidgets import QInputDialog
 from PySide6.QtCore import Qt, QRectF, QSizeF
 
 from ..core.config import DETECTION_BOX_CONFIG

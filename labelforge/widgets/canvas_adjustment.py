@@ -9,7 +9,7 @@ underlying image are displayed:
 - ``Contrast``   : contrast of the image, same range/mapping as brightness.
 """
 
-from PySide6.QtCore import Qt, QTimer, Signal, QSize
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QSlider, QPushButton, QToolButton

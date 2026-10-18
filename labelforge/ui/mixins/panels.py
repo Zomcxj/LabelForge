@@ -1,6 +1,5 @@
 """Panels UI building mixin."""
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QPushButton
-from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt, QTimer, QRect
 from ...canvas import Canvas
 from ...widgets.canvas_adjustment import CanvasAdjustmentWidget

@@ -1,4 +1,3 @@
-import math
 from typing import List, Tuple
 
 from PySide6.QtGui import QImage

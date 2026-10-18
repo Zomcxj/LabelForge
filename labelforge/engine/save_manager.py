@@ -5,7 +5,7 @@
 import os
 import json
 from typing import TYPE_CHECKING
-from PySide6.QtCore import Signal, QObject, Qt, QRectF
+from PySide6.QtCore import Signal, QObject, QRectF
 from PySide6.QtGui import QPixmap, QPainter, QColor
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication
 from ..core.config import LABELME_VERSION, DEFAULT_PREFIX

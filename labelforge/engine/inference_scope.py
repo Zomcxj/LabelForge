@@ -15,7 +15,7 @@
 """
 import copy
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from .augmenter.crop import MAX_WINDOW, normalized_window, window_starts
