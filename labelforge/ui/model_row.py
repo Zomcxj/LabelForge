@@ -12,9 +12,12 @@ from PySide6.QtWidgets import (
 from .i18n import t as tr
 from .theme import ThemeManager
 
-# 置信度 / NMS 两个输入框的宽度。原来 72px，按「减少 1/5」收到 58px——
-# 两位小数（0.25）在这个宽度里还看得全，参数行则宽松不少。
-_THRESHOLD_SPIN_WIDTH = 58
+# 置信度 / NMS 两个输入框的宽度。
+# 58px 会把小数末位裁掉：可编辑区只剩 34px，而 "0.01" 需要 48px，
+# 于是显示成 "0.0"（用户报的「缺了一位小数」）。
+# 74px 是项目主题下的最小可用值，可编辑区刚好 48px。
+# 注意别用裸 QDoubleSpinBox 量：项目 QSS 的内边距更宽，量出来会偏小。
+_THRESHOLD_SPIN_WIDTH = 74
 
 
 class ModelRow(QWidget):

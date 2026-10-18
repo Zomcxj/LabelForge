@@ -2597,7 +2597,7 @@ print(row.size_spin_w.isEnabled(), row.size_spin_h.isEnabled())
 
 
 def test_real_threshold_spins_step_by_one_hundredth():
-    """③ 置信度 / NMS 的步长是 0.01，且宽度收窄到 58px。"""
+    """③ 置信度 / NMS 的步长是 0.01，宽度不窄于装得下两位小数的那一档。"""
     out = _run_real_qt("""
 from PySide6.QtWidgets import QApplication
 from labelforge.ui.model_row import ModelRow
@@ -2617,7 +2617,10 @@ print(row.conf_spin.width(), row.iou_spin.width())
     assert lines[0] == "0.01 0.01", f"步长不是 0.01：{lines[0]}"
     assert lines[1] == "0.26", f"置信度没有按 0.01 步进：{lines[1]}"
     assert lines[2] == "0.44", f"NMS 没有按 0.01 步进：{lines[2]}"
-    assert lines[3] == "58 58", f"阈值输入框宽度没收到 58：{lines[3]}"
+    # 宽度曾经收窄到 58px，结果把 "0.01" 的末位裁掉（显示成 "0.0"）。
+    # 这里只守「不窄到那一档」，精确可用宽度由 test_threshold_spin_width 量。
+    widths = [int(w) for w in lines[3].split()]
+    assert all(w > 58 for w in widths), f"阈值输入框宽度又回到会裁字的档位：{lines[3]}"
 
 
 def test_real_batch_cancel_refreshes_rows_without_switching_images():
