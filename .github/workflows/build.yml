@@ -128,9 +128,6 @@ jobs:
             chmod +x "staging/LabelForge-${TAG}-Linux"
             file "staging/LabelForge-${TAG}-Linux"
           fi
-          # LGPL 要求许可证正文与声明随产物分发；单文件包把它们封在 exe 内部，
-          # 只下载 exe 的人读不到，所以在这里单独发一份。
-          cp LICENSE THIRD-PARTY.md staging/
 
       - name: Create or upload to release
         env:
@@ -192,7 +189,7 @@ jobs:
             "" \
             "• 项目更名 PasteLabel → LabelForge：包目录、配置文件、CLI 名称、文档同步，旧配置自动沿用" \
             "• 界面框架由 PyQt5 换成 PySide6（Qt6）" \
-            "• 许可协议由 MIT 改为 LGPL-3.0-only：换绑定并不能回避 Qt 的 LGPL，PyQt 的 wheel 里带的也是 LGPL 版 Qt；一文件打包的 exe 无法满足 4(d)(1)，采用 4(d)(0) 路线（开放源码 + 可替换的 Qt），因此 LICENSE 与 THIRD-PARTY.md 会随每个发行产物单独附一份供直接下载" \
+            "• 许可协议由 MIT 改为 LGPL-3.0-only：换绑定并不能回避 Qt 的 LGPL，PyQt 的 wheel 里带的也是 LGPL 版 Qt；一文件打包的 exe 无法满足 4(d)(1)，采用 4(d)(0) 路线（开放源码 + 可替换的 Qt），LICENSE 与 THIRD-PARTY.md 随源码仓库提供" \
             "• Linux 包照常提供，但构建基线由 Ubuntu 18.04 上调到 20.04（glibc 2.31）：PySide6 需要 glibc ≥ 2.28，18.04 装不上；同时把 PySide6 上限钉在 <6.10，因为 6.10 的 Linux wheel 要求 glibc 2.34，会在无人察觉的情况下再把门槛抬高" \
             "• 依赖版本以 requirements.txt 为唯一出处，CI 直接读它，避免两处各钉一份" \
             "• 新增运行时依赖 cv2，钉到 opencv-python-headless>=4.10,<4.11（只用 headless，不要与其它 OpenCV 发行版混装）" \
