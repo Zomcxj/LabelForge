@@ -64,10 +64,7 @@ class DatasetToolsDialog(QDialog):
         self.setWindowTitle(tr("格式转换"))
         self.setMinimumWidth(560)
 
-        t = ThemeManager.get_theme()
-        self.setStyleSheet(
-            f"QDialog {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}"
-        )
+        self.setStyleSheet(ThemeManager.get_dialog_style())
 
         layout = QVBoxLayout(self)
         self._text_widgets = []

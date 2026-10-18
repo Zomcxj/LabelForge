@@ -69,7 +69,7 @@ class ClassFilterPanel(QDialog):
     def _apply_style(self):
         theme = ThemeManager.get_theme()
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {theme['widget_bg']}; color: {theme['text_primary']}; }}
+            {ThemeManager.get_dialog_style()}
             QLabel {{ color: {theme['text_primary']}; }}
             QLabel#classFilterHint {{ color: {theme['text_secondary']}; }}
             QScrollArea {{ border: 1px solid {theme['border_color']}; border-radius: 4px; }}

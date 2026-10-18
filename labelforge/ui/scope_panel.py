@@ -181,7 +181,7 @@ class ScopePanel(QDialog):
     def _apply_style(self):
         theme = ThemeManager.get_theme()
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {theme['widget_bg']}; color: {theme['text_primary']}; }}
+            {ThemeManager.get_dialog_style()}
             QLabel {{ color: {theme['text_primary']}; }}
             QLabel#scopeHint {{ color: {theme['text_secondary']}; }}
             QLabel#scopeWarn {{ color: {theme['accent']}; }}

@@ -247,7 +247,7 @@ class ThemedMultiLineDialog(QDialog):
     def _apply_style(self):
         t = self._theme
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}
+            {ThemeManager.get_dialog_style()}
             QLabel {{ color: {t['text_primary']}; }}
             QLabel#multiLineCount {{ color: {t['text_secondary']}; }}
             QPlainTextEdit {{ background-color: {t['panel_bg']}; color: {t['text_primary']};

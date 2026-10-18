@@ -556,7 +556,7 @@ class VideoDialog(QDialog):
     def _apply_style(self):
         t = ThemeManager.get_theme()
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}
+            {ThemeManager.get_dialog_style()}
             QTabWidget::pane {{ border: 1px solid {t['border_color']};
                 border-radius: 4px; top: -1px; }}
             QTabBar::tab {{ background-color: {t['panel_bg']};

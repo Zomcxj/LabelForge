@@ -278,7 +278,7 @@ class StatsMixin:
         is_dark = ThemeManager.get_mode().value == "dark"
         QTimer.singleShot(30, _sync)
         dialog.setStyleSheet(f"""
-            QDialog {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}
+            {ThemeManager.get_dialog_style()}
             QTableWidget {{ background-color: {t['widget_bg']}; color: {t['text_primary']};
                 border: 1px solid {t['border_color']}; border-radius: 4px;
                 gridline-color: {t['border_color']}; }}

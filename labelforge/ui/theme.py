@@ -806,6 +806,20 @@ class ThemeManager:
 
 
     @classmethod
+    def get_dialog_style(cls):
+        """小窗共用的底色与正文色。
+
+        这条规则原先在十一个对话框里各写了一遍，换配色得挨个找；而且各处的
+        写法还不一致（有的用 `theme`、有的用 `t`），搜起来更容易漏。
+
+        注意别和 `get_dialog_button_style()` 混：那个管按钮外观，这里只管
+        对话框本身的底色与文字色。
+        """
+        t = cls._current_theme
+        return (f"QDialog {{ background-color: {t['widget_bg']}; "
+                f"color: {t['text_primary']}; }}")
+
+    @classmethod
     def get_list_style(cls):
         t = cls._current_theme
         return f"""

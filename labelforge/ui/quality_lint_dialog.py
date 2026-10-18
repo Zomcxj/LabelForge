@@ -44,7 +44,7 @@ class QualityLintDialog(QDialog):
         self.setMinimumSize(720, 580)
         t = ThemeManager.get_theme()
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}
+            {ThemeManager.get_dialog_style()}
             QTableWidget {{ background-color: {t['widget_bg']}; color: {t['text_primary']};
                 border: 1px solid {t['border_color']}; gridline-color: {t['border_color']}; }}
             QTableWidget::item {{ padding: 4px; }}

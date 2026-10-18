@@ -124,10 +124,7 @@ class DatasetClassifierDialog(QDialog):
         self.setWindowTitle(tr("数据集分类"))
         self.setMinimumWidth(480)
 
-        t = ThemeManager.get_theme()
-        self.setStyleSheet(
-            f"QDialog {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}"
-        )
+        self.setStyleSheet(ThemeManager.get_dialog_style())
 
         layout = QVBoxLayout(self)
 
@@ -245,10 +242,7 @@ class KMeansInfoDialog(QDialog):
         self.setWindowTitle(tr("KMeans聚类结果"))
         self.setMinimumWidth(560)
 
-        t = ThemeManager.get_theme()
-        self.setStyleSheet(
-            f"QDialog {{ background-color: {t['widget_bg']}; color: {t['text_primary']}; }}"
-        )
+        self.setStyleSheet(ThemeManager.get_dialog_style())
 
         layout = QVBoxLayout(self)
 
