@@ -307,6 +307,24 @@ class ThemeManager:
             }}
             QCheckBox::indicator:hover {{
                 border-color: {t['accent']};
+            }}
+            /* 列表项的勾选框由样式自己画，不继承 QCheckBox::indicator。不显式
+               给规则的话勾会走平台原生样式（Windows 下是缩在左上角、溢出色块
+               的小勾），和旁边的复选框完全不是一个样子，暗色主题下几乎看不出
+               勾没勾上。 */
+            QListWidget::indicator, QListView::indicator {{
+                width: 14px;
+                height: 14px;
+                border: 2px solid {t['border_color']};
+                border-radius: 4px;
+                background-color: {t['widget_bg']};
+            }}
+            QListWidget::indicator:checked, QListView::indicator:checked {{
+                background-color: {t['accent']};
+                border-color: {t['accent']};
+            }}
+            QListWidget::indicator:hover, QListView::indicator:hover {{
+                border-color: {t['accent']};
             }}"""
 
     @classmethod
