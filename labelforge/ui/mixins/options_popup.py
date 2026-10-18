@@ -29,7 +29,8 @@ class OptionsPopupMixin:
         self.btn_annotate_mode.setChecked(True)
         self.btn_annotate_mode.setFixedWidth(74)
         self.btn_annotate_mode.setFixedHeight(22)
-        self.btn_annotate_mode.clicked.connect(lambda: self._toggle_edit_mode())
+        self.btn_annotate_mode.clicked.connect(
+            lambda: self._toggle_edit_mode('annotate'))
         mode_layout.addWidget(self.btn_annotate_mode)
 
         self.btn_paste_mode = QPushButton(tr("贴图"))
@@ -37,7 +38,8 @@ class OptionsPopupMixin:
         self.btn_paste_mode.setCheckable(True)
         self.btn_paste_mode.setFixedWidth(74)
         self.btn_paste_mode.setFixedHeight(22)
-        self.btn_paste_mode.clicked.connect(lambda: self._toggle_edit_mode())
+        self.btn_paste_mode.clicked.connect(
+            lambda: self._toggle_edit_mode('paste'))
         mode_layout.addWidget(self.btn_paste_mode)
 
         self.mode_seg_ctrl = AnimatedSegmentedControl(self.mode_seg, self.btn_annotate_mode, self.btn_paste_mode)

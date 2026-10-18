@@ -345,13 +345,15 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         if hasattr(self, 'show_paste_names_checkbox'):
             self.show_paste_names_checkbox.setChecked(not is_annotate)
 
-    def _toggle_edit_mode(self):
-        """切换标注/贴图模式"""
-        sender = self.sender()
-        if sender == self.btn_paste_mode:
-            self._set_edit_mode('paste', animated=True)
-        else:
-            self._set_edit_mode('annotate', animated=True)
+    def _toggle_edit_mode(self, mode):
+        """切换标注/贴图模式。
+
+        模式由调用方直接传入，不读 `sender()`：两个按钮都是用 lambda 连的，
+        lambda 是普通 Python 可调用对象，Qt 无法从中还原发送者，`sender()`
+        恒返回 None —— 之前正是因此每次都落到 else 分支，贴图模式点不进去。
+        """
+        self._set_edit_mode('paste' if mode == 'paste' else 'annotate',
+                            animated=True)
 
     def _set_edit_mode(self, mode, animated=False):
         self.edit_mode = 'annotate' if mode == 'annotate' else 'paste'
