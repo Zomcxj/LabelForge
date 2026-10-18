@@ -125,14 +125,19 @@ def _excludes_block(text):
 
 
 def test_spec_does_not_exclude_pyside6():
-    """spec 的 excludes 绝不能含 PySide6。
+    """spec 的 excludes 绝不能含 PySide6 这个包本身。
 
     迁移前排除它是为瘦身；现在 Qt 就是 PySide6，排除掉构建照样成功，
     exe 却缺 Qt、启动即崩，且构建期毫无提示。
+
+    排**子模块**是另一回事，不在禁止之列：Linux 构建镜像里 conda 的 libkrb5 与
+    系统 libgssapi 版本不匹配，PyInstaller 给 QtNetwork 探测 OpenSSL 时会直接
+    中断构建，而本项目不用网络，所以 QtNetwork 是被有意排除的。
     """
     spec = SRC / "LabelForge.spec"
     block = _excludes_block(spec.read_text(encoding="utf-8"))
-    assert "PySide6" not in block, f"spec 仍在排除 PySide6：\n{block}"
+    entries = re.findall(r"'([^']+)'", block)
+    assert "PySide6" not in entries, f"spec 仍在排除 PySide6 整包：\n{block}"
 
 
 def test_build_sh_does_not_exclude_pyside6():
@@ -245,7 +250,7 @@ def test_linux_build_image_installs_the_libraries_qt_needs_to_import():
     """
     text = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
     linux_step = text[text.index("Build with PyInstaller (Linux"):]
-    for lib in ("libglib2.0-0", "libdbus-1-3", "libx11-6",
+    for lib in ("libglib2.0-0", "libdbus-1-3", "libx11-6", "libgl1",
                 "libxcb-cursor0", "libxkbcommon-x11-0"):
         assert lib in linux_step, (
             f"Linux 构建镜像没装 {lib}：Qt 探测会失败，平台插件静默丢失")

@@ -57,6 +57,11 @@ a = Analysis(
     # （utils/hooks/qt.py: ensure_single_qt_bindings_package），环境里残留
     # PyQt5 会把构建直接打断。
     excludes=['tkinter', 'matplotlib', 'pandas', 'pytest',
+              # QtNetwork 只为一条原因排除：Linux 构建镜像里 conda 的 libkrb5 与
+              # 系统 libgssapi 版本不匹配，PyInstaller 给 QtNetwork 探测 OpenSSL
+              # （_check_if_openssl_enabled）时会 ImportError 直接中断构建。本项目
+              # 不用网络，排掉它既躲开这个坑，也顺带瘦身。
+              'PySide6.QtNetwork',
               'PyQt5', 'PyQt6', 'PySide2',
               'av', 'IPython', 'ipykernel', 'jedi', 'prompt_toolkit', 'pygments',
               'backcall', 'stack_data', 'matplotlib_inline', 'notebook', 'nbformat',
