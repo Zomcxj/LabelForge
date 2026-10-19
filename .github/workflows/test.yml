@@ -12,7 +12,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ['3.11', '3.12']
+        # 只测 3.12：3.11 的轮询差异已被证明与机器速度无关
+        # （见 test_health_dock_layout_autofix），维护两份矩阵没有收益
+        python-version: ['3.12']
 
     runs-on: ${{ matrix.os }}
 
