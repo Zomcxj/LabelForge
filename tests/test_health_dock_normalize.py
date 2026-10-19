@@ -14,12 +14,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Qt 子进程在解释器退出阶段析构顺序不定，偶发崩溃/挂死。断言全过、标记打印
-# 之后立即 flush + os._exit(0)，绕开不可控的析构阶段。
+# 退出用 sys.exit（正常 finalize）而不是 os._exit：后者仍会经 ExitProcess 卸载 DLL
+# 触发 Qt 静态析构，实测 150 次崩 12 次（0xC0000005/0xC0000409）；sys.exit 崩 0 次。
+# 断言失败时脚本先抛异常，两种写法返回码都是 1，不会掩盖真实失败。
 _QT_EXIT_GUARD = '''
-import os, sys
+import sys
 sys.stdout.flush()
-os._exit(0)
+sys.exit(0)
 '''
 
 _SCRIPT = '''

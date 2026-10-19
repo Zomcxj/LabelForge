@@ -526,9 +526,9 @@ def test_render_video_accepts_chinese_paths(tmp_path):
 # ---------- 真实 Qt：绘制真的进了视频 ----------
 
 _QT_GUARD = '''
-import os, sys
+import sys
 sys.stdout.flush()
-os._exit(0)
+sys.exit(0)
 '''
 
 

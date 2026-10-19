@@ -485,7 +485,7 @@ window.close()
 for _ in range(200):
     app.processEvents()
 sys.stdout.flush()
-os._exit(0)
+sys.exit(0)
 ''' % str(ROOT)
 
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen",

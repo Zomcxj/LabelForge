@@ -27,9 +27,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 _GUARD = """
-import os, sys
+import sys
 sys.stdout.flush()
-os._exit(0)
+sys.exit(0)
 """
 
 
@@ -38,6 +38,7 @@ def _run_real_qt(script):
     result = subprocess.run(
         [sys.executable, "-c", script + _GUARD],
         cwd=ROOT, env=env, text=True, capture_output=True,
+        timeout=180,
         encoding="utf-8", errors="replace",
     )
     assert result.returncode == 0, result.stderr

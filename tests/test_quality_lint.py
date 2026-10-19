@@ -1614,11 +1614,12 @@ rules = config_manager.load_all().get("lint_ignored_rules")
 assert rules == {}, rules
 print("OK")
 
-# Qt 子进程退出阶段析构顺序不定，偶发崩溃/挂死；断言通过后 flush + os._exit(0)
-# 绕开析构（os._exit 不冲刷缓冲，必须先 flush，否则标记丢失会误报失败）。
-import os, sys
+# 退出用 sys.exit（正常 finalize）而不是 os._exit：后者仍会经 ExitProcess 卸载
+# DLL 触发 Qt 静态析构，实测 150 次崩 12 次；sys.exit 崩 0 次。断言失败时脚本
+# 先抛异常，两种写法返回码都是 1，不会掩盖真实失败。
+import sys
 sys.stdout.flush()
-os._exit(0)
+sys.exit(0)
 '''
     env = os.environ | {
         "QT_QPA_PLATFORM": "offscreen",

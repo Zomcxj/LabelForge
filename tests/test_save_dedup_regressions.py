@@ -9,12 +9,13 @@ from labelforge.engine.save_manager import SaveManager
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-# Qt 子进程在解释器退出阶段析构顺序不定，偶发崩溃/挂死。断言通过后立即
-# flush + os._exit(0) 绕开析构；os._exit 不冲刷缓冲，必须先 flush。
+# Qt 子进程退出用 sys.exit（走正常 finalize），不用 os._exit：后者仍会经
+# ExitProcess 卸载 DLL 触发 Qt 静态析构，实测 150 次崩 12 次；sys.exit 崩 0 次。
+# 断言失败时脚本先抛异常，两种写法返回码都是 1，不会掩盖真实失败。
 _QT_EXIT_GUARD = """
-import os, sys
+import sys
 sys.stdout.flush()
-os._exit(0)
+sys.exit(0)
 """
 
 
@@ -29,6 +30,7 @@ def _run_real_qt(script):
     result = subprocess.run(
         [sys.executable, "-c", script + _QT_EXIT_GUARD],
         cwd=ROOT, env=env, text=True, capture_output=True,
+        timeout=180,
         encoding="utf-8", errors="replace",
     )
     assert result.returncode == 0, result.stderr

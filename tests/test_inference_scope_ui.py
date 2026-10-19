@@ -18,10 +18,21 @@ from labelforge.engine.inference_scope import (
 )
 
 _QT_EXIT_GUARD = """
-import os, sys
+import sys
 sys.stdout.flush()
-os._exit(0)
+# 必须走 sys.exit（正常 finalize）。此前的 os._exit(0) 会跳过解释器收尾，
+# Windows 上约 8% 的概率在进程终止时触发 0xC0000005/0xC0000409 原生崩溃
+# （150 次实测：os._exit 崩 12 次，sys.exit 崩 0 次）。脚本内若抛异常，
+# 两种情况返回码都是 1，所以换法不会吞掉真正的断言失败。
+sys.exit(0)
 """
+
+# Windows 原生崩溃码 → 人话，避免再被当成「随机抖动」或代码 bug
+_WIN_CRASH = {
+    0xC0000005: "访问冲突 (ACCESS_VIOLATION)",
+    0xC0000409: "栈缓冲溢出 (STACK_BUFFER_OVERRUN)",
+    0xC0000374: "堆损坏 (HEAP_CORRUPTION)",
+}
 
 
 def _run_real_qt(script):
@@ -30,10 +41,29 @@ def _run_real_qt(script):
     result = subprocess.run(
         [sys.executable, "-c", script + _QT_EXIT_GUARD],
         cwd=ROOT, env=env, text=True, capture_output=True,
-        encoding="utf-8", errors="replace",
+        encoding="utf-8", errors="replace", timeout=180,
     )
-    assert result.returncode == 0, result.stderr
+    _assert_child_ok(result)
     return result.stdout
+
+
+def _assert_child_ok(result):
+    """子进程退出码检查：有 stderr 就给 stderr，没有就把原生崩溃码翻译出来。
+
+    崩溃时 stderr 往往是空的（崩在解释器收尾阶段），直接 assert returncode == 0
+    只会得到一句 `assert 3221225477 == 0`，看着像随机失败。
+    """
+    if result.returncode == 0:
+        return
+    unsigned = result.returncode & 0xFFFFFFFF
+    hint = _WIN_CRASH.get(unsigned)
+    detail = result.stderr.strip() or "(stderr 为空)"
+    raise AssertionError(
+        f"真实 Qt 子进程退出码 {result.returncode}"
+        + (f" / 0x{unsigned:08X} —— {hint}" if hint else "")
+        + f"\n--- 子进程 stderr ---\n{detail}"
+        + f"\n--- 子进程 stdout ---\n{result.stdout.strip() or '(空)'}"
+    )
 
 
 def _lines(out):

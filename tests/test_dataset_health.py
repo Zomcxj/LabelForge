@@ -369,14 +369,15 @@ def test_hist_header_shows_total_not_peak():
     assert _hist_header('框数', []) == '框数: 0'
 
 
-# Qt 子进程在解释器退出阶段析构顺序不定，偶发挂死或崩溃（已观察到 paint
-# 测试在整套件里从 0.7s 变成 >120s 超时）。断言全部通过、标记打印之后
-# 立即 flush + os._exit(0)，绕开不可控的析构阶段。os._exit 不冲刷缓冲，
-# 必须先 flush，否则 pytest 收不到 OK 标记会误报失败。
+# 退出用 sys.exit（正常 finalize）而不是 os._exit：后者仍会经 ExitProcess 卸载 DLL
+# 触发 Qt 静态析构，实测 150 次崩 12 次（0xC0000005/0xC0000409）；sys.exit 崩 0 次。
+# 断言失败时脚本先抛异常，两种写法返回码都是 1，不会掩盖真实失败。
+# 另：本文件曾观察到 paint 测试在整套件里从 0.7s 变成 >120s 超时，
+# 因此断言通过、标记打印之后立即 flush，否则 pytest 收不到 OK 会误报失败。
 _QT_EXIT_GUARD = '''
-import os, sys
+import sys
 sys.stdout.flush()
-os._exit(0)
+sys.exit(0)
 '''
 
 

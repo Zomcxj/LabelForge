@@ -290,12 +290,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-# Qt 子进程在解释器退出阶段析构顺序不定，偶发崩溃/挂死。断言通过、标记打印后
-# 立即 flush + os._exit(0) 绕开支路阶段；os._exit 不冲刷缓冲，必须先 flush。
+# 退出用 sys.exit（正常 finalize）而不是 os._exit：后者仍会经 ExitProcess 卸载 DLL
+# 触发 Qt 静态析构，实测 150 次崩 12 次（0xC0000005/0xC0000409）；sys.exit 崩 0 次。
+# 断言失败时脚本先抛异常，两种写法返回码都是 1，不会掩盖真实失败。
 _QT_EXIT_GUARD = '''
-import os, sys
+import sys
 sys.stdout.flush()
-os._exit(0)
+sys.exit(0)
 '''
 
 
@@ -555,81 +556,6 @@ print("OK_LOCK_QUEUE")
     assert "OK_LOCK_QUEUE" in _run_real_qt(script)
 
 
-@pytest.mark.skip(reason="legacy single-overlap coupling replaced by independent axis overlaps")
-def test_crop_dialog_lock_count_and_overlap_derives_size_in_range(tmp_path):
-    # 2000×1000 图，锁「数量」(3列2行) + 锁「重叠」→ 尺寸可调但被收窄到可行区间。
-    # 区间端点：w∈[734,999]（734 是刚够 3 列的最小值，733 会变 4 列），h∈[550,999]。
-    # 改重叠 100 后：尺寸反推到 w=734、h=550（与旧行为一致，锁定项仍驱动派生项）。
-    script = f'''
-import os
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication
-app = QApplication.instance() or QApplication([])
-from labelforge.ui.crop_dialog import CropConfigDialog
-from labelforge.engine.augmenter.crop import size_range_for_count, window_starts
-
-d = r"{tmp_path.as_posix()}"
-src = os.path.join(d, "big.png")
-QImage(2000, 1000, QImage.Format_RGB888).save(src)
-dlg = CropConfigDialog([src], {{0: []}},
-                       {{"w": 800, "h": 600, "overlap": 200, "min_visible": 0.7}})
-dlg._cols.setValue(3)
-dlg._rows.setValue(2)
-dlg._lock_cnt.setChecked(True)
-dlg._lock_ov.setChecked(True)
-assert (dlg._w.value(), dlg._h.value()) == (800, 600), (dlg._w.value(), dlg._h.value())
-# 锁「数量+重叠」并不唯一确定尺寸，故尺寸可编辑，只是范围被收窄到可行区间
-assert not dlg._w.isReadOnly() and not dlg._h.isReadOnly(), "尺寸应区间可编辑"
-assert (dlg._w.minimum(), dlg._w.maximum()) == size_range_for_count(2000, 3, 200), \\
-    (dlg._w.minimum(), dlg._w.maximum())
-assert (dlg._h.minimum(), dlg._h.maximum()) == size_range_for_count(1000, 2, 200), \\
-    (dlg._h.minimum(), dlg._h.maximum())
-
-# 区间内任意尺寸都保持 3×2，锁定数量不漂移
-for value in (dlg._w.minimum(), 850, dlg._w.maximum()):
-    dlg._w.setValue(value)
-    assert len(window_starts(2000, dlg._w.value(), dlg._ov.value())) == 3, value
-    assert (dlg._cols.value(), dlg._rows.value()) == (3, 2), (value, dlg._cols.value())
-
-# 改重叠（锁定项，用户主动改）→ 尺寸仍按它反推
-dlg._ov.setValue(100)
-assert (dlg._w.value(), dlg._h.value()) == (734, 550), (dlg._w.value(), dlg._h.value())
-assert (dlg._cols.value(), dlg._rows.value()) == (3, 2), "锁定的数量不得漂移"
-print("OK_LOCK_CNT_OV")
-'''
-    assert "OK_LOCK_CNT_OV" in _run_real_qt(script)
-
-
-@pytest.mark.skip(reason="legacy single-overlap coupling replaced by independent axis overlaps")
-def test_crop_dialog_lock_count_edit_width_syncs_overlap_and_height(tmp_path):
-    # 只锁「数量」(3列2行)：把宽 800→900，应反推重叠=(3*900−2000)/2=350，
-    # 再按新重叠反推高=(1000+350)/2=675，且行列数保持 3×2 不漂。
-    script = f'''
-import os
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication
-app = QApplication.instance() or QApplication([])
-from labelforge.ui.crop_dialog import CropConfigDialog
-
-d = r"{tmp_path.as_posix()}"
-src = os.path.join(d, "big.png")
-QImage(2000, 1000, QImage.Format_RGB888).save(src)
-dlg = CropConfigDialog([src], {{0: []}},
-                       {{"w": 800, "h": 600, "overlap": 200, "min_visible": 0.7}})
-dlg._cols.setValue(3)
-dlg._rows.setValue(2)
-dlg._lock_cnt.setChecked(True)
-assert not dlg._w.isReadOnly() and not dlg._ov.isReadOnly(), "只锁 1 个时其余应可编辑"
-
-dlg._w.setValue(900)
-assert dlg._ov.value() == 350, dlg._ov.value()
-assert dlg._h.value() == 675, dlg._h.value()
-assert (dlg._cols.value(), dlg._rows.value()) == (3, 2)
-print("OK_LOCK_CNT_EDIT_W")
-'''
-    assert "OK_LOCK_CNT_EDIT_W" in _run_real_qt(script)
-
-
 def test_crop_dialog_lock_size_and_overlap_derives_readonly_count(tmp_path):
     # 锁「尺寸」(800×600) + 锁「重叠」(200) → 数量只读，且为真实网格数 3列2行
     script = f'''
@@ -651,69 +577,6 @@ assert dlg._cols.isReadOnly() and dlg._rows.isReadOnly(), "锁满 2 个后数量
 print("OK_LOCK_SIZE_OV")
 '''
     assert "OK_LOCK_SIZE_OV" in _run_real_qt(script)
-
-
-@pytest.mark.skip(reason="legacy single-overlap coupling replaced by independent axis overlaps")
-def test_crop_dialog_lock_count_infeasible_clamps_and_warns(tmp_path):
-    # 2000×1000 图，锁「数量」3 列；把宽压到 600 → 反推重叠 (3*600−2000)/2=−100 不可行，
-    # 钳到 0 后实际只能切 4 列：数量写回真实值 4 并给出不可达提示
-    script = f'''
-import os
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication
-app = QApplication.instance() or QApplication([])
-from labelforge.ui.crop_dialog import CropConfigDialog
-
-d = r"{tmp_path.as_posix()}"
-src = os.path.join(d, "big.png")
-QImage(2000, 1000, QImage.Format_RGB888).save(src)
-dlg = CropConfigDialog([src], {{0: []}},
-                       {{"w": 800, "h": 600, "overlap": 200, "min_visible": 0.7}})
-dlg._cols.setValue(3)
-dlg._rows.setValue(2)
-dlg._lock_cnt.setChecked(True)
-dlg._w.setValue(600)
-assert dlg._ov.value() == 0, dlg._ov.value()
-assert dlg._cols.value() == 4, dlg._cols.value()
-assert dlg._infeasible is True
-dlg._refresh()
-assert "无法凑出锁定的数量" in dlg._est.text(), dlg._est.text()
-print("OK_INFEASIBLE")
-'''
-    assert "OK_INFEASIBLE" in _run_real_qt(script)
-
-
-@pytest.mark.skip(reason="legacy single-overlap coupling replaced by independent axis overlaps")
-def test_crop_dialog_locked_count_infeasible_shows_hint(tmp_path):
-    # 2000×1000 图，锁「数量」3列；把宽压到 600 → 反推重叠 (3*600−2000)/2 < 0 钳到 0，
-    # 3 窗只盖 1800 < 2000，实际需 4 列 → 数量按实际写回并给出不可达提示。
-    script = f'''
-import os
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication
-app = QApplication.instance() or QApplication([])
-from labelforge.ui.crop_dialog import CropConfigDialog
-from labelforge.ui.i18n import t as tr
-
-d = r"{tmp_path.as_posix()}"
-src = os.path.join(d, "big.png")
-QImage(2000, 1000, QImage.Format_RGB888).save(src)
-dlg = CropConfigDialog([src], {{0: []}},
-                       {{"w": 800, "h": 600, "overlap": 200, "min_visible": 0.7}})
-dlg._cols.setValue(3)
-dlg._rows.setValue(2)
-dlg._lock_cnt.setChecked(True)
-assert dlg._cols.value() == 3 and not dlg._infeasible
-
-dlg._w.setValue(600)
-assert dlg._ov.value() == 0, dlg._ov.value()      # 反推为负 → 钳到 0
-assert dlg._cols.value() == 4, dlg._cols.value()  # 3 列盖不满 → 写回实际 4 列
-assert dlg._infeasible is True
-dlg._refresh()
-assert tr("crop_infeasible") in dlg._est.text(), dlg._est.text()
-print("OK_INFEASIBLE")
-'''
-    assert "OK_INFEASIBLE" in _run_real_qt(script)
 
 
 def test_crop_dialog_fill_defaults_and_spec(tmp_path):
@@ -1556,73 +1419,6 @@ def test_overlap_range_for_count_matches_brute_force():
                         (length, count, size, lo, hi, want[0], want[-1])
 
 
-@pytest.mark.skip(reason="legacy single-overlap coupling replaced by independent axis overlaps")
-def test_crop_dialog_locked_ov_and_cnt_keeps_size_editable_in_range(tmp_path):
-    """锁「重叠+数量」时尺寸不是唯一解：应可编辑，且范围恰好是可行区间。"""
-    script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from labelforge.engine.augmenter.crop import size_range_for_count, window_starts
-
-dlg._lock_ov.setChecked(True)
-dlg._lock_cnt.setChecked(True)
-app.processEvents()
-
-assert dlg._lock_order == ["ov", "cnt"], dlg._lock_order
-assert not dlg._w.isReadOnly(), "锁重叠+数量时尺寸应可编辑"
-assert not dlg._h.isReadOnly(), "锁重叠+数量时尺寸应可编辑"
-
-lo_w, hi_w = size_range_for_count(600, dlg._cols.value(), dlg._ov.value())
-lo_h, hi_h = size_range_for_count(400, dlg._rows.value(), dlg._ov.value())
-assert (dlg._w.minimum(), dlg._w.maximum()) == (lo_w, hi_w), \
-    (dlg._w.minimum(), dlg._w.maximum(), lo_w, hi_w)
-assert (dlg._h.minimum(), dlg._h.maximum()) == (lo_h, hi_h), \
-    (dlg._h.minimum(), dlg._h.maximum(), lo_h, hi_h)
-
-# 区间两端都能调，且数量始终锁在 3×3
-for value in (lo_w, (lo_w + hi_w) // 2, hi_w):
-    dlg._w.setValue(value)
-    assert dlg._cols.value() == 3, (value, dlg._cols.value())
-    assert len(window_starts(600, dlg._w.value(), dlg._ov.value())) == 3, value
-for value in (lo_h, hi_h):
-    dlg._h.setValue(value)
-    assert dlg._rows.value() == 3, (value, dlg._rows.value())
-
-# 数量与重叠都没被顶动
-assert dlg._ov.value() == 60, dlg._ov.value()
-print("OK_SIZE_RANGE")
-'''
-    assert "OK_SIZE_RANGE" in _run_real_qt(script)
-
-
-@pytest.mark.skip(reason="legacy single-overlap coupling replaced by independent axis overlaps")
-def test_crop_dialog_locked_size_and_cnt_keeps_overlap_editable_in_range(tmp_path):
-    """锁「尺寸+数量」时重叠同样有自由度：应可编辑，范围取两轴可行区间的交集。"""
-    script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from labelforge.engine.augmenter.crop import overlap_range_for_count, window_starts
-
-dlg._lock_size.setChecked(True)
-dlg._lock_cnt.setChecked(True)
-app.processEvents()
-
-assert dlg._lock_order == ["size", "cnt"], dlg._lock_order
-assert not dlg._ov.isReadOnly(), "锁尺寸+数量时重叠应可编辑"
-
-w_lo, w_hi = overlap_range_for_count(600, dlg._cols.value(), dlg._w.value())
-h_lo, h_hi = overlap_range_for_count(400, dlg._rows.value(), dlg._h.value())
-want_lo, want_hi = max(w_lo, h_lo), min(w_hi, h_hi)
-assert (dlg._ov.minimum(), dlg._ov.maximum()) == (want_lo, want_hi), \
-    (dlg._ov.minimum(), dlg._ov.maximum(), want_lo, want_hi)
-
-# 交集内任意重叠都要同时保住 3 行与 3 列
-for value in (want_lo, (want_lo + want_hi) // 2, want_hi):
-    dlg._ov.setValue(value)
-    assert len(window_starts(600, dlg._w.value(), dlg._ov.value())) == 3, value
-    assert len(window_starts(400, dlg._h.value(), dlg._ov.value())) == 3, value
-    assert dlg._cols.value() == 3 and dlg._rows.value() == 3, (value, dlg._rows.value())
-print("OK_OV_RANGE")
-'''
-    assert "OK_OV_RANGE" in _run_real_qt(script)
-
-
 def test_crop_dialog_locked_size_and_ov_keeps_count_readonly(tmp_path):
     """锁「尺寸+重叠」时数量是纯结果、没有自由度，必须仍为只读。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
@@ -1920,33 +1716,6 @@ print("OK_DERIVE_OV_FROM_SIZE")
     assert "OK_DERIVE_OV_FROM_SIZE" in _run_real_qt(script)
 
 
-@pytest.mark.skip(reason="legacy single-overlap coupling replaced by independent axis overlaps")
-def test_crop_dialog_no_lock_derives_size_from_overlap_without_fill(tmp_path):
-    """不开填充 + 无锁定：改重叠要反推宽高，仍保持恰好铺满。"""
-    script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from labelforge.engine.augmenter.crop import window_starts
-
-assert not dlg._fill.isChecked()
-dlg._cols.setValue(3)
-dlg._rows.setValue(2)
-app.processEvents()
-
-for ov in (0, 2, 5, 30, 60, 90):
-    dlg._ov.setValue(ov)
-    cw, ch, got = dlg._w.value(), dlg._h.value(), dlg._ov.value()
-    starts_w = window_starts(600, cw, got)
-    # ov=2/5 等使 600+2ov 不被 3 整除 → 无精确解，走 ceil 回退，
-    # 此时 round 会把窗口取小、多凑一列（202 vs 201 恰好跨过 3 窗边界）
-    assert len(starts_w) == 3, (ov, cw, got, starts_w)
-    assert starts_w[-1] + cw == 600, (ov, cw, got, starts_w)
-    starts_h = window_starts(400, ch, got)
-    assert len(starts_h) == 2, (ov, ch, got, starts_h)
-    assert starts_h[-1] + ch == 400, (ov, ch, got, starts_h)
-print("OK_DERIVE_SIZE_FROM_OV")
-'''
-    assert "OK_DERIVE_SIZE_FROM_OV" in _run_real_qt(script)
-
-
 def test_crop_dialog_fill_on_does_not_derive_overlap_from_size(tmp_path):
     """开填充：动宽高不反推重叠（不够就填充），重叠保持用户/原值不动。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
@@ -2218,99 +1987,6 @@ assert "补边" in dlg._est.text() and "30" in dlg._est.text(), dlg._est.text()
 print("OK_SNAP_ON_TOGGLE")
 '''
     assert "OK_SNAP_ON_TOGGLE" in _run_real_qt(script)
-
-
-@pytest.mark.skip(reason="legacy single-overlap coupling replaced by independent axis overlaps")
-def test_crop_dialog_fill_on_notifies_when_pad_clamped(tmp_path):
-    """回退发生时摘要行必须提示（回归：_pad_clamped 曾是只写不读的死代码）。"""
-    script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from labelforge.engine.augmenter.crop import pad_overflow
-
-dlg._fill.setChecked(True)
-app.processEvents()
-dlg._refresh()          # 摘要是防抖渲染的，测试里显式刷新
-assert "补边" in dlg._est.text(), dlg._est.text()   # 开填充时已发生回退
-
-# 手动调到一个本来合规的值 → 提示应消失（不能常驻）
-w_lo, w_hi = dlg._w.minimum(), dlg._w.maximum()
-assert w_hi > w_lo, (w_lo, w_hi)          # 段内要有可调空间，否则这次编辑是空操作
-dlg._w.setValue(w_hi)
-app.processEvents()
-dlg._refresh()
-w, h, ov = dlg._w.value(), dlg._h.value(), dlg._ov.value()
-assert pad_overflow(600, w, ov) * 100 <= 30 * w, (w, ov)
-assert pad_overflow(400, h, ov) * 100 <= 30 * h, (h, ov)
-assert not dlg._pad_clamped, "调到合规值后不该还挂着「已吸附」标记"
-assert "补边" not in dlg._est.text(), dlg._est.text()
-print("OK_PAD_NOTICE")
-'''
-    assert "OK_PAD_NOTICE" in _run_real_qt(script)
-
-
-@pytest.mark.skip(reason="legacy single-overlap coupling replaced by independent axis overlaps")
-def test_crop_dialog_fill_on_count_edit_keeps_count_and_cap(tmp_path):
-    """开填充改数量：派生的尺寸若超限，回退必须保住数量且满足 30% 上限。"""
-    script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-from labelforge.engine.augmenter.crop import (
-    pad_overflow, size_range_for_count, window_starts,
-)
-
-dlg._fill.setChecked(True)
-app.processEvents()
-dlg._ov.setValue(0)
-app.processEvents()
-
-for n in (2, 3, 4, 5, 6):
-    dlg._cols.setValue(n)
-    app.processEvents()
-    w, ov = dlg._w.value(), dlg._ov.value()
-    assert len(window_starts(600, w, ov, True)) == n, (n, w, ov)
-    assert pad_overflow(600, w, ov) * 100 <= 30 * w, (n, w, ov, pad_overflow(600, w, ov))
-    lo, hi = size_range_for_count(600, n, ov, fill=True)
-    assert lo <= w <= hi, (n, w, lo, hi)
-print("OK_COUNT_EDIT")
-'''
-    assert "OK_COUNT_EDIT" in _run_real_qt(script)
-
-
-@pytest.mark.skip(reason="legacy single-overlap coupling replaced by independent axis overlaps")
-def test_crop_dialog_fill_on_template_over_cap_snaps_and_notifies(tmp_path):
-    """套用模板时模板宽高在填充模式下超限：回退到最近合规值并提示。"""
-    script = f'''
-import os
-os.environ["LABELFORGE_CONFIG_PATH"] = r"{tmp_path.as_posix()}/config.json"
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication, QPushButton
-app = QApplication.instance() or QApplication([])
-from labelforge.ui.crop_dialog import CropConfigDialog
-from labelforge.core.config_manager import add_crop_template
-from labelforge.engine.augmenter.crop import (
-    nearest_pad_compliant_size, pad_overflow,
-)
-
-d = r"{tmp_path.as_posix()}"
-src = os.path.join(d, "t.png")
-QImage(600, 400, QImage.Format_RGB888).save(src)
-add_crop_template({{"w": 800, "h": 640, "overlap": 200, "min_visible": 0.7,
-                   "fill": True, "fill_rgb": [114, 114, 114]}})
-dlg = CropConfigDialog([src], {{0: []}},
-                       {{"w": 300, "h": 200, "overlap": 60, "min_visible": 0.7,
-                         "fill": True}})
-btn = [b for b in dlg.findChildren(QPushButton) if "640" in b.text()][0]
-btn.click()
-app.processEvents()
-
-s = dlg.spec()
-assert s["fill"] is True, s
-assert pad_overflow(600, s["w"], s["overlap"]) * 100 <= 30 * s["w"], s
-assert pad_overflow(400, s["h"], s["overlap"]) * 100 <= 30 * s["h"], s
-want_w = nearest_pad_compliant_size(600, 800, s["overlap"])
-assert s["w"] == want_w, (s["w"], want_w)
-dlg._refresh()          # 摘要是防抖渲染的，测试里显式刷新
-assert "补边" in dlg._est.text() and "30" in dlg._est.text(), dlg._est.text()
-print("OK_TEMPLATE_SNAP")
-'''
-    assert "OK_TEMPLATE_SNAP" in _run_real_qt(script)
 
 
 def test_crop_dialog_no_fill_keeps_full_ranges(tmp_path):

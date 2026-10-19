@@ -13,17 +13,18 @@ ROOT = Path(__file__).resolve().parents[1]
 # 处置分两层：
 # 1) window.close() 走真实关闭路径（closeEvent 会请求中断扫描线程并
 #    wait(2000)），顺便验证关闭流程本身不挂死；再排空事件让删除落地。
-# 2) 做完上面这些后 flush + os._exit(0)：解释器退出阶段 Qt 对象析构顺序
-#    不定，即使关窗干净仍有约 1/60 概率崩在析构里，与被测逻辑无关，
-#    不值得继续追。必须先 flush —— os._exit 不冲刷缓冲，标记会丢，
-#    断言就误报失败。不能只用 os._exit 跳过关闭，那会掩盖真实的挂死。
+# 2) 做完上面这些后 flush + sys.exit(0)：退出用 sys.exit（正常 finalize）
+#    而不是 os._exit —— 后者仍会经 ExitProcess 卸载 DLL 触发 Qt 静态析构，
+#    实测 150 次崩 12 次（0xC0000005/0xC0000409），sys.exit 崩 0 次。
+#    必须先 flush，标记丢了 pytest 会误报失败。不能省掉 window.close()，
+#    那会掩盖真实的挂死。
 _TEARDOWN = (
     "\nwindow.close()\n"
     "for _ in range(200):\n"
     "    app.processEvents()\n"
     "import sys\n"
     "sys.stdout.flush()\n"
-    "os._exit(0)\n"
+    "sys.exit(0)\n"
 )
 
 
