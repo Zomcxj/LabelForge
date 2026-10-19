@@ -62,12 +62,12 @@ def test_memory_action_dispatches_memory_records_dialog(monkeypatch):
 
 
 def test_canvas_adjustment_panel_localizes_via_project_i18n():
-    source = (ROOT / "labelforge" / "widgets" / "canvas_adjustment.py").read_text(encoding="utf-8")
+    source = (ROOT / "labelforge" / "widgets" / "canvas_display_panel.py").read_text(encoding="utf-8")
 
     # 不允许绕过项目 i18n 的 Qt 自带 tr()（无翻译文件时恒为英文）
     assert "self.tr(" not in source
     assert "from ..ui.i18n import t as tr" in source
-    for key in ("画布显示", "标签透明度", "画面亮度", "对比度", "恢复默认"):
+    for key in ("画布显示", "标签透明度", "画面亮度", "对比度"):
         assert f'tr("{key}")' in source
     assert "def retranslate_ui" in source
 

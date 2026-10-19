@@ -44,5 +44,8 @@ SVG_MODEL_FILTER = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" 
 SVG_MODEL_SINGLE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5v15l12.5-7.5z"/></svg>'
 # 闪电：从当前位置一键跑完（批量推理）
 SVG_MODEL_ALL = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 13.5H11L10 22l8.5-11.5H12z"/></svg>'
+
+# 爆炸/迸发：用于画布显示面板的展开/收起开关
+SVG_BURST = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.2 4.6 4.9-1.5-2.4 4.5 4.3 3-4.7 1.6 1 4.8-4.3-2.7-3.3 3.7-.6-4.9-4.9.3 3.3-3.6-3.4-3.5 4.9-.2.4-4.9 3.2 3.6z"/></svg>'
 # 胶片：视频抽帧（加载视频导出图片）
 SVG_VIDEO = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="7" y1="4" x2="7" y2="20"/><line x1="17" y1="4" x2="17" y2="20"/><line x1="2" y1="9" x2="7" y2="9"/><line x1="2" y1="15" x2="7" y2="15"/><line x1="17" y1="9" x2="22" y2="9"/><line x1="17" y1="15" x2="22" y2="15"/></svg>'

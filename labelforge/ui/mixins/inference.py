@@ -1089,4 +1089,6 @@ class InferenceMixin:
         from ..widgets.window_params import DEFAULT_MIN_VISIBLE
         return {"w": DEFAULT_WINDOW, "h": DEFAULT_WINDOW,
                 "overlap": DEFAULT_OVERLAP,
+                "overlap_x": DEFAULT_OVERLAP,
+                "overlap_y": DEFAULT_OVERLAP,
                 "min_visible": DEFAULT_MIN_VISIBLE}

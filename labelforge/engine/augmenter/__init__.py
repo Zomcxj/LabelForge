@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QImage, QPainter
 
 from .base import BaseTransform, get_all_transforms, register_transform
 from .crop import (
-    crop_boxes, normalized_fill_rgb, normalized_window, window_starts,
+    crop_boxes, normalized_fill_rgb, normalized_window_axes, window_starts,
 )
 
 from . import flipt, color, noise, translate, rotate, scale
@@ -210,20 +210,22 @@ class Augmenter:
         末行/末列越出图像的部分以 fill_rgb 补齐，命名追加 _pad。
         """
         iw, ih = original_image.width(), original_image.height()
-        cw, ch, ov = normalized_window(iw, ih, crop_spec)
+        cw, ch, ov_x, ov_y = normalized_window_axes(iw, ih, crop_spec)
         min_vis = float(crop_spec.get("min_visible", 0.7))
         pad = bool(crop_spec.get("fill"))
         rgb = normalized_fill_rgb(crop_spec) if pad else None
         made = 0
-        for r, y0 in enumerate(window_starts(ih, ch, ov, fill=pad)):
-            for c, x0 in enumerate(window_starts(iw, cw, ov, fill=pad)):
+        for r, y0 in enumerate(window_starts(ih, ch, ov_y, fill=pad)):
+            for c, x0 in enumerate(window_starts(iw, cw, ov_x, fill=pad)):
                 if self.is_interrupted():
                     return made
                 win_boxes = crop_boxes(boxes, x0, y0, cw, ch, min_vis)
                 if not win_boxes:
                     continue
                 win_img = self._crop_window(original_image, x0, y0, cw, ch, rgb)
-                suffix = f"_crop_r{r + 1}c{c + 1}_ov{ov}"
+                suffix = (f"_crop_r{r + 1}c{c + 1}_ov{ov_x}"
+                          if ov_x == ov_y else
+                          f"_crop_r{r + 1}c{c + 1}_ovx{ov_x}_ovy{ov_y}")
                 if pad:
                     suffix += "_pad"
                 out_name = base + suffix + ext

@@ -642,7 +642,7 @@ old_btn = [b for b in p.findChildren(QPushButton) if "滑窗参数" in b.text()]
 print(len(old_btn))
 """)
     lines = _lines(out)
-    assert lines[0] == "4", f"窗口参数现在有四个输入框（含最低可见比例）：{lines[0]}"
+    assert lines[0] == "5", f"窗口参数现在有五个输入框（宽/高/横向重叠/纵向重叠/最低可见）：{lines[0]}"
     assert _spec_size(lines[1]) == (640, 640, 200), lines[1]
     assert lines[2] == "True", lines[2]
     assert lines[3] == "0", lines[3]
@@ -1603,8 +1603,8 @@ print(d.window_count(), d.ok_btn.isEnabled())
 print(d._estimate.text().replace(chr(10), ' / '))
 """)
     lines = _lines(out)
-    assert lines[0] == "1024 True", lines[0]
-    assert "1024" in lines[1] and "倍" in lines[1], lines[1]
+    assert lines[0] == "1440 True", lines[0]
+    assert "1440" in lines[1] and "倍" in lines[1], lines[1]
 
 
 def test_real_mixin_roi_without_regions_raises_before_start():

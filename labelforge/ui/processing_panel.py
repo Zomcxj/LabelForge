@@ -610,12 +610,12 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         rows = cols = "?"
         W, H = self._crop_ref_size()
         if W and H:
-            from ..engine.augmenter.crop import normalized_window, window_starts
+            from ..engine.augmenter.crop import normalized_window_axes, window_starts
             fill = bool(spec.get("fill"))
-            cw, ch, ov = normalized_window(W, H, spec)
-            cols = len(window_starts(W, cw, ov, fill))
-            rows = len(window_starts(H, ch, ov, fill))
-            spec = {**spec, "overlap": ov}
+            cw, ch, ov_x, ov_y = normalized_window_axes(W, H, spec)
+            cols = len(window_starts(W, cw, ov_x, fill))
+            rows = len(window_starts(H, ch, ov_y, fill))
+            spec = {**spec, "overlap": ov_x, "overlap_x": ov_x, "overlap_y": ov_y}
         txt = tr("crop_summary").format(
             w=spec["w"], h=spec["h"], ov=spec["overlap"], rows=rows, cols=cols)
         if spec.get("fill"):

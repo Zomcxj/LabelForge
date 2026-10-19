@@ -348,8 +348,25 @@ def normalized_window(iw: int, ih: int, spec: dict) -> tuple:
     else:
         cw = min(int(spec["w"]), iw)
         ch = min(int(spec["h"]), ih)
-    ov = max(0, min(int(spec["overlap"]), cw - 1, ch - 1))
+    ov = max(0, min(int(spec.get("overlap", 0)), cw - 1, ch - 1))
     return cw, ch, ov
+
+
+def normalized_window_axes(iw: int, ih: int, spec: dict) -> tuple:
+    """Return ``(cw, ch, overlap_x, overlap_y)`` with legacy fallback.
+
+    ``overlap`` is retained as the compatibility fallback for configurations
+    written before horizontal and vertical overlap became independent.
+    """
+    if spec.get("fill"):
+        cw, ch = int(spec["w"]), int(spec["h"])
+    else:
+        cw = min(int(spec["w"]), iw)
+        ch = min(int(spec["h"]), ih)
+    legacy = int(spec.get("overlap", 0))
+    ox = int(spec.get("overlap_x", legacy))
+    oy = int(spec.get("overlap_y", legacy))
+    return cw, ch, max(0, min(ox, cw - 1)), max(0, min(oy, ch - 1))
 
 
 def visible_ratio(box, window):

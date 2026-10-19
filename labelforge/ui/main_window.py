@@ -133,13 +133,26 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         from ..core.config import BOX_BORDER_CONFIG
         BOX_BORDER_CONFIG['width'] = max(1, min(4, float(settings.get('box_border_width', BOX_BORDER_CONFIG['width']))))
 
+    # `current_background` 是画布当前要画的图：赋值时就同步画布显示面板的
+    # 显隐（不能在 paintEvent 里改控件可见性，那会偶发 0xC0000005 崩溃）。
+    @property
+    def current_background(self):
+        return self._current_background
+
+    @current_background.setter
+    def current_background(self, pixmap):
+        self._current_background = pixmap
+        sync = getattr(self, '_sync_canvas_adjustment_visibility', None)
+        if sync is not None:
+            sync()
+
     def _init_data(self):
         """初始化数据结构"""
         from PySide6.QtWidgets import QLineEdit
         from ..core.config import DEFAULT_PREFIX
 
         self.background_images = []
-        self.current_background = None
+        self._current_background = None
         self.current_background_index = -1
         self.small_images = []
         self._memory_background_path = ""

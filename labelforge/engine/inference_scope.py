@@ -18,7 +18,8 @@ import math
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from .augmenter.crop import MAX_WINDOW, normalized_window, window_starts
+from .augmenter.crop import (MAX_WINDOW, ceil_size_for_count,
+                              normalized_window, window_starts)
 from .onnx_inference import DEFAULT_IOU, nms_per_class
 
 MODE_FULL = "full"
@@ -27,7 +28,8 @@ MODE_ROI = "roi"
 MODES = (MODE_FULL, MODE_WINDOW, MODE_ROI)
 
 _SCOPE_KEYS = {"mode", "windows", "regions", "reference_size"}
-_WINDOW_KEYS = {"w", "h", "overlap", "min_visible"}
+_WINDOW_KEYS = {"w", "h", "overlap", "overlap_x", "overlap_y",
+                "rows", "cols", "min_visible"}
 _EDGE_EPS = 1e-6            # 顶点/边命中容差（原图像素坐标）
 # 窗口数上限。重叠逼近窗口尺寸时步长退化为 1，窗口数变成图面积量级：
 # 20000² 配 640 窗口会排出 3.7 亿个窗口，列表没建完就把内存吃光。
@@ -90,30 +92,51 @@ def iter_windows_with_index(iw, ih, spec):
     unknown = set(spec) - _WINDOW_KEYS - {"fill"}
     if unknown:
         raise ScopeError(f"窗口参数含未知字段：{sorted(unknown)}")
-    if "w" not in spec or "h" not in spec:
+    if ("rows" not in spec and "cols" not in spec
+            and ("w" not in spec or "h" not in spec)):
         raise ScopeError("窗口参数必须包含 w 与 h")
 
+    legacy_overlap = spec.get("overlap", 0)
     try:
-        raw_w, raw_h = int(spec["w"]), int(spec["h"])
+        overlap_x = int(spec.get("overlap_x", legacy_overlap))
+        overlap_y = int(spec.get("overlap_y", legacy_overlap))
     except (TypeError, ValueError):
-        raise ScopeError(f"窗口尺寸必须是整数：{spec.get('w')!r} x {spec.get('h')!r}")
+        raise ScopeError("横向和纵向重叠必须是整数")
+    rows = spec.get("rows")
+    cols = spec.get("cols")
+    if rows is not None or cols is not None:
+        try:
+            rows, cols = int(rows), int(cols)
+        except (TypeError, ValueError):
+            raise ScopeError("行数和列数必须是整数")
+        if rows <= 0 or cols <= 0:
+            raise ScopeError("行数和列数必须为正")
+        raw_w = ceil_size_for_count(iw, cols, overlap_x)
+        raw_h = ceil_size_for_count(ih, rows, overlap_y)
+    else:
+        try:
+            raw_w, raw_h = int(spec["w"]), int(spec["h"])
+        except (TypeError, ValueError):
+            raise ScopeError(f"窗口尺寸必须是整数：{spec.get('w')!r} x {spec.get('h')!r}")
     if raw_w <= 0 or raw_h <= 0:
         raise ScopeError(f"窗口尺寸必须为正：{raw_w} x {raw_h}")
     if raw_w > MAX_WINDOW or raw_h > MAX_WINDOW:
         raise ScopeError(f"窗口尺寸超过上限 {MAX_WINDOW}：{raw_w} x {raw_h}")
 
-    try:
-        overlap = int(spec.get("overlap", 0))
-    except (TypeError, ValueError):
-        raise ScopeError(f"重叠必须是整数：{spec.get('overlap')!r}")
-    if overlap < 0:
-        raise ScopeError(f"重叠不能为负：{overlap}")
+    if overlap_x < 0 or overlap_y < 0:
+        raise ScopeError("重叠不能为负")
 
     # fill 不参与推理：范围推理一律贴边不补边，避免把填充色喂给模型
-    cw, ch, ov = normalized_window(iw, ih, {"w": raw_w, "h": raw_h,
-                                            "overlap": overlap})
-    xs = window_starts(iw, cw, ov)
-    ys = window_starts(ih, ch, ov)
+    cw = min(raw_w, iw)
+    ch = min(raw_h, ih)
+    ox = max(0, min(overlap_x, cw - 1))
+    oy = max(0, min(overlap_y, ch - 1))
+    xs = window_starts(iw, cw, ox)
+    ys = window_starts(ih, ch, oy)
+    if rows is not None and len(ys) != rows:
+        raise ScopeError(f"行数 {rows} 在当前图像尺寸下不可达，实际为 {len(ys)}")
+    if cols is not None and len(xs) != cols:
+        raise ScopeError(f"列数 {cols} 在当前图像尺寸下不可达，实际为 {len(xs)}")
     # 先乘后比，不建列表：这个检查的意义就是别把它建出来
     if len(xs) * len(ys) > MAX_WINDOWS:
         raise ScopeError(

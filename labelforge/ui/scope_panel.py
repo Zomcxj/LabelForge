@@ -412,8 +412,12 @@ class ScopePanel(QDialog):
         spec = self.window_params.spec()
         if not spec:
             return ""
-        return (f"{spec.get('w')}×{spec.get('h')} "
-                f"{tr('重叠')} {spec.get('overlap')}")
+        ox = spec.get('overlap_x', spec.get('overlap'))
+        oy = spec.get('overlap_y', spec.get('overlap'))
+        overlap = ox if ox == oy else f"{ox}×{oy}"
+        counts = (f" {spec['rows']}×{spec['cols']}"
+                  if 'rows' in spec and 'cols' in spec else '')
+        return f"{spec.get('w')}×{spec.get('h')} {tr('重叠')} {overlap}{counts}"
 
     # ---------- 内部 ----------
 

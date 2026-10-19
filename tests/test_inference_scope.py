@@ -81,6 +81,23 @@ def test_iter_windows_overlap_clamped_below_window_size():
     assert xs[:3] == [0, 1, 2]
 
 
+def test_iter_windows_supports_fixed_grid_with_axis_overlaps():
+    windows = iter_windows(1920, 1080, {
+        "rows": 2, "cols": 3, "overlap_x": 200, "overlap_y": 100,
+    })
+    assert len(windows) == 6
+    assert len({x for x, y, w, h in windows}) == 3
+    assert len({y for x, y, w, h in windows}) == 2
+
+
+def test_iter_windows_recomputes_size_for_each_reference_image():
+    spec = {"rows": 2, "cols": 3, "overlap_x": 200, "overlap_y": 100}
+    large = iter_windows(1920, 1080, spec)
+    small = iter_windows(960, 540, spec)
+    assert len(large) == len(small) == 6
+    assert (large[0][2], large[0][3]) != (small[0][2], small[0][3])
+
+
 def test_iter_windows_rejects_window_count_above_cap():
     """窗口数超上限必须报错，不能把内存吃光。
 

@@ -15,6 +15,7 @@ from ..core.config_manager import load_crop_templates
 from ..engine.augmenter.crop import (
     MAX_WINDOW, PAD_MAX_PERCENT, crop_boxes, exact_overlap_for_flush,
     nearest_pad_compliant_overlap, normalized_fill_rgb, normalized_window,
+    normalized_window_axes,
     overlap_for_count, overlap_range_for_count, pad_compliant_overlap_run,
     pad_compliant_size_run, pad_overflow, size_for_count, size_for_flush,
     size_range_for_count, window_starts,
@@ -142,7 +143,9 @@ class CropConfigDialog(QDialog):
 
         self._w = QSpinBox(); self._w.setRange(8, MAX_WINDOW)
         self._h = QSpinBox(); self._h.setRange(8, MAX_WINDOW)
-        self._ov = QSpinBox(); self._ov.setRange(0, 4096)
+        self._ov_x = QSpinBox(); self._ov_x.setRange(0, 4096)
+        self._ov_y = QSpinBox(); self._ov_y.setRange(0, 4096)
+        self._ov = self._ov_x  # compatibility alias; new UI uses both axes
         self._rows = QSpinBox(); self._rows.setRange(1, 128)
         self._cols = QSpinBox(); self._cols.setRange(1, 128)
         self._vis = QSpinBox(); self._vis.setRange(50, 100); self._vis.setSuffix(" %")
@@ -163,7 +166,9 @@ class CropConfigDialog(QDialog):
 
         self._w.setValue(int(spec["w"]))
         self._h.setValue(int(spec["h"]))
-        self._ov.setValue(int(spec["overlap"]))
+        legacy_ov = int(spec.get("overlap", 0))
+        self._ov_x.setValue(int(spec.get("overlap_x", legacy_ov)))
+        self._ov_y.setValue(int(spec.get("overlap_y", legacy_ov)))
         self._vis.setValue(int(round(spec.get("min_visible", 0.7) * 100)))
         self._square.setChecked(bool(spec.get("square")))
         self._fill.setChecked(bool(spec.get("fill")))
@@ -181,7 +186,8 @@ class CropConfigDialog(QDialog):
 
         self._w.valueChanged.connect(lambda _v: self._on_size("w"))
         self._h.valueChanged.connect(lambda _v: self._on_size("h"))
-        self._ov.valueChanged.connect(self._on_overlap)
+        self._ov_x.valueChanged.connect(lambda: self._on_overlap("x"))
+        self._ov_y.valueChanged.connect(lambda: self._on_overlap("y"))
         self._rows.valueChanged.connect(lambda _v: self._on_count("rows"))
         self._cols.valueChanged.connect(lambda _v: self._on_count("cols"))
         self._square.toggled.connect(self._on_square)
@@ -198,24 +204,32 @@ class CropConfigDialog(QDialog):
         col_a = QVBoxLayout()
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("裁剪尺寸（像素）")))
+        for _sb in (self._w, self._h):
+            _sb.setFixedWidth(64)       # 窄一点，给行尾的锁留位置
         row.addWidget(self._w); row.addWidget(QLabel("×")); row.addWidget(self._h)
         row.addWidget(self._square)
         row.addStretch()
-        # 三个锁统一放在 addStretch() 之后：否则本行的锁会跟着内容左靠，
+        # 两个锁统一放在 addStretch() 之后：否则本行的锁会跟着内容左靠，
         # 窗口一拉宽就与另两行错开（1270 宽下恰好重合，1900 宽时错位 103px）。
         # 锁是 28×22 定宽，行高由输入框决定，不显式居中会被顶到行首。
         # 右内容边距用 addSpacing 无效（零余量行会被压缩掉），必须走 contentsMargins。
         row.setContentsMargins(0, 0, self._LOCK_INSET, 0)
         row.addWidget(self._lock_size, 0, Qt.AlignVCenter)
         col_a.addLayout(row)
+        # 横向/纵向重叠各占一个框，与上面的「宽×高」一一对应
         row = QHBoxLayout()
-        row.addWidget(QLabel(tr("重叠长度（像素）"))); row.addWidget(self._ov)
+        row.addWidget(QLabel(tr("重叠（像素）")))
+        for _sb in (self._ov_x, self._ov_y):
+            _sb.setFixedWidth(64)
+        row.addWidget(self._ov_x); row.addWidget(QLabel("×")); row.addWidget(self._ov_y)
         row.addStretch()
         row.setContentsMargins(0, 0, self._LOCK_INSET, 0)
         row.addWidget(self._lock_ov, 0, Qt.AlignVCenter)
         col_a.addLayout(row)
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("裁剪数量（行 × 列）")))
+        for _sb in (self._rows, self._cols):
+            _sb.setFixedWidth(46)       # 行列只到 128，3 位数够用
         row.addWidget(self._rows); row.addWidget(QLabel("×")); row.addWidget(self._cols)
         row.addStretch()
         row.setContentsMargins(0, 0, self._LOCK_INSET, 0)
@@ -225,11 +239,14 @@ class CropConfigDialog(QDialog):
 
         col_b = QVBoxLayout()
         row = QHBoxLayout()
+        self._vis.setFixedWidth(64)     # 百分比最多 3 位 + 后缀
         row.addWidget(QLabel(tr("最小可见比例（%）"))); row.addWidget(self._vis); row.addStretch()
         col_b.addLayout(row)
         row = QHBoxLayout()
         row.addWidget(self._fill)
         row.addWidget(QLabel("RGB"))
+        for _sb in (self._fill_r, self._fill_g, self._fill_b):
+            _sb.setFixedWidth(52)       # 0~255 三位数
         row.addWidget(self._fill_r); row.addWidget(self._fill_g); row.addWidget(self._fill_b)
         row.addWidget(self._fill_swatch)
         row.addStretch()
@@ -330,7 +347,7 @@ class CropConfigDialog(QDialog):
         回填前必须先放开区间：上一轮的补边硬墙/锁定区间还留在控件上，
         setValue(800) 会被旧范围静默钳成 352（模板值根本没生效）。
         """
-        controls = (self._w, self._h, self._ov, self._rows, self._cols,
+        controls = (self._w, self._h, self._ov_x, self._ov_y, self._rows, self._cols,
                     self._vis, self._square, self._fill,
                     self._fill_r, self._fill_g, self._fill_b)
         self._relax_ranges()
@@ -338,7 +355,9 @@ class CropConfigDialog(QDialog):
             c.blockSignals(True)
         self._w.setValue(int(spec["w"]))
         self._h.setValue(int(spec["h"]))
-        self._ov.setValue(int(spec["overlap"]))
+        legacy_ov = int(spec.get("overlap", 0))
+        self._ov_x.setValue(int(spec.get("overlap_x", legacy_ov)))
+        self._ov_y.setValue(int(spec.get("overlap_y", legacy_ov)))
         self._vis.setValue(int(round(spec["min_visible"] * 100)))
         self._square.setChecked(bool(spec["square"]))
         self._fill.setChecked(bool(spec.get("fill")))
@@ -355,7 +374,8 @@ class CropConfigDialog(QDialog):
         self._sync_fill_ui()
         self._linking = True
         try:
-            self._relayout("lock")
+            self._sync_counts()
+            self._apply_readonly()
         finally:
             self._linking = False
         self._debounce.start()
@@ -367,7 +387,9 @@ class CropConfigDialog(QDialog):
 
     def _clamp_ov_max(self):
         """重叠上限：数量锁定时放宽到 窗口−1（数量已锁死不会爆炸），否则半窗。"""
-        self._ov.setMaximum(max(0, self._ov_hi_limit()))
+        limit = max(0, self._ov_hi_limit())
+        self._ov_x.setMaximum(limit)
+        self._ov_y.setMaximum(limit)
 
     def _axis_count(self, length, size, ov):
         return len(window_starts(length, size, max(0, min(ov, size - 1))))
@@ -396,10 +418,10 @@ class CropConfigDialog(QDialog):
         if not rw:
             return
         sp = self.spec()
-        cw, ch, ov = normalized_window(rw, rh, sp)
+        cw, ch, ov_x, ov_y = normalized_window_axes(rw, rh, sp)
         fill = bool(sp["fill"])
-        self._set(self._rows, len(window_starts(rh, ch, ov, fill)))
-        self._set(self._cols, len(window_starts(rw, cw, ov, fill)))
+        self._set(self._rows, len(window_starts(rh, ch, ov_y, fill)))
+        self._set(self._cols, len(window_starts(rw, cw, ov_x, fill)))
 
     # ---- 锁定：按点击先后排队，最多 2 个 ----
 
@@ -439,7 +461,8 @@ class CropConfigDialog(QDialog):
         if not full or not rw:
             self._w.setRange(8, MAX_WINDOW)
             self._h.setRange(8, MAX_WINDOW)
-            self._ov.setRange(0, 4096)
+            self._ov_x.setRange(0, 4096)
+            self._ov_y.setRange(0, 4096)
             for wdg in (self._rows, self._cols):
                 wdg.setReadOnly(False)
             self._clamp_ov_max()
@@ -463,9 +486,11 @@ class CropConfigDialog(QDialog):
                                                  fill=fill)
             lo_h, hi_h = overlap_range_for_count(rh, self._rows.value(), self._h.value(),
                                                  fill=fill)
-            self._set_range(self._ov, max(lo_w, lo_h), min(hi_w, hi_h))
+            self._set_range(self._ov_x, 0, 4096)
+            self._set_range(self._ov_y, 0, 4096)
         else:
-            self._ov.setRange(0, 4096)
+            self._ov_x.setRange(0, 4096)
+            self._ov_y.setRange(0, 4096)
             self._clamp_ov_max()
 
         ro_cnt = full and "cnt" not in self._lock_order
@@ -492,8 +517,10 @@ class CropConfigDialog(QDialog):
 
     def _set_ov(self, ov):
         """赋重叠前先放开上限，避免被旧上限静默钳掉；收尾由 _clamp_ov_max 回钳。"""
-        self._ov.setMaximum(4096)
-        self._set(self._ov, ov)
+        self._ov_x.setMaximum(4096)
+        self._ov_y.setMaximum(4096)
+        self._set(self._ov_x, ov)
+        self._set(self._ov_y, ov)
 
     def _size_from_count(self, length, count, ov):
         return self._exact_size(length, size_for_count(length, count, ov), count, ov)
@@ -713,27 +740,51 @@ class CropConfigDialog(QDialog):
             return
         self._linking = True
         try:
-            self._apply_square()
-            self._relayout(axis)
+            if self._apply_square():
+                axis = "w"
+            rw, rh = self._ref_size()
+            if rw and rh:
+                if axis == "w":
+                    self._set(self._ov_x, overlap_for_count(
+                        rw, self._cols.value(), self._w.value()))
+                else:
+                    self._set(self._ov_y, overlap_for_count(
+                        rh, self._rows.value(), self._h.value()))
+                self._sync_counts()
         finally:
             self._linking = False
         self._debounce.start()
 
-    def _on_overlap(self):
+    def _on_overlap(self, axis="x"):
         if self._linking:
             return
         self._linking = True
         try:
-            ov = self._ov.value()
-            if "size" not in self._lock_order:   # 尺寸被锁时不去顶它
-                if ov >= self._w.value():
+            if axis == "y":
+                rw, rh = self._ref_size()
+                if rh:
+                    self._relayout_axis("y", rh, self._rows.value(), self._ov_y.value())
+            else:
+                ov = self._ov_x.value()
+                if "size" not in self._lock_order and ov >= self._w.value():
                     self._set(self._w, ov + 1)
-                if ov >= self._h.value():
-                    self._set(self._h, ov + 1)
-            self._relayout("ov")
+            rw, rh = self._ref_size()
+            if rw and rh:
+                if axis == "x":
+                    self._relayout_axis("x", rw, self._cols.value(), self._ov_x.value())
+                self._sync_counts()
         finally:
             self._linking = False
         self._debounce.start()
+
+    def _relayout_axis(self, axis, length, count, overlap):
+        """Recompute one dimension while preserving its row/column count."""
+        minimum = max(8, overlap + 1)
+        size = max(minimum, (length + (count - 1) * overlap + count - 1) // count)
+        starts = window_starts(length, size, overlap, fill=self._fill.isChecked())
+        if len(starts) != count:
+            size = self._size_from_count(length, count, overlap)
+        self._set(self._h if axis == "y" else self._w, size)
 
     def _on_count(self, axis):
         if self._linking:
@@ -743,7 +794,12 @@ class CropConfigDialog(QDialog):
             return
         self._linking = True
         try:
-            self._relayout(axis)
+            rw, rh = self._ref_size()
+            if axis == "cols":
+                self._relayout_axis("x", rw, self._cols.value(), self._ov_x.value())
+            else:
+                self._relayout_axis("y", rh, self._rows.value(), self._ov_y.value())
+            self._sync_counts()
         finally:
             self._linking = False
         self._debounce.start()
@@ -810,14 +866,14 @@ class CropConfigDialog(QDialog):
             return
         iw, ih = img.width(), img.height()
         sp = self.spec()
-        cw, ch, ov = normalized_window(iw, ih, sp)
+        cw, ch, ov_x, ov_y = normalized_window_axes(iw, ih, sp)
         fill = bool(sp["fill"])
         boxes = self._boxes.get(self._img.currentIndex(), [])
         min_vis = self._vis.value() / 100.0
         rects = []
         kept = 0
-        for r, y0 in enumerate(window_starts(ih, ch, ov, fill), 1):
-            for c, x0 in enumerate(window_starts(iw, cw, ov, fill), 1):
+        for r, y0 in enumerate(window_starts(ih, ch, ov_y, fill), 1):
+            for c, x0 in enumerate(window_starts(iw, cw, ov_x, fill), 1):
                 has = bool(crop_boxes(boxes, x0, y0, cw, ch, min_vis))
                 rects.append(((x0, y0, cw, ch), has, r, c))
                 kept += 1 if has else 0
@@ -833,7 +889,9 @@ class CropConfigDialog(QDialog):
 
     def spec(self):
         return {"w": self._w.value(), "h": self._h.value(),
-                "overlap": self._ov.value(),
+                "overlap": self._ov_x.value(),
+                "overlap_x": self._ov_x.value(),
+                "overlap_y": self._ov_y.value(),
                 "min_visible": self._vis.value() / 100.0,
                 "square": self._square.isChecked(),
                 "fill": self._fill.isChecked(),

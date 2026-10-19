@@ -382,7 +382,9 @@ def _normalize_crop_template(spec):
     try:
         w = int(spec.get('w', 0))
         h = int(spec.get('h', 0))
-        overlap = int(spec.get('overlap', 0))
+        legacy_overlap = int(spec.get('overlap', 0))
+        overlap_x = int(spec.get('overlap_x', legacy_overlap))
+        overlap_y = int(spec.get('overlap_y', legacy_overlap))
     except (TypeError, ValueError):
         return None
     raw_visible = spec.get('min_visible')
@@ -395,12 +397,13 @@ def _normalize_crop_template(spec):
             return None
     if not (8 <= w <= 8192 and 8 <= h <= 8192):
         return None
-    if not (0 <= overlap <= 4096):
+    if not (0 <= overlap_x <= 4096 and 0 <= overlap_y <= 4096):
         return None
     if not (0.5 <= min_visible <= 1.0):
         return None
     return {
-        'w': w, 'h': h, 'overlap': overlap,
+        'w': w, 'h': h, 'overlap': overlap_x,
+        'overlap_x': overlap_x, 'overlap_y': overlap_y,
         'min_visible': round(min_visible, 4),
         'square': bool(spec.get('square')),
         'fill': bool(spec.get('fill')),
@@ -409,7 +412,7 @@ def _normalize_crop_template(spec):
 
 
 def _crop_template_key(t):
-    return (t['w'], t['h'], t['overlap'], t['min_visible'], t['square'],
+    return (t['w'], t['h'], t['overlap_x'], t['overlap_y'], t['min_visible'], t['square'],
             t['fill'], tuple(t['fill_rgb']))
 
 

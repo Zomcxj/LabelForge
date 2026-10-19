@@ -4,6 +4,6 @@
 
 from .ui.main_window import ImageEditor, main
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 __author__ = "LabelForge"
 __all__ = ['ImageEditor', 'main']

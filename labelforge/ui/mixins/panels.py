@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QPushButton
 from PySide6.QtCore import Qt, QTimer, QRect
 from ...canvas import Canvas
-from ...widgets.canvas_adjustment import CanvasAdjustmentWidget
+from ...widgets.canvas_display_panel import CanvasDisplayPanel
 from ...widgets.spinner import _SpinnerWidget
 from ..i18n import t as tr
 
@@ -29,9 +29,12 @@ class PanelsMixin:
         self._loading_spinner = _SpinnerWidget(canvas_scroll.viewport())
         self._loading_spinner.hide()
 
-        self.canvas_adjustment = CanvasAdjustmentWidget(canvas_scroll.viewport())
-        self.canvas_adjustment.opacity_changed.connect(self._on_opacity_changed)
-        self.canvas_adjustment.brightness_contrast_changed.connect(self._on_brightness_contrast_changed)
+        self.canvas_adjustment = CanvasDisplayPanel(canvas_scroll.viewport())
+        # 没有背景图时不显示；换图/清图由 current_background 的 setter 触发同步
+        self.canvas_adjustment.hide()
+        self._canvas_panel_pending = False
+        self.canvas_adjustment.label_opacity_changed.connect(self._on_opacity_changed)
+        self.canvas_adjustment.image_tone_changed.connect(self._on_brightness_contrast_changed)
         self.canvas_adjustment.geometry_changed.connect(
             lambda: self._position_canvas_adjustment(canvas_scroll)
         )
@@ -64,6 +67,31 @@ class PanelsMixin:
         )
         self.canvas_adjustment.raise_()
 
+    def _sync_canvas_adjustment_visibility(self):
+        """画布显示面板跟随背景图：有图显示、无图隐藏。
+
+        可以随时被调用（包括绘制栈内）：这里只打脏标记，真正改可见性走
+        `singleShot(0)`，回到事件循环再执行。在 paintEvent 里直接
+        `setVisible()` 会重排布局，真实 Qt 下偶发 0xC0000005 崩溃。
+        """
+        if self._canvas_panel_pending:
+            return
+        self._canvas_panel_pending = True
+        QTimer.singleShot(0, self._apply_canvas_adjustment_visibility)
+
+    def _apply_canvas_adjustment_visibility(self):
+        self._canvas_panel_pending = False
+        panel = getattr(self, 'canvas_adjustment', None)
+        scroll = getattr(self, '_canvas_scroll_area', None)
+        if panel is None:
+            return
+        want = getattr(self, 'current_background', None) is not None
+        if panel.isVisible() == want:
+            return
+        panel.setVisible(want)
+        if want and scroll is not None:
+            self._position_canvas_adjustment(scroll)
+
     def _side_panel_geometry(self):
         """右侧控制栏相对主窗口的矩形；还没建好时返回 None。
 
@@ -89,10 +117,14 @@ class PanelsMixin:
         # 枚举写成 `QEvent.Type.Resize`：PySide6 只把枚举挂在类上，实例上取不到
         # （`event.Resize` 会 AttributeError），PyQt5 那套实例访问在这里不成立。
         from PySide6.QtCore import QEvent
-        if (hasattr(self, '_canvas_scroll_area') and
-                obj == self._canvas_scroll_area.viewport() and
-                event.type() == QEvent.Type.Resize):
-            self._position_canvas_adjustment(self._canvas_scroll_area)
+        scroll = getattr(self, '_canvas_scroll_area', None)
+        if scroll is not None and event.type() == QEvent.Type.Resize:
+            # 退出时滚动区可能已析构，碰一下就会 0xC0000005，故包起来
+            try:
+                if obj is scroll.viewport():
+                    self._position_canvas_adjustment(scroll)
+            except RuntimeError:
+                pass
         return super().eventFilter(obj, event)
 
     def _create_control_panel(self):
