@@ -1330,11 +1330,12 @@ print("OK_HEIGHT")
     assert "OK_HEIGHT" in _run_real_qt(script)
 
 
-def test_crop_dialog_lock_buttons_aligned_at_any_width(tmp_path):
-    """尺寸锁、重叠锁、数量锁必须始终右对齐成一条竖线，且与同行输入框垂直居中。
+def test_crop_dialog_lock_buttons_follow_their_own_row(tmp_path):
+    """每个锁要紧跟它锁的那一组参数，不能三个锁挤在行尾排成一条竖线。
 
-    回归：_lock_size 曾加在 addStretch() 之前，1270 宽下恰好与另两个重合，
-    但窗口拉宽到 1900 时错位 103px。
+    回归：早先把三个锁都放在 addStretch() 之后推到 col_a 右边缘，锁与它
+    对应的输入框之间隔着大半行空白，看不出锁的是哪一组。改成紧跟在参数组
+    后面之后，三行的锁 x 坐标必然**不同**，而各自与所属参数组的间隙要小。
     """
     script = f'''
 import os
@@ -1348,31 +1349,35 @@ p = os.path.join(d, "a.png")
 QImage(1920, 1080, QImage.Format_RGB888).save(p)
 spec = {{"w": 699, "h": 584, "overlap": 88, "min_visible": 0.7,
         "square": False, "fill": False, "fill_rgb": (114, 114, 114)}}
+GAP_MAX = 24
 for width in (1270, 1600, 1900):
     dlg = CropConfigDialog([p], {{0: []}}, spec)
     dlg.resize(width, 800); dlg.show(); app.processEvents()
-    xs = []
-    for b in (dlg._lock_size, dlg._lock_ov, dlg._lock_cnt):
-        xs.append(b.mapTo(dlg, b.rect().topLeft()).x())
-    if width == 1270:
-        # 最小宽度下首行零余量，锁的位置由前序控件累加得出，允许 1px 取整误差
-        assert max(xs) - min(xs) <= 1, (width, xs)
-    else:
-        # 有余量时 stretch 把三个锁都推到 col_a 右边缘，必须严格成一条竖线
-        # （回归：修复前 1600 宽错位 3px、1900 宽错位 103px）
-        assert len(set(xs)) == 1, (width, xs)
-    # 垂直居中：锁图标中心应与同行输入框中心齐平
-    for b, ref in ((dlg._lock_size, dlg._w), (dlg._lock_ov, dlg._ov_x),
-                   (dlg._lock_cnt, dlg._cols)):
-        gb = b.mapTo(dlg, b.rect().topLeft())
-        gr = ref.mapTo(dlg, ref.rect().topLeft())
-        cb = gb.y() + b.height() / 2
-        cr = gr.y() + ref.height() / 2
-        assert abs(cb - cr) <= 1.0, (width, b.height(), ref.height(), cb, cr)
+    # (锁, 该组最后一个控件)：锁紧跟在它右边
+    pairs = ((dlg._lock_size, dlg._square), (dlg._lock_ov, dlg._ov_y),
+             (dlg._lock_cnt, dlg._cols))
+    for lock, anchor in pairs:
+        lx = lock.mapTo(dlg, lock.rect().topLeft()).x()
+        ax = anchor.mapTo(dlg, anchor.rect().topLeft()).x() + anchor.width()
+        gap = lx - ax
+        assert 0 <= gap <= GAP_MAX, (width, gap, lx, ax)
+        # 垂直居中：锁图标中心应与同行输入框中心齐平
+        cb = lock.mapTo(dlg, lock.rect().topLeft()).y() + lock.height() / 2
+        cr = anchor.mapTo(dlg, anchor.rect().topLeft()).y() + anchor.height() / 2
+        assert abs(cb - cr) <= 1.0, (width, cb, cr)
+    xs = [b.mapTo(dlg, b.rect().topLeft()).x()
+          for b in (dlg._lock_size, dlg._lock_ov, dlg._lock_cnt)]
+    # 三组参数宽度不同，锁各自跟随 -> 不应重合（旧布局下三者严格相等）
+    assert len(set(xs)) >= 2, (width, xs)
+    # 窗口拉宽时锁跟着自己的参数组走，不能被 stretch 推到右边
+    for lock, anchor in pairs:
+        lx = lock.mapTo(dlg, lock.rect().topLeft()).x()
+        ax = anchor.mapTo(dlg, anchor.rect().topLeft()).x() + anchor.width()
+        assert lx - ax <= GAP_MAX, (width, lx - ax)
     dlg.close()
-print("OK_LOCK_ALIGN")
+print("OK_LOCK_FOLLOW")
 '''
-    assert "OK_LOCK_ALIGN" in _run_real_qt(script)
+    assert "OK_LOCK_FOLLOW" in _run_real_qt(script)
 
 
 def test_size_range_for_count_matches_brute_force():
@@ -1500,23 +1505,22 @@ print("OK_PATH_FOLLOW")
     assert "OK_PATH_FOLLOW" in _run_real_qt(script)
 
 
-def test_crop_dialog_lock_buttons_shifted_left_with_gap(tmp_path):
-    """③ 三个锁要往左挪一点：与所在行右边缘留出可见间距，且仍严格对齐。"""
+def test_crop_dialog_lock_buttons_not_pinned_to_row_right_edge(tmp_path):
+    """锁不能被推到 col_a 右边缘：那样它离自己的参数组太远，含义就丢了。"""
     script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
 dlg.resize(1600, 800)
 dlg.show(); app.processEvents()
 
-# 布局链：主布局 → 顶部三列 → 第一列（三个锁都在这里）→ 每一行
 col_a = dlg.layout().itemAt(0).layout().itemAt(0).layout()
 locks = (dlg._lock_size, dlg._lock_ov, dlg._lock_cnt)
 
 xs = [b.mapTo(dlg, b.rect().topLeft()).x() for b in locks]
-assert len(set(xs)) == 1, xs          # 仍严格成一条竖线
+assert len(set(xs)) >= 2, xs          # 各自跟随所属参数组
 
 for idx, b in enumerate(locks):
     row_right = col_a.itemAt(idx).layout().geometry().right()
     lock_right = b.mapTo(dlg, b.rect().topLeft()).x() + b.width()
-    assert row_right - lock_right >= 8, (idx, row_right, lock_right)
+    assert row_right - lock_right > 40, (idx, row_right, lock_right)
 print("OK_LOCK_SHIFT")
 '''
     assert "OK_LOCK_SHIFT" in _run_real_qt(script)

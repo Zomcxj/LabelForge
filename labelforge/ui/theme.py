@@ -1,6 +1,7 @@
 """
 Theme module - manages dark/light theme switching
 """
+import os
 from enum import Enum
 
 
@@ -9,11 +10,45 @@ class ThemeMode(Enum):
     DARK = "dark"
 
 
+# 界面字体只用于界面，不用于代码/数字展示。把等宽字体排在第一位会让中文
+# 也落到 JetBrains Mono 上——它没有中文字形，一旦回落失败就是豆腐块。
+UI_FONT_FAMILY = "'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif"
+# 等宽字体只留给坐标、阈值这类需要对齐的数字。
+MONO_FONT_FAMILY = "'JetBrains Mono', 'Consolas', 'Courier New', monospace"
+
+# 字号以「100% 缩放下多少 px」书写，渲染时按屏幕 DPI 换算。
+# QSS 里的 px 不随系统缩放走，12px 在 150% 缩放的笔记本上会显得很小。
+_BASE_FONT_SIZE = 12
+_BASE_FONT_SIZE_SMALL = 11
+
+
+def _scale_px(base: int) -> int:
+    """把 100% 缩放下的字号换算成当前 DPI 下的 px。
+
+    只用逻辑 DPI（logicalDotsPerInch）而不是物理 DPI：Qt 已经开了
+    AA_EnableHighDpiScaling，逻辑 DPI 里已经含了系统缩放比例，再乘物理
+    DPI 会放大两次。拿不到屏幕时（无 GUI、离屏）原样返回。
+    """
+    scale = float(os.environ.get("LABELFORGE_UI_SCALE") or 0) or None
+    if scale is None:
+        try:
+            from PySide6.QtGui import QGuiApplication
+            screen = QGuiApplication.primaryScreen()
+            scale = screen.logicalDotsPerInch() / 96.0 if screen else 1.0
+        except Exception:
+            scale = 1.0
+    # 下限 9px：再小就看不清；上限 3 倍够覆盖到 300% 缩放。
+    return max(9, min(36, round(base * min(max(scale, 1.0), 3.0))))
+
+
 LIGHT_THEME = {
     "name": "light",
-    "font_family": "'JetBrains Mono', 'Microsoft YaHei', 'Segoe UI', sans-serif",
-    "font_size": 12,
-    "font_size_small": 11,
+    "font_family": UI_FONT_FAMILY,
+    "font_mono": MONO_FONT_FAMILY,
+    "font_size": _BASE_FONT_SIZE,
+    "font_size_small": _BASE_FONT_SIZE_SMALL,
+    "font_size_px": _scale_px(_BASE_FONT_SIZE),
+    "font_size_px_small": _scale_px(_BASE_FONT_SIZE_SMALL),
     "interaction_active": "#2950ff",
     "interaction_active_text": "#FFFFFF",
     "window_bg": "#F5F5F5",
@@ -22,10 +57,13 @@ LIGHT_THEME = {
             "canvas_bg": "#FFFFFF",
     "border_color": "#E0E0E0",
     "border_hover": "#BBDEFB",
+    "border_input": "#C4C4C4",
     "text_primary": "#1F1F1F",
     "button_text": "#1F1F1F",
     "text_secondary": "#1F1F1F",
-    "text_disabled": "#BDBDBD",
+    # 禁用文字也要读得清：用户得看懂这一项是什么，才能判断要不要启用它。
+    # 用虚线边框表达「不可用」，不用把字压到看不见。
+    "text_disabled": "#8A8A8A",
     "accent": "#2196F3",
     "accent_hover": "#1976D2",
     "accent_light": "#E3F2FD",
@@ -53,21 +91,30 @@ LIGHT_THEME = {
 
 DARK_THEME = {
     "name": "dark",
-    "font_family": "'JetBrains Mono', 'Microsoft YaHei', 'Segoe UI', sans-serif",
-    "font_size": 12,
-    "font_size_small": 11,
+    "font_family": UI_FONT_FAMILY,
+    "font_mono": MONO_FONT_FAMILY,
+    "font_size": _BASE_FONT_SIZE,
+    "font_size_small": _BASE_FONT_SIZE_SMALL,
+    "font_size_px": _scale_px(_BASE_FONT_SIZE),
+    "font_size_px_small": _scale_px(_BASE_FONT_SIZE_SMALL),
     "interaction_active": "#2950ff",
     "interaction_active_text": "#FFFFFF",
     "window_bg": "#1E1E1E",
     "widget_bg": "#2D2D2D",
     "panel_bg": "#252525",
     "canvas_bg": "#2D2D2D",
-    "border_color": "#3E3E3E",
-    "border_hover": "#505050",
+    # 边框对 widget_bg 只有 1.29:1 时基本看不见；WCAG 1.4.11 要求
+    # 可交互组件的边界至少 3:1。border_color 用于装饰分隔，
+    # border_input 用于输入框/复选框这类必须看得见的边界。
+    "border_color": "#505050",
+    "border_hover": "#5E5E5E",
+    "border_input": "#757575",
     "text_primary": "#F5F5F5",
     "button_text": "#F5F5F5",
     "text_secondary": "#F5F5F5",
-    "text_disabled": "#616161",
+    # 原 #616161 对 widget_bg 只有 2.22:1，禁用态的字读不清，
+    # 用户没法判断那个选项到底是什么。提到 #969696（对 widget_bg 4.66:1）。
+    "text_disabled": "#969696",
     "accent": "#42A5F5",
     "accent_hover": "#1E88E5",
     "accent_light": "#1A2332",
@@ -75,7 +122,8 @@ DARK_THEME = {
     "success_light": "#1A2E1A",
     "warning": "#FFA726",
     "warning_light": "#2E2218",
-    "danger": "#EF5350",
+    # 原 #EF5350 在 widget_bg 上只有 3.95:1，当错误提示文字用时不够。
+    "danger": "#FF6B6B",
     "danger_light": "#2E1A1A",
     "list_hover": "#333333",
     "list_selected_bg": "#1A2332",
@@ -133,7 +181,6 @@ class ThemeManager:
         return cls._current_theme
 
     @classmethod
-    @classmethod
     def get_stylesheet(cls):
         """整份 QSS，按界面区域拼装；每段见对应的 _qss_* 方法。
 
@@ -166,7 +213,7 @@ class ThemeManager:
                 background-color: {t['widget_bg']};
                 color: {t['text_primary']};
                 font-family: {t['font_family']};
-                font-size: {t['font_size']}px;
+                font-size: {t['font_size_px']}px;
             }}
             QSplitter {{
                 background-color: {t['widget_bg']};
@@ -257,7 +304,7 @@ class ThemeManager:
                 color: {t['interaction_active_text']};
             }}
             QLineEdit {{
-                border: 1px solid {t['border_color']};
+                border: 1px solid {t['border_input']};
                 border-radius: 4px;
                 padding: 3px 6px;
                 background-color: {t['widget_bg']};
@@ -271,7 +318,7 @@ class ThemeManager:
                 border-color: {t['accent']};
             }}
             QSpinBox, QDoubleSpinBox {{
-                border: 1px solid {t['border_color']};
+                border: 1px solid {t['border_input']};
                 border-radius: 4px;
                 padding: 3px 2px;
                 background-color: {t['widget_bg']};
@@ -282,6 +329,11 @@ class ThemeManager:
             }}
             QSpinBox:focus, QDoubleSpinBox:focus {{
                 border-color: {t['accent']};
+            }}
+            QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled,
+            QComboBox:disabled {{
+                color: {t['text_disabled']};
+                border: 1px dashed {t['border_input']};
             }}
             QSpinBox::up-button, QSpinBox::down-button,
             QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
@@ -297,7 +349,7 @@ class ThemeManager:
             QCheckBox::indicator {{
                 width: 14px;
                 height: 14px;
-                border: 2px solid {t['border_color']};
+                border: 2px solid {t['border_input']};
                 border-radius: 4px;
                 background-color: {t['widget_bg']};
             }}
@@ -350,6 +402,7 @@ class ThemeManager:
             QPushButton:disabled {{
                 background-color: {t['scrollbar_bg']};
                 color: {t['text_disabled']};
+                border: 1px dashed {t['border_input']};
             }}"""
 
     @classmethod
@@ -361,8 +414,8 @@ class ThemeManager:
                 border-radius: 4px;
                 background-color: {t['widget_bg']};
                 color: {t['text_secondary']};
-                font-family: Consolas, "Courier New", monospace;
-                font-size: 12px;
+                font-family: {t['font_mono']};
+                font-size: {t['font_size_px']}px;
                 padding: 4px;
             }}
             QGroupBox {{
@@ -406,7 +459,7 @@ class ThemeManager:
                 background-color: {t['widget_bg']};
             }}
             QComboBox {{
-                border: 1px solid {t['border_color']};
+                border: 1px solid {t['border_input']};
                 border-radius: 4px;
                 padding: 3px 6px;
                 background-color: {t['widget_bg']};
@@ -428,7 +481,6 @@ class ThemeManager:
             }}
 """
 
-    @classmethod
     @classmethod
     def _qss_toolbar_buttons(cls, t):
         """工具栏上的具名按钮：图标、翻页、背景/贴图、标签、主题、设置、选项。"""
@@ -761,7 +813,7 @@ class ThemeManager:
                 background: transparent;
                 border: none;
                 color: {t['button_text']};
-                font-size: {t['font_size_small']}px;
+                font-size: {t['font_size_px_small']}px;
                 padding: 3px 8px;
             }}
             QPushButton#modeSegBtn:hover {{
@@ -898,7 +950,7 @@ class ThemeManager:
                 border: 1px solid {t['border_color']};
                 border-radius: 4px;
                 padding: 3px 8px;
-                font-size: {t['font_size']}px;
+                font-size: {t['font_size_px']}px;
                 font-weight: bold;
                 color: {fg};
             }}

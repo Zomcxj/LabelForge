@@ -107,11 +107,20 @@ class _CropPreview(QWidget):
                                      dst.top() + int((by - y0) * sy),
                                      max(1, int(bw * sx)), max(1, int(bh * sy))))
                 p.restore()
-            p.setPen(QPen(QColor("#4CAF50") if kept else QColor("#ff3b30"), 2))
+            # 2px 细框在缩小后的预览图上几乎看不见。加粗到 3px，并沿边框
+            # 外侧再描一圈同色半透明的光晕（而不是整块盖住窗口内部——那样
+            # 会连同窗口内容与填充色一起染色）。
+            rect_color = QColor("#4CAF50") if kept else QColor("#ff3b30")
+            halo = QColor(rect_color)
+            halo.setAlpha(70)
             p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(halo, 7))
+            p.drawRect(dst.adjusted(-2, -2, 2, 2))
+            p.setPen(QPen(rect_color, 3))
             p.drawRect(dst)
+            label_color = QColor("#ffffff")
             if kept and dst.width() >= 44 and dst.height() >= 30:
-                p.setPen(QColor("#ffffff"))
+                p.setPen(label_color)
                 p.drawText(dst.adjusted(2, 0, -2, -2),
                            Qt.AlignBottom | Qt.AlignLeft, f"r{r}c{c}")
 
@@ -121,7 +130,6 @@ class CropConfigDialog(QDialog):
 
     _LOCK_MAX = 2                       # 最多同时锁定 2 组，第 3 个挤掉最早锁的
     _LOCK_KEYS = ("size", "ov", "cnt")
-    _LOCK_INSET = 12                    # 锁与所在行右边缘的间距
     _LOCK_ICON_ON = "\U0001F512"        # 🔒 已锁
     _LOCK_ICON_OFF = "\U0001F513"       # 🔓 未锁
 
@@ -208,13 +216,11 @@ class CropConfigDialog(QDialog):
             _sb.setFixedWidth(64)       # 窄一点，给行尾的锁留位置
         row.addWidget(self._w); row.addWidget(QLabel("×")); row.addWidget(self._h)
         row.addWidget(self._square)
-        row.addStretch()
-        # 两个锁统一放在 addStretch() 之后：否则本行的锁会跟着内容左靠，
-        # 窗口一拉宽就与另两行错开（1270 宽下恰好重合，1900 宽时错位 103px）。
-        # 锁是 28×22 定宽，行高由输入框决定，不显式居中会被顶到行首。
-        # 右内容边距用 addSpacing 无效（零余量行会被压缩掉），必须走 contentsMargins。
-        row.setContentsMargins(0, 0, self._LOCK_INSET, 0)
+        # 锁紧跟在参数组后面，中间只留 6px：原来靠 addStretch() 推到行尾，
+        # 锁和它对应的输入框之间隔着半行空白，看不出锁的是哪一组。
+        row.addSpacing(6)
         row.addWidget(self._lock_size, 0, Qt.AlignVCenter)
+        row.addStretch()
         col_a.addLayout(row)
         # 横向/纵向重叠各占一个框，与上面的「宽×高」一一对应
         row = QHBoxLayout()
@@ -222,18 +228,18 @@ class CropConfigDialog(QDialog):
         for _sb in (self._ov_x, self._ov_y):
             _sb.setFixedWidth(64)
         row.addWidget(self._ov_x); row.addWidget(QLabel("×")); row.addWidget(self._ov_y)
-        row.addStretch()
-        row.setContentsMargins(0, 0, self._LOCK_INSET, 0)
+        row.addSpacing(6)
         row.addWidget(self._lock_ov, 0, Qt.AlignVCenter)
+        row.addStretch()
         col_a.addLayout(row)
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("裁剪数量（行 × 列）")))
         for _sb in (self._rows, self._cols):
             _sb.setFixedWidth(46)       # 行列只到 128，3 位数够用
         row.addWidget(self._rows); row.addWidget(QLabel("×")); row.addWidget(self._cols)
-        row.addStretch()
-        row.setContentsMargins(0, 0, self._LOCK_INSET, 0)
+        row.addSpacing(6)
         row.addWidget(self._lock_cnt, 0, Qt.AlignVCenter)
+        row.addStretch()
         col_a.addLayout(row)
         col_a.addStretch()
 
@@ -286,6 +292,10 @@ class CropConfigDialog(QDialog):
         top.addLayout(col_c, 1)
 
         btns = QHBoxLayout()
+        # 图例做成两个带色块的标签：纯文字说明在图很大时容易被忽略，
+        # 色块先给出「哪个颜色是什么意思」，文字只做补充。
+        btns.addWidget(self._make_legend_chip("#4CAF50", tr("保留")))
+        btns.addWidget(self._make_legend_chip("#ff3b30", tr("空窗丢弃")))
         btns.addWidget(QLabel(tr("绿=保留 · 红=空窗丢弃")))
         btns.addStretch()
         ok = QPushButton(tr("确定")); ok.setObjectName("successBtn"); ok.clicked.connect(self.accept)
@@ -317,6 +327,15 @@ class CropConfigDialog(QDialog):
         btn.toggled.connect(lambda on, b=btn: b.setText(
             self._LOCK_ICON_ON if on else self._LOCK_ICON_OFF))
         return btn
+
+    def _make_legend_chip(self, color, text):
+        """图例色块：一个 8×8 圆角色块 + 12px 文字。"""
+        chip = QLabel(f'<span style="color:{color};">&#9632;</span>&nbsp;{text}')
+        chip.setTextFormat(Qt.RichText)
+        font = chip.font()
+        font.setPointSizeF(max(9.0, font.pointSizeF()))
+        chip.setFont(font)
+        return chip
 
     def _set(self, spin, value):
         spin.blockSignals(True)
@@ -879,12 +898,19 @@ class CropConfigDialog(QDialog):
                 kept += 1 if has else 0
         self._preview.set_content(img, rects, boxes,
                                   QColor(*sp["fill_rgb"]) if fill else None)
-        txt = tr("crop_estimate").format(
-            total=len(self._images), est=kept * len(self._images))
+        total_n = len(self._images)
+        est_n = kept * len(self._images)
+        txt = tr("crop_estimate").format(total=total_n, est=est_n)
+        # 摘要行里两个数字是用户真正要看的结论，其余是说明文字。把数字加粗
+        # 并套强调色，扫一眼就能拿到，不用读完整句。
+        accent = ThemeManager.get_theme()["accent"]
+        txt = txt.replace(str(total_n), f'<b style="color:{accent}">{total_n}</b>', 1)
+        txt = txt.replace(str(est_n), f'<b style="color:{accent}">{est_n}</b>', 1)
+        txt = "<br>".join(txt.split("\n"))
         if self._infeasible:
-            txt = tr("crop_infeasible") + "\n" + txt
+            txt = tr("crop_infeasible") + "<br>" + txt
         if self._pad_clamped:
-            txt = tr("crop_pad_clamped").format(pct=PAD_MAX_PERCENT) + "\n" + txt
+            txt = tr("crop_pad_clamped").format(pct=PAD_MAX_PERCENT) + "<br>" + txt
         self._est.setText(txt)
 
     def spec(self):
