@@ -37,8 +37,11 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         self._editor = editor
         self.setObjectName("processingPanel")
         self.setWindowIcon(create_app_icon(os.path.dirname(__file__)))
-        self.setMinimumWidth(500)
-        self.resize(832, 850)
+        # 数据增强改成 4 列后，单格约需 220px（复选框 + 两个 56px 输入框 +
+        # 分隔符 + 间距），4 列加边距要 900px 以上。窗口宽度跟着加，并提高
+        # 最小宽度，否则窗口一缩就把第 4 列挤掉。
+        self.setMinimumWidth(900)
+        self.resize(960, 850)
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(8, 8, 8, 8)
         main_layout.setSpacing(0)

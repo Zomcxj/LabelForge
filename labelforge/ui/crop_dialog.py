@@ -209,38 +209,50 @@ class CropConfigDialog(QDialog):
         self._img.currentIndexChanged.connect(self._on_image)
 
         # ---- 顶部参数区：三列并排（原来是一整列竖排在左侧） ----
+        # 三行的标签文字长短不一（裁剪尺寸 / 重叠 / 裁剪数量），各自 addWidget
+        # 会让输入框起点差出 20~60px，整块看着是歪的。这里给标签统一宽度，
+        # 输入框与 × 也统一宽度，三行的列就自然对齐了。
+        _LABEL_W = 132
+        _SPIN_W = 64
+        _COL_W = _SPIN_W * 2 + 22       # 两个输入框 + 中间的 ×
+        _LOCK_W = 28
+        _GAP = 6
+
+        def _row(label_text, left, right, lock, extra=None):
+            """构造一行：定宽标签 + 两个定宽输入框 + 锁（列对齐）。"""
+            lay = QHBoxLayout()
+            lay.setSpacing(_GAP)
+            lbl = QLabel(label_text)
+            lbl.setFixedWidth(_LABEL_W)
+            lay.addWidget(lbl)
+            for _sb in (left, right):
+                _sb.setFixedWidth(_SPIN_W)
+            lay.addWidget(left)
+            times = QLabel("×")
+            times.setFixedWidth(10)
+            times.setAlignment(Qt.AlignCenter)
+            lay.addWidget(times)
+            lay.addWidget(right)
+            if extra is not None:
+                lay.addWidget(extra)
+            # 用 addStretch 把「参数组 + 锁」这一整块推到列宽边界，锁在三行里
+            # 才会落在同一条竖线上；只靠前面的定宽做不到——行列那两个框更窄。
+            lay.addStretch()
+            lay.addWidget(lock, 0, Qt.AlignVCenter)
+            lay.addSpacing(_GAP)
+            return lay
+
         col_a = QVBoxLayout()
-        row = QHBoxLayout()
-        row.addWidget(QLabel(tr("裁剪尺寸（像素）")))
-        for _sb in (self._w, self._h):
-            _sb.setFixedWidth(64)       # 窄一点，给行尾的锁留位置
-        row.addWidget(self._w); row.addWidget(QLabel("×")); row.addWidget(self._h)
-        row.addWidget(self._square)
-        # 锁紧跟在参数组后面，中间只留 6px：原来靠 addStretch() 推到行尾，
-        # 锁和它对应的输入框之间隔着半行空白，看不出锁的是哪一组。
-        row.addSpacing(6)
-        row.addWidget(self._lock_size, 0, Qt.AlignVCenter)
-        row.addStretch()
-        col_a.addLayout(row)
-        # 横向/纵向重叠各占一个框，与上面的「宽×高」一一对应
-        row = QHBoxLayout()
-        row.addWidget(QLabel(tr("重叠（像素）")))
-        for _sb in (self._ov_x, self._ov_y):
-            _sb.setFixedWidth(64)
-        row.addWidget(self._ov_x); row.addWidget(QLabel("×")); row.addWidget(self._ov_y)
-        row.addSpacing(6)
-        row.addWidget(self._lock_ov, 0, Qt.AlignVCenter)
-        row.addStretch()
-        col_a.addLayout(row)
-        row = QHBoxLayout()
-        row.addWidget(QLabel(tr("裁剪数量（行 × 列）")))
+        col_a.setSpacing(4)
+        self._square.setText(tr("正方形"))
+        col_a.addLayout(_row(tr("裁剪尺寸（像素）"), self._w, self._h,
+                             self._lock_size, extra=self._square))
+        col_a.addLayout(_row(tr("重叠（像素）"), self._ov_x, self._ov_y,
+                             self._lock_ov))
+        col_a.addLayout(_row(tr("裁剪数量（行 × 列）"), self._rows, self._cols,
+                             self._lock_cnt))
         for _sb in (self._rows, self._cols):
             _sb.setFixedWidth(46)       # 行列只到 128，3 位数够用
-        row.addWidget(self._rows); row.addWidget(QLabel("×")); row.addWidget(self._cols)
-        row.addSpacing(6)
-        row.addWidget(self._lock_cnt, 0, Qt.AlignVCenter)
-        row.addStretch()
-        col_a.addLayout(row)
         col_a.addStretch()
 
         col_b = QVBoxLayout()
@@ -292,11 +304,10 @@ class CropConfigDialog(QDialog):
         top.addLayout(col_c, 1)
 
         btns = QHBoxLayout()
-        # 图例做成两个带色块的标签：纯文字说明在图很大时容易被忽略，
-        # 色块先给出「哪个颜色是什么意思」，文字只做补充。
+        # 图例只用带色块的标签，不再另附一行「绿=保留 · 红=空窗丢弃」：
+        # 色块里已经写了保留/空窗丢弃，再加一句是同一件事说两遍。
         btns.addWidget(self._make_legend_chip("#4CAF50", tr("保留")))
         btns.addWidget(self._make_legend_chip("#ff3b30", tr("空窗丢弃")))
-        btns.addWidget(QLabel(tr("绿=保留 · 红=空窗丢弃")))
         btns.addStretch()
         ok = QPushButton(tr("确定")); ok.setObjectName("successBtn"); ok.clicked.connect(self.accept)
         cancel = QPushButton(tr("取消")); cancel.setObjectName("accentBtn"); cancel.clicked.connect(self.reject)

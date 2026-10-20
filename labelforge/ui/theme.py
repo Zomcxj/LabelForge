@@ -10,9 +10,9 @@ class ThemeMode(Enum):
     DARK = "dark"
 
 
-# 界面字体只用于界面，不用于代码/数字展示。把等宽字体排在第一位会让中文
-# 也落到 JetBrains Mono 上——它没有中文字形，一旦回落失败就是豆腐块。
-UI_FONT_FAMILY = "'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif"
+# 界面主字体。JetBrains Mono 排在第一位（用户指定的观感），中文由
+# Microsoft YaHei 承接——JetBrains Mono 没有中文字形，系统会自动回落。
+UI_FONT_FAMILY = "'JetBrains Mono', 'Microsoft YaHei', 'Segoe UI', sans-serif"
 # 等宽字体只留给坐标、阈值这类需要对齐的数字。
 MONO_FONT_FAMILY = "'JetBrains Mono', 'Consolas', 'Courier New', monospace"
 

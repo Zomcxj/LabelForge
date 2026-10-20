@@ -36,7 +36,10 @@ _TRANSFORM_ORDER = [
     "gauss", "saltpepper",
 ]
 
-# 分组标题：key 是组内第一个变换名，插入到它前面。空字符串表示不插。
+# 数据增强网格的列数。4 列比 3 列更省纵向空间，且 12 个变换正好铺满 3 行。
+_COLS = 4
+
+# 分组标题：key 是组内第一个变换名，插入到它前面。
 _TRANSFORM_GROUPS = {
     "fliph": "几何",
     "bright": "色彩",
@@ -80,28 +83,29 @@ class ProcessingPanelBuilderMixin:
         # 先把「每个变换落在第几行第几列」算完，再统一放置。插分组标题会让
         # 后续行号顺延，边算边放会把后面的格子挤错位。
         _slots = {}
-        _row, _col = 0, 0          # 第 0 行第 0 列已被「原图」占用
-        _col = 1
+        _heads = {}                # 分组标题单独记，不能和变换共用 key：
+                                   # 「几何」组的第一项就是 fliph，共用会让
+                                   # fliph 自己被当成标题，复选框永远建不出来
+        _row, _col = 0, 1          # 第 0 行第 0 列已被「原图」占用
         for name in order:
-            if name in _TRANSFORM_GROUPS:
+            group = _TRANSFORM_GROUPS.get(name)
+            if group is not None:
                 if _col != 0:
                     _row, _col = _row + 1, 0
-                _slots[name] = (_row, _col, True)
+                _heads[group] = (_row, _col)
                 _row, _col = _row + 1, 0
-                continue
-            _slots[name] = (_row, _col, False)
+            _slots[name] = (_row, _col)
             _col += 1
-            if _col >= 3:
+            if _col >= _COLS:
                 _row, _col = _row + 1, 0
+        for group, (grow, gcol) in _heads.items():
+            # 分组标题独占一整行，不占列宽
+            head = QLabel(tr(group))
+            head.setStyleSheet(
+                "color: #9E9E9E; font-size: 11px; background: transparent;")
+            grid.addWidget(head, grow, 0, 1, _COLS)
         for name in order:
-            row, col, is_head = _slots[name]
-            if is_head:
-                # 分组标题独占一整行，不占列宽
-                head = QLabel(tr(_TRANSFORM_GROUPS[name]))
-                head.setStyleSheet(
-                    "color: #9E9E9E; font-size: 11px; background: transparent;")
-                grid.addWidget(head, row, 0, 1, 3)
-                continue
+            row, col = _slots[name]
             meta = TRANSFORM_META.get(name, (name, []))
             display_name, param_defs = meta
             cell = QWidget()
@@ -151,8 +155,8 @@ class ProcessingPanelBuilderMixin:
         crop_cl.addWidget(self._crop_summary_lbl, 1)
         # 滑窗裁剪跟噪声组之后，单独占一整行（它带「配置…」按钮和摘要）
         _last_row = max(v[0] for v in _slots.values()) if _slots else 0
-        grid.addWidget(crop_cell, _last_row + 1, 0, 1, 3)
-        for c in range(3):
+        grid.addWidget(crop_cell, _last_row + 1, 0, 1, _COLS)
+        for c in range(_COLS):
             grid.setColumnStretch(c, 1)
         layout.addLayout(grid)
         rl = QHBoxLayout()
@@ -293,12 +297,10 @@ class ProcessingPanelBuilderMixin:
         self._pipe_split.setChecked(True)
         # 三个步骤做成有色块的步骤条：勾选时块变强调色，未勾选时淡灰。
         # 原来只是三个复选框 + 两个 →，勾没勾一眼看不出来，像没做完的控件。
-        _steps = (
-            (self._pipe_aug, "增强"),
-            (self._pipe_exp, "导出"),
-            (self._pipe_split, "划分"),
-        )
-        for _i, (_cb, _txt) in enumerate(_steps):
+        # 文字由 QCheckBox 自己带（_refresh_texts 里 setText），这里**不再**
+        # 另加 QLabel —— 两处都给文字，界面上会显示成「增强 增强」。
+        _steps = (self._pipe_aug, self._pipe_exp, self._pipe_split)
+        for _i, _cb in enumerate(_steps):
             if _i:
                 _arrow = QLabel("→")
                 _arrow.setStyleSheet(
@@ -309,9 +311,6 @@ class ProcessingPanelBuilderMixin:
             _wl.setContentsMargins(6, 2, 8, 2)
             _wl.setSpacing(4)
             _wl.addWidget(_cb)
-            _label = QLabel(tr(_txt))
-            _label.setStyleSheet("background: transparent;")
-            _wl.addWidget(_label)
             hl.addWidget(_wrap)
             _cb.toggled.connect(
                 lambda on, w=_wrap, c=_cb: _style_pipe_step(w, c))

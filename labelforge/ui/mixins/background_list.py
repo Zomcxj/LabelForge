@@ -35,7 +35,12 @@ class BackgroundListMixin:
             act.triggered.connect(lambda checked, t=task: self._toggle_task_filter(t, checked))
             menu.addAction(act)
         menu.addSeparator()
-        clear = QAction(f"{'√ ' if not current else ''}{tr('全部')}", self)
+        # 「全部」也做成 checkable：原来靠文字前缀 "√ " 表示选中，勾会跟着
+        # 文字一起居中，看起来不在左侧勾选栏里。做成 checkable 后由 Qt 统一
+        # 画在左边的标记列，与上面几个选项对齐。
+        clear = QAction(tr('全部'), self)
+        clear.setCheckable(True)
+        clear.setChecked(not current)
         clear.triggered.connect(self._clear_task_filter)
         self._task_filter_clear_action = clear
         menu.addAction(clear)
@@ -53,7 +58,12 @@ class BackgroundListMixin:
             act.triggered.connect(lambda checked, g=gid: self._toggle_group_filter(g, checked))
             menu.addAction(act)
         menu.addSeparator()
-        clear = QAction(f"{'√ ' if not current else ''}{tr('全部')}", self)
+        # 「全部」也做成 checkable：原来靠文字前缀 "√ " 表示选中，勾会跟着
+        # 文字一起居中，看起来不在左侧勾选栏里。做成 checkable 后由 Qt 统一
+        # 画在左边的标记列，与上面几个选项对齐。
+        clear = QAction(tr('全部'), self)
+        clear.setCheckable(True)
+        clear.setChecked(not current)
         clear.triggered.connect(self._clear_group_filter)
         self._group_filter_clear_action = clear
         menu.addAction(clear)
@@ -106,14 +116,14 @@ class BackgroundListMixin:
         self._refresh_filter_menu_checks()
 
     def _refresh_filter_menu_checks(self):
-        """菜单不自动关闭，就地刷新"全部"行的勾选标记。"""
+        """菜单不自动关闭，就地刷新"全部"行的勾选状态。"""
         for attr, current in (
             ('_task_filter_clear_action', getattr(self, '_task_filter', set())),
             ('_group_filter_clear_action', getattr(self, '_group_filter', set())),
         ):
             act = getattr(self, attr, None)
             if act is not None:
-                act.setText(f"{'√ ' if not current else ''}{tr('全部')}")
+                act.setChecked(not current)
 
     def _refresh_filter_buttons(self):
         task_btn = getattr(self, 'task_filter_btn', None)

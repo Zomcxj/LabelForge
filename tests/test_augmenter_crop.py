@@ -1330,12 +1330,11 @@ print("OK_HEIGHT")
     assert "OK_HEIGHT" in _run_real_qt(script)
 
 
-def test_crop_dialog_lock_buttons_follow_their_own_row(tmp_path):
-    """每个锁要紧跟它锁的那一组参数，不能三个锁挤在行尾排成一条竖线。
+def test_crop_dialog_first_column_is_aligned(tmp_path):
+    """三行的输入框与锁必须各自对齐成竖线。
 
-    回归：早先把三个锁都放在 addStretch() 之后推到 col_a 右边缘，锁与它
-    对应的输入框之间隔着大半行空白，看不出锁的是哪一组。改成紧跟在参数组
-    后面之后，三行的锁 x 坐标必然**不同**，而各自与所属参数组的间隙要小。
+    回归：三行标签文字长短不一（裁剪尺寸 / 重叠 / 裁剪数量），各自
+    addWidget 会让输入框起点差出 20~60px，锁也跟着错位，整块看着是歪的。
     """
     script = f'''
 import os
@@ -1347,37 +1346,65 @@ from labelforge.ui.crop_dialog import CropConfigDialog
 d = r"{tmp_path.as_posix()}"
 p = os.path.join(d, "a.png")
 QImage(1920, 1080, QImage.Format_RGB888).save(p)
-spec = {{"w": 699, "h": 584, "overlap": 88, "min_visible": 0.7,
+spec = {{"w": 768, "h": 640, "overlap_x": 192, "overlap_y": 192,
+        "rows": 2, "cols": 3, "min_visible": 0.7,
         "square": False, "fill": False, "fill_rgb": (114, 114, 114)}}
-GAP_MAX = 24
 for width in (1270, 1600, 1900):
     dlg = CropConfigDialog([p], {{0: []}}, spec)
     dlg.resize(width, 800); dlg.show(); app.processEvents()
-    # (锁, 该组最后一个控件)：锁紧跟在它右边
-    pairs = ((dlg._lock_size, dlg._square), (dlg._lock_ov, dlg._ov_y),
-             (dlg._lock_cnt, dlg._cols))
-    for lock, anchor in pairs:
+    # 第一列（左输入框）三行必须同一 x
+    first_xs = [w.mapTo(dlg, w.rect().topLeft()).x()
+                for w in (dlg._w, dlg._ov_x, dlg._rows)]
+    assert len(set(first_xs)) == 1, (width, first_xs)
+    # 锁也必须落在同一条竖线上
+    lock_xs = [b.mapTo(dlg, b.rect().topLeft()).x()
+               for b in (dlg._lock_size, dlg._lock_ov, dlg._lock_cnt)]
+    assert len(set(lock_xs)) == 1, (width, lock_xs)
+    # 锁在输入框右侧，不能反过来
+    for lock, spin in ((dlg._lock_size, dlg._h), (dlg._lock_ov, dlg._ov_y),
+                       (dlg._lock_cnt, dlg._cols)):
         lx = lock.mapTo(dlg, lock.rect().topLeft()).x()
-        ax = anchor.mapTo(dlg, anchor.rect().topLeft()).x() + anchor.width()
-        gap = lx - ax
-        assert 0 <= gap <= GAP_MAX, (width, gap, lx, ax)
-        # 垂直居中：锁图标中心应与同行输入框中心齐平
-        cb = lock.mapTo(dlg, lock.rect().topLeft()).y() + lock.height() / 2
-        cr = anchor.mapTo(dlg, anchor.rect().topLeft()).y() + anchor.height() / 2
+        sx = spin.mapTo(dlg, spin.rect().topLeft()).x()
+        assert lx > sx, (width, lx, sx)
+    # 垂直居中
+    for b, ref in ((dlg._lock_size, dlg._w), (dlg._lock_ov, dlg._ov_x),
+                   (dlg._lock_cnt, dlg._cols)):
+        cb = b.mapTo(dlg, b.rect().topLeft()).y() + b.height() / 2
+        cr = ref.mapTo(dlg, ref.rect().topLeft()).y() + ref.height() / 2
         assert abs(cb - cr) <= 1.0, (width, cb, cr)
-    xs = [b.mapTo(dlg, b.rect().topLeft()).x()
-          for b in (dlg._lock_size, dlg._lock_ov, dlg._lock_cnt)]
-    # 三组参数宽度不同，锁各自跟随 -> 不应重合（旧布局下三者严格相等）
-    assert len(set(xs)) >= 2, (width, xs)
-    # 窗口拉宽时锁跟着自己的参数组走，不能被 stretch 推到右边
-    for lock, anchor in pairs:
-        lx = lock.mapTo(dlg, lock.rect().topLeft()).x()
-        ax = anchor.mapTo(dlg, anchor.rect().topLeft()).x() + anchor.width()
-        assert lx - ax <= GAP_MAX, (width, lx - ax)
     dlg.close()
-print("OK_LOCK_FOLLOW")
+print("OK_LOCK_ALIGN")
 '''
-    assert "OK_LOCK_FOLLOW" in _run_real_qt(script)
+    assert "OK_LOCK_ALIGN" in _run_real_qt(script)
+
+
+def test_crop_dialog_legend_is_not_duplicated(tmp_path):
+    """底部图例只出现一次：色块标签已经写了保留/空窗丢弃，不再附文字版。"""
+    script = f'''
+import os
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QLabel
+app = QApplication.instance() or QApplication([])
+from labelforge.ui.crop_dialog import CropConfigDialog
+
+d = r"{tmp_path.as_posix()}"
+p = os.path.join(d, "a.png")
+QImage(200, 200, QImage.Format_RGB888).save(p)
+spec = {{"w": 100, "h": 100, "overlap_x": 10, "overlap_y": 10,
+        "rows": 2, "cols": 2, "min_visible": 0.7,
+        "square": False, "fill": False, "fill_rgb": (114, 114, 114)}}
+dlg = CropConfigDialog([p], {{0: []}}, spec)
+dlg.show(); app.processEvents()
+texts = [l.text() for l in dlg.findChildren(QLabel)]
+joined = " ".join(texts)
+assert "绿=保留" not in joined, texts
+assert "红=空窗丢弃" not in joined, texts
+# 色块版图例仍在
+assert any("保留" in t for t in texts), texts
+assert any("空窗" in t for t in texts), texts
+print("OK_LEGEND_ONCE")
+'''
+    assert "OK_LEGEND_ONCE" in _run_real_qt(script)
 
 
 def test_size_range_for_count_matches_brute_force():
@@ -1503,27 +1530,6 @@ assert panel._path_edit.text() == d1, panel._path_edit.text()
 print("OK_PATH_FOLLOW")
 '''
     assert "OK_PATH_FOLLOW" in _run_real_qt(script)
-
-
-def test_crop_dialog_lock_buttons_not_pinned_to_row_right_edge(tmp_path):
-    """锁不能被推到 col_a 右边缘：那样它离自己的参数组太远，含义就丢了。"""
-    script = _DIALOG_BOOT.format(d=tmp_path.as_posix()) + '''
-dlg.resize(1600, 800)
-dlg.show(); app.processEvents()
-
-col_a = dlg.layout().itemAt(0).layout().itemAt(0).layout()
-locks = (dlg._lock_size, dlg._lock_ov, dlg._lock_cnt)
-
-xs = [b.mapTo(dlg, b.rect().topLeft()).x() for b in locks]
-assert len(set(xs)) >= 2, xs          # 各自跟随所属参数组
-
-for idx, b in enumerate(locks):
-    row_right = col_a.itemAt(idx).layout().geometry().right()
-    lock_right = b.mapTo(dlg, b.rect().topLeft()).x() + b.width()
-    assert row_right - lock_right > 40, (idx, row_right, lock_right)
-print("OK_LOCK_SHIFT")
-'''
-    assert "OK_LOCK_SHIFT" in _run_real_qt(script)
 
 
 def test_pad_overflow_measures_uniform_step_overflow():

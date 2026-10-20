@@ -161,6 +161,33 @@ class HealthBarChart(QWidget):
                 painter.setBrush(color)
                 painter.drawRect(x + 2, h - bar_h, col_w - 4, bar_h)
 
+    def _edge_label(self, idx):
+        """第 idx 个柱子的区间文字，用于 tooltip。"""
+        edges = self._edges or []
+        try:
+            lo = edges[idx]
+            hi = edges[idx + 1] if idx + 1 < len(edges) else None
+        except IndexError:
+            return ''
+        lo_s = _fmt_tick_series([lo])[0]
+        if hi is None:
+            return lo_s
+        return f"{lo_s} ~ {_fmt_tick_series([hi])[0]}"
+
+    def mouseMoveEvent(self, event):
+        """窄柱不标数字时，用 tooltip 给出该柱的区间与计数。"""
+        hits = getattr(self, '_bar_hits', None)
+        if self._mode == 'hist' and hits:
+            x = event.position().x()
+            for x0, x1, count, label in hits:
+                if x0 <= x < x1:
+                    self.setToolTip(
+                        f"{label}: {_fmt_num(count)}" if label else _fmt_num(count))
+                    break
+            else:
+                self.setToolTip('')
+        super().mouseMoveEvent(event)
+
     def _paint_hist(self, painter, w, h, t):
         if not self._counts:
             return
@@ -179,9 +206,9 @@ class HealthBarChart(QWidget):
         n = len(self._counts)
         col_w = max(2, w // max(1, n))
         fmc = painter.fontMetrics()
-        # 柱顶计数在柱子窄于文字宽度时会互相压住（截图里「130129」就是这么来的）。
-        # 窄柱改成竖向排列（一位一行的 90° 标签），仍然放不下就隔一根标一根。
-        vert = col_w < fmc.horizontalAdvance(_fmt_num(peak)) + 4
+        # 柱顶计数只横向写。柱子窄到放不下时**不标**，而不是竖排——竖排的
+        # 数字要一位一位往下读，比不标更难用。不标的柱子靠悬停 tooltip 补足。
+        self._bar_hits = []          # (x0, x1, 计数) 供 mouseMoveEvent 查
         last_label_right = {}
         for idx, count in enumerate(self._counts):
             x = idx * col_w
@@ -191,30 +218,23 @@ class HealthBarChart(QWidget):
             painter.setPen(QPen(border))
             painter.setBrush(color)
             painter.drawRect(x + 1, top, col_w - 2, bar_h)
+            self._bar_hits.append((x, x + col_w, count,
+                                   self._edge_label(idx)))
             if count <= 0:
                 continue
-            painter.setPen(text_pen)
             text = _fmt_num(count)
-            if vert:
-                # 竖向：逐字往下画，占一列宽、若干行高
-                tw = fmc.horizontalAdvance(text)
-                if tw > plot_h - 2:
-                    continue
-                y = top - line_h - tw
-                for ch in text:
-                    painter.drawText(x, y, col_w, fmc.height(),
-                                     Qt.AlignHCenter | Qt.AlignTop, ch)
-                    y += fmc.height()
-            else:
-                tw = fmc.horizontalAdvance(text)
-                tx = x + col_w // 2 - tw // 2
-                # 与同一行上相邻标签重叠就跳过，宁可少标也不要糊成一团
-                key = int((top - line_h) // max(1, line_h))
-                if tx < last_label_right.get(key, -10 ** 9) + 3:
-                    continue
-                painter.drawText(tx, top - line_h, tw, line_h,
-                                 Qt.AlignLeft | Qt.AlignBottom, text)
-                last_label_right[key] = tx + tw
+            tw = fmc.horizontalAdvance(text)
+            if tw > col_w - 2:
+                continue             # 柱子比数字还窄：留白，别硬塞
+            painter.setPen(text_pen)
+            tx = x + col_w // 2 - tw // 2
+            # 与同一行上相邻标签重叠就跳过，宁可少标也不要糊成一团
+            key = int((top - line_h) // max(1, line_h))
+            if tx < last_label_right.get(key, -10 ** 9) + 3:
+                continue
+            painter.drawText(tx, top - line_h, tw, line_h,
+                             Qt.AlignLeft | Qt.AlignBottom, text)
+            last_label_right[key] = tx + tw
         edges = self._edges
         if edges:
             painter.setPen(text_pen)
@@ -226,8 +246,10 @@ class HealthBarChart(QWidget):
             fm = painter.fontMetrics()
             widest = max((fm.horizontalAdvance(_fmt_tick_series([e])[0])
                           for e in edges), default=0)
-            slot = max(1, widest + 10)
-            max_ticks = max(2, w // slot)
+            # 每个刻度至少隔 4 根柱子：只按「文字宽度能否放下」算会让 900px 宽
+            # 的图上标出十几个刻度（截图里 0.2k 47.4k 94.6k 挤成一排）。
+            spacing_slots = max(1, (widest + 18) // max(1, col_w))
+            max_ticks = max(2, n_edges // max(4, spacing_slots))
             if n_edges <= max_ticks:
                 tick_idx = list(range(n_edges))
             elif max_ticks <= 2:
@@ -240,8 +262,14 @@ class HealthBarChart(QWidget):
             last_right = -10 ** 9
             for i, label in zip(tick_idx, tick_labels):
                 lw = fm.horizontalAdvance(label)
-                # 刻度画在柱边界 i*col_w 处居中
-                tx = int(i * col_w - lw / 2)
+                # 刻度画在柱边界 i*col_w 处居中；首末两枚改用左右对齐，
+                # 否则会被窗口边缘裁掉一半。
+                if i == 0:
+                    tx = 0
+                elif i == n_edges - 1:
+                    tx = max(0, w - lw)
+                else:
+                    tx = int(i * col_w - lw / 2)
                 tx = min(max(0, tx), max(0, w - lw))
                 if tx < last_right + 6:
                     continue          # 与前一个标签挤在一起就跳过
