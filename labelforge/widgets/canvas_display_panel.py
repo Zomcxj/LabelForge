@@ -302,8 +302,39 @@ class CanvasDisplayPanel(QWidget):
             row._reset_tooltip = tr("恢复默认")
             row._refresh_text()
 
+    def _resize_to_text(self):
+        """文字变化后重算尺寸，让标题完整显示。
+
+        英文的 Brightness / Contrast 比中文的「画面亮度」「对比度」宽得多
+        （实测需要 100/80px，中文只要 40/30px），而窗口矩形不会自己变，
+        不重算就会被裁掉。
+
+        三层布局缓存都要显式失效，缺一层就白算：QLabel 换文字只更新自己，
+        _VerticalTrack 的布局缓存仍是旧值（实测 caption 需要 100 而轨道仍报
+        50），面板的根布局又是按轨道报的值算的（实测 _body 已更新到 278，
+        面板却留在 218）。只调 adjustSize() 等于按旧尺寸复原。
+        """
+        for row in (self._opacity_row, self._bright_row, self._contrast_row):
+            row.updateGeometry()
+            row.layout().invalidate()
+        self._body.updateGeometry()
+        self._body.layout().invalidate()
+        self.setMinimumSize(0, 0)
+        self.setMaximumSize(16777215, 16777215)
+        self.updateGeometry()
+        self.layout().invalidate()
+        self.layout().activate()
+        self.adjustSize()
+
     def retranslate_ui(self):
         self._refresh_texts()
+        if self._collapsed:
+            # 收起时按图标尺寸显示，不重算；但展开时必须重算，见
+            # _apply_collapsed_state —— 单靠这里 return 会漏掉
+            # 「收起状态下切语言，再展开」这条顺序。
+            return
+        self._resize_to_text()
+        self.geometry_changed.emit()
 
     # ---------- 交互 ----------
 
@@ -340,16 +371,19 @@ class CanvasDisplayPanel(QWidget):
             self._bar.setStretch(self._bar_stretch, 0)
         else:
             self._bar.setAlignment(self._chevron, Qt.AlignRight)
-            self.setMinimumSize(0, 0)
-            self.setMaximumSize(16777215, 16777215)
         self.setContentsMargins(*(0, 0, 0, 0) if self._collapsed else (10, 6, 10, 6))
         self._chevron.setToolTip(
             tr("展开调节") if self._collapsed else tr("收起调节")
         )
         self.style().unpolish(self)
         self.style().polish(self)
-        self.layout().activate()
-        self.adjustSize()
+        # 边距属于布局的一部分，必须在 _resize_to_text 之前设好，否则算出的
+        # sizeHint 不含边距，展开后会比内容窄 20px。
+        if self._collapsed:
+            self.layout().activate()
+            self.adjustSize()
+        else:
+            self._resize_to_text()
 
     def _toggle(self):
         self._collapsed = not self._collapsed
