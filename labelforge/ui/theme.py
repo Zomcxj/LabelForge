@@ -504,6 +504,11 @@ class ThemeManager:
                 border-radius: 4px;
                 font-size: 10px;
                 color: {t['text_secondary']};
+                /* 必须显式归零：不写 padding 时 Qt 走平台默认内边距
+                   （每侧约 5px），再算上菜单箭头，22px 的按钮只剩 4px
+                   内容宽度——「T」「G」和 14px 的图标全被裁掉。
+                   归零后内容可用宽 = 按钮宽 − 2，22px 也放得下。 */
+                padding: 0px;
             }}
             QPushButton#navBtn:hover {{
                 background-color: {t['accent_light']};
