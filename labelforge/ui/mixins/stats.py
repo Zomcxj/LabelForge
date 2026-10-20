@@ -374,7 +374,16 @@ class StatsMixin:
         bg_tasks = {}
         bg_table = QTableWidget(len(bg_stats), 4)
         bg_table.setHorizontalHeaderLabels([tr("类别"), tr("数量"), tr("框类型"), tr("颜色")])
-        bg_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # 四列等分会让「类别」被截断成 `traffic ...`，而「框类型」几乎永远
+        # 是同一个 det 却占同样宽度。改成分列设宽度。
+        _bg_header = bg_table.horizontalHeader()
+        _bg_header.setSectionResizeMode(0, QHeaderView.Stretch)
+        _bg_header.setSectionResizeMode(1, QHeaderView.Fixed)
+        _bg_header.setSectionResizeMode(2, QHeaderView.Fixed)
+        _bg_header.setSectionResizeMode(3, QHeaderView.Fixed)
+        bg_table.setColumnWidth(1, 64)
+        bg_table.setColumnWidth(2, 72)
+        bg_table.setColumnWidth(3, 84)
         bg_table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed | QAbstractItemView.SelectedClicked)
 
         def _fill_bg_table(stats, tasks):
@@ -455,7 +464,12 @@ class StatsMixin:
         paste_stats = self._get_session_paste_stats()
         paste_table = QTableWidget(len(paste_stats), 3)
         paste_table.setHorizontalHeaderLabels([tr("类别"), tr("数量"), tr("颜色")])
-        paste_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        _p_header = paste_table.horizontalHeader()
+        _p_header.setSectionResizeMode(0, QHeaderView.Stretch)
+        _p_header.setSectionResizeMode(1, QHeaderView.Fixed)
+        _p_header.setSectionResizeMode(2, QHeaderView.Fixed)
+        paste_table.setColumnWidth(1, 64)
+        paste_table.setColumnWidth(2, 84)
         paste_table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed | QAbstractItemView.SelectedClicked)
         for row, (label, count) in enumerate(sorted(paste_stats.items(), key=lambda x: -x[1])):
             label_item = QTableWidgetItem(label)
@@ -614,14 +628,20 @@ class StatsMixin:
         from PySide6.QtWidgets import QLabel
 
         from ..i18n import t as tr
+        from ..theme import ThemeManager
 
+        theme = ThemeManager.get_theme()
         title_label = QLabel(tr('数据集健康'))
         title_label.setStyleSheet(
-            "font-weight: bold; font-size: 13px; padding: 2px 0;")
+            f"font-weight: bold; font-size: {theme['font_size_px']}px;"
+            " padding: 2px 0; background: transparent;")
         layout.addWidget(title_label)
 
         source_label = QLabel(tr('数据源：背景图标签（切换标签页）'))
-        source_label.setStyleSheet("color: gray; font-size: 11px;")
+        source_label.setStyleSheet(
+            f"color: {theme['text_disabled']};"
+            f" font-size: {theme['font_size_px_small']}px;"
+            " background: transparent;")
         layout.addWidget(source_label)
 
         charts = self._create_health_charts()
@@ -631,8 +651,13 @@ class StatsMixin:
 
         self._build_health_docks(dialog, charts)
 
-        advice_label = QLabel(f"{tr('建议')}: {tr('正在分析')}")
+        # 建议是这一整块里最该被看到的结论，却原来和数据源混在一行、
+        # 用的是普通文字色。改成独立一行、加粗、套 warning 色。
+        advice_label = QLabel(f"⚠ {tr('建议')}: {tr('正在分析')}")
         advice_label.setWordWrap(True)
+        advice_label.setStyleSheet(
+            f"color: {theme['warning']}; font-weight: bold;"
+            " background: transparent;")
         layout.addWidget(advice_label)
         dialog._health_advice_label = advice_label
         dialog._health_source_label = source_label
@@ -875,7 +900,7 @@ class StatsMixin:
         charts['iou'].set_histogram(iou.get('edges'), iou.get('counts'),
                                     xlabel=tr('IoU'), ylabel=tr('框对数'))
         advice = section.get('advice') or [tr('未发现明显失衡')]
-        advice_label.setText(f"{tr('建议')}: " + "；".join(
+        advice_label.setText(f"⚠ {tr('建议')}: " + "；".join(
             tr(a['key']).format(**a['params']) if isinstance(a, dict) else a
             for a in advice))
 

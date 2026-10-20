@@ -178,6 +178,11 @@ class HealthBarChart(QWidget):
         plot_h = plot_bottom - plot_top
         n = len(self._counts)
         col_w = max(2, w // max(1, n))
+        fmc = painter.fontMetrics()
+        # 柱顶计数在柱子窄于文字宽度时会互相压住（截图里「130129」就是这么来的）。
+        # 窄柱改成竖向排列（一位一行的 90° 标签），仍然放不下就隔一根标一根。
+        vert = col_w < fmc.horizontalAdvance(_fmt_num(peak)) + 4
+        last_label_right = {}
         for idx, count in enumerate(self._counts):
             x = idx * col_w
             bar_h = int((count / peak) * max(1, plot_h - line_h))
@@ -186,20 +191,63 @@ class HealthBarChart(QWidget):
             painter.setPen(QPen(border))
             painter.setBrush(color)
             painter.drawRect(x + 1, top, col_w - 2, bar_h)
-            if count > 0:
-                painter.setPen(text_pen)
-                painter.drawText(x, top - line_h, col_w, line_h,
-                                 Qt.AlignHCenter | Qt.AlignBottom,
-                                 _fmt_num(count))
+            if count <= 0:
+                continue
+            painter.setPen(text_pen)
+            text = _fmt_num(count)
+            if vert:
+                # 竖向：逐字往下画，占一列宽、若干行高
+                tw = fmc.horizontalAdvance(text)
+                if tw > plot_h - 2:
+                    continue
+                y = top - line_h - tw
+                for ch in text:
+                    painter.drawText(x, y, col_w, fmc.height(),
+                                     Qt.AlignHCenter | Qt.AlignTop, ch)
+                    y += fmc.height()
+            else:
+                tw = fmc.horizontalAdvance(text)
+                tx = x + col_w // 2 - tw // 2
+                # 与同一行上相邻标签重叠就跳过，宁可少标也不要糊成一团
+                key = int((top - line_h) // max(1, line_h))
+                if tx < last_label_right.get(key, -10 ** 9) + 3:
+                    continue
+                painter.drawText(tx, top - line_h, tw, line_h,
+                                 Qt.AlignLeft | Qt.AlignBottom, text)
+                last_label_right[key] = tx + tw
         edges = self._edges
         if edges:
             painter.setPen(text_pen)
-            ticks = [0, len(edges) // 2, len(edges) - 1]
-            tick_labels = _fmt_tick_series([edges[i] for i in ticks])
-            for i, label in zip(ticks, tick_labels):
-                tx = min(max(0, i * col_w - 30), max(0, w - 60))
-                painter.drawText(tx, plot_bottom + 2, 60, line_h - 4,
-                                 Qt.AlignHCenter | Qt.AlignTop, label)
+            # 原来只标首/中/末三个刻度，且中间那个落在 `len(edges)//2` 上，
+            # 与柱子的实际边界对不齐（柱子 x = idx*col_w，刻度却画在 idx*col_w-30
+            # 处居中），看起来像错位。改成标在柱边界上，并按可用宽度决定
+            # 标几个：太窄就只标首末，避免标签互相压住。
+            n_edges = len(edges)
+            fm = painter.fontMetrics()
+            widest = max((fm.horizontalAdvance(_fmt_tick_series([e])[0])
+                          for e in edges), default=0)
+            slot = max(1, widest + 10)
+            max_ticks = max(2, w // slot)
+            if n_edges <= max_ticks:
+                tick_idx = list(range(n_edges))
+            elif max_ticks <= 2:
+                tick_idx = [0, n_edges - 1]
+            else:
+                # 均匀取点，首末必取，中间按步长
+                step = (n_edges - 1) / (max_ticks - 1)
+                tick_idx = sorted({int(round(k * step)) for k in range(max_ticks)})
+            tick_labels = _fmt_tick_series([edges[i] for i in tick_idx])
+            last_right = -10 ** 9
+            for i, label in zip(tick_idx, tick_labels):
+                lw = fm.horizontalAdvance(label)
+                # 刻度画在柱边界 i*col_w 处居中
+                tx = int(i * col_w - lw / 2)
+                tx = min(max(0, tx), max(0, w - lw))
+                if tx < last_right + 6:
+                    continue          # 与前一个标签挤在一起就跳过
+                painter.drawText(tx, plot_bottom + 2, lw, line_h - 4,
+                                 Qt.AlignLeft | Qt.AlignTop, label)
+                last_right = tx + lw
         painter.setPen(text_pen)
         if self._ylabel:
             painter.drawText(0, 0, w, line_h, Qt.AlignLeft | Qt.AlignTop,
