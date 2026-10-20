@@ -44,10 +44,6 @@ _TRANSFORM_GROUPS = {
 }
 
 
-class ProcessingPanelBuilderMixin:
-    """Build the processing panel's four operation sections."""
-
-
 def _style_pipe_step(wrap, checkbox):
     """流水线步骤块的选中样式：勾上就点亮，没勾就压暗。"""
     on = bool(checkbox.isChecked())
@@ -57,6 +53,10 @@ def _style_pipe_step(wrap, checkbox):
         f"QWidget {{ background-color: {bg}; border-radius: 4px; }}"
         f" QLabel {{ color: {fg}; background: transparent; }}"
         f" QCheckBox {{ color: {fg}; background: transparent; }}")
+
+
+class ProcessingPanelBuilderMixin:
+    """Build the processing panel's four operation sections."""
 
     def _build_augment_section(self, parent_layout):
         section = self._collapsible_section("", parent_layout, "#F44336")
