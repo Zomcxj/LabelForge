@@ -50,12 +50,16 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         self._build_augment_section(main_layout)
         self._build_export_section(main_layout)
         self._build_split_section(main_layout)
+        self._update_split_total()      # 初始 0.8/0.1/0.1 也要显示合计
         self._build_pipeline_section(main_layout)
         self._log_area = QTextEdit()
         self._log_area.setReadOnly(True)
-        self._log_area.setMinimumHeight(80)
+        # 最小高度降到 72：原来 80 加上四个折叠区之后，整窗高 850 里日志区
+        # 占到 200 多像素的空白，四个操作区反被挤得紧。
+        self._log_area.setMinimumHeight(72)
         self._log_area.setPlaceholderText(tr("操作日志将显示在这里..."))
         self._log_area.setObjectName("logArea")
+        # stretch 保持 1：窗口拉高时日志区优先长，操作区不被拉扯
         main_layout.addWidget(self._log_area, 1)
         self._augment_result = None
         self._crop_spec = None
@@ -240,13 +244,21 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             msg.setStyleSheet("color: gray; padding: 4px;")
             self._exp_label_grid.addWidget(msg, 0, 0)
             return
+        # 固定 6 列且每列等宽：只给每个复选框设 minimumWidth 的话，列宽
+        # 由该列最长的标签名决定，于是各列宽窄不一、右边缘参差（截图里
+        # 第三行末尾就空出一格）。这里统一按单元格宽度铺开。
+        _COLS = 6
+        _CELL_W = 112
         for i, lbl in enumerate(labels):
             cb = QCheckBox(lbl)
             cb.setChecked(True)
-            cb.setMinimumWidth(100)
-            row, col = divmod(i, 6)
+            cb.setFixedWidth(_CELL_W)
+            row, col = divmod(i, _COLS)
             self._exp_label_grid.addWidget(cb, row, col)
             self._exp_label_checkboxes[lbl] = cb
+        for col in range(_COLS):
+            self._exp_label_grid.setColumnMinimumWidth(col, _CELL_W)
+            self._exp_label_grid.setColumnStretch(col, 0)
 
     def _clear_grid(self):
         for w in list(self._exp_label_grid_container.children()):
@@ -819,6 +831,25 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             sb.blockSignals(True)
             sb.setValue(max(0.0, max_val))
             sb.blockSignals(False)
+        self._update_split_total()
+
+    def _update_split_total(self):
+        """显示三个比例的合计，不足 1 时标红提示。
+
+        上限已被 _on_split_changed 钳住，所以合计只可能 <= 1；小于 1 意味着
+        有一部分样本不会被写进任何一份（划分器按比例截取），用户看不出来。
+        """
+        lbl = getattr(self, '_split_total_lbl', None)
+        if lbl is None:
+            return
+        total = sum(getattr(self, f"_split_{k}").value() for k in SPLIT_KEYS)
+        theme = ThemeManager.get_theme()
+        ok = abs(total - 1.0) < 1e-6
+        color = theme['success'] if ok else theme['warning']
+        mark = "✓" if ok else "⚠"
+        lbl.setText(f" {mark} 合计 {total:.2f}")
+        lbl.setStyleSheet(
+            f"color: {color}; background: transparent; font-weight: bold;")
 
     def _run_split(self):
         self._ensure_boxes_loaded()

@@ -24,12 +24,39 @@ TRANSFORM_META = {
     "crop":        ("滑窗裁剪", []),
 }
 
-_TRANSFORM_ORDER = ["fliph", "flipv", "bright", "trans", "rotate", "scale",
-                    "contrast", "gauss", "saltpepper", "hue", "saturation", "value"]
+# 按语义分成三组再排：几何（翻转/平移/旋转/缩放）→ 色彩（亮度/对比度/
+# 色相/饱和度/明度）→ 噪声。原来的顺序是历史堆积，色彩与噪声、几何混在
+# 一起，扫一眼看不出哪几项是一类。
+_TRANSFORM_ORDER = [
+    # 几何
+    "fliph", "flipv", "trans", "rotate", "scale",
+    # 色彩
+    "bright", "contrast", "hue", "saturation", "value",
+    # 噪声
+    "gauss", "saltpepper",
+]
+
+# 分组标题：key 是组内第一个变换名，插入到它前面。空字符串表示不插。
+_TRANSFORM_GROUPS = {
+    "fliph": "几何",
+    "bright": "色彩",
+    "gauss": "噪声",
+}
 
 
 class ProcessingPanelBuilderMixin:
     """Build the processing panel's four operation sections."""
+
+
+def _style_pipe_step(wrap, checkbox):
+    """流水线步骤块的选中样式：勾上就点亮，没勾就压暗。"""
+    on = bool(checkbox.isChecked())
+    bg = "#1E88E5" if on else "#3A3A3A"
+    fg = "#FFFFFF" if on else "#9E9E9E"
+    wrap.setStyleSheet(
+        f"QWidget {{ background-color: {bg}; border-radius: 4px; }}"
+        f" QLabel {{ color: {fg}; background: transparent; }}"
+        f" QCheckBox {{ color: {fg}; background: transparent; }}")
 
     def _build_augment_section(self, parent_layout):
         section = self._collapsible_section("", parent_layout, "#F44336")
@@ -50,8 +77,31 @@ class ProcessingPanelBuilderMixin:
         orig_cl.addWidget(self._aug_inc_orig)
         orig_cl.addStretch()
         grid.addWidget(orig_cell, 0, 0)
-        for idx, name in enumerate(order):
-            row, col = divmod(idx + 1, 3)
+        # 先把「每个变换落在第几行第几列」算完，再统一放置。插分组标题会让
+        # 后续行号顺延，边算边放会把后面的格子挤错位。
+        _slots = {}
+        _row, _col = 0, 0          # 第 0 行第 0 列已被「原图」占用
+        _col = 1
+        for name in order:
+            if name in _TRANSFORM_GROUPS:
+                if _col != 0:
+                    _row, _col = _row + 1, 0
+                _slots[name] = (_row, _col, True)
+                _row, _col = _row + 1, 0
+                continue
+            _slots[name] = (_row, _col, False)
+            _col += 1
+            if _col >= 3:
+                _row, _col = _row + 1, 0
+        for name in order:
+            row, col, is_head = _slots[name]
+            if is_head:
+                # 分组标题独占一整行，不占列宽
+                head = QLabel(tr(_TRANSFORM_GROUPS[name]))
+                head.setStyleSheet(
+                    "color: #9E9E9E; font-size: 11px; background: transparent;")
+                grid.addWidget(head, row, 0, 1, 3)
+                continue
             meta = TRANSFORM_META.get(name, (name, []))
             display_name, param_defs = meta
             cell = QWidget()
@@ -61,16 +111,24 @@ class ProcessingPanelBuilderMixin:
             cl.setSpacing(2)
             cb = QCheckBox(display_name)
             cb.setChecked(name in ("fliph", "flipv", "bright", "rotate", "trans"))
+            # 勾选框里直接带文字，不再用 QLabel + QCheckBox 两件套：
+            # 那样文字与方框的基线差 1~2px，整列看上去是歪的。
             cl.addWidget(cb)
             cl.addStretch()
             param_spins = {}
             for pname, ptype, pmin, pmax, dmin, dmax in param_defs:
-                lbl = QLabel("~")
-                lbl.setFixedWidth(10)
+                sep = QLabel("~")
+                sep.setFixedWidth(10)
+                # 居中而不是默认靠上，否则 ~ 会比两侧输入框的基线高出一截
+                sep.setAlignment(Qt.AlignCenter)
                 spin_min = self._make_spin(ptype, pmin, pmax, dmin)
                 spin_max = self._make_spin(ptype, pmin, pmax, dmax)
+                # 两侧输入框统一右/左对齐，数字位数不同时也能对齐小数点
+                for _sp, _al in ((spin_min, Qt.AlignRight), (spin_max, Qt.AlignLeft)):
+                    _sp.setAlignment(_al)
+                    _sp.setFixedWidth(56)
                 cl.addWidget(spin_min)
-                cl.addWidget(lbl)
+                cl.addWidget(sep)
                 cl.addWidget(spin_max)
                 param_spins[pname] = (spin_min, spin_max)
             grid.addWidget(cell, row, col)
@@ -91,8 +149,9 @@ class ProcessingPanelBuilderMixin:
         crop_cl.addWidget(self._crop_config_btn)
         self._crop_summary_lbl = QLabel()
         crop_cl.addWidget(self._crop_summary_lbl, 1)
-        crop_row_idx, crop_col_idx = divmod(len(order) + 1, 3)
-        grid.addWidget(crop_cell, crop_row_idx, crop_col_idx, 1, 2)
+        # 滑窗裁剪跟噪声组之后，单独占一整行（它带「配置…」按钮和摘要）
+        _last_row = max(v[0] for v in _slots.values()) if _slots else 0
+        grid.addWidget(crop_cell, _last_row + 1, 0, 1, 3)
         for c in range(3):
             grid.setColumnStretch(c, 1)
         layout.addLayout(grid)
@@ -202,6 +261,11 @@ class ProcessingPanelBuilderMixin:
             s.valueChanged.connect(lambda val, k=key: self._on_split_changed(k))
             sl.addWidget(s)
             setattr(self, f"_split_{key}", s)
+        # 三个比例加起来必须是 1，否则划分结果会漏掉或多出样本。
+        # 实时显示合计并在不合法时变红，比等到点「划分」再报错更好。
+        self._split_total_lbl = QLabel()
+        self._split_total_lbl.setStyleSheet("background: transparent;")
+        sl.addWidget(self._split_total_lbl)
         sl.addStretch()
         layout.addLayout(sl)
         btn_layout = QHBoxLayout()
@@ -227,11 +291,31 @@ class ProcessingPanelBuilderMixin:
         self._pipe_exp.setChecked(True)
         self._pipe_split = QCheckBox()
         self._pipe_split.setChecked(True)
-        hl.addWidget(self._pipe_aug)
-        hl.addWidget(QLabel(" → "))
-        hl.addWidget(self._pipe_exp)
-        hl.addWidget(QLabel(" → "))
-        hl.addWidget(self._pipe_split)
+        # 三个步骤做成有色块的步骤条：勾选时块变强调色，未勾选时淡灰。
+        # 原来只是三个复选框 + 两个 →，勾没勾一眼看不出来，像没做完的控件。
+        _steps = (
+            (self._pipe_aug, "增强"),
+            (self._pipe_exp, "导出"),
+            (self._pipe_split, "划分"),
+        )
+        for _i, (_cb, _txt) in enumerate(_steps):
+            if _i:
+                _arrow = QLabel("→")
+                _arrow.setStyleSheet(
+                    "color: #9E9E9E; background: transparent; font-size: 13px;")
+                hl.addWidget(_arrow)
+            _wrap = QWidget()
+            _wl = QHBoxLayout(_wrap)
+            _wl.setContentsMargins(6, 2, 8, 2)
+            _wl.setSpacing(4)
+            _wl.addWidget(_cb)
+            _label = QLabel(tr(_txt))
+            _label.setStyleSheet("background: transparent;")
+            _wl.addWidget(_label)
+            hl.addWidget(_wrap)
+            _cb.toggled.connect(
+                lambda on, w=_wrap, c=_cb: _style_pipe_step(w, c))
+            _style_pipe_step(_wrap, _cb)
         hl.addStretch()
         layout.addLayout(hl)
         btn_layout = QHBoxLayout()
