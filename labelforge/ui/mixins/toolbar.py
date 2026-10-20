@@ -24,7 +24,9 @@ class ToolbarMixin:
         self.shortcut_status_label = QLabel("")
         self.shortcut_status_label.setObjectName("shortcutStatusLabel")
         self.shortcut_status_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.shortcut_status_label.setMinimumHeight(24)
+        # 最小高度 24 → 20：这一行只是快捷键速查，占掉 24px 并加上下内边距后
+        # 顶部两条带合计 80px，小窗口下画布被压得明显。
+        self.shortcut_status_label.setMinimumHeight(20)
         main_layout.addWidget(self.shortcut_status_label)
 
         splitter = self._create_splitter()

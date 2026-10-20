@@ -708,8 +708,20 @@ class CanvasRendererMixin:
         return bool(cb is not None and cb.isChecked())
 
     def _draw_box_label(self, painter, x, y, label, bg_color):
-        """绘制检测框标签"""
-        font_size = max(5, min(15, DETECTION_BOX_CONFIG.get('label_font_size', 9)))
+        """绘制检测框标签。
+
+        字号按画布缩放反向补偿：4K 图上放大到 1:1 时 9px 的标签会显得很小，
+        缩到 20% 浏览时又大得盖住画面。以 1.0 缩放为基准，放大时字号按比例
+        收窄（保住每块画面的信息密度），缩小时放大（保住可读性）。
+        """
+        base = DETECTION_BOX_CONFIG.get('label_font_size', 9)
+        zoom = float(getattr(self, 'background_scale', 1.0) or 1.0)
+        if zoom > 0:
+            # 0.7 次方：缩放 4 倍时字号只涨到 ~2.6 倍，不至于糊成一片
+            font_size = base * (1.0 / zoom) ** 0.7
+        else:
+            font_size = base
+        font_size = max(5, min(15, int(round(font_size))))
         position = DETECTION_BOX_CONFIG.get('label_position', 'outside')
         if position not in ('outside', 'inside'):
             position = 'outside'
