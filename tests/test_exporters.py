@@ -432,3 +432,23 @@ def test_every_exporter_copies_the_source_image(tmp_path, exporter_cls, src_imag
                               img_path=src_image)])
 
     assert (root / "images" / "a.png").read_bytes() == Path(src_image).read_bytes()
+
+
+# ---------- B8 回归：VOC 导出必须转义 ----------
+
+def test_voc_escapes_special_chars_in_label_and_filename(tmp_path):
+    """B8：label/stem 里的 & < > 未转义会让 XML 直接解析失败。
+    导出后用 ElementTree 解析（修复前 ParseError），且解析出的
+    <name>/<filename> 文本与原始值逐字符一致。"""
+    import xml.etree.ElementTree as ET
+
+    label = 'a&b<c>d"e\''
+    items = [_item("img&1", [_box(label, 0, 0, 10, 10)])]
+    exp = VocExporter(str(tmp_path))
+    exp.run([], {}, [label], skip_empty=False, input_data=items)
+
+    xml_path = tmp_path / "labels" / "img&1.xml"
+    root = ET.parse(str(xml_path)).getroot()
+    names = [o.findtext("name") for o in root.findall("object")]
+    assert names == [label]
+    assert root.findtext("filename") == "img&1"

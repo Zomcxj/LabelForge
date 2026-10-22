@@ -1,5 +1,6 @@
 import os
 from typing import List
+from xml.sax.saxutils import escape
 
 from .base_exporter import BaseExporter
 
@@ -25,7 +26,7 @@ class VocExporter(BaseExporter):
             f.write('<?xml version="1.0" ?>\n')
             f.write('<annotation>\n')
             f.write('  <folder>LabelForge</folder>\n')
-            f.write(f'  <filename>{stem}</filename>\n')
+            f.write(f'  <filename>{escape(stem)}</filename>\n')
             f.write('  <size>\n')
             f.write(f'    <width>{iw}</width>\n')
             f.write(f'    <height>{ih}</height>\n')
@@ -42,7 +43,7 @@ class VocExporter(BaseExporter):
                 if x2 - x1 < 1 or y2 - y1 < 1:
                     continue
                 f.write('  <object>\n')
-                f.write(f'    <name>{b["label"]}</name>\n')
+                f.write(f'    <name>{escape(b["label"])}</name>\n')
                 f.write('    <pose>Unspecified</pose>\n')
                 f.write('    <truncated>0</truncated>\n')
                 f.write('    <difficult>0</difficult>\n')
