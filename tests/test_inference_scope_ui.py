@@ -501,9 +501,8 @@ def test_real_scope_panel_never_shows_a_thumbnail_preview():
     `WindowOverlayPreview` 这类控件——留着就会又出现一个「单独小窗显示全图」。
     """
     out = _run_real_qt("""
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 from labelforge.ui.scope_panel import ScopePanel
-from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
 from labelforge.engine.inference_scope import MODE_WINDOW
 
 app = QApplication([])
@@ -512,10 +511,13 @@ p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
 p.set_mode(MODE_WINDOW)
 p.show()
 app.processEvents()
-leftovers = p.findChildren(WindowOverlayPreview)
+# 运行时按类名比对（原 WindowOverlayPreview 模块已删除，不再导入）
+leftovers = [w for w in p.findChildren(QWidget)
+             if type(w).__name__ == "WindowOverlayPreview"]
 print(len(leftovers))
 # 参数控件里也不该有
-print(len(p.window_params.findChildren(WindowOverlayPreview)))
+print(len([w for w in p.window_params.findChildren(QWidget)
+           if type(w).__name__ == "WindowOverlayPreview"]))
 """)
     lines = _lines(out)
     assert lines[0] == "0", lines[0]
@@ -715,7 +717,7 @@ def test_real_scope_panel_asks_the_canvas_to_redraw_on_change():
     信号真的会发，且切模式也会发。
     """
     out = _run_real_qt("""
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 from labelforge.ui.scope_panel import ScopePanel
 from labelforge.engine.inference_scope import MODE_FULL, MODE_WINDOW, MODE_ROI
 
@@ -735,8 +737,9 @@ app.processEvents()
 after_switch = len(signals)
 print(after_mode > 0, after_param > after_mode, after_switch > after_param)
 # 面板里不该有任何缩略预览控件（已在画布上画）
-from labelforge.ui.widgets.window_overlay_preview import WindowOverlayPreview
-print(len(p.findChildren(WindowOverlayPreview)))
+# 运行时按类名比对（原 WindowOverlayPreview 模块已删除，不再导入）
+print(len([w for w in p.findChildren(QWidget)
+           if type(w).__name__ == "WindowOverlayPreview"]))
 """)
     lines = _lines(out)
     assert lines[0] == "True True True", lines[0]
