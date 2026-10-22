@@ -439,3 +439,87 @@ for draw in (
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+# ---------- P2 回归：放大镜关闭时不得再做满幅离屏拷贝 ----------
+
+def test_paint_skips_full_frame_scene_when_magnifier_disabled():
+    """审计 P2：满幅离屏 QPixmap 只服务放大镜（_draw_magnifier 从
+    scene 取像素）；关闭时每帧白付一次分配+透明填充+整幅 blit，
+    十字线跟随鼠标的每次 mousemove 都在付。
+
+    关 → 0 次满幅构造；开 → 有；两条路径画出的像素必须一致——
+    画布内容不因走哪个分支而变。QWidget.grab() 在 offscreen 下
+    合法驱动完整 paintEvent（render 上下文里 QPainter(self) 合法）。
+    """
+    script = '''
+from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtGui import QImage
+import labelforge.canvas.canvas_renderer as cr
+
+app = QApplication.instance() or QApplication([])
+
+class Check:
+    def isChecked(self):
+        return False
+
+class Editor:
+    _magnifier_enabled = False
+    show_labels_checkbox = Check()
+    edit_mode = 'paste'
+    current_background = None
+    detection_boxes = []
+
+class Renderer(cr.CanvasRendererMixin, QWidget):
+    def __init__(self):
+        QWidget.__init__(self)
+        self.resize(80, 60)
+        self._editor = Editor()
+        self.is_drawing_box = False
+        self.is_drawing_region = False
+        self.is_drawing_polygon = False
+        self.is_drawing_region_polygon = False
+        self.mouse_inside = False
+        self.shape_opacity = 1.0
+
+    def apply_display_adjustments(self):
+        pass
+
+    def get_background_rect(self):
+        return None
+
+counter = {"scene": 0}
+_RealPixmap = cr.QPixmap
+
+def counting_pixmap(*args):
+    if len(args) == 1:
+        counter["scene"] += 1  # QPixmap(QSize) 只有 scene 一处
+    return _RealPixmap(*args)
+
+cr.QPixmap = counting_pixmap
+
+r = Renderer()
+
+r._editor._magnifier_enabled = False
+img_off = r.grab().toImage()
+assert counter["scene"] == 0, ("magnifier off must not build scene", counter)
+
+r._editor._magnifier_enabled = True
+counter["scene"] = 0
+img_on = r.grab().toImage()
+assert counter["scene"] >= 1, ("magnifier on must build scene", counter)
+
+assert img_off.size() == img_on.size()
+for x, y in [(5, 5), (40, 30), (79, 59)]:
+    assert img_off.pixelColor(x, y) == img_on.pixelColor(x, y), (x, y)
+
+print("OK")
+'''
+    result = subprocess.run(
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
+        cwd=ROOT,
+        env=os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr

@@ -41,9 +41,15 @@ class CanvasRendererMixin:
         # 所有切图路径最终都会重绘，亮度/对比度在此单点重新套用
         self.apply_display_adjustments()
 
-        scene = QPixmap(self.size())
-        scene.fill(Qt.transparent)
-        sp = QPainter(scene)
+        # 满幅离屏 QPixmap 只服务放大镜（_draw_magnifier 从 scene 取像素）。
+        # 关闭时直接画到 self，省一次分配+透明填充+整幅 blit（审计 P2）。
+        scene = None
+        if getattr(self._editor, '_magnifier_enabled', False):
+            scene = QPixmap(self.size())
+            scene.fill(Qt.transparent)
+            sp = QPainter(scene)
+        else:
+            sp = QPainter(self)
         background_rect = None
         try:
             sp.setRenderHint(QPainter.Antialiasing)
@@ -107,16 +113,17 @@ class CanvasRendererMixin:
             if sp.isActive():
                 sp.end()
 
-        painter = QPainter(self)
-        try:
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.drawPixmap(0, 0, scene)
+        if scene is not None:
+            painter = QPainter(self)
+            try:
+                painter.setRenderHint(QPainter.Antialiasing)
+                painter.drawPixmap(0, 0, scene)
 
-            if background_rect:
-                self._draw_magnifier(painter, background_rect, scene)
-        finally:
-            if painter.isActive():
-                painter.end()
+                if background_rect:
+                    self._draw_magnifier(painter, background_rect, scene)
+            finally:
+                if painter.isActive():
+                    painter.end()
 
     def _report_paint_failure(self, exc):
         """绘制失败时的降级处理：记日志，绝不再抛异常。
