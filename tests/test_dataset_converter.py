@@ -1286,3 +1286,66 @@ def test_validate_det_task_keeps_all_shapes(tmp_path):
     report = ST.validate_dataset(dataset, task="det")
     assert report.ok
     assert not any("跳过" in w for w in report.warnings)
+
+
+# ---------- B2 回归：_read_coco 对 images 的访问必须线性 ----------
+
+def test_read_coco_parses_each_image_entry_once(tmp_path, monkeypatch):
+    """B2：原先对每张图在全部 images 里做 next() 线性重扫（O(N²)，
+    万图数据集卡分钟级）。修复后按 basename 建一次映射、字典直查。
+
+    用可重复迭代的计数列表包住 images，统计「遍历总产出行数」：
+    修复前 ≈ N + N²/2（next() 早停，平均扫半张表），修复后 = N。
+    断言 < 4N——判据是确定性的迭代计数，不用计时，避开 CI 负载抖动。
+    """
+    n = 300
+    entries = [{"id": i, "file_name": f"img_{i:04d}.jpg",
+                "width": 640, "height": 480} for i in range(n)]
+    payload = {
+        "images": entries,
+        "annotations": [{"image_id": i, "category_id": 1, "id": 1000 + i,
+                         "bbox": [10, 10, 20, 20]} for i in range(n)],
+        "categories": [{"id": 1, "name": "cat"}],
+    }
+    ann = tmp_path / "ann.json"
+    ann.write_text(json.dumps(payload), encoding="utf-8")
+    images_dir = tmp_path / "images"
+    images_dir.mkdir()
+
+    class _Counting(list):
+        """可重复迭代；每次产出一项就计数。"""
+
+        def __init__(self, items):
+            super().__init__(items)
+            self.yielded = 0
+
+        def __iter__(self):
+            parent = self
+
+            def gen():
+                for item in list.__iter__(parent):
+                    parent.yielded += 1
+                    yield item
+            return gen()
+
+    counting = {"images": None}
+    real_load = ST.json.load
+
+    def counting_load(fp, *args, **kwargs):
+        data = real_load(fp, *args, **kwargs)
+        counting["images"] = _Counting(data["images"])
+        data["images"] = counting["images"]
+        return data
+
+    monkeypatch.setattr(ST.json, "load", counting_load)
+
+    dataset = ST._read_coco(str(images_dir), str(ann))
+
+    # 正确性一个不能少：快不能以丢数据为代价
+    assert len(dataset.image_paths) == n
+    assert len(dataset.annotations) == n
+    assert dataset.classes == ["cat"]
+    assert sum(len(v) for v in dataset.annotations.values()) == n
+    assert dataset.image_sizes[next(iter(dataset.image_sizes))] == (640, 480)
+    # 线性访问：总产出行数远小于二次扫描的 ~N²/2
+    assert counting["images"].yielded <= 4 * n, counting["images"].yielded

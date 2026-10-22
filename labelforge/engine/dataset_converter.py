@@ -593,10 +593,12 @@ def _read_coco(images_dir: str, annotations_path: str) -> Dataset:
     category_to_index = {category.get("id"): index
                          for index, category in enumerate(categories)}
     dataset = Dataset(classes=classes, image_paths=[])
+    entries_by_name: Dict[str, dict] = {}
     for entry in payload.get("images") or []:
         name = os.path.basename(str(entry.get("file_name") or ""))
         if not name:
             continue
+        entries_by_name.setdefault(name, entry)
         path = os.path.join(os.path.abspath(images_dir), name)
         dataset.image_paths.append(path)
         width = entry.get("width")
@@ -607,9 +609,7 @@ def _read_coco(images_dir: str, annotations_path: str) -> Dataset:
     for entry in payload.get("annotations") or []:
         grouped.setdefault(int(entry.get("image_id", -1)), []).append(entry)
     for path in dataset.image_paths:
-        entry = next((item for item in payload.get("images") or []
-                      if os.path.basename(str(item.get("file_name") or ""))
-                      == os.path.basename(path)), None)
+        entry = entries_by_name.get(os.path.basename(path))
         annotations = _empty_detections()
         items = grouped.get(int(entry.get("id", -1))) if entry else None
         if items:
