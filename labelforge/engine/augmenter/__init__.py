@@ -109,7 +109,7 @@ class Augmenter:
                     out_name, boxes_copy, img_copy.width(), img_copy.height()
                 )
                 results.append({
-                    "image": img_copy, "boxes": boxes_copy,
+                    "boxes": boxes_copy,
                     "width": img_copy.width(), "height": img_copy.height(),
                     "stem": base + suffix
                 })
@@ -193,7 +193,7 @@ class Augmenter:
                     out_name, boxes_copy, img_copy.width(), img_copy.height()
                 )
                 results.append({
-                    "image": img_copy, "boxes": boxes_copy,
+                    "boxes": boxes_copy,
                     "width": img_copy.width(), "height": img_copy.height(),
                     "stem": base + suffix
                 })
@@ -235,7 +235,7 @@ class Augmenter:
                     out_name, win_boxes, win_img.width(), win_img.height()
                 )
                 results.append({
-                    "image": win_img, "boxes": win_boxes,
+                    "boxes": win_boxes,
                     "width": win_img.width(), "height": win_img.height(),
                     "stem": base + suffix
                 })
@@ -287,7 +287,7 @@ class Augmenter:
         if not os.path.exists(out_json):
             self._save_labelme_json(out_json, base + ext, boxes, data.width(), data.height())
         results.append({
-            "image": data, "boxes": boxes,
+            "boxes": boxes,
             "width": data.width(), "height": data.height(),
             "stem": base
         })

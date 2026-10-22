@@ -714,3 +714,44 @@ assert len(res) < len(srcs), (len(res), len(srcs))
 print("OK")
 ''')
     assert "OK" in out
+
+
+# ---------- B3 回归：结果不再攥着 QImage ----------
+
+def test_augmenter_results_do_not_retain_images():
+    """B3：run() 的返回值不应携带 QImage——4K 图一张 ~33MB，几千张
+    增强图把进程内存推到 GB 级。唯一调用方只用 len(result)；产物全部
+    落盘，导出走 _detect_augmented_images() 从磁盘重建。
+
+    省内存不能省产出：stem 集合、boxes/width/height 字段、磁盘上的
+    png+json 产物都必须原样保留。"""
+    out = _run_real_qt('''
+import os, tempfile
+from PySide6.QtGui import QImage, QColor
+from labelforge.engine.augmenter import Augmenter
+from labelforge.engine.augmenter.color import Brightness
+from labelforge.engine.augmenter.flipt import HorizontalFlip
+
+src_dir = tempfile.mkdtemp()
+img = QImage(32, 32, QImage.Format_RGB888)
+img.fill(QColor(10, 20, 30))
+src = os.path.join(src_dir, "a.png")
+img.save(src)
+boxes = {0: [{"label": "cat", "x": 1, "y": 1, "width": 5, "height": 5}]}
+
+out = tempfile.mkdtemp()
+res = Augmenter(out, seed=1).run([src], boxes,
+                                 [(Brightness, {"delta": (10, 40)}),
+                                  (HorizontalFlip, {})],
+                                 mode="all", image_ratio=1.0, skip_empty=False)
+assert len(res) == 2, res
+assert all("image" not in r for r in res), [sorted(r) for r in res]
+stems = sorted(r["stem"] for r in res)
+assert stems == ["a_bright", "a_fliph"], stems
+for r in res:
+    assert "boxes" in r and "width" in r and "height" in r, sorted(r)
+    assert os.path.isfile(os.path.join(out, "images", r["stem"] + ".png"))
+    assert os.path.isfile(os.path.join(out, "images", r["stem"] + ".json"))
+print("OK")
+''')
+    assert "OK" in out
