@@ -570,7 +570,7 @@ class CanvasDrawingMixin:
             import os
             background_path = self._editor.background_images[self._editor.current_background_index]
             background_name = os.path.basename(background_path)
-            self._editor.save_json(background_path, background_name, "", canvas_items=[])
+            self._editor.save_json(background_path, background_name, "", canvas_items=None)
 
     def _sync_detection_box_to_dict(self, box_index):
         idx = self._editor.current_background_index

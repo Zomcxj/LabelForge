@@ -182,7 +182,7 @@ class EventHandlerMixin:
             if self.current_background and self.current_background_index >= 0:
                 background_path = self.background_images[self.current_background_index]
                 background_name = os.path.basename(background_path)
-                self.save_json(background_path, background_name, "", canvas_items=[])
+                self.save_json(background_path, background_name, "", canvas_items=None)
 
         if (self.canvas.selected_box is not None and
                 0 <= self.canvas.selected_box < len(self.detection_boxes)):
@@ -200,7 +200,7 @@ class EventHandlerMixin:
             if self.current_background and self.current_background_index >= 0:
                 background_path = self.background_images[self.current_background_index]
                 background_name = os.path.basename(background_path)
-                self.save_json(background_path, background_name, "", canvas_items=[])
+                self.save_json(background_path, background_name, "", canvas_items=None)
 
         if (self.selected_item is not None and
                 0 <= self.selected_item < len(self.canvas_items)):
