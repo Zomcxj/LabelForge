@@ -12,14 +12,14 @@ PUBLIC_SYMBOLS = [
     "annotation_status_for_image", "annotation_status_for_image_light",
     "decorate_background_list_item", "apply_background_status_to_item",
     # scan
-    "scan_dataset_labels", "scan_dataset_labels_with_counts", "scan_dataset_full",
+    "scan_dataset_full",
     "collect_background_label_counts", "collect_background_label_tasks",
     "count_labels_in_json", "DatasetLabelScanWorker",
     # mixin
     "ImageLoaderMixin",
 ]
 
-PRIVATE_SYMBOLS = ["_status_icon", "_count_labels_in_json", "_scan_single_json"]
+PRIVATE_SYMBOLS = ["_status_icon", "_count_labels_in_json"]
 
 MODULE_ATTRS = ["json", "os", "QFileDialog", "QMessageBox"]
 

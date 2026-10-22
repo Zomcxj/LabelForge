@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 from .status import *
 from .status import _status_icon
 from .scan import *
-from .scan import _count_labels_in_json, _scan_single_json
+from .scan import _count_labels_in_json
 from . import mixin
 from .mixin import ImageLoaderMixin
 
@@ -22,7 +22,7 @@ __all__ = [
     "STATUS_UNANNOTATED", "STATUS_ANNOTATED", "STATUS_EMPTY", "STATUS_PENDING",
     "annotation_status_for_image", "annotation_status_for_image_light",
     "decorate_background_list_item", "apply_background_status_to_item",
-    "scan_dataset_labels", "scan_dataset_labels_with_counts", "scan_dataset_full",
+    "scan_dataset_full",
     "collect_background_label_counts", "collect_background_label_tasks",
     "count_labels_in_json", "DatasetLabelScanWorker",
     "ImageLoaderMixin",

@@ -9,56 +9,10 @@ from .status import STATUS_UNANNOTATED, STATUS_ANNOTATED, STATUS_EMPTY
 from ...core.utils import shape_task_type
 
 __all__ = [
-    "scan_dataset_labels", "scan_dataset_labels_with_counts", "scan_dataset_full",
+    "scan_dataset_full",
     "collect_background_label_counts", "collect_background_label_tasks",
     "count_labels_in_json", "DatasetLabelScanWorker",
 ]
-
-
-def _scan_single_json(json_path):
-    """Parse a single LabelMe JSON and return its labels, or None on error."""
-    try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    except Exception:
-        return None
-    shapes = data.get("shapes") if isinstance(data, dict) else None
-    if not isinstance(shapes, list):
-        return None
-    labels = set()
-    for shape in shapes:
-        label = shape.get("label") if isinstance(shape, dict) else None
-        if isinstance(label, str) and label.strip():
-            labels.add(label)
-    return labels
-
-
-def scan_dataset_labels(image_paths, is_interrupted=None):
-    """Return valid LabelMe labels from the JSON files beside image paths."""
-    labels = set()
-    pending = []
-    for image_path in image_paths:
-        if is_interrupted and is_interrupted():
-            break
-        pending.append(f"{os.path.splitext(image_path)[0]}.json")
-    if not pending:
-        return labels
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        futures = [pool.submit(_scan_single_json, jp) for jp in pending]
-        for future in concurrent.futures.as_completed(futures):
-            if is_interrupted and is_interrupted():
-                break
-            result = future.result()
-            if result:
-                labels.update(result)
-    return labels
-
-
-def scan_dataset_labels_with_counts(image_paths, is_interrupted=None):
-    """Return (labels_set, {label: count}) across all background sidecar JSONs."""
-    labels, counts, _ = scan_dataset_full(image_paths, is_interrupted)
-    return labels, counts
 
 
 def scan_dataset_full(image_paths, is_interrupted=None, progress_cb=None,

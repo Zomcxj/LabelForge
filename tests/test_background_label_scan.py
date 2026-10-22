@@ -3,7 +3,7 @@ import json
 import pytest
 
 from labelforge.engine import image_loader
-from labelforge.engine.image_loader import ImageLoaderMixin, scan_dataset_labels
+from labelforge.engine.image_loader import ImageLoaderMixin
 from labelforge.ui.main_window import ImageEditor
 from labelforge.ui.processing_panel import ProcessingPanel
 
@@ -41,25 +41,6 @@ def test_collect_bg_stats_for_dialog_uses_nonempty_cache_without_path():
 
     result = ImageEditor._collect_bg_stats_for_dialog(editor)
     assert result == {"kitty": 7, "dog": 1}
-
-
-def test_scan_dataset_labels_collects_only_non_empty_string_labels(tmp_path):
-    first_image = tmp_path / "first.png"
-    second_image = tmp_path / "second.jpg"
-    invalid_image = tmp_path / "invalid.bmp"
-    missing_image = tmp_path / "missing.gif"
-    for image in (first_image, second_image, invalid_image, missing_image):
-        image.touch()
-
-    (tmp_path / "first.json").write_text(json.dumps({"shapes": [
-        {"label": "cat"}, {"label": ""}, {"label": 3}, {},
-    ]}), encoding="utf-8")
-    (tmp_path / "second.json").write_text(json.dumps({"shapes": [
-        {"label": "dog"}, {"label": "cat"}, {"label": "  "},
-    ]}), encoding="utf-8")
-    (tmp_path / "invalid.json").write_text("not json", encoding="utf-8")
-
-    assert scan_dataset_labels((str(first_image), str(second_image), str(invalid_image), str(missing_image))) == {"cat", "dog"}
 
 
 def test_apply_dataset_labels_ignores_stale_generation_and_path_snapshot():
