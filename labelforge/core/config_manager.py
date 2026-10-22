@@ -216,12 +216,21 @@ def load_config():
 
 
 def save_config(config):
-    """保存完整配置"""
+    """保存完整配置（tmp + os.replace 原子写：中断不留半截文件）"""
+    tmp_path = f"{CONFIG_PATH}.tmp"
     try:
-        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, CONFIG_PATH)
         return True
     except Exception:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
         return False
 
 

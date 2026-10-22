@@ -683,3 +683,42 @@ class TestLegacyTraceEnvVar:
 
     def test_absent_means_off(self, monkeypatch):
         assert self._fresh(monkeypatch, '') is False
+
+
+# ---------- B7 回归：配置写盘必须是原子的 ----------
+
+def test_save_config_midwrite_failure_keeps_original_intact(tmp_path, monkeypatch):
+    """写盘中途崩（磁盘满等）：原配置不得被截断，也不得残留临时文件。"""
+    cfg = tmp_path / 'config.json'
+    cfg.write_text('{"keep": true}', encoding='utf-8')
+    original = _with_temp_config(tmp_path)
+    config_manager.CONFIG_PATH = str(cfg)
+    try:
+        def broken_dump(obj, fh, **kwargs):
+            fh.write('{"partial":')  # 半截内容落进目标文件——旧实现在这里截断原配置
+            raise OSError('disk full mid-write')
+
+        monkeypatch.setattr(config_manager.json, 'dump', broken_dump)
+        assert config_manager.save_config({'new': 1}) is False
+        assert cfg.read_text(encoding='utf-8') == '{"keep": true}'
+        assert not [p for p in tmp_path.iterdir() if p.name.endswith('.tmp')]
+    finally:
+        config_manager.CONFIG_PATH = original
+
+
+def test_save_config_replace_failure_keeps_original_and_cleans_tmp(tmp_path, monkeypatch):
+    """os.replace 阶段崩：原配置完好，临时文件被清理，返回 False。"""
+    cfg = tmp_path / 'config.json'
+    cfg.write_text('{"keep": true}', encoding='utf-8')
+    original = _with_temp_config(tmp_path)
+    config_manager.CONFIG_PATH = str(cfg)
+    try:
+        def broken_replace(src, dst):
+            raise OSError('replace failed')
+
+        monkeypatch.setattr(config_manager.os, 'replace', broken_replace)
+        assert config_manager.save_config({'new': 1}) is False
+        assert cfg.read_text(encoding='utf-8') == '{"keep": true}'
+        assert not [p for p in tmp_path.iterdir() if p.name.endswith('.tmp')]
+    finally:
+        config_manager.CONFIG_PATH = original
