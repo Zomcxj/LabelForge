@@ -506,26 +506,37 @@ class CanvasRendererMixin:
         self._draw_paste_label(painter, item_x, item_y, label, is_selected, item_index)
 
     def _draw_paste_with_overlay(self, painter, pixmap, item_rect, label, fill_alpha):
-        """绘制带标签色透明覆盖层的贴图。"""
-        temp_pixmap = QPixmap(int(item_rect.width()), int(item_rect.height()))
-        temp_pixmap.fill(Qt.transparent)
-        temp_painter = QPainter(temp_pixmap)
+        """绘制带标签色透明覆盖层的贴图。
 
-        temp_painter.drawPixmap(
-            0, 0, int(item_rect.width()), int(item_rect.height()), pixmap
-        )
+        shape_opacity == 1.0（默认）时直接「图 → 色层」两步 SourceOver：
+        over 运算满足结合律，与旧「临时 QPixmap 里合成再 blit」逐像素一致，
+        但省掉每帧每图一次 QPixmap 分配（审计 P3）。
 
+        shape_opacity != 1 时不能直接画：外层衰减会分别作用于图与色层，
+        与旧「先全强度合成、再整体衰减」语义不同——保留旧合成路径，
+        像素完全不变。
+        """
+        w = int(item_rect.width())
+        h = int(item_rect.height())
+        if getattr(self, 'shape_opacity', 1.0) != 1.0:
+            temp_pixmap = QPixmap(w, h)
+            temp_pixmap.fill(Qt.transparent)
+            temp_painter = QPainter(temp_pixmap)
+
+            temp_painter.drawPixmap(0, 0, w, h, pixmap)
+
+            color = QColor(self._editor.get_label_color(label))
+            overlay_color = QColor(color.red(), color.green(), color.blue(), fill_alpha)
+            temp_painter.fillRect(0, 0, w, h, overlay_color)
+            temp_painter.end()
+
+            painter.drawPixmap(int(item_rect.left()), int(item_rect.top()), temp_pixmap)
+            return
+
+        painter.drawPixmap(int(item_rect.left()), int(item_rect.top()), w, h, pixmap)
         color = QColor(self._editor.get_label_color(label))
         overlay_color = QColor(color.red(), color.green(), color.blue(), fill_alpha)
-        temp_painter.fillRect(
-            0, 0, int(item_rect.width()), int(item_rect.height()), overlay_color
-        )
-        temp_painter.end()
-
-        painter.drawPixmap(
-            int(item_rect.left()), int(item_rect.top()),
-            temp_pixmap
-        )
+        painter.fillRect(int(item_rect.left()), int(item_rect.top()), w, h, overlay_color)
 
     def _draw_resize_handle(self, painter, item_rect, stroke_color, fill_color, is_hovered=False):
         """绘制右下角缩放手柄；悬停时显示白色正方形命中范围。"""

@@ -523,3 +523,123 @@ print("OK")
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+# ---------- P3 回归：贴图叠加层不再每帧每图建临时 QPixmap ----------
+
+_OVERLAY_OLD_IMPL = '''
+def draw_overlay_old(painter, pixmap, item_rect, label_color, fill_alpha):
+    """旧实现的逐像素参照（temp 里先图后色，再整体 blit）。"""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QPixmap, QPainter, QColor
+    w, h = int(item_rect.width()), int(item_rect.height())
+    temp_pixmap = QPixmap(w, h)
+    temp_pixmap.fill(Qt.transparent)
+    temp_painter = QPainter(temp_pixmap)
+    temp_painter.drawPixmap(0, 0, w, h, pixmap)
+    color = QColor(label_color)
+    overlay_color = QColor(color.red(), color.green(), color.blue(), fill_alpha)
+    temp_painter.fillRect(0, 0, w, h, overlay_color)
+    temp_painter.end()
+    painter.drawPixmap(int(item_rect.left()), int(item_rect.top()), temp_pixmap)
+'''
+
+
+def test_paste_overlay_skips_temp_pixmap_when_opacity_is_1():
+    """审计 P3：_draw_paste_with_overlay 每帧每图新建一个
+    QPixmap(w,h) 做透明覆盖层。SourceOver 满足结合律，外层透明度为
+    1.0（默认值）时直接「图 → 色层」两步画逐像素一致，临时缓冲省掉。
+
+    shape_opacity != 1 时外层衰减会分别作用于图与色层、与旧「先合成
+    再整体衰减」不同，实现按透明度分流——用例同时钉住两条路径：
+    不透明路径 0 次构造且与旧实现逐像素一致；半透明路径保留旧像素。
+    """
+    script = '''
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QImage, QPainter, QPixmap, QColor
+import labelforge.canvas.canvas_renderer as cr
+
+app = QApplication.instance() or QApplication([])
+
+class Editor:
+    def get_label_color(self, label):
+        return "#1E88E5"
+
+class Renderer(cr.CanvasRendererMixin):
+    def __init__(self):
+        self._editor = Editor()
+        self.shape_opacity = 1.0
+
+''' + _OVERLAY_OLD_IMPL + '''
+
+counter = {"n": 0}
+_RealPixmap = cr.QPixmap
+
+def counting_pixmap(*args):
+    counter["n"] += 1
+    return _RealPixmap(*args)
+
+cr.QPixmap = counting_pixmap
+
+# 源图：不透明、带非均匀图案（避免「碰巧同色」的假一致）
+src = QImage(32, 32, QImage.Format_ARGB32)
+src.fill(QColor(200, 30, 30))
+qp = QPainter(src)
+qp.fillRect(4, 4, 10, 10, QColor(20, 200, 20))
+qp.fillRect(18, 8, 8, 18, QColor(30, 30, 220))
+qp.end()
+pixmap = QPixmap.fromImage(src)
+rect = QRectF(0, 0, 32, 32)
+
+renderer = Renderer()
+
+# 路径一：shape_opacity == 1.0（默认）→ 直接两步画，0 次临时构造
+renderer.shape_opacity = 1.0
+out_a = QImage(48, 48, QImage.Format_ARGB32)
+out_a.fill(QColor(255, 255, 255))
+pa = QPainter(out_a)
+counter["n"] = 0
+renderer._draw_paste_with_overlay(pa, pixmap, rect, "cat", 60)
+pa.end()
+assert counter["n"] == 0, ("opaque path must not build temp pixmaps", counter)
+
+# 路径二：shape_opacity == 0.5 → 保留旧合成路径，像素不变
+renderer.shape_opacity = 0.5
+out_b = QImage(48, 48, QImage.Format_ARGB32)
+out_b.fill(QColor(255, 255, 255))
+pb = QPainter(out_b)
+pb.setOpacity(0.5)
+counter["n"] = 0
+renderer._draw_paste_with_overlay(pb, pixmap, rect, "cat", 60)
+pb.end()
+assert counter["n"] >= 1, ("fallback path keeps the old composition", counter)
+
+# 参照：旧算法在同等外层透明度下的输出
+def render_with(impl_painter, shape_opacity):
+    img = QImage(48, 48, QImage.Format_ARGB32)
+    img.fill(QColor(255, 255, 255))
+    p = QPainter(img)
+    p.setOpacity(shape_opacity)
+    draw_overlay_old(p, pixmap, rect, "#1E88E5", 60)
+    p.end()
+    return img
+
+ref_a = render_with(None, 1.0)
+ref_b = render_with(None, 0.5)
+for x, y in [(2, 2), (8, 8), (22, 16), (30, 30), (40, 44)]:
+    assert out_a.pixelColor(x, y) == ref_a.pixelColor(x, y), ("a", x, y,
+        out_a.pixelColor(x, y).getRgb(), ref_a.pixelColor(x, y).getRgb())
+    assert out_b.pixelColor(x, y) == ref_b.pixelColor(x, y), ("b", x, y,
+        out_b.pixelColor(x, y).getRgb(), ref_b.pixelColor(x, y).getRgb())
+
+print("OK")
+'''
+    result = subprocess.run(
+        [sys.executable, "-c", script + _QT_EXIT_GUARD],
+        cwd=ROOT,
+        env=os.environ | {"QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
