@@ -429,6 +429,18 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         return [lbl for lbl, cb in self._exp_label_checkboxes.items() if cb.isChecked()]
 
     def _get_image_size(self, img_path):
+        # 先只读文件头拿宽高（PNG/JPEG/GIF/BMP/WebP/TIFF…）；导出几千张图
+        # 时整图解码只为问宽高是大头。
+        try:
+            from ..engine.dataset_converter import read_image_size
+            size = read_image_size(img_path)
+            if size:
+                return int(size[0]), int(size[1])
+        except Exception as e:
+            from ..core.exception_hook import _write_log
+            _write_log(f"读取图片尺寸失败 {img_path}: {e}")
+        # 兜底：read_image_size 认不出的格式仍走 QImage 解码；
+        # 解不出依旧 (0, 0)，日志与异常处理照旧。
         try:
             from PySide6.QtGui import QImage
             img = QImage(img_path)
