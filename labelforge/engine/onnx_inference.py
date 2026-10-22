@@ -414,18 +414,6 @@ def runtime_available():
     return True
 
 
-def available_providers():
-    """当前环境可用的 provider；缺少依赖时返回空表。"""
-    try:
-        import onnxruntime as ort
-    except ImportError:
-        return []
-    try:
-        return list(ort.get_available_providers())
-    except Exception:
-        return []
-
-
 def read_class_names(path):
     """读取类别表，一行一个类别。
 

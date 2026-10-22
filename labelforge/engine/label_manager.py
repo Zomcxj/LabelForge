@@ -632,11 +632,6 @@ class LabelManager(QObject):
         target_exists = self._label_already_exists(new_label)
         # When called after rename, new_label is always "existing" via global_labels.
         # Prefer explicit pre-check via _apply_rename_color from callers.
-        # Fallback: if new_label already had a color, treat as existing.
-        color_map = getattr(self.editor, 'label_color_map', None)
-        if isinstance(color_map, dict) and new_label in color_map and old_label not in (None, new_label):
-            # If new already has color and it wasn't just copied, keep it.
-            pass
         self._apply_rename_color(old_label, new_label, target_exists, move_if_unused=move_if_unused)
 
     def _seed_stats_cache_from_disk_and_memory(self):

@@ -20,54 +20,8 @@ class EventHandlerMixin:
             return sc.get(action, SHORTCUT_CONFIG.get(action, ''))
         return SHORTCUT_CONFIG.get(action, '')
 
-    def _match_shortcut(self, event, action):
-        """检查事件是否匹配指定快捷键"""
-        shortcut = self._get_shortcut(action)
-        if not shortcut:
-            return False
-
-        parts = shortcut.split('+')
-        key_str = parts[-1].strip()
-        modifiers_str = '+'.join(parts[:-1]).strip() if len(parts) > 1 else ''
-
-        key_map = {
-            'A': Qt.Key_A, 'B': Qt.Key_B, 'C': Qt.Key_C, 'D': Qt.Key_D,
-            'E': Qt.Key_E, 'F': Qt.Key_F, 'G': Qt.Key_G, 'H': Qt.Key_H,
-            'I': Qt.Key_I, 'J': Qt.Key_J, 'K': Qt.Key_K, 'L': Qt.Key_L,
-            'M': Qt.Key_M, 'N': Qt.Key_N, 'O': Qt.Key_O, 'P': Qt.Key_P,
-            'Q': Qt.Key_Q, 'R': Qt.Key_R, 'S': Qt.Key_S, 'T': Qt.Key_T,
-            'U': Qt.Key_U, 'V': Qt.Key_V, 'W': Qt.Key_W, 'X': Qt.Key_X,
-            'Y': Qt.Key_Y, 'Z': Qt.Key_Z,
-            '0': Qt.Key_0, '1': Qt.Key_1, '2': Qt.Key_2, '3': Qt.Key_3,
-            '4': Qt.Key_4, '5': Qt.Key_5, '6': Qt.Key_6, '7': Qt.Key_7,
-            '8': Qt.Key_8, '9': Qt.Key_9,
-            'Delete': Qt.Key_Delete, 'Space': Qt.Key_Space,
-            'F1': Qt.Key_F1, 'F2': Qt.Key_F2, 'F3': Qt.Key_F3, 'F4': Qt.Key_F4,
-            'F5': Qt.Key_F5, 'F6': Qt.Key_F6, 'F7': Qt.Key_F7, 'F8': Qt.Key_F8,
-            'F9': Qt.Key_F9, 'F10': Qt.Key_F10, 'F11': Qt.Key_F11, 'F12': Qt.Key_F12,
-        }
-
-        target_key = key_map.get(key_str)
-        if target_key is None:
-            return False
-
-        if event.key() != target_key:
-            return False
-
-        modifiers = event.modifiers()
-        expected_modifiers = Qt.NoModifier
-        if 'Ctrl' in modifiers_str:
-            expected_modifiers |= Qt.ControlModifier
-        if 'Alt' in modifiers_str:
-            expected_modifiers |= Qt.AltModifier
-        if 'Shift' in modifiers_str:
-            expected_modifiers |= Qt.ShiftModifier
-
-        return modifiers == expected_modifiers
-
     def setup_shortcuts(self):
         """用 QShortcut 注册所有快捷键（全局生效，不受焦点影响）"""
-        step = getattr(self, '_nav_step', 1)
         action_handlers = {
             'prev_image': lambda: self.switch_background(-1),
             'next_image': lambda: self.switch_background(1),

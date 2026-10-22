@@ -70,14 +70,6 @@ def trace_delete(where, json_path, survived):
         f"实际是否删掉={survived} 调用栈={stack}")
 
 
-def trace_switch(index, image_path):
-    """切图时记录：这张图、以及**这张图的 json** 当前状态。"""
-    if not _on():
-        return
-    json_path = f"{os.path.splitext(image_path)[0]}.json" if image_path else None
-    trace('切图', json_path, index=index)
-
-
 def trace_load_result(index, image_path, memory_boxes, from_cache):
     """记一次「切到这张图后到底读到几个框」。
 

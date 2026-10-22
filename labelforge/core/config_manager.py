@@ -188,11 +188,6 @@ def _repair_label_color_map(color_map, palette):
     return rebuilt
 
 
-def get_config_path():
-    """获取配置文件路径"""
-    return CONFIG_PATH
-
-
 def load_config():
     """加载完整配置"""
     migrate_legacy_config()

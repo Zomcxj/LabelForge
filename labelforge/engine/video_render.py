@@ -19,7 +19,6 @@ import numpy as np
 
 # 线宽与字号按画面高度缩放：480p 线宽 1、1080p 约 2、2160p 约 5
 PEN_HEIGHT_DIVISOR = 480
-FONT_HEIGHT_DIVISOR = 40
 MIN_PEN_WIDTH = 1
 MAX_PEN_WIDTH = 6
 MIN_FONT_PIXELS = 10
@@ -83,11 +82,6 @@ def label_text(box, spec):
 def _auto_pen_width(height):
     value = int(round(height / PEN_HEIGHT_DIVISOR))
     return max(MIN_PEN_WIDTH, min(MAX_PEN_WIDTH, value))
-
-
-def _auto_font_pixels(height):
-    value = int(round(height / FONT_HEIGHT_DIVISOR))
-    return max(MIN_FONT_PIXELS, min(MAX_FONT_PIXELS, value))
 
 
 # 字号滑块的量程。**0 表示自动**（按画面高度算），1..MAX 是手动像素值。
@@ -179,16 +173,6 @@ def _read_back(qimage, width, height):
     raw = _buffer(qimage, writable=False).reshape(
         height, qimage.bytesPerLine())
     return raw[:, :width * 3].copy().reshape(height, width, 3)
-
-
-def _box_anchor(box):
-    """文字锚点：矩形左上，其它形状用外接盒左上。"""
-    points = _clamp_points(box.get("points") or [])
-    if points:
-        x = min(p[0] for p in points)
-        y = min(p[1] for p in points)
-        return x, y
-    return float(box.get("x") or 0.0), float(box.get("y") or 0.0)
 
 
 def _draw_label(painter, anchor_x, anchor_y, text, bg_color, font):
