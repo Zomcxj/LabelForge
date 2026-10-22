@@ -371,7 +371,11 @@ class PasteEngineMixin:
             file_path = self.background_images[i]
             pixmap = QPixmap(file_path)
             if not pixmap.isNull():
-                if i in self.detection_boxes_dict and len(self.detection_boxes_dict[i]) > 0:
+                if i in self.detection_boxes_dict:
+                    # 判据是「下标在不在字典里」：空列表（0 框）也是有效缓存。
+                    # 用 len>0 判会把刚清空的图当成没加载过而重读磁盘，
+                    # sidecar 里的旧框会把已删的框复活（审计 B5；与
+                    # image_loader/mixin._load_detection_boxes_for_index 同一判据）。
                     temp_detection_boxes = self.detection_boxes_dict[i].copy()
                 else:
                     temp_detection_boxes = self.load_detection_boxes(file_path)
