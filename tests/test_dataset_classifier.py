@@ -186,3 +186,31 @@ def test_generated_dataset_yaml_claims_no_foreign_license(tmp_path):
     assert 'AGPL' not in text
     assert 'Ultralytics' not in text
     assert "path:" in text and "0: cat" in text
+
+
+# ---------- B4 回归：recommend_k 必须按真实轮廓系数选 K ----------
+
+def test_recommend_k_scores_by_real_silhouette_and_picks_separated_k():
+    """B4：原先 scores[k] = (-distortion, distortion)，而 distortion 随 K
+    单调下降 → 无论数据长什么样都推荐 max_k（审计 B4）。
+
+    改为真实平均轮廓系数后：三簇清晰分离的合成特征应推荐 k=3 而非
+    max_k=6；且第一列是轮廓系数（值域 [-1,1]）——UI 表格
+    dataset_classifier_dialog 早就按 Silhouette 列显示它，修好后该列
+    自动变正、不再单调递减。
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(42)
+    centers = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0]])
+    X = np.vstack([c + rng.normal(scale=0.05, size=(5, 2)) for c in centers])
+
+    best_k, scores = recommend_k(X, max_k=6)
+
+    assert best_k == 3, scores
+    assert max(scores, key=lambda k: scores[k][0]) == 3
+    for k, (sil, distortion) in scores.items():
+        assert -1.0 <= sil <= 1.0, (k, sil)
+        assert distortion >= 0.0, (k, distortion)
+    # 峰值明显：k=3 的轮廓系数要高于其它 K（分离良好的数据上差距很大）
+    assert scores[3][0] > max(v[0] for kk, v in scores.items() if kk != 3)

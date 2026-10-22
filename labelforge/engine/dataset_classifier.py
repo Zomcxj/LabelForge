@@ -64,6 +64,32 @@ def _vq(X, centroids):
     return codes, min_dists
 
 
+def _silhouette_mean(X, centroids):
+    """平均轮廓系数（简化版：用点到簇心的距离代替簇内平均距离）。
+
+    a(i) = 点到自身簇心的距离；b(i) = 点到最近**其它**簇心的距离；
+    s(i) = (b - a) / max(a, b)，分母为 0（重合点/重合簇心）记 0。
+    取值 [-1, 1]，越大越「簇内紧、簇间远」。
+
+    不引入 sklearn：聚类数只有个位数、样本是标签数级别，全量距离矩阵
+    的开销可以忽略。审计 B4 的 UI 对照：dataset_classifier_dialog 的
+    表头本就按 Silhouette 显示第一列，这里修的正是数据源。
+    """
+    n, k = X.shape[0], centroids.shape[0]
+    if k < 2 or n < 2:
+        return 0.0
+    dists = np.sqrt(np.sum((X[:, None, :] - centroids[None, :, :]) ** 2, axis=2))
+    codes = np.argmin(dists, axis=1)
+    a = dists[np.arange(n), codes]
+    other = dists.copy()
+    other[np.arange(n), codes] = np.inf
+    b = other.min(axis=1)
+    denom = np.maximum(a, b)
+    s = (b - a) / np.maximum(denom, 1e-12)
+    s = np.where(denom > 1e-12, s, 0.0)
+    return float(s.mean())
+
+
 def get_image_extensions():
     return {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.tif', '.webp'}
 
@@ -181,8 +207,10 @@ def recommend_k(X, max_k=10, progress_callback=None, is_interrupted=None):
         if is_interrupted and is_interrupted():
             return None, {}
         centroids, distortion = _kmeans(X, k)
-        # distortion 越小聚类越好，用负值模拟得分（越大越好）
-        scores[k] = (-distortion, distortion)
+        # 第一列是真实平均轮廓系数（[-1,1]，越大越好），第二列保留
+        # distortion 供 UI 的 Inertia 列显示；UI 早已按两列语义解包
+        # （sil, inert = scores[k]），修复前第一列填的是负 distortion。
+        scores[k] = (_silhouette_mean(X, centroids), distortion)
         if progress_callback:
             progress_callback(i + 1, total, k)
     if not scores:
