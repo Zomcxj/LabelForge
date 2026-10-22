@@ -663,15 +663,21 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             self._update_crop_summary()
 
     def _run_augment(self):
+        # 置忙必须先于 _ensure_boxes_loaded：后者每 5 张图 processEvents()
+        # 一次，读盘期间按钮尚未 disabled 时连点可重入（审计 P5）。
+        # 置忙之后的提前 return 都要 _button_ready，否则校验失败卡死按钮。
+        self._button_busy(self._aug_btn, clear_btn=self._aug_clear_btn)
         self._ensure_boxes_loaded()
         if not self._run_images:
             self._log(tr("log_no_images"))
             self._pipe_finish(True)
+            self._button_ready(self._aug_btn, clear_btn=self._aug_clear_btn)
             return
         specs = self._get_transform_specs()
         crop_spec = self._get_crop_spec()
         if not specs and not crop_spec:
             self._pipe_finish(True)
+            self._button_ready(self._aug_btn, clear_btn=self._aug_clear_btn)
             return
         ratio = self._aug_ratio.value()
         mode = "all" if self._aug_mode.currentIndex() == 0 else "random"
@@ -687,7 +693,6 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             transforms=", ".join(transform_names) if transform_names else tr("原图"),
             ratio=ratio
         ))
-        self._button_busy(self._aug_btn, clear_btn=self._aug_clear_btn)
         total = len(self._run_images)
         self._interrupted = False
 
@@ -730,18 +735,21 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         worker.start()
 
     def _run_export(self):
+        # 同 _run_augment：置忙先于同步读盘（审计 P5）
+        self._button_busy(self._exp_btn, clear_btn=self._exp_clear_btn)
         self._ensure_boxes_loaded()
         if not self._run_images:
             self._log(tr("log_no_images"))
             self._pipe_finish(True)
+            self._button_ready(self._exp_btn, clear_btn=self._exp_clear_btn)
             return
         labels = self._get_selected_labels()
         if not labels:
             self._log(tr("log_no_labels"))
             self._pipe_finish(True)
+            self._button_ready(self._exp_btn, clear_btn=self._exp_clear_btn)
             return
         output_dir = self._get_output_dir()
-        self._button_busy(self._exp_btn, clear_btn=self._exp_clear_btn)
         self._interrupted = False
         skip_empty = self._exp_skip_empty.isChecked()
 
@@ -867,10 +875,13 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             f"color: {color}; background: transparent; font-weight: bold;")
 
     def _run_split(self):
+        # 同 _run_augment：置忙先于同步读盘（审计 P5）
+        self._button_busy(self._split_btn, clear_btn=self._split_clear_btn)
         self._ensure_boxes_loaded()
         if not self._run_images:
             self._log(tr("log_no_images"))
             self._pipe_finish(True)
+            self._button_ready(self._split_btn, clear_btn=self._split_clear_btn)
             return
         output_dir = self._get_output_dir()
         labels_dir = os.path.join(output_dir, "labels")
@@ -879,6 +890,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         if not txt_files:
             self._log(tr("log_split_no_labels"))
             self._pipe_finish(True)
+            self._button_ready(self._split_btn, clear_btn=self._split_clear_btn)
             return
         aug_jpgs = [f for f in os.listdir(images_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))] if os.path.isdir(images_dir) else []
         txt_count = len(txt_files)
@@ -908,6 +920,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             if not matched_bases:
                 self._log(tr("log_split_no_labels"))
                 self._pipe_finish(True)
+                self._button_ready(self._split_btn, clear_btn=self._split_clear_btn)
                 return
             self._log(tr("log_aug_detected").format(count=len(matched_bases)))
             split_images = []
@@ -925,7 +938,6 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         if rest > 0:
             train_n += rest
         self._log(tr("log_split_start").format(total=total, train=train_n, val=val_n, test=test_n))
-        self._button_busy(self._split_btn, clear_btn=self._split_clear_btn)
         self._interrupted = False
 
         def _split_task(log_fn, progress_fn):
