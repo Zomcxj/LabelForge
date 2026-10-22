@@ -48,14 +48,12 @@ class MemoryRecordMixin:
                 if isinstance(item, dict) and str(item.get('label', '')).strip()
             }
         else:
-            from ...engine.image_loader import (
-                collect_background_label_counts, collect_background_label_tasks,
-            )
+            from ...engine.image_loader import collect_background_label_stats_and_tasks
             paths = list(self.background_images or [])
-            counts = collect_background_label_counts(paths)
+            counts, disk_tasks = collect_background_label_stats_and_tasks(paths)
             tasks_by_label = {
                 str(label).strip(): sorted(ts)
-                for label, ts in collect_background_label_tasks(paths).items()
+                for label, ts in disk_tasks.items()
                 if str(label).strip()
             }
         for lbl in getattr(self, 'background_dataset_labels', set()) or set():

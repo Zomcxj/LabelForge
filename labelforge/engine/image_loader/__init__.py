@@ -23,6 +23,7 @@ __all__ = [
     "annotation_status_for_image", "annotation_status_for_image_light",
     "decorate_background_list_item", "apply_background_status_to_item",
     "scan_dataset_full",
+    "collect_background_label_stats_and_tasks",
     "collect_background_label_counts", "collect_background_label_tasks",
     "count_labels_in_json", "DatasetLabelScanWorker",
     "ImageLoaderMixin",

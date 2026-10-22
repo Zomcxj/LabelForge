@@ -10,6 +10,7 @@ from ...core.utils import shape_task_type
 
 __all__ = [
     "scan_dataset_full",
+    "collect_background_label_stats_and_tasks",
     "collect_background_label_counts", "collect_background_label_tasks",
     "count_labels_in_json", "DatasetLabelScanWorker",
 ]

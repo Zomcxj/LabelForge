@@ -137,9 +137,9 @@ class StatsMixin:
             if bg_stats:
                 return bg_stats
 
-        from ...engine.image_loader import collect_background_label_counts, collect_background_label_tasks
-        bg_stats = collect_background_label_counts(list(self.background_images or []))
-        bg_tasks = collect_background_label_tasks(list(self.background_images or []))
+        from ...engine.image_loader import collect_background_label_stats_and_tasks
+        bg_stats, bg_tasks = collect_background_label_stats_and_tasks(
+            list(self.background_images or []))
         for lbl in getattr(self, 'background_dataset_labels', set()) or set():
             bg_stats.setdefault(lbl, 0)
         for lbl in self.global_labels:

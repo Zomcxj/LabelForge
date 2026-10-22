@@ -641,15 +641,16 @@ class LabelManager(QObject):
         canvas/list edits are reflected without missing unloaded files.
         """
         import os
-        from .image_loader import collect_background_label_counts, collect_background_label_tasks
+        from .image_loader import collect_background_label_stats_and_tasks
 
         color_map = getattr(self.editor, 'label_color_map', None)
         images = list(getattr(self.editor, 'background_images', None) or [])
         boxes_dict = getattr(self.editor, 'detection_boxes_dict', None) or {}
 
         # 1) Start from disk scan for the whole dataset.
-        counts = collect_background_label_counts(images) if images else {}
-        label_tasks = collect_background_label_tasks(images) if images else {}
+        counts, label_tasks = (
+            collect_background_label_stats_and_tasks(images) if images else ({}, {})
+        )
 
         # 2) Override counts for images loaded in memory (source of truth).
         if images and boxes_dict:
