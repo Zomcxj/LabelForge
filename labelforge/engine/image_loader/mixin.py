@@ -4,13 +4,14 @@ import json
 import time
 
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QListWidgetItem, QMessageBox
+    QApplication, QFileDialog, QListWidgetItem
 )
 from PySide6.QtGui import QPixmap, QIcon
 from PySide6.QtCore import Qt, QSize, QTimer
 
 from ...core.config import SUPPORTED_IMAGE_EXTENSIONS
 from ...core.utils import PathUtils, natural_sort_key, create_thumbnail
+from ...ui import dialog_helpers
 from ...ui.i18n import t as tr
 
 from .status import (
@@ -183,7 +184,7 @@ class ImageLoaderMixin:
         try:
             all_files = sorted(os.listdir(folder_path), key=natural_sort_key)
         except OSError:
-            QMessageBox.warning(self, tr("警告"), tr("无法读取文件夹"))
+            dialog_helpers.warning(self, "警告", "无法读取文件夹")
             self._finish_background_replacement_without_scan()
             self.update_file_count()
             return
@@ -195,7 +196,7 @@ class ImageLoaderMixin:
                 image_files.append(os.path.join(folder_path, file_name))
 
         if not image_files:
-            QMessageBox.warning(self, tr("警告"), tr("该文件夹中没有找到支持的图片文件"))
+            dialog_helpers.warning(self, "警告", "该文件夹中没有找到支持的图片文件")
             self._finish_background_replacement_without_scan()
             self.update_file_count()
             return
@@ -490,7 +491,7 @@ class ImageLoaderMixin:
                     loaded_count += 1
 
         if loaded_count == 0:
-            QMessageBox.warning(self, tr("警告"), tr("该文件夹中没有找到支持的图片文件"))
+            dialog_helpers.warning(self, "警告", "该文件夹中没有找到支持的图片文件")
 
         self._update_paste_count_spin()
         self._refresh_small_list_view()
@@ -578,12 +579,12 @@ class ImageLoaderMixin:
                         if parts:
                             labels.append(parts[0])
         except Exception as e:
-            QMessageBox.critical(self, tr("错误"), f"{tr('读取标签文件失败：')}{e}")
+            dialog_helpers.critical(self, "错误", f"{tr('读取标签文件失败：')}{e}")
             return
 
         labels = [label for label in labels if label]
         if not labels:
-            QMessageBox.warning(self, tr("警告"), tr("未找到有效的标签"))
+            dialog_helpers.warning(self, "警告", "未找到有效的标签")
             return
 
         self.imported_background_labels.update(labels)
@@ -619,9 +620,9 @@ class ImageLoaderMixin:
                 for label in labels:
                     self.paste_label_list.addItem(label)
             else:
-                QMessageBox.warning(self, tr("警告"), tr("未找到有效的标签"))
+                dialog_helpers.warning(self, "警告", "未找到有效的标签")
         except Exception as e:
-            QMessageBox.critical(self, tr("错误"), f"{tr('读取标签文件失败：')}{e}")
+            dialog_helpers.critical(self, "错误", f"{tr('读取标签文件失败：')}{e}")
 
     def _load_detection_boxes_for_index(self, index, file_path):
         """加载指定索引的检测框（优先从缓存，否则从文件）

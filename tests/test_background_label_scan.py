@@ -388,7 +388,8 @@ def test_load_background_folder_finishes_replacement_when_no_scan_can_start(monk
     editor.update_file_count = lambda: None
     editor.update_label_list = lambda: None
     monkeypatch.setattr(image_loader.os, "listdir", listdir)
-    monkeypatch.setattr(image_loader.QMessageBox, "warning", lambda *args: None)
+    from labelforge.ui import dialog_helpers
+    monkeypatch.setattr(dialog_helpers, "warning", lambda *args: None)
 
     if raises:
         editor.load_background_folder("images")

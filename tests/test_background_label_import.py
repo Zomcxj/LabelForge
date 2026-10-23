@@ -188,8 +188,8 @@ def test_empty_file_warns_and_changes_nothing(tmp_path, monkeypatch):
     path.write_text("\n  \n", encoding="utf-8")
     editor = _editor()
     warnings = []
-    import labelforge.engine.image_loader as loader
-    monkeypatch.setattr(loader.QMessageBox, "warning",
+    from labelforge.ui import dialog_helpers
+    monkeypatch.setattr(dialog_helpers, "warning",
                         lambda *a, **k: warnings.append(a), raising=False)
 
     editor.load_background_label_file(str(path))
@@ -202,8 +202,8 @@ def test_empty_file_warns_and_changes_nothing(tmp_path, monkeypatch):
 def test_unreadable_file_reports_error_and_changes_nothing(tmp_path, monkeypatch):
     editor = _editor()
     errors = []
-    import labelforge.engine.image_loader as loader
-    monkeypatch.setattr(loader.QMessageBox, "critical",
+    from labelforge.ui import dialog_helpers
+    monkeypatch.setattr(dialog_helpers, "critical",
                         lambda *a, **k: errors.append(a), raising=False)
 
     editor.load_background_label_file(str(tmp_path / "does-not-exist.txt"))
