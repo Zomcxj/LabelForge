@@ -475,7 +475,7 @@ def _bounding_box(points) -> Tuple[float, float, float, float]:
 # ==========================================================================
 
 def _read_yolo(images_dir: str, labels_dir: str, data_yaml_path: str,
-               task: str = "auto") -> Dataset:
+               task: str = "auto", on_progress: Optional[Callable] = None) -> Dataset:
     yaml_path = _check_file(data_yaml_path, "data.yaml")
     with open(yaml_path, "r", encoding="utf-8", errors="replace") as fh:
         yaml_text = fh.read()
@@ -496,13 +496,15 @@ def _read_yolo(images_dir: str, labels_dir: str, data_yaml_path: str,
 
     dataset = Dataset(classes=classes, image_paths=image_paths)
     labels_abs = os.path.abspath(labels_dir)
-    for path in image_paths:
+    for idx, path in enumerate(image_paths, start=1):
         stem = os.path.splitext(os.path.basename(path))[0]
         label_path = os.path.join(labels_abs, stem + ".txt")
         annotations = _empty_detections()
         if os.path.isfile(label_path):
             annotations = _parse_yolo_labels(label_path, path, dataset, task)
         dataset.annotations[path] = annotations
+        if on_progress:
+            on_progress(idx, len(image_paths))
     return dataset
 
 
@@ -583,7 +585,8 @@ def _yolo_pose(det, class_id, coords, width, height, group_id):
                           group_id=group_id)
 
 
-def _read_coco(images_dir: str, annotations_path: str) -> Dataset:
+def _read_coco(images_dir: str, annotations_path: str,
+               on_progress: Optional[Callable] = None) -> Dataset:
     json_path = _check_file(annotations_path, "COCO 标注文件")
     with open(json_path, "r", encoding="utf-8", errors="replace") as fh:
         payload = json.load(fh)
@@ -608,7 +611,7 @@ def _read_coco(images_dir: str, annotations_path: str) -> Dataset:
     grouped: Dict[int, List[dict]] = {}
     for entry in payload.get("annotations") or []:
         grouped.setdefault(int(entry.get("image_id", -1)), []).append(entry)
-    for path in dataset.image_paths:
+    for idx, path in enumerate(dataset.image_paths, start=1):
         entry = entries_by_name.get(os.path.basename(path))
         annotations = _empty_detections()
         items = grouped.get(int(entry.get("id", -1))) if entry else None
@@ -624,6 +627,8 @@ def _read_coco(images_dir: str, annotations_path: str) -> Dataset:
                 _append_detection(annotations, index, (x, y, x + width, y + height),
                                   shape_type="rectangle")
         dataset.annotations[path] = annotations
+        if on_progress:
+            on_progress(idx, len(dataset.image_paths))
     return dataset
 
 
@@ -768,7 +773,8 @@ def _child_text(node, tag: str) -> str:
     return (child[1] if child is not None else "").strip()
 
 
-def _read_voc(images_dir: str, annotations_dir: str) -> Dataset:
+def _read_voc(images_dir: str, annotations_dir: str,
+              on_progress: Optional[Callable] = None) -> Dataset:
     xml_files = sorted(os.path.join(annotations_dir, name)
                        for name in os.listdir(annotations_dir)
                        if os.path.splitext(name)[1].lower() == ".xml")
@@ -816,7 +822,7 @@ def _read_voc(images_dir: str, annotations_dir: str) -> Dataset:
                     classes.append(label)
 
     dataset = Dataset(classes=classes, image_paths=[])
-    for filename, _xml_path, size, objects in rows:
+    for idx, (filename, _xml_path, size, objects) in enumerate(rows, start=1):
         path = os.path.join(os.path.abspath(images_dir), filename)
         dataset.image_paths.append(path)
         if size:
@@ -829,10 +835,13 @@ def _read_voc(images_dir: str, annotations_dir: str) -> Dataset:
             _append_detection(annotations, index, (xmin, ymin, xmax, ymax),
                               shape_type="rectangle")
         dataset.annotations[path] = annotations
+        if on_progress:
+            on_progress(idx, len(rows))
     return dataset
 
 
-def _read_labelme(images_dir: str, annotations_dir: str) -> Dataset:
+def _read_labelme(images_dir: str, annotations_dir: str,
+                  on_progress: Optional[Callable] = None) -> Dataset:
     json_files = sorted(os.path.join(annotations_dir, name)
                         for name in os.listdir(annotations_dir)
                         if os.path.splitext(name)[1].lower() == ".json")
@@ -875,7 +884,7 @@ def _read_labelme(images_dir: str, annotations_dir: str) -> Dataset:
         rows.append((name, size, shapes))
 
     dataset = Dataset(classes=classes, image_paths=[])
-    for name, size, shapes in rows:
+    for idx, (name, size, shapes) in enumerate(rows, start=1):
         path = os.path.join(os.path.abspath(images_dir), name)
         dataset.image_paths.append(path)
         if size:
@@ -889,6 +898,8 @@ def _read_labelme(images_dir: str, annotations_dir: str) -> Dataset:
                               points=coords, group_id=group_id, mask=polygon,
                               flags=flags)
         dataset.annotations[path] = annotations
+        if on_progress:
+            on_progress(idx, len(rows))
     return dataset
 
 
@@ -1128,11 +1139,13 @@ def _slice_dataset(dataset: Dataset, paths: List[str]) -> Dataset:
 
 def load_dataset(input_format: str, images_dir: str, annotations_path: str,
                  data_yaml_path: Optional[str] = None,
-                 task: str = "auto") -> Dataset:
+                 task: str = "auto",
+                 on_progress: Optional[Callable] = None) -> Dataset:
     """按指定格式加载数据集，返回 Dataset。
 
     annotations_path 对 yolo/voc/labelme 是目录，对 coco 是 json 文件。
     task 决定 YOLO 标注行的解析方式（det/seg/obb/pose/auto）。
+    on_progress(cur, total) 每处理一张图回调一次（转换弹窗的进度条数据源）。
     """
     fmt = (input_format or "").strip().lower()
     if fmt not in INPUT_FORMATS:
@@ -1142,15 +1155,16 @@ def load_dataset(input_format: str, images_dir: str, annotations_path: str,
         if fmt == "yolo":
             annotations_dir = _check_dir(annotations_path, "标注目录")
             yaml_path = _check_file(data_yaml_path, "data.yaml")
-            return _read_yolo(images_dir, annotations_dir, yaml_path, task)
+            return _read_yolo(images_dir, annotations_dir, yaml_path, task,
+                              on_progress=on_progress)
         if fmt == "coco":
             json_path = _check_file(annotations_path, "COCO 标注文件")
-            return _read_coco(images_dir, json_path)
+            return _read_coco(images_dir, json_path, on_progress=on_progress)
         if fmt == "voc":
             annotations_dir = _check_dir(annotations_path, "标注目录")
-            return _read_voc(images_dir, annotations_dir)
+            return _read_voc(images_dir, annotations_dir, on_progress=on_progress)
         annotations_dir = _check_dir(annotations_path, "标注目录")
-        return _read_labelme(images_dir, annotations_dir)
+        return _read_labelme(images_dir, annotations_dir, on_progress=on_progress)
     except DatasetToolError:
         raise
     except Exception as exc:
@@ -1166,11 +1180,13 @@ _TASK_SHAPE = {
 }
 
 
-def validate_dataset(dataset, task: str = "auto") -> ValidationReport:
+def validate_dataset(dataset, task: str = "auto",
+                     on_progress: Optional[Callable] = None) -> ValidationReport:
     """检查数据集的图片、标注、类别一致性。
 
     task 为 seg/obb/pose 时，额外统计与任务不匹配、转 YOLO 会被跳过的标注，
     并按形状类型给出明细提示（避免多类型混标时静默丢框）。
+    on_progress(cur, total) 逐图回调（转换收尾自动校验的进度数据源）。
     """
     classes = list(getattr(dataset, "classes", []) or [])
     image_paths = list(getattr(dataset, "image_paths", []) or [])
@@ -1201,7 +1217,9 @@ def validate_dataset(dataset, task: str = "auto") -> ValidationReport:
     bad_class = 0
     empty_images = 0
     shape_counts: Dict[str, int] = {}
-    for path in image_paths:
+    for idx, path in enumerate(image_paths, start=1):
+        if on_progress:
+            on_progress(idx, len(image_paths))
         detections = annotations.get(path)
         if detections is None:
             warnings.append(f"图片没有对应标注：{os.path.basename(path)}")
@@ -1383,7 +1401,8 @@ def convert_paths(input_format: str, images_dir: str, annotations_path: str,
     输入为 auto（非 YOLO 时的默认）时输出退化为 det。
     """
     dataset = load_dataset(input_format, images_dir, annotations_path,
-                           data_yaml_path=data_yaml_path, task=task)
+                           data_yaml_path=data_yaml_path, task=task,
+                           on_progress=on_progress)
     out_task = task if task in ("det", "seg", "obb", "pose") else "det"
     result = convert_dataset(dataset, output_format, output_dir,
                              overwrite=overwrite,
@@ -1391,7 +1410,8 @@ def convert_paths(input_format: str, images_dir: str, annotations_path: str,
                              is_interrupted=is_interrupted,
                              task=out_task)
     report_task = out_task if output_format.strip().lower() == "yolo" else "auto"
-    result["report"] = validate_dataset(dataset, task=report_task).as_dict()
+    result["report"] = validate_dataset(dataset, task=report_task,
+                                        on_progress=on_progress).as_dict()
     return result
 
 

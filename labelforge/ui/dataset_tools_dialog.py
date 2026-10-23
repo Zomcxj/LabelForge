@@ -350,13 +350,16 @@ class DatasetToolsDialog(QDialog):
             return
 
         def task(progress_fn, is_interrupted):
+            on_step = lambda cur, total: progress_fn(cur, total, None)
             dataset = st.load_dataset(
                 params["input_format"], params["images_dir"],
                 params["annotations_path"],
                 data_yaml_path=params["data_yaml_path"],
-                task=params["task"])
+                task=params["task"],
+                on_progress=on_step)
             report_task = params["task"] if self._output_format() == "yolo" else "auto"
-            return st.validate_dataset(dataset, task=report_task).as_dict()
+            return st.validate_dataset(dataset, task=report_task,
+                                       on_progress=on_step).as_dict()
 
         result, error = _run_with_progress(
             self, tr("格式转换"), tr("正在校验数据集..."), task)

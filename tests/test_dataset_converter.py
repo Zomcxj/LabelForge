@@ -894,15 +894,18 @@ def test_yolo_dataset_fixture_is_readable(yolo_dataset):
     assert len(dataset.image_paths) == 3
 
 
-def _load_output(fmt, layout):
+def _load_output(fmt, layout, on_progress=None):
     if fmt == "yolo":
         return load_dataset("yolo", layout["images"], layout["annotations"],
-                            layout["data_yaml"])
+                            layout["data_yaml"], on_progress=on_progress)
     if fmt == "coco":
-        return load_dataset("coco", layout["images"], layout["annotations"])
+        return load_dataset("coco", layout["images"], layout["annotations"],
+                            on_progress=on_progress)
     if fmt == "voc":
-        return load_dataset("voc", layout["images"], layout["annotations"])
-    return load_dataset("labelme", layout["images"], layout["annotations"])
+        return load_dataset("voc", layout["images"], layout["annotations"],
+                            on_progress=on_progress)
+    return load_dataset("labelme", layout["images"], layout["annotations"],
+                        on_progress=on_progress)
 
 
 @SV
@@ -1349,3 +1352,54 @@ def test_read_coco_parses_each_image_entry_once(tmp_path, monkeypatch):
     assert dataset.image_sizes[next(iter(dataset.image_sizes))] == (640, 480)
     # 线性访问：总产出行数远小于二次扫描的 ~N²/2
     assert counting["images"].yielded <= 4 * n, counting["images"].yielded
+
+
+# ---------- 格式转换进度回调（用户请求：转换弹窗加进度条） ----------
+
+def test_load_dataset_reports_progress_for_every_format(tmp_path, yolo_dataset):
+    """转换进度条的数据源：load_dataset 每处理一张图回调一次，
+    最后一次回调必须 (total, total)。
+
+    此前只有 convert_dataset 的写出阶段有 on_progress——读取阶段
+    （labelme 逐个 sidecar 解析）进度条全程卡 0，大数据集体感就是
+    「没有进度条/卡死」。四种输入格式都必须报。"""
+    calls = []
+    load_dataset("yolo", yolo_dataset.images_dir, yolo_dataset.labels_dir,
+                 yolo_dataset.data_yaml, on_progress=lambda c, t: calls.append((c, t)))
+    assert calls[-1] == (3, 3), calls
+    assert [c for c, _t in calls] == [1, 2, 3], calls
+
+    dataset = load_dataset("yolo", yolo_dataset.images_dir,
+                           yolo_dataset.labels_dir, yolo_dataset.data_yaml)
+    for fmt in ("coco", "voc", "labelme"):
+        out = str(tmp_path / f"out_{fmt}")
+        convert_dataset(dataset, fmt, out)
+        layout = output_layout(fmt, out)
+        calls = []
+        _load_output(fmt, layout, on_progress=lambda c, t: calls.append((c, t)))
+        assert calls and calls[-1] == (3, 3), (fmt, calls[-3:])
+
+
+def test_validate_dataset_reports_progress(tmp_path, yolo_dataset):
+    """校验（转换收尾会自动跑一遍）也要报进度：否则转换的最后一段
+    进度条再次卡 0。"""
+    dataset = load_dataset("yolo", yolo_dataset.images_dir,
+                           yolo_dataset.labels_dir, yolo_dataset.data_yaml)
+    calls = []
+    validate_dataset(dataset, on_progress=lambda c, t: calls.append((c, t)))
+    assert calls[-1] == (3, 3), calls
+    assert [c for c, _t in calls] == [1, 2, 3], calls
+
+
+def test_convert_paths_read_phase_reports_progress(tmp_path, yolo_dataset):
+    """convert_paths 把 on_progress 传给读取阶段：转换弹窗的进度条
+    从第一步读盘就开始动，而不是只覆盖写出。"""
+    out = str(tmp_path / "out_yolo")
+    calls = []
+    result = convert_paths("yolo", yolo_dataset.images_dir,
+                           yolo_dataset.labels_dir, "voc", out,
+                           data_yaml_path=yolo_dataset.data_yaml,
+                           on_progress=lambda c, t: calls.append((c, t)))
+    assert result["cancelled"] is False
+    assert calls[-1] == (3, 3), calls[-5:]
+    assert len(calls) >= 6, calls  # 读取 3 次 + 写出 3 次，两阶段都在报
