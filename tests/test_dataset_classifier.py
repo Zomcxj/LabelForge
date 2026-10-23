@@ -3,6 +3,7 @@ import json
 import os
 
 from labelforge.engine.dataset_classifier import (
+    _silhouette_mean,
     analyze_dataset, build_features, classify_and_split, cluster_labels,
     get_image_extensions, recommend_k, split_by_class, write_yaml,
 )
@@ -214,3 +215,40 @@ def test_recommend_k_scores_by_real_silhouette_and_picks_separated_k():
         assert distortion >= 0.0, (k, distortion)
     # 峰值明显：k=3 的轮廓系数要高于其它 K（分离良好的数据上差距很大）
     assert scores[3][0] > max(v[0] for kk, v in scores.items() if kk != 3)
+
+
+# ---------- B4 追加：轮廓系数的单点簇退化（用户实测复现） ----------
+
+def test_silhouette_singletons_score_zero():
+    """单点簇的轮廓系数按惯例记 0。
+
+    第一版用「点到簇心」距离代替簇内平均——K 接近标签数时簇退化成
+    单点、a(i)=0、s(i)=1，平均 s 趋近 1，推荐又回到恒取最大 K
+    （用户实测：换几个数据集推荐 K 仍是最大）。
+    """
+    import numpy as np
+
+    X = np.array([[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]])
+    centroids = np.array([[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]])
+    assert _silhouette_mean(X, centroids) == 0.0
+
+
+def test_recommend_k_does_not_degenerate_when_k_approaches_label_count():
+    """用户病灶的 recommend_k 级回归：k_max 逼近标签数时不得推荐最大 K。
+
+    数据：3 组各 5 个标签（间距 4、σ=0.6），n=15、max_k=14——K=14 时
+    鸽笼原理强制至少 13 个单点簇，简化轮廓系数全体趋 1（修复前实测
+    naive best=14, s=0.956）；标准轮廓系数下单点簇 s=0，K=3 以
+    0.828 vs K2=0.573 清晰胜出。kmeans 已在 recommend_k 内定种子，
+    断言值是确定性的。
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(7)
+    X = np.vstack([c + rng.normal(0, 0.6, size=(5, 2)) for c in (0.0, 4.0, 8.0)])
+    X[:, 1] *= 0.3
+
+    best_k, scores = recommend_k(X, max_k=14)
+
+    assert best_k == 3, {k: (round(v[0], 3), round(v[1], 3)) for k, v in scores.items()}
+    assert scores[3][0] > scores[14][0]
