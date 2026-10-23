@@ -21,6 +21,7 @@ class _FakeDialog:
     def __init__(self):
         self.values = []
         self.labels = []
+        self.closed = []
 
     def show(self):
         pass
@@ -34,11 +35,19 @@ class _FakeDialog:
     def wasCanceled(self):
         return False
 
+    def close(self):
+        self.closed.append(True)
+
 
 class _FakeFactory:
     @staticmethod
     def create_progress_dialog(parent, title, text, count):
-        return _FakeDialog()
+        dialog = _FakeDialog()
+        _FakeFactory.created.append(dialog)
+        return dialog
+
+
+_FakeFactory.created = []
 
 
 class _FakeCanvas:
@@ -103,3 +112,25 @@ def test_empty_cache_entry_is_valid_and_disk_is_not_reread(monkeypatch):
     # image 1：无缓存条目，正常读盘并写回缓存
     assert editor.detection_boxes_dict[1] == [disk_box]
     assert pastes[1] == [disk_box]
+
+
+def test_batch_paste_closes_progress_dialog(tmp_path, monkeypatch):
+    """用户实测反馈：一键贴图到 100% 进度小窗不自动退出。
+
+    ProgressDialogFactory 显式 setAutoClose(False)，save_manager 与
+    _run_with_progress 的收尾都手动 close()，唯独 batch_paste_images
+    只 setValue 不关窗——模态小窗留在屏幕上要手动关。
+    """
+    monkeypatch.setattr("labelforge.ui.dialogs.ProgressDialogFactory", _FakeFactory)
+    _FakeFactory.created.clear()
+
+    disk_box = {"label": "ghost", "x": 1, "y": 1, "width": 5, "height": 5}
+    editor, loads, _pastes = _make_editor(
+        ["img_0.png", "img_1.png"], cache={0: []}, sidecar_boxes=[disk_box])
+
+    editor.batch_paste_images()
+
+    assert _FakeFactory.created, "进度窗应被创建"
+    dialog = _FakeFactory.created[-1]
+    assert dialog.closed == [True], (dialog.closed, dialog.values)
+    assert editor._busy is False

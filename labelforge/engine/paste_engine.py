@@ -408,4 +408,7 @@ class PasteEngineMixin:
             self.canvas_items = self.canvas_items_dict.get(original_index, []).copy()
             self.canvas.update()
 
+        # 工厂里 setAutoClose(False)，收尾必须手动关（save_manager 同惯例）；
+        # 不关的话模态小窗到 100% 后留在屏幕上要手动关（用户实测反馈）
+        progress_dialog.close()
         self._busy = False
