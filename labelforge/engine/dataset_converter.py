@@ -998,11 +998,16 @@ def _yolo_lines_for(det: "Detections", task: str, width: int, height: int) -> Li
     return lines
 
 
-def _write_coco(dataset: Dataset, layout: dict) -> None:
+def _write_coco(dataset: Dataset, layout: dict,
+                on_progress: Optional[Callable] = None,
+                is_interrupted: Optional[Callable] = None) -> None:
     images_dir = layout["images"]
     os.makedirs(images_dir, exist_ok=True)
     images, annotations, counter = [], [], 0
+    total = len(dataset.image_paths)
     for index, path in enumerate(dataset.image_paths, start=1):
+        if is_interrupted and is_interrupted():
+            raise _Cancelled()
         _copy_image(path, images_dir)
         width, height = dataset.size_of(path)
         images.append({"id": index, "file_name": os.path.basename(path),
@@ -1020,6 +1025,8 @@ def _write_coco(dataset: Dataset, layout: dict) -> None:
                 "area": round(float(x2 - x1) * float(y2 - y1), 6),
                 "iscrowd": 0,
             })
+        if on_progress:
+            on_progress(index, total)
     payload = {
         "info": {"description": "converted by LabelForge",
                  "version": IMPL_VERSION},
@@ -1344,13 +1351,12 @@ def convert_dataset(dataset, output_format: str, output_dir: str,
 
     try:
         if fmt == "coco":
-            # COCO 标注是单个 json，必须整体写出，无法分块
-            if is_interrupted():
-                raise _Cancelled()
-            _write_coco(dataset, layout)
-            done = total
-            if on_progress:
-                on_progress(done, total)
+            # COCO 标注是单个 json，必须整体写出，无法分块；
+            # 进度与取消在逐张拷图循环里给——整段写完才报一次的话，
+            # 大数据集整个写出阶段进度条都停在上一阶段留下的 100%
+            #（用户实测：六七千张卡在 100%）
+            _write_coco(dataset, layout, on_progress=on_progress,
+                        is_interrupted=is_interrupted)
         else:
             for start in range(0, total, _CHUNK_SIZE):
                 if is_interrupted():
@@ -1400,18 +1406,36 @@ def convert_paths(input_format: str, images_dir: str, annotations_path: str,
     task 同时决定 YOLO 输入的解析方式与 YOLO 输出的行格式；
     输入为 auto（非 YOLO 时的默认）时输出退化为 det。
     """
+    # 读/写/校验三阶段各遍历同一批 N 张图。把三段进度折算成 0→3N 的
+    # 单条连续进度：不折算的话进度条会三次 0→100% 反复横跳，且阶段
+    # 衔接处停在 100% 空转（用户实测：到 100% 后又快速加载一遍才关闭；
+    # 六七千张的大数据集卡在 100%）。
+    if on_progress is not None:
+        phase = {"n": 0, "per": None}
+
+        def _phase_progress(cur, total):
+            if phase["per"] is None:
+                phase["per"] = max(int(total), 1)
+            on_progress(phase["n"] * phase["per"] + cur, 3 * phase["per"])
+    else:
+        _phase_progress = None
+
     dataset = load_dataset(input_format, images_dir, annotations_path,
                            data_yaml_path=data_yaml_path, task=task,
-                           on_progress=on_progress)
+                           on_progress=_phase_progress)
     out_task = task if task in ("det", "seg", "obb", "pose") else "det"
+    if _phase_progress is not None:
+        phase["n"] = 1
     result = convert_dataset(dataset, output_format, output_dir,
                              overwrite=overwrite,
-                             on_progress=on_progress,
+                             on_progress=_phase_progress,
                              is_interrupted=is_interrupted,
                              task=out_task)
     report_task = out_task if output_format.strip().lower() == "yolo" else "auto"
+    if _phase_progress is not None:
+        phase["n"] = 2
     result["report"] = validate_dataset(dataset, task=report_task,
-                                        on_progress=on_progress).as_dict()
+                                        on_progress=_phase_progress).as_dict()
     return result
 
 

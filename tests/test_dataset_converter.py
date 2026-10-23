@@ -1391,9 +1391,11 @@ def test_validate_dataset_reports_progress(tmp_path, yolo_dataset):
     assert [c for c, _t in calls] == [1, 2, 3], calls
 
 
-def test_convert_paths_read_phase_reports_progress(tmp_path, yolo_dataset):
-    """convert_paths 把 on_progress 传给读取阶段：转换弹窗的进度条
-    从第一步读盘就开始动，而不是只覆盖写出。"""
+def test_convert_paths_progress_is_one_continuous_sweep(tmp_path, yolo_dataset):
+    """读/写/校验三阶段折算成一条 0→3N 的连续进度：
+    不再三次 0→100% 反复横跳，也消除阶段衔接停在 100% 的空窗
+    （用户实测：到 100% 后又快速加载一遍才关闭；六七千张卡在 100%
+    ——COCO 输出整段写出零回调）。"""
     out = str(tmp_path / "out_yolo")
     calls = []
     result = convert_paths("yolo", yolo_dataset.images_dir,
@@ -1401,5 +1403,42 @@ def test_convert_paths_read_phase_reports_progress(tmp_path, yolo_dataset):
                            data_yaml_path=yolo_dataset.data_yaml,
                            on_progress=lambda c, t: calls.append((c, t)))
     assert result["cancelled"] is False
-    assert calls[-1] == (3, 3), calls[-5:]
-    assert len(calls) >= 6, calls  # 读取 3 次 + 写出 3 次，两阶段都在报
+    totals = {t for _c, t in calls}
+    assert totals == {9}, totals          # 全程同一个 total = 3N（N=3，三阶段）
+    curs = [c for c, _t in calls]
+    assert curs == sorted(curs), curs     # 单调不减——不再回卷
+    assert curs[0] == 1 and curs[-1] == 9, curs
+
+
+def test_coco_output_reports_progress_while_writing(tmp_path, yolo_dataset):
+    """COCO 输出 = 单 json + 逐张拷图：写出进度必须在拷图循环里逐张
+    报（写出阶段 cur 覆盖 N+1..2N），而不是整段写完后一次性报——
+    七千张时写出全程进度条都停在 100% 不动。"""
+    out = str(tmp_path / "out_coco")
+    calls = []
+    result = convert_paths("yolo", yolo_dataset.images_dir,
+                           yolo_dataset.labels_dir, "coco", out,
+                           data_yaml_path=yolo_dataset.data_yaml,
+                           on_progress=lambda c, t: calls.append((c, t)))
+    assert result["cancelled"] is False
+    write_curs = [c for c, t in calls if 4 <= c <= 6]
+    assert write_curs == [4, 5, 6], calls
+
+
+def test_coco_write_honors_interruption(tmp_path, yolo_dataset):
+    """COCO 写出逐张检查取消：中断即清理输出目录并报 cancelled
+    （此前整段写出不可取消，7k 张点停止要干等全部拷完）。"""
+    out = str(tmp_path / "out_coco")
+    ticks = {"n": 0}
+
+    def stop_during_write():
+        ticks["n"] += 1
+        return ticks["n"] > 2  # 写出第 2 张时取消
+
+    result = convert_paths("yolo", yolo_dataset.images_dir,
+                           yolo_dataset.labels_dir, "coco", out,
+                           data_yaml_path=yolo_dataset.data_yaml,
+                           on_progress=lambda c, t: None,
+                           is_interrupted=stop_during_write)
+    assert result["cancelled"] is True
+    assert not (tmp_path / "out_coco").exists()
