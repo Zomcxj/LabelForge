@@ -368,6 +368,20 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         if clear_btn:
             clear_btn.setEnabled(True)
 
+    def _busy_guarded(self, btn, clear_btn, fn):
+        """置忙后执行同步前奏 fn；前奏抛异常必须恢复按钮。
+
+        置忙提前到读盘之前后（审计 P5），busy 与 worker.start() 之间的
+        同步代码一旦抛异常，不会再有任何回调碰这些按钮——不恢复的话
+        数据处理面板四个按钮永久 disabled（终审 I-2）。
+        """
+        self._button_busy(btn, clear_btn=clear_btn)
+        try:
+            fn()
+        except Exception:
+            self._button_ready(btn, clear_btn=clear_btn)
+            raise
+
     def _spinner_tick(self):
         if self._spinner_btn is None:
             return
@@ -665,9 +679,18 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
     def _run_augment(self):
         # 置忙必须先于 _ensure_boxes_loaded：后者每 5 张图 processEvents()
         # 一次，读盘期间按钮尚未 disabled 时连点可重入（审计 P5）。
-        # 置忙之后的提前 return 都要 _button_ready，否则校验失败卡死按钮。
-        self._button_busy(self._aug_btn, clear_btn=self._aug_clear_btn)
+        # 置忙之后的提前 return 都要 _button_ready，否则校验失败卡死按钮；
+        # 同步前奏抛异常由 _busy_guarded 兜底恢复（终审 I-2）。
+        self._busy_guarded(self._aug_btn, self._aug_clear_btn, self._run_augment_body)
+
+    def _run_augment_body(self):
         self._ensure_boxes_loaded()
+        if self._interrupted:
+            # 读盘期间用户点了停止：不检查的话 _interrupted 会被下面
+            # 复位、worker 照常起跑，停止请求被吞（终审 I-1）
+            self._pipe_finish(True)
+            self._button_ready(self._aug_btn, clear_btn=self._aug_clear_btn)
+            return
         if not self._run_images:
             self._log(tr("log_no_images"))
             self._pipe_finish(True)
@@ -694,7 +717,6 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             ratio=ratio
         ))
         total = len(self._run_images)
-        self._interrupted = False
 
         def _aug_task(log_fn, progress_fn):
             def _on_transform_progress(tname, cur, tot):
@@ -736,8 +758,14 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
 
     def _run_export(self):
         # 同 _run_augment：置忙先于同步读盘（审计 P5）
-        self._button_busy(self._exp_btn, clear_btn=self._exp_clear_btn)
+        self._busy_guarded(self._exp_btn, self._exp_clear_btn, self._run_export_body)
+
+    def _run_export_body(self):
         self._ensure_boxes_loaded()
+        if self._interrupted:
+            self._pipe_finish(True)
+            self._button_ready(self._exp_btn, clear_btn=self._exp_clear_btn)
+            return
         if not self._run_images:
             self._log(tr("log_no_images"))
             self._pipe_finish(True)
@@ -750,7 +778,6 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             self._button_ready(self._exp_btn, clear_btn=self._exp_clear_btn)
             return
         output_dir = self._get_output_dir()
-        self._interrupted = False
         skip_empty = self._exp_skip_empty.isChecked()
 
         def _exp_task(log_fn, progress_fn):
@@ -876,8 +903,14 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
 
     def _run_split(self):
         # 同 _run_augment：置忙先于同步读盘（审计 P5）
-        self._button_busy(self._split_btn, clear_btn=self._split_clear_btn)
+        self._busy_guarded(self._split_btn, self._split_clear_btn, self._run_split_body)
+
+    def _run_split_body(self):
         self._ensure_boxes_loaded()
+        if self._interrupted:
+            self._pipe_finish(True)
+            self._button_ready(self._split_btn, clear_btn=self._split_clear_btn)
+            return
         if not self._run_images:
             self._log(tr("log_no_images"))
             self._pipe_finish(True)
@@ -938,7 +971,6 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         if rest > 0:
             train_n += rest
         self._log(tr("log_split_start").format(total=total, train=train_n, val=val_n, test=test_n))
-        self._interrupted = False
 
         def _split_task(log_fn, progress_fn):
             sp = Splitter(

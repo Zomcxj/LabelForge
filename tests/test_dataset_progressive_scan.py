@@ -127,6 +127,7 @@ def test_snapshot_reuses_fresh_cache_without_rescan(tmp_path, monkeypatch):
         raise AssertionError("缓存新鲜时不应重扫磁盘")
 
     monkeypatch.setattr(image_loader, "collect_background_label_counts", _boom)
+    monkeypatch.setattr(image_loader, "collect_background_label_stats_and_tasks", _boom)
     stats = host._build_bg_label_stats_snapshot()
     assert stats == [{"label": "c0", "count": 300, "color": "", "tasks": []}]
 

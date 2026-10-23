@@ -112,6 +112,7 @@ def boom(*a, **k):
 
 il.collect_background_label_counts = boom
 il.collect_background_label_tasks = boom
+il.collect_background_label_stats_and_tasks = boom
 
 orig = QDialog.exec_
 def fake_exec(self, *a):

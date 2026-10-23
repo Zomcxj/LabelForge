@@ -123,7 +123,6 @@ LabelForge/
 │   │   └── widgets/           # ui 层自绘控件
 │   │       ├── __init__.py
 │   │       ├── health_charts.py # 数据集健康图表（QPainter 条形图 / 直方图）
-│   │       ├── window_overlay_preview.py # 原图叠加滑窗网格预览（画真实原图再叠网格；无图时退回纯色占位）
 │   │       └── window_params.py # 滑窗参数控件（宽/高/重叠/最低可见比例 + 窗口数预估），被范围面板内嵌、也被滑窗弹窗复用
 │   └── widgets/               # 可复用 Qt 控件
 │       ├── canvas_adjustment.py
