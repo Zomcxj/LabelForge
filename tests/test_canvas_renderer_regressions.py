@@ -643,3 +643,30 @@ print("OK")
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+# ---------- 类别名/置信度字号：只跟设置走，不随缩放与原图尺寸 ----------
+
+def test_box_label_font_size_ignores_zoom_and_image_size():
+    """用户裁定：画布上类别名/置信度的字号只由设置里的「类别名字号」
+    决定，不做缩放反向补偿——补偿系数经适配缩放间接依赖原图尺寸
+    （大图适配后字号被放大、小图被压小），与导出视频「只由设置字号
+    与画面高度决定」的口径不一致。"""
+    from labelforge.canvas.canvas_renderer import CanvasRendererMixin
+
+    class Editor:
+        pass
+
+    renderer = CanvasRendererMixin.__new__(CanvasRendererMixin)
+    renderer._editor = Editor()
+
+    sizes = []
+    renderer._draw_label_above_rect = (
+        lambda painter, x, y, label, bg_color, font_size=None, position="outside":
+        sizes.append(font_size))
+
+    for scale in (0.2, 1.0, 3.0):   # 6k 图适配 / 1:1 / 小图放大
+        renderer.background_scale = scale
+        renderer._draw_box_label(None, 10, 10, "cat", "#43A047")
+
+    assert sizes == [9, 9, 9], sizes   # 只跟设置字号（默认 9）走

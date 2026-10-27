@@ -728,18 +728,14 @@ class CanvasRendererMixin:
     def _draw_box_label(self, painter, x, y, label, bg_color):
         """绘制检测框标签。
 
-        字号按画布缩放反向补偿：4K 图上放大到 1:1 时 9px 的标签会显得很小，
-        缩到 20% 浏览时又大得盖住画面。以 1.0 缩放为基准，放大时字号按比例
-        收窄（保住每块画面的信息密度），缩小时放大（保住可读性）。
+        字号只跟设置里的「类别名字号」走，不做缩放反向补偿——补偿系数
+        经适配缩放间接依赖原图尺寸（大图适配后字号被放大、小图被压小），
+        与导出视频的口径（字号只由设置字号与画面高度决定，见
+        video_render.label_font_pixels）不一致。用户裁定：不考虑图片
+        原尺寸。缩放时文字保持屏幕上的大小，与框的相对大小随缩放变化。
         """
         base = DETECTION_BOX_CONFIG.get('label_font_size', 9)
-        zoom = float(getattr(self, 'background_scale', 1.0) or 1.0)
-        if zoom > 0:
-            # 0.7 次方：缩放 4 倍时字号只涨到 ~2.6 倍，不至于糊成一片
-            font_size = base * (1.0 / zoom) ** 0.7
-        else:
-            font_size = base
-        font_size = max(5, min(15, int(round(font_size))))
+        font_size = max(5, min(15, int(round(base))))
         position = DETECTION_BOX_CONFIG.get('label_position', 'outside')
         if position not in ('outside', 'inside'):
             position = 'outside'
