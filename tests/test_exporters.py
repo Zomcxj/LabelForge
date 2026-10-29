@@ -1,8 +1,12 @@
-"""导出器行为测试（YOLO / VOC / COCO）。
+"""导出行为测试（YOLO / VOC / COCO）。
 
 导出失败是静默的：文件写错也不抛异常。测试真写文件后读回断言，不走源码
-字符串。导出器的序列化由 ``dataset_converter`` 的写出层负责，这里测的是
-「端到端产物是否正确」——包括坐标钳制、退化框跳过、类别重映射与 VOC 转义。
+字符串。
+
+YOLO 走 ``YoloExporter``（数据处理面板的导出）；VOC/COCO 走
+``dataset_converter.convert_dataset()``（格式转换窗口的路径）。两处的序列化
+最终都落在 ``dataset_converter`` 的写出层上，所以坐标钳制、退化框跳过、
+VOC 转义这些规则对两边是同一份实现——但入口不同，各自都要有用例钉住。
 """
 import json
 import os
@@ -12,8 +16,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from labelforge.engine.coco_exporter import CocoExporter
-from labelforge.engine.voc_exporter import VocExporter
+from labelforge.engine import dataset_converter as dc
 from labelforge.engine.yolo_exporter import YoloExporter
 
 
@@ -207,17 +210,49 @@ def test_yolo_writes_classes_file_in_class_id_order(tmp_path):
     assert names.index("'ant'") < names.index("'zebra'")
 
 
-# ---------- VOC ----------
+# ---------- VOC / COCO：走 dataset_converter 的格式转换路径 ----------
+#
+# 这两个格式不再由数据处理面板导出（面板固定 YOLO），入口是工具栏的
+# 「格式」按钮，它调用 dataset_converter.convert_dataset()。下面直接构造
+# Dataset 调用它，测的是产出物本身：XML 是否合法、坐标是否钳住、COCO 的
+# id 是否唯一。
+
+def _dataset(boxes_by_stem, classes=("cat",), width=200, height=100,
+             tmp_path=None):
+    """按 {stem: [(label, x, y, w, h), ...]} 构造 dataset_converter.Dataset。
+
+    ``convert_dataset`` 会校验源图存在，所以给了 ``tmp_path`` 时写出一张
+    最小 PNG 再引用它——这样测的是标注内容，尺寸由 ``image_sizes`` 决定。
+    """
+    index_of = {name: i for i, name in enumerate(classes)}
+    ds = dc.Dataset(classes=list(classes), image_paths=[], annotations={},
+                    image_sizes={})
+    for stem, boxes in boxes_by_stem.items():
+        if tmp_path is not None:
+            img = tmp_path / "src" / f"{stem}.png"
+            img.parent.mkdir(parents=True, exist_ok=True)
+            img.write_bytes(_png_bytes(width, height))
+            key = str(img)
+        else:
+            key = f"{stem}.png"
+        ds.image_paths.append(key)
+        ds.image_sizes[key] = (width, height)
+        det = dc._empty_detections()
+        for label, x, y, w, h in boxes:
+            dc._append_detection(det, index_of[label],
+                                 (float(x), float(y), float(x + w), float(y + h)))
+        ds.annotations[key] = det
+    return ds
+
 
 def test_voc_writes_well_formed_xml(tmp_path):
-    exp = VocExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 10, 20, 30, 40)])]
+    ds = _dataset({"a": [("cat", 10, 20, 30, 40)]}, tmp_path=tmp_path)
 
-    exp.run([], {}, ["cat"], input_data=items)
+    dc.convert_dataset(ds, "voc", str(tmp_path / "out"))
 
-    xml_path = _labels_dir(tmp_path) / "a.xml"
+    xml_path = tmp_path / "out" / "annotations" / "a.xml"
     root = ElementTree.parse(str(xml_path)).getroot()
-    assert root.findtext("filename") == "a.jpg" or root.findtext("filename") == "a.png"
+    assert root.findtext("filename") == "a.png"
     obj = root.find("object")
     assert obj is not None
     assert obj.findtext("name") == "cat"
@@ -226,26 +261,25 @@ def test_voc_writes_well_formed_xml(tmp_path):
     assert float(bndbox.findtext("ymax")) == 60
 
 
-def test_voc_escapes_special_chars_in_label_and_filename(tmp_path):
-    """标签里的 & < > 必须被转义，否则 XML 解析直接炸。"""
-    exp = VocExporter(str(tmp_path))
-    items = [_item("a&b", [_box('cat & "dog" <x>', 10, 10, 20, 20)])]
+def test_voc_escapes_special_chars_in_label(tmp_path):
+    """标签里的 & < > 必须被转义，否则 XML 解析直接失败。"""
+    label = 'cat & "dog" <x>'
+    ds = _dataset({"a": [(label, 10, 10, 20, 20)]}, classes=(label,),
+                      tmp_path=tmp_path)
 
-    exp.run([], {}, ['cat & "dog" <x>'], input_data=items)
+    dc.convert_dataset(ds, "voc", str(tmp_path / "out"))
 
-    xml_path = _labels_dir(tmp_path) / "a&b.xml"
-    root = ElementTree.parse(str(xml_path)).getroot()
-    assert root.find("object").findtext("name") == 'cat & "dog" <x>'
+    root = ElementTree.parse(str(tmp_path / "out" / "annotations" / "a.xml")).getroot()
+    assert root.find("object").findtext("name") == label
 
 
 def test_voc_clamps_and_skips_degenerate_boxes(tmp_path):
-    exp = VocExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 150, 80, 100, 100),
-                         _box("cat", 10, 10, 0, 0)])]
+    ds = _dataset({"a": [("cat", 150, 80, 100, 100), ("cat", 10, 10, 0, 0)]},
+             tmp_path=tmp_path)
 
-    exp.run([], {}, ["cat"], input_data=items)
+    dc.convert_dataset(ds, "voc", str(tmp_path / "out"))
 
-    root = ElementTree.parse(str(_labels_dir(tmp_path) / "a.xml")).getroot()
+    root = ElementTree.parse(str(tmp_path / "out" / "annotations" / "a.xml")).getroot()
     objects = root.findall("object")
     assert len(objects) == 1, "退化框应被跳过"
     box = objects[0].find("bndbox")
@@ -253,17 +287,14 @@ def test_voc_clamps_and_skips_degenerate_boxes(tmp_path):
     assert float(box.findtext("ymax")) <= 100
 
 
-# ---------- COCO ----------
-
 def _coco(tmp_path):
-    return json.loads((tmp_path / "coco_detection.json").read_text(encoding="utf-8"))
+    return json.loads((tmp_path / "out" / "coco_detection.json").read_text(encoding="utf-8"))
 
 
 def test_coco_writes_categories_images_and_annotations(tmp_path):
-    exp = CocoExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 10, 20, 30, 40)])]
+    ds = _dataset({"a": [("cat", 10, 20, 30, 40)]}, tmp_path=tmp_path)
 
-    exp.run([], {}, ["cat"], input_data=items)
+    dc.convert_dataset(ds, "coco", str(tmp_path / "out"))
 
     payload = _coco(tmp_path)
     assert [c["name"] for c in payload["categories"]] == ["cat"]
@@ -275,37 +306,33 @@ def test_coco_writes_categories_images_and_annotations(tmp_path):
 
 
 def test_coco_annotation_ids_are_unique_across_images(tmp_path):
-    exp = CocoExporter(str(tmp_path))
-    items = [
-        _item("a", [_box("cat", 0, 0, 10, 10), _box("cat", 20, 20, 10, 10)]),
-        _item("b", [_box("cat", 0, 0, 10, 10)]),
-    ]
+    ds = _dataset({
+        "a": [("cat", 0, 0, 10, 10), ("cat", 20, 20, 10, 10)],
+        "b": [("cat", 0, 0, 10, 10)],
+    }, tmp_path=tmp_path)
 
-    exp.run([], {}, ["cat"], input_data=items)
+    dc.convert_dataset(ds, "coco", str(tmp_path / "out"))
 
     ids = [a["id"] for a in _coco(tmp_path)["annotations"]]
     assert len(ids) == len(set(ids)) == 3
 
 
 def test_coco_clamps_boxes(tmp_path):
-    exp = CocoExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 150, 80, 100, 100)])]
+    ds = _dataset({"a": [("cat", 150, 80, 100, 100)]}, tmp_path=tmp_path)
 
-    exp.run([], {}, ["cat"], input_data=items)
+    dc.convert_dataset(ds, "coco", str(tmp_path / "out"))
 
-    bbox = _coco(tmp_path)["annotations"][0]["bbox"]
-    x, y, w, h = bbox
+    x, y, w, h = _coco(tmp_path)["annotations"][0]["bbox"]
     assert x + w <= 200 and y + h <= 100
 
 
 def test_coco_is_valid_json_with_utf8_labels(tmp_path):
-    exp = CocoExporter(str(tmp_path))
-    items = [_item("a", [_box("猫", 0, 0, 10, 10)])]
+    ds = _dataset({"a": [("猫", 0, 0, 10, 10)]}, classes=("猫",),
+             tmp_path=tmp_path)
 
-    exp.run([], {}, ["猫"], input_data=items)
+    dc.convert_dataset(ds, "coco", str(tmp_path / "out"))
 
-    payload = _coco(tmp_path)
-    assert payload["categories"][0]["name"] == "猫"
+    assert _coco(tmp_path)["categories"][0]["name"] == "猫"
 
 
 # ---------- 源图复制 ----------
@@ -340,13 +367,20 @@ def test_export_skips_copy_when_source_missing(tmp_path):
     assert (_labels_dir(tmp_path) / "a.txt").exists()
 
 
-# ---------- 三种格式都创建输出目录 ----------
+# ---------- 各入口都创建输出目录 ----------
 
-@pytest.mark.parametrize("exporter_cls", [YoloExporter, VocExporter, CocoExporter])
-def test_every_exporter_creates_output_dirs(tmp_path, exporter_cls):
-    exp = exporter_cls(str(tmp_path))
-    items = [_item("a", [_box("cat", 10, 10, 20, 20)])]
-
-    exp.run([], {}, ["cat"], input_data=items)
+def test_yolo_exporter_creates_output_dirs(tmp_path):
+    YoloExporter(str(tmp_path)).run(
+        [], {}, ["cat"],
+        input_data=[_item("a", [_box("cat", 10, 10, 20, 20)])])
 
     assert (tmp_path / "images").is_dir()
+    assert (tmp_path / "labels").is_dir()
+
+
+@pytest.mark.parametrize("fmt", ["voc", "coco"])
+def test_convert_dataset_creates_output_dirs(tmp_path, fmt):
+    dc.convert_dataset(_dataset({"a": [("cat", 10, 10, 20, 20)]},
+                                tmp_path=tmp_path), fmt, str(tmp_path / "out"))
+
+    assert (tmp_path / "out" / "images").is_dir()

@@ -27,7 +27,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 INPUT_FORMATS = ("yolo", "coco", "voc", "labelme")
 OUTPUT_FORMATS = ("yolo", "coco", "voc", "labelme")
 
-#: COCO 标注文件名，与 labelforge/engine/coco_exporter.py 保持一致
+#: COCO 标注文件名
 COCO_ANNOTATION_NAME = "coco_detection.json"
 
 #: 分块写出时的块大小，避免大图集长时间无进度回调

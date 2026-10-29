@@ -42,8 +42,6 @@ LabelForge/
 │   ├── engine/                # 图片、标签、保存、事件与数据处理
 │   │   ├── __init__.py
 │   │   ├── base_exporter.py
-│   │   ├── coco_exporter.py
-│   │   ├── dataset_classifier.py
 │   │   ├── dataset_converter.py # 数据集格式转换（LabelMe/YOLO/COCO/VOC + 任务类型）
 │   │   ├── dataset_health.py   # 数据集健康统计（分布数据与建议，纯逻辑）
 │   │   ├── event_handler.py
@@ -65,7 +63,6 @@ LabelForge/
 │   │   ├── video_io.py       # 视频探测/抽帧时间轴/解码导出/映射清单/合成/逐帧推理编码 render_video（cv2 延迟导入，无 Qt 依赖）
 │   │   ├── video_render.py   # 叠加标签框：QPainter 离屏绘制（延迟导入 PySide6，纯函数；合成页与推理成片页共用）
 │   │   ├── undo_manager.py
-│   │   ├── voc_exporter.py
 │   │   ├── yolo_exporter.py
 │   │   └── augmenter/
 │   │       ├── __init__.py
