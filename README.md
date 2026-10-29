@@ -54,7 +54,7 @@ Linux 发行包需要 glibc 2.31 及以上（Ubuntu 20.04、Debian 11、RHEL 9 �
 - **格式转换** — 独立窗口支持 LabelMe / YOLO / COCO / Pascal VOC 相互转换，可选任务类型（检测框 / 分割 / 旋转框 / 关键点），默认 LabelMe → YOLO
 - **画布显示调节** — 实时调整标注透明度、图像亮度、对比度，支持一键复位
 - **数据集划分** — 按 train/val/test 比例划分到 divide/ 目录，默认 0.8/0.1/0.1
-- **KMeans 划分** — 基于标签出现频次+检测框面积的二维特征做聚类，自动用轮廓系数推荐最优 K 值，支持用户手动调整；输出目录结构 `g{组号}/images/{train,val}` + `g{组号}/labels/{train,val}`，每组分配合适的 classes.txt 与 yaml
+- **数据集分组** — 按类别覆盖图片数、框面积中位数与面积离散度三项特征做层次凝聚聚类，自动按数据层次结构推荐分组数，支持用户手动调整；输出目录结构 `g{组号}/images/{train,val}` + `g{组号}/labels/{train,val}`，每组分配合适的 classes.txt 与 yaml
 - **一键流水线** — 增强→导出→划分一键串联执行
 - **自动输出目录** — 在数据目录的父目录下自动创建 exports/ 子目录
 

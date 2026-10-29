@@ -24,7 +24,7 @@ from .mixins.quality_lint import QualityLintMixin
 from .mixins.background_list import BackgroundListMixin
 from .mixins.theme import ThemeMixin
 from .mixins.translation import TranslationMixin
-from .mixins.dataset_classifier import DatasetClassifierMixin
+from .mixins.dataset_grouper import DatasetGrouperMixin
 from .mixins.dataset_tools import DatasetToolsMixin
 from .mixins.inference import InferenceMixin
 from .mixins.video import VideoMixin
@@ -37,7 +37,7 @@ from .mixins.panels import PanelsMixin
 
 class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin, QualityLintMixin, MemoryRecordMixin, LabelCacheSlotMixin,
                    ToolbarMixin, OptionsPopupMixin, CacheMenuMixin, ListsMixin, PanelsMixin, ImageLoaderMixin, PasteEngineMixin,
-                   DatasetClassifierMixin, DatasetToolsMixin, InferenceMixin, VideoMixin, EventHandlerMixin, QMainWindow):
+                   DatasetGrouperMixin, DatasetToolsMixin, InferenceMixin, VideoMixin, EventHandlerMixin, QMainWindow):
     """贴图标注工具主窗口"""
 
     def __init__(self):
@@ -522,14 +522,14 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
             self._center_processing_panel()
 
     def _show_export_menu(self):
-        """顶部'导出'按钮弹出菜单: 增强划分 / Kmeans划分"""
+        """顶部'导出'按钮弹出菜单: 增强划分 / 数据集分组"""
         from PySide6.QtWidgets import QMenu
         from PySide6.QtCore import QPoint
 
         menu = QMenu(self)
         menu.setObjectName("optionsMenu")
         action_aug = menu.addAction(tr("增强划分"))
-        action_kmeans = menu.addAction(tr("Kmeans划分"))
+        action_group = menu.addAction(tr("数据集分组"))
 
         btn_pos = self.process_btn.mapToGlobal(QPoint(0, self.process_btn.height()))
         action = menu.exec_(btn_pos)
@@ -537,7 +537,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         if action == action_aug:
             self._toggle_processing_panel()
         elif action == action_kmeans:
-            self._open_dataset_classifier()
+            self._open_dataset_grouper()
 
     def _update_processing_panel_labels(self):
         if hasattr(self, '_processing_panel') and self._processing_panel:

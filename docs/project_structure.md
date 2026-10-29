@@ -79,7 +79,7 @@ LabelForge/
 │   │       └── translate.py
 │   ├── ui/                    # 主窗口、对话框、主题与国际化
 │   │   ├── __init__.py
-│   │   ├── dataset_classifier_dialog.py # KMeans 数据集分类窗口
+│   │   ├── dataset_grouper_dialog.py    # 数据集分组（按类别相似度）窗口
 │   │   ├── dataset_tools_dialog.py      # 数据集格式转换窗口
 │   │   ├── crop_dialog.py     # 滑窗裁剪参数配置窗口（尺寸/重叠/预览）
 │   │   ├── dialog_helpers.py

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from ..core.utils import PathUtils
 from ..engine import dataset_converter as st
 from . import i18n
-from .dataset_classifier_dialog import _run_with_progress
+from .dataset_grouper_dialog import run_with_progress
 from .dialog_helpers import center_on_parent, warning
 from .dwm import set_titlebar_dark
 from .theme import ThemeManager
@@ -361,7 +361,7 @@ class DatasetToolsDialog(QDialog):
             return st.validate_dataset(dataset, task=report_task,
                                        on_progress=on_step).as_dict()
 
-        result, error = _run_with_progress(
+        result, error = run_with_progress(
             self, tr("格式转换"), tr("正在校验数据集..."), task)
         if error == "canceled":
             return
@@ -391,7 +391,7 @@ class DatasetToolsDialog(QDialog):
                 is_interrupted=is_interrupted,
                 task=params["task"])
 
-        result, error = _run_with_progress(
+        result, error = run_with_progress(
             self, tr("格式转换"), tr("正在转换数据集..."), task)
         if error == "canceled":
             self._log(tr("log_sv_cancelled"))

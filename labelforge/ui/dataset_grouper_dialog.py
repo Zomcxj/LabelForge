@@ -1,23 +1,24 @@
-"""
-数据集分类对话框 - KMeans[频次+面积]聚类的GUI流程
+"""数据集分组对话框：按类别相似度把数据集切成若干独立训练集。
 
-流程:
-1. 设置对话框: 输入图片文件夹(train/val 分割比例), 默认填充当前打开的文件夹
-2. 点击"开始分析"后弹出进度条, 后台分析数据集并评估KMeans聚类
-3. 弹出聚类指数(K-Silhouette/Inertia)对话框, 用户确认或自定义K
-4. 点击"开始分类"后弹出进度条, 按K分组并分割 train/val
+流程：
+1. 设置对话框：选图片文件夹 + train 比例，默认填当前打开的文件夹；
+2. 「开始分析」后后台统计类别画像、评估分组数，弹出指数表让用户确认；
+3. 「开始分组」后按选定的组数导出 train/val、classes.txt 与 data.yaml。
+
+与旧实现的差别：聚类从「频次 + 面积」的 k-means 换成「覆盖数 + 面积中位数
++ 面积离散度」的层次凝聚（见 ``engine/dataset_grouper.py`` 的说明）。
 """
 import os
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QDoubleSpinBox, QSpinBox, QTextEdit, QFileDialog, QMessageBox, QApplication,
+    QDoubleSpinBox, QSpinBox, QTextEdit, QFileDialog, QMessageBox,
 )
 
 from ..core.utils import PathUtils
-from ..engine.dataset_classifier import (
-    analyze_dataset, build_features, cluster_labels, classify_and_split, recommend_k,
+from ..engine.dataset_grouper import (
+    GroupAnalysis, analyze_dataset, export_groups, group_labels, recommend_k,
 )
 from . import i18n
 from .dialog_helpers import ThemedMessageBox, center_on_parent, warning
@@ -28,8 +29,9 @@ from .dwm import set_titlebar_dark
 tr = i18n.t
 
 
-class _ClassifyWorker(QThread):
-    """后台执行数据集分析/分割任务的线程。"""
+class _GroupWorker(QThread):
+    """后台执行分组分析/导出任务的线程。"""
+
     progress = Signal(int, int, object)
     finished_ok = Signal(object)
     failed = Signal(str)
@@ -43,25 +45,25 @@ class _ClassifyWorker(QThread):
         try:
             result = self._func(self.progress.emit, lambda: self._interrupted)
             self.finished_ok.emit(result)
-        except Exception as e:
-            self.failed.emit(str(e))
+        except Exception as exc:
+            self.failed.emit(str(exc))
 
     def cancel(self):
         self._interrupted = True
 
 
-def _run_with_progress(parent, title, label, task):
-    """在子线程中执行 task(progress_fn, is_interrupted)，弹出进度条对话框。
+def run_with_progress(parent, title, label, task):
+    """在子线程执行 ``task(progress_fn, is_interrupted)``，带进度条。
 
-    返回 (result, error)；用户取消时 error 为 "canceled"。
+    返回 ``(result, error)``；用户取消时 error 为 ``"canceled"``。
     """
     from PySide6.QtCore import QEventLoop
 
     progress = ProgressDialogFactory.create_progress_dialog(parent, title, label, 100)
-    worker = _ClassifyWorker(task, parent)
-    workers = getattr(parent, '_classify_workers', None)
+    worker = _GroupWorker(task, parent)
+    workers = getattr(parent, '_group_workers', None)
     if workers is None:
-        workers = parent._classify_workers = set()
+        workers = parent._group_workers = set()
 
     result_box = {}
     cancelled = [False]
@@ -113,15 +115,15 @@ def _run_with_progress(parent, title, label, task):
     return result_box.get('result'), result_box.get('error')
 
 
-class DatasetClassifierDialog(QDialog):
-    """设置对话框: 输入文件夹 + train/val 比例，并触发分析。"""
+class DatasetGrouperDialog(QDialog):
+    """设置对话框：文件夹 + train 比例，触发分析。"""
 
     def __init__(self, editor, parent=None, default_folder=None):
         super().__init__(parent or editor)
         self._editor = editor
-        self._classify_workers = set()
+        self._group_workers = set()
         self._analysis = None
-        self.setWindowTitle(tr("数据集分类"))
+        self.setWindowTitle(tr("数据集分组"))
         self.setMinimumWidth(480)
 
         self.setStyleSheet(ThemeManager.get_dialog_style())
@@ -169,7 +171,8 @@ class DatasetClassifierDialog(QDialog):
         set_titlebar_dark(int(self.winId()), ThemeManager.get_mode().value == "dark")
 
     def _browse_folder(self):
-        d = QFileDialog.getExistingDirectory(self, tr("选择图片文件夹"), self._folder_edit.text())
+        d = QFileDialog.getExistingDirectory(self, tr("选择图片文件夹"),
+                                             self._folder_edit.text())
         if d:
             self._folder_edit.setText(PathUtils.to_display_path(d))
 
@@ -187,10 +190,10 @@ class DatasetClassifierDialog(QDialog):
         train_ratio = self._train_spin.value()
 
         def task(progress_fn, is_interrupted):
-            return self._analyze_task(progress_fn, is_interrupted, folder)
+            return _analyze_task(progress_fn, is_interrupted, folder)
 
-        result, error = _run_with_progress(
-            self, tr("数据集分类"), tr("正在分析数据集..."), task,
+        result, error = run_with_progress(
+            self, tr("数据集分组"), tr("正在分析数据集..."), task,
         )
         if error == "canceled":
             return
@@ -201,52 +204,46 @@ class DatasetClassifierDialog(QDialog):
             warning(self, tr("错误"), tr("未找到有效的标签"))
             return
         self._analysis = result
-        info_dlg = KMeansInfoDialog(self, result, train_ratio)
+        info_dlg = GroupIndexDialog(self, result, train_ratio)
         if info_dlg.exec_():
             self.accept()
 
-    @staticmethod
-    def _analyze_task(progress_fn, is_interrupted, folder):
-        analysis = analyze_dataset(folder, progress_fn, is_interrupted)
-        if analysis is None:
-            return None
-        images, label_image_count, mean_areas, image_labels, image_primary_label, classified_images = analysis
-        if not images:
-            return None
-        labels, X_scaled, X = build_features(label_image_count, mean_areas)
-        if len(labels) < 2:
-            return None
-        best_k, scores = recommend_k(X_scaled)
-        if best_k is None:
-            return None
-        return {
-            'folder': folder,
-            'analysis': analysis,
-            'labels': labels,
-            'X': X,
-            'X_scaled': X_scaled,
-            'best_k': best_k,
-            'scores': scores,
-            'n_labels': len(labels),
-        }
+
+def _analyze_task(progress_fn, is_interrupted, folder):
+    """后台任务：统计画像 → 评估分组数。"""
+    analysis = analyze_dataset(folder, progress_fn, is_interrupted)
+    if analysis is None:
+        return None
+    if not analysis.images or len(analysis.labels) < 2:
+        return None
+    best_k, scores = recommend_k(analysis)
+    if best_k is None:
+        return None
+    return {
+        'folder': folder,
+        'analysis': analysis,
+        'best_k': best_k,
+        'scores': scores,
+        'n_labels': len(analysis.labels),
+    }
 
 
-class KMeansInfoDialog(QDialog):
-    """展示KMeans聚类指数(Silhouette/Inertia)，让用户确认K后执行分类。"""
+class GroupIndexDialog(QDialog):
+    """展示分组指数（Silhouette / Inertia），让用户确认组数后执行导出。"""
 
     def __init__(self, parent, info, train_ratio):
         super().__init__(parent)
         self._info = info
         self._train_ratio = train_ratio
-        self._classify_workers = set()
-        self.setWindowTitle(tr("KMeans聚类结果"))
+        self._group_workers = set()
+        self.setWindowTitle(tr("分组指数"))
         self.setMinimumWidth(560)
 
         self.setStyleSheet(ThemeManager.get_dialog_style())
 
         layout = QVBoxLayout(self)
 
-        title = QLabel(tr("KMeans聚类指数 (Silhouette 越高越好, Inertia 越低越好)"))
+        title = QLabel(tr("分组指数 (Silhouette 越高越好, Inertia 越低越好)"))
         title.setWordWrap(True)
         layout.addWidget(title)
 
@@ -259,10 +256,10 @@ class KMeansInfoDialog(QDialog):
         k_row = QHBoxLayout()
         self._rec_label = QLabel()
         k_row.addWidget(self._rec_label, 1)
-        k_row.addWidget(QLabel(tr("自定义K")))
+        k_row.addWidget(QLabel(tr("自定义分组数")))
         self._k_spin = QSpinBox()
-        self._k_spin.setRange(2, max(2, info['n_labels']))
-        self._k_spin.setValue(max(2, min(info['best_k'], info['n_labels'])))
+        self._k_spin.setRange(1, max(1, info['n_labels']))
+        self._k_spin.setValue(max(1, min(info['best_k'], info['n_labels'])))
         self._k_spin.valueChanged.connect(self._refresh_groups_preview)
         k_row.addWidget(self._k_spin)
         layout.addLayout(k_row)
@@ -275,9 +272,9 @@ class KMeansInfoDialog(QDialog):
         layout.addWidget(self._group_text)
 
         btn_row = QHBoxLayout()
-        self._start_btn = QPushButton(tr("开始分类"))
+        self._start_btn = QPushButton(tr("开始分组"))
         self._start_btn.setObjectName("successBtn")
-        self._start_btn.clicked.connect(self._start_split)
+        self._start_btn.clicked.connect(self._start_export)
         btn_row.addWidget(self._start_btn, 1)
         cancel_btn = QPushButton(tr("取消"))
         cancel_btn.clicked.connect(self.reject)
@@ -307,37 +304,44 @@ class KMeansInfoDialog(QDialog):
                 lines.append(f"{k:>3}  {sil:>12.4f}  {inert:>14.1f}  {mark}")
             self._k_table.setPlainText("\n".join(lines))
         self._rec_label.setText(
-            tr("推荐聚类数 K = {k}，共 {n} 个标签").format(k=best_k, n=n_labels)
+            tr("推荐分组数 = {k}，共 {n} 个标签").format(k=best_k, n=n_labels)
         )
 
     def _refresh_groups_preview(self):
         info = self._info
         k = self._k_spin.value()
-        group_labels, _, _ = cluster_labels(info['X_scaled'], k, info['labels'])
-        label_image_count = info['analysis'][1]
-        mean_areas = info['analysis'][2]
+        analysis: GroupAnalysis = info['analysis']
+        groups = group_labels(analysis, k)
+        profiles = analysis.profiles
         lines = []
-        for gi, glabels in enumerate(group_labels):
-            lines.append(f"g{gi} ({len(glabels)} {tr('个标签')}):")
-            for l in sorted(glabels, key=lambda x: label_image_count[x], reverse=True):
+        for gi, labels in enumerate(groups):
+            lines.append(f"g{gi} ({len(labels)} {tr('个标签')}):")
+            for label in sorted(labels,
+                               key=lambda x: profiles[x].coverage if x in profiles else 0,
+                               reverse=True):
+                profile = profiles.get(label)
+                coverage = profile.coverage if profile else 0
+                area = profile.median_area if profile else 0.0
                 lines.append(
-                    f"    {l}: {tr('频次')} {label_image_count[l]}, "
-                    f"{tr('平均面积')} {mean_areas.get(l, 0):.1f}"
+                    f"    {label}: {tr('频次')} {coverage}, "
+                    f"{tr('平均面积')} {area:.1f}"
                 )
         self._group_text.setPlainText("\n".join(lines))
 
-    def _start_split(self):
+    def _start_export(self):
         info = self._info
         k = self._k_spin.value()
+        analysis: GroupAnalysis = info['analysis']
+        groups = group_labels(analysis, k)
 
         def task(progress_fn, is_interrupted):
-            return classify_and_split(
-                info['folder'], self._train_ratio, k, analysis=info['analysis'],
+            return export_groups(
+                info['folder'], groups, analysis, self._train_ratio,
                 progress_callback=progress_fn, is_interrupted=is_interrupted,
             )
 
-        result, error = _run_with_progress(
-            self, tr("数据集分类"), tr("正在分割数据集..."), task,
+        result, error = run_with_progress(
+            self, tr("数据集分组"), tr("正在导出分组..."), task,
         )
         if error == "canceled":
             return
@@ -359,7 +363,7 @@ class KMeansInfoDialog(QDialog):
             lines.append(
                 f"g{gi}: train {result['group_train_count'][gi]}, "
                 f"val {result['group_val_count'][gi]} "
-                f"({len(result['group_labels'][gi])} {tr('个标签')})"
+                f"({len(result['groups'][gi])} {tr('个标签')})"
             )
         lines.append(f"{tr('输出目录')}: {result['output_dir']}")
         box = ThemedMessageBox(self)
