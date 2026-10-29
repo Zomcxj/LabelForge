@@ -420,8 +420,11 @@ c3.resize(200, 140)
 c3.set_histogram([0.0, 1.0], [5, 1])
 c3.render(img2)
 dark = any(img2.pixelColor(x, y).lightness() < 128
-           for x in range(0, 200, 4) for y in range(0, 48, 2))
+           for x in range(200) for y in range(48))
 assert dark, "peak bar count label missing in top band"
+# 上面那个「5」只有 3 像素宽（实测 x 49..51），用 x 步长 4 的稀疏网格扫，
+# 命中与否取决于字体光栅化的落点——CI 的 windows 镜像命中、本机整条漏掉。
+# 别为了省这点时间改回网格采样。
 
 img3 = QImage(200, 140, QImage.Format_ARGB32)
 img3.fill(Qt.white)

@@ -94,6 +94,9 @@ jobs:
 
   release:
     needs: build
+    # 只在 tag 推送时发布。硬防护：下面那步会「先删后建」同 tag 的 release，
+    # 而分支推送会让 tag 解析 fallback 到 git describe 的最新 tag（= 删掉一个正式 release）。
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
 
     steps:
