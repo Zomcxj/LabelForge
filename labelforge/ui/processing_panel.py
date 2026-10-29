@@ -18,8 +18,6 @@ from .dwm import set_titlebar_dark
 from ..core.utils import create_app_icon
 from ..core.config_manager import add_crop_template
 from ..engine.yolo_exporter import YoloExporter
-from ..engine.voc_exporter import VocExporter
-from ..engine.coco_exporter import CocoExporter
 from ..engine.splitter import Splitter
 from ..engine.augmenter import Augmenter, get_all_transforms
 from .mixins.processing_panel_builder import ProcessingPanelBuilderMixin, SPLIT_KEYS, TRANSFORM_META
@@ -297,7 +295,6 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         self._crop_config_btn.setText(tr("配置…"))
         self._update_crop_summary()
         self._exp_section.set_title(tr("标签导出"))
-        self._exp_fmt_label.setText(tr("格式:"))
         self._exp_label_title.setText(tr("类别:"))
         self._exp_skip_empty.setText(tr("跳过空标签"))
         self._exp_btn.setText(tr("导出"))
@@ -819,28 +816,13 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
                 count=len(input_data),
                 labels=", ".join(labels),
             ))
-            fmt = self._exp_format.currentText()
-            if fmt == "VOC Detection":
-                exp = VocExporter(
-                    output_dir,
-                    on_progress=lambda c, t: progress_fn(c, t, ""),
-                    is_interrupted=lambda: self._interrupted,
-                )
-            elif fmt == "COCO Detection":
-                exp = CocoExporter(
-                    output_dir,
-                    on_progress=lambda c, t: progress_fn(c, t, ""),
-                    is_interrupted=lambda: self._interrupted,
-                )
-            else:
-                exp = YoloExporter(
-                    output_dir,
-                    on_progress=lambda c, t: progress_fn(c, t, ""),
-                    is_interrupted=lambda: self._interrupted,
-                    mode=("seg" if fmt == "YOLO Seg"
-                          else "pose" if fmt == "YOLO Pose"
-                          else "obb" if fmt == "YOLO OBB" else "hbb"),
-                )
+            # 固定导出 YOLO：本面板的下游（划分）只读 labels/*.txt，
+            # 任务类型（det/seg/obb/pose）由 YoloExporter 按 shape_type 自动判定。
+            exp = YoloExporter(
+                output_dir,
+                on_progress=lambda c, t: progress_fn(c, t, ""),
+                is_interrupted=lambda: self._interrupted,
+            )
             exp.run(
                 self._run_images,
                 self._run_boxes,

@@ -204,19 +204,10 @@ class ProcessingPanelBuilderMixin:
     def _build_export_section(self, parent_layout):
         section = self._collapsible_section("", parent_layout, "#FFC107")
         layout = section.content_layout()
-        fmt_layout = QHBoxLayout()
-        fmt_layout.setContentsMargins(0, 0, 0, 0)
-        self._exp_fmt_label = QLabel()
-        fmt_layout.addWidget(self._exp_fmt_label)
-        self._exp_format = QComboBox()
-        self._exp_format.addItems([
-            "YOLO Detection", "YOLO Seg", "YOLO Pose", "YOLO OBB",
-            "VOC Detection", "COCO Detection"
-        ])
-        self._exp_format.setFixedWidth(150)
-        fmt_layout.addWidget(self._exp_format)
-        fmt_layout.addStretch()
-        layout.addLayout(fmt_layout)
+        # 本面板是「YOLO 训练集生产流水线」：导出 → 划分 → 训练。
+        # 导出格式固定为 YOLO——划分模块读的是 labels/*.txt，导出成
+        # VOC/COCO 后下游没人能接，所以不提供格式选择。
+        # 需要 COCO/VOC 时用工具栏的「格式」按钮，那里支持四格式互转。
         self._exp_label_title = QLabel()
         layout.addWidget(self._exp_label_title)
         self._exp_label_grid_container = QWidget()
