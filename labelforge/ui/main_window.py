@@ -536,7 +536,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
 
         if action == action_aug:
             self._toggle_processing_panel()
-        elif action == action_kmeans:
+        elif action == action_group:
             self._open_dataset_grouper()
 
     def _update_processing_panel_labels(self):
