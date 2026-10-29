@@ -86,7 +86,7 @@ def scan_dataset_full(image_paths, is_interrupted=None, progress_cb=None,
                 try:
                     progress_cb(dict(batch))
                 except Exception as exc:
-                    # 回调是外部传进来的；它挂了不该拖垮扫描，但要让用户查到
+                    # 回调由外部传入；回调抛异常不应中断扫描，但要记录到日志。
                     from ...core.exception_hook import _write_log
                     _write_log(f"扫描进度回调失败: {exc}")
                 batch = {}
@@ -105,9 +105,9 @@ def collect_background_label_stats_and_tasks(image_paths, is_interrupted=None):
 
     统计弹窗原先分别调 `collect_background_label_counts()` 与
     `collect_background_label_tasks()`，**把每个 sidecar json 解析了两遍**，
-    而且都在 UI 线程上，数据集一大就要好几秒（用户报的「统计有时候需要 5s
-    才能打开」）。这里复用 `scan_dataset_full()` 的单趟解析：它本来就在同一
-    次读取里同时产出 counts 与 tasks。
+    而且都在 UI 线程上，数据集一大就要好几秒。这里复用
+    `scan_dataset_full()` 的单趟解析：它本来就在同一次读取里同时产出
+    counts 与 tasks。
 
     返回 `(counts, tasks)`；两者都是普通 dict（tasks 的值仍为 set）。
     """

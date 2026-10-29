@@ -33,8 +33,8 @@ KIND_LABELS = {
 TINY_INPUT_SIZE = 640
 
 #: 短边比例的直方图分桶边界。刻意压在判档阈值上而不是等宽分桶：
-#: 数据集里大框占多数时，等宽桶会把 0~2.5% 的整个决策区糊进第一桶，
-#: 看不出"该不该上滑窗"。前两个桶是 🔴 区、第三个是 🟡 区、其余为 ✅。
+#: 数据集里大框占多数时，等宽分桶会把 0~2.5% 的整个决策区并入第一个桶，
+#: 无法区分是否应启用滑窗。前两个桶为 🔴 区、第三个为 🟡 区、其余为 ✅。
 TINY_RATIO_EDGES = (0.0, 0.003125, 0.00625, 0.0125, 0.025,
                     0.05, 0.1, 0.2, 0.5, 1.0)
 
@@ -80,7 +80,7 @@ def normalized_min_side(box, image_width, image_height):
 
     分母取**长边**而不是各轴各比各的：预处理是等比的，短边会被同比例缩小，
     各轴比自己的边会把这个缩水抹掉（1920x1080 上 100x100 按轴算是 5.2% 很
-    "健康"，等比缩放到 640 后其实只剩 33px）。
+    "健康"，等比缩放到 640 后实际只剩 33px）。
 
     只看矩形检测框：关键点宽高恒为 0（比例会算成 0，等于把每个关键点判死），
     多边形的 bbox 也不代表目标本身，两者都跳过。
@@ -519,7 +519,7 @@ def lint_dataset(image_paths, memory_boxes=None, progress_cb=None,
             try:
                 progress_cb(done, total)
             except Exception as exc:
-                # 回调是外部传进来的；它挂了不该拖垮扫描，但要让用户查到
+                # 回调由外部传入；回调抛异常不应中断扫描，但要记录到日志。
                 from ..core.exception_hook import _write_log
                 _write_log(f"质检进度回调失败: {exc}")
 
@@ -611,7 +611,7 @@ def _remove_shapes_matching(json_path, boxes):
     返回 (removed, ok)：ok=False 表示磁盘未按预期删除（读取/写入失败，
     或签名失配导致磁盘与内存不一致），由调用方标记该图失败，避免仅删
     内存、磁盘残留导致重载后问题复现。
-    文件不存在（内存独有）视为成功，由内存同步兜底。
+    文件不存在（内存独有）视为成功，由内存同步逻辑处理。
     """
     pending = {}
     for box in boxes or []:
@@ -693,7 +693,7 @@ def _mark_shapes_matching(json_path, boxes):
 
     内存里 box_index 指向内存列表，而磁盘 shapes 顺序可能不同（磁盘滞后），
     直接按下标写会把豁免标到隔壁框上。返回 (matched, ok)。
-    文件不存在（内存独有）视为成功，由内存同步兜底。
+    文件不存在（内存独有）视为成功，由内存同步逻辑处理。
     """
     pending = {}
     for box in boxes or []:

@@ -28,20 +28,20 @@ def center_on_parent(dialog, parent=None):
 def place_within(dialog, rect, align="center"):
     """把对话框浮到 rect（父窗口坐标）那块，并钳到所在屏幕的可用区。
 
-    rect 是**右侧侧栏那块**（面板要盖在它上面，而不是画布上）。**不要求弹窗
-    装进 rect**：范围弹窗比侧栏宽，几何上装不下——用户要的是「浮在侧栏上层、
-    别盖画布」。
+    rect 是**右侧侧栏那块**（面板盖在它上面，而不是画布上）。**不要求弹窗
+    装进 rect**：范围弹窗比侧栏宽，几何上装不下。弹窗浮在侧栏上层即可，
+    不要盖住画布。
 
     竖直方向：
     - `align="center"`（默认）：按 rect 的**中心**居中。范围弹窗原来用这个。
     - `align="top-left"`：弹窗左上角对齐 rect 左上角（范围弹窗现在用这个，
-      用户要求「左上角始终对齐标签管理区域的左上角」）。
+      即始终对齐「标签管理」区域的左上角）。
 
     水平方向：以 rect 的中心线对齐弹窗中心，但**优先保住左边不越过 rect
-    左边界**——用户报过「面板跑到屏幕左边挡住画布」，根因是这里曾经用
-    `rect.left() + 8` 当左上角、而 rect.x 又被上游写死成 0。现在先按居中算，
-    再钳到「不小于 rect.left()」，让弹窗向右溢出（压住侧栏右侧的空白）而不是
-    向左盖画布（画布在主窗左侧）。
+    左边界**。不能用 `rect.left() + 8` 当左上角、且 rect.x 可能被上游写成 0，
+    那样面板会跑到屏幕左边挡住画布。这里先按居中算，再钳到「不小于
+    rect.left()」，让弹窗向右溢出（压住侧栏右侧的空白）而不是向左盖画布
+    （画布在主窗左侧）。
     """
     if rect is None or rect.isEmpty():
         center_on_parent(dialog)
@@ -89,8 +89,8 @@ def place_within(dialog, rect, align="center"):
                  min(gy, available.bottom() + 1 - span_y - inset_y))
     # 直接用**全局**坐标 move()：`ScopePanel` 是顶层窗口，`QWidget.move()` 对
     # 顶层窗口按全局坐标解释（实测 move(1056,323) 后 pos() 就是 1056,323）。
-    # 早先这里减掉了 `origin`，等于把面板整体左移一个主窗 x 的量——主窗不在
-    # 屏幕原点时，面板就跑到画布上去了（用户报的「跑到屏幕左边、遮挡画布」）。
+    # 不能减掉 `origin`：那等于把面板整体左移一个主窗 x 的量，
+    # 主窗不在屏幕原点时面板就会跑到画布上、遮挡画布。
     dialog.move(gx, gy)
 
 
@@ -201,7 +201,7 @@ class ThemedMultiLineDialog(QDialog):
     """多行文本输入框。
 
     QInputDialog 只有单行，一行一个类别名这种场景写不下第二个，所以单独做一个：
-    多行编辑区 + 实时行数提示。行数提示让用户能核对「我是不是漏填了」。
+    多行编辑区 + 实时行数提示。行数提示可用于核对是否漏填。
     """
 
     def __init__(self, parent=None, expected_lines=None):

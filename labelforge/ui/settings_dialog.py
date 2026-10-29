@@ -453,7 +453,7 @@ class SettingsDialog(QDialog):
         self.reset_all_btn.setToolTip(tr("重置所有设置"))
         self.reset_all_btn.clicked.connect(self._reset_all_settings)
 
-        # 左下角只放版本号；「恢复默认设置」挪到保存左边（用户要求）。
+        # 左下角只放版本号；「恢复默认设置」在保存左边。
         # 版本取自 `labelforge.__version__`，不硬编码——发版时只需改包常量，
         # 不会两处漂移。
         left_col = QVBoxLayout()

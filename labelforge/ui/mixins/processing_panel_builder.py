@@ -25,8 +25,8 @@ TRANSFORM_META = {
 }
 
 # 按语义分成三组再排：几何（翻转/平移/旋转/缩放）→ 色彩（亮度/对比度/
-# 色相/饱和度/明度）→ 噪声。原来的顺序是历史堆积，色彩与噪声、几何混在
-# 一起，扫一眼看不出哪几项是一类。
+# 色相/饱和度/明度）→ 噪声。原顺序沿自历史累积，色彩、噪声与几何混排，
+# 难以判断哪些项属于同一类。
 _TRANSFORM_ORDER = [
     # 几何
     "fliph", "flipv", "trans", "rotate", "scale",
@@ -287,7 +287,7 @@ class ProcessingPanelBuilderMixin:
         self._pipe_split = QCheckBox()
         self._pipe_split.setChecked(True)
         # 三个步骤做成有色块的步骤条：勾选时块变强调色，未勾选时淡灰。
-        # 原来只是三个复选框 + 两个 →，勾没勾一眼看不出来，像没做完的控件。
+        # 只用三个复选框 + 两个 → 的话，勾选状态不够醒目，观感也不完整。
         # 文字由 QCheckBox 自己带（_refresh_texts 里 setText），这里**不再**
         # 另加 QLabel —— 两处都给文字，界面上会显示成「增强 增强」。
         _steps = (self._pipe_aug, self._pipe_exp, self._pipe_split)

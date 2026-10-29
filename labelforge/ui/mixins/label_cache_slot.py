@@ -127,13 +127,13 @@ class LabelCacheSlotMixin:
     def _sync_pasted_boxes_to_cache(self, box_index=None):
         """把「从缓存槽粘出来的那几个框」的当前位置回写进槽，当新的模板。
 
-        只在**被拖的正是粘贴副本**时才回写（用户要求）：`box_index` 是画布
-        传进来的被拖框下标，不属于粘贴区间就什么都不做。
+        只在**被拖的正是粘贴副本**时才回写：`box_index` 是画布传进来的被拖框
+        下标，不属于粘贴区间就什么都不做。
 
-        原来这里不看 `box_index`，只要粘过一次，之后拖动**任何**框都会把
-        粘贴区间里的内容写回槽——于是「拖动一个没被复制过的框，缓存槽却被
-        改写了」（用户报的 bug）。而且粘贴时副本会被 `_offset_overlapping_
-        paste_group` 挪开避让，写回去的是**挪过的位置**，模板就这么悄悄变了。
+        不看 `box_index` 的话，只要粘过一次，之后拖动**任何**框都会把粘贴区间
+        里的内容写回槽，缓存槽就被意外改写。而且粘贴时副本会被
+        `_offset_overlapping_paste_group` 挪开避让，写回去的是**挪过的位置**，
+        模板会跟着悄悄变。
         """
         if self._last_paste_slot is None or self._last_paste_count <= 0:
             return

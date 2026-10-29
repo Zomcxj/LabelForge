@@ -17,13 +17,12 @@ class CanvasMenuMixin:
     def _active_regions(self):
         """**当前模式**该操作/显示的那份区域列表。
 
-        用户第 10 轮把区域拆成两份，各自属于一种模式：
+        区域分成两份，各自属于一种模式：
         - 贴图模式 → `paste_region_boxes`（贴图落点）
         - 标注模式 → `region_boxes`（推理范围）
 
         画布上所有区域相关的读写都经这里取列表，**不要**直接摸
-        `region_boxes`——否则贴图模式会改到推理的那份（这正是第 10 轮报的
-        「推理的区域在贴图下还能操作」）。
+        `region_boxes`——否则贴图模式会改到推理的那份。
         """
         if self._is_paste_mode():
             if not isinstance(getattr(self._editor, 'paste_region_boxes', None), list):
@@ -103,7 +102,7 @@ class CanvasMenuMixin:
         """返回鼠标位置下的区域索引（画布坐标转图像坐标判断）。
 
         `include_locked=False`（默认）跳过**已锁定**的区域：锁定 = 「最底层、
-        不可修改」（用户要求），所以它必须从交互里彻底消失，点上去直接落到
+        不可修改」，所以它必须从交互里彻底消失，点上去直接落到
         它下面的检测框或画布。只有「这里有没有区域」这类纯几何查询才传
         `True`（比如往外拖文件的守卫，那里关心的是有没有东西挡着，与能否
         编辑无关）。
@@ -130,7 +129,7 @@ class CanvasMenuMixin:
                 return i
         return None
 
-    # ---------- 每条区域的锁定（用户要求：区域列表里每条各自锁） ----------
+    # ---------- 每条区域的锁定（区域列表里每条各自锁） ----------
 
     @staticmethod
     def region_locked(region):
@@ -147,7 +146,7 @@ class CanvasMenuMixin:
     def set_region_locked(self, index, locked):
         """锁定/解锁第 index 条区域；返回是否真的改了。
 
-        锁定的语义（用户要求）：
+        锁定的语义：
         - **不锁定**：画在检测框**之上**，和检测框一样可拖动/缩放/改顶点；
         - **锁定**：落到检测框**之下**，不可修改，点击也穿透到下面的框；
         - 只是「不许在画布上改」，**区域照常参与推理**——锁不等于禁用。
@@ -247,13 +246,13 @@ class CanvasMenuMixin:
     def _region_handle_at(self, mouse_pos, index):
         """返回区域缩放手柄名称：**四角 + 四边**都算。
 
-        四角 `tl/tr/bl/br` 改两个方向，四边 `t/b/l/r` 只改一个方向
-        （用户要求「复用检测框的缩放，单边调整和角点拖动」）。
+        四角 `tl/tr/bl/br` 改两个方向，四边 `t/b/l/r` 只改一个方向，
+        口径与检测框的缩放一致。
 
         命中容差**不写死像素**：`handle_size` 是设计尺寸（8），实际比较用
         `_region_handle_hit_size()`，它会随 `background_scale` 放大——图缩小
-        后区域框在屏上只有几十像素，固定 8px 的方框基本点不中，那正是用户
-        看到的「没办法调整大小」。四角优先于四边：角上同时落在两条边的
+        后区域框在屏上只有几十像素，固定 8px 的方框基本点不中。
+        四角优先于四边：角上同时落在两条边的
         判定里，取角才能一次改两个方向。
         """
         regions = self._active_regions()
@@ -290,22 +289,20 @@ class CanvasMenuMixin:
     def _region_handle_hit_size(self):
         """区域手柄的命中边长（画布像素）；与绘制共用 `_region_handle_size()`。
 
-        过去这里是「设计尺寸 / 缩放」，图缩小时会把命中区放大到 24px。但
-        用户要求手柄只比检测框大一点、且**看着别忽大忽小**，所以现在跟检测框
-        一样是恒定像素（`_region_handle_size()`），不再随 `background_scale`
-        变化。命中区与绘制必须同源，否则会出现「看着能抓却抓不到」。
+        手柄只比检测框大一点、且**不随缩放忽大忽小**，所以这里跟检测框一样
+        是恒定像素（`_region_handle_size()`），不随 `background_scale` 变化。
+        命中区与绘制必须同源，否则会出现「看着能抓却抓不到」。
         """
         return self._region_handle_size()
 
     def _region_handle_size(self):
         """区域句柄边长（画布像素）= **检测框句柄 + 3**，**不随缩放变化**。
 
-        用户要求「句柄只比检测框大一点」。关键点是**不能缩放**：检测框
+        句柄只比检测框大一点。关键点是**不能缩放**：检测框
         `_draw_box_handles()` 用的是写死的 `DETECTION_BOX_CONFIG
         ['resize_handle_size']`，无论 `background_scale` 是多少都是 8px。
-        区域过去按 `handle_size / scale` 放大（上限 24），于是图一缩小，区域
-        句柄就变成检测框的两三倍大——用户原话「我参数拉到 15 都没你的区域框
-        句柄大」，说的就是这个，跟基准值是 8 还是 9 完全无关。
+        区域若按 `handle_size / scale` 放大（上限 24），图一缩小句柄就会
+        变成检测框的两三倍大，所以这里取恒定值。
 
         定义放在这里（与命中判定同一个类），绘制端 `_region_handle_draw_size()`
         转调它，保证「看到的」就是「抓得到的」。
@@ -335,9 +332,8 @@ class CanvasMenuMixin:
     def _add_region_actions(self, menu, fixed):
         """追加 添加区域（矩形）、固定、清空 菜单项。
 
-        **只有矩形**（用户第 11 轮：「多边形不要了」）：推理范围只做矩形，
-        多边形那条路（`_start_add_region_polygon`）已随右键段一起去掉，
-        免得留一个画得出来、面板里却看不全的入口。
+        **只有矩形**：推理范围只做矩形，不提供多边形入口，
+        免得留一个画得出来、面板里却看不全的路径。
         """
         add_rect_action = QAction(tr("添加区域（矩形）"), self)
         add_rect_action.setEnabled(not fixed)
@@ -346,13 +342,12 @@ class CanvasMenuMixin:
 
         # 「固定区域」**不用 `setCheckable`**：Qt 会给可勾选项的文字额外缩进
         # 一个 `PM_MenuButtonIndicator` 的宽度（本主题下 12px），于是它比同菜单
-        # 里其它项多空出一个字——用户报的「固定区域没有左对齐空了一个字」。
-        # 按 Qt 画菜单项的口径复算，可勾选时缩进是 [0, 12, 0]，去掉 checkable
-        # 后是 [0, 0, 0]。
+        # 里其它项多空出一个字。按 Qt 画菜单项的口径复算，可勾选时缩进是
+        # [0, 12, 0]，去掉 checkable 后是 [0, 0, 0]。
         #
-        # 勾**仍然要有**（用户明确「我不是固定区域左边有打钩吗，不勾选不就解除了」），
-        # 所以把勾画进文案本身：未固定显示「固定区域」，已固定显示「✔ 固定区域」，
-        # 点一下照样来回切。这样勾看得见、各项也严格左对齐。
+        # 但勾**仍然要有**，所以把勾画进文案本身：未固定显示「固定区域」，
+        # 已固定显示「✔ 固定区域」，点一下照样来回切。这样勾看得见、
+        # 各项也严格左对齐。
         fix_action = QAction(
             tr("✔ 固定区域") if fixed else tr("固定区域"), self)
         fix_action.triggered.connect(self._toggle_fix_regions)
@@ -431,7 +426,7 @@ class CanvasMenuMixin:
         """查找鼠标位置下的检测框。
 
         顺序与画布点选一致（关键点在最上层）。用正序遍历会先撞上包含关键点的
-        那个检测框，于是右键改的是框而不是点 —— 用户报的就是这个。
+        那个检测框，于是右键改的是框而不是点。
         """
         background_rect = self.get_background_rect()
         if not background_rect:
@@ -551,12 +546,10 @@ class CanvasMenuMixin:
     def _modify_box_label(self, box_index):
         """修改**这一个**检测框的标签（不动同名的其它框）。
 
-        用户明确要求：「画布上右键修改标签怎么是改全部？我只是改一个啊」。
-        这里此前直接调 `rename_detection_label`，那是**按标签名全局改名**——
-        右键一个框会把当前图乃至整个数据集里所有同名框一起改掉，用户想只改
-        一个也做不到。
+        不能用 `rename_detection_label`：那是**按标签名全局改名**，
+        右键一个框会把当前图乃至整个数据集里所有同名框一起改掉。
 
-        现在只改选中的那一个框，复用 `_change_box_label()`——那条路径（右键
+        这里只改选中的那一个框，复用 `_change_box_label()`——那条路径（右键
         菜单里直接点已有标签）本来就是「只改一个」，颜色迁移、统计缓存
         delta=1、写盘都齐了，不再另写一套。分组（`group_id`）它不管，这里
         单独处理。
@@ -766,10 +759,9 @@ class CanvasMenuMixin:
         remove_action.triggered.connect(self._remove_current_background)
         menu.addAction(remove_action)
 
-        # 区域那一整段**只在贴图模式**给（用户第 10 轮）：
-        # 「推理是推理的操作，贴图是贴图的操作」——推理区域的增删改全部走
-        # 「推理范围」面板（`ScopePanel`），标注模式的右键不该还留一份入口，
-        # 否则同一个推理区域有两个地方能改，用户分不清哪份才算数。
+        # 区域那一整段**只在贴图模式**给：推理区域的增删改全部走
+        # 「推理范围」面板（`ScopePanel`），标注模式的右键不再留入口，
+        # 否则同一个推理区域有两个地方能改。
         # 贴图模式下的这段作用于贴图那份（`_active_regions()`）。
         if self._is_paste_mode():
             menu.addSeparator()

@@ -157,7 +157,7 @@ def get_label_color(labels, label, palette=None, label_color_map=None):
         return color_map[label]
     if len(colors) >= 30:
         # 把待分配标签并入有序集合，保证“未进入会话”的标签也走确定索引分配，
-        # 不再落哈希兜底（哈希会把不同标签撞到同一红色系）。
+        # 不使用哈希分配（不同标签会碰撞到同一红色系）。
         unique_labels = sorted({str(value) for value in labels if value} | {label})
         start = unique_labels.index(label) % len(colors)
         used_colors = set(color_map.values())
@@ -173,7 +173,7 @@ def get_label_color(labels, label, palette=None, label_color_map=None):
 def _repair_label_color_map(color_map, palette):
     """修复历史脏数据：旧算法把不同标签写成同一颜色时整表按确定算法重排。
 
-    颜色撞车是旧哈希兜底的确定特征；一旦发现，就整表重排，既清掉撞色，
+    颜色碰撞是旧哈希分配的确定特征；一旦发现，就整表重排，既清掉撞色，
     也顺带替换掉旧算法写入的其他脏色（如非调色板色、首标签红色）。
     颜色互不重复的表原样返回，避免覆盖用户手动选色。
     """
@@ -368,8 +368,8 @@ def delete_memory_record(index):
 
 CROP_TEMPLATES_LIMIT = 3
 
-# 模板里 `min_visible` 的兜底值。与数据增强侧输入框的默认值（0.7）一致——
-# 推理侧不传该字段时用它补齐，而不是凭空造一个 0.5 或让整条模板被丢掉。
+# 模板里 `min_visible` 的默认值，与数据增强侧输入框的默认值（0.7）一致。
+# 推理侧不传该字段时用它补齐，避免另设一个值或让整条模板被判为无效。
 DEFAULT_CROP_MIN_VISIBLE = 0.7
 
 

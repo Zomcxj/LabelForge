@@ -181,7 +181,7 @@ class SaveManager(QObject):
         SaveTipDialog.show_save_tip(self.editor, file_path, save_success and os.path.exists(file_path))
 
     def save_current_json(self):
-        """仅保存当前图的标注 JSON，供切图和关闭窗口时兜底。
+        """仅保存当前图的标注 JSON，用于切图和关闭窗口时的保底写入。
 
         Annotate mode: save when there are boxes, or when all boxes were
         cleared but a sidecar JSON already exists (persist empty / 空标签).
@@ -216,8 +216,8 @@ class SaveManager(QObject):
             if json_exists and not has_boxes and self._json_shapes_empty(json_path):
                 if getattr(self.editor, '_delete_empty_json_on_switch', True):
                     if self._delete_sidecar_json(json_path):
-                        # 图标要跟着改，否则列表行还挂着「空标签」的橙色圆环，
-                        # 用户会以为没删掉。保存路径本来就有这一步。
+                        # 图标要跟着改，否则列表行仍显示「空标签」的橙色圆环，
+                        # 看起来像没有删除。保存路径本来就有这一步。
                         refresh = getattr(self.editor,
                                           '_refresh_background_item_status', None)
                         if callable(refresh):

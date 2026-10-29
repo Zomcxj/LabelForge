@@ -44,11 +44,11 @@ class LabelSelectionDialog(QDialog):
         if initial_text:
             self.new_label_input.setText(str(initial_text))
             self.new_label_input.selectAll()
-        # 输入框里的预填值是**旧名**，不是用户的选择。用户如果去点列表里
-        # 另一个标签，那才是他要的结果——但旧代码只认「输入框非空」，于是
-        # 点了列表也没用（改名场景里表现为「怎么改都改不动」，因为返回的
-        # 还是旧名、判定为无变化）。这里记一下输入框**有没有被用户真正编辑
-        # 过**：编辑过就听输入框，没编辑过就听列表选中。
+        # 输入框里的预填值是**旧名**，不代表实际选择。点列表里的另一个标签
+        # 才是明确选择——但只认「输入框非空」的话，点列表不会生效
+        # （改名场景里表现为改动无效，因为返回的仍是旧名、判定为无变化）。
+        # 这里记录输入框**是否被真正编辑过**：编辑过以输入框为准，
+        # 否则以列表选中项为准。
         self._input_edited = False
         self.new_label_input.textEdited.connect(self._on_input_edited)
         top_layout.addWidget(self.new_label_input, 1)

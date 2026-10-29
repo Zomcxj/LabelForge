@@ -69,7 +69,7 @@ class _OverlayGroup:
         return chosen
 
     def fill(self, labels):
-        """重建类别列表（有内容时主开关默认打开：用户就是要看框）。"""
+        """重建类别列表；有内容时主开关默认打开，因为默认行为是显示框。"""
         self.label_list.clear()
         for label, count in (labels or {}).items():
             text = f"{label} ({count})" if count else str(label)
@@ -145,7 +145,7 @@ class VideoDialog(QDialog):
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName("videoProgress")
-        # 与全项目进度条一致：16px 高 + 8px 圆角（原来 12px 直角，看着像另一种控件）
+        # 与全项目进度条一致：16px 高 + 8px 圆角（原先为 12px 直角，与其他控件不统一）
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
@@ -437,7 +437,7 @@ class VideoDialog(QDialog):
         self.render_model_label.setWordWrap(True)
         layout.addWidget(self.render_model_label)
 
-        # 没加载模型时的显眼提示：只把开始按钮变灰，用户会以为这页坏了。
+        # 没加载模型时的显眼提示：只把开始按钮变灰会表现为这页不可用。
         # 用强调色（videoHint）并说清去哪加载，加载完自动隐藏。
         self.render_model_hint_label = QLabel(tr(
             "还没有加载模型：点画布上方参数行里的「加载模型」，"
@@ -824,7 +824,7 @@ class VideoDialog(QDialog):
         self._fill_compose_labels(labels)
 
     def _fill_compose_labels(self, labels):
-        """重建合成页的类别列表；有标注时主开关默认打开（用户就是要看框）。"""
+        """重建合成页的类别列表；有标注时主开关默认打开，因为默认行为是显示框。"""
         self._compose_overlay.fill(labels)
 
     def _compose_frame_count(self):
@@ -864,7 +864,7 @@ class VideoDialog(QDialog):
         return self.compose_start_spin.value(), self.compose_end_spin.value()
 
     def _set_compose_frame_count(self, total):
-        """来源变了：把范围重置为「0 到最后一张」（用户要的默认）。"""
+        """来源变了：把范围重置为「0 到最后一张」（默认值取此）。"""
         total = int(total or 0)
         last = max(0, total - 1)
         # 先断开信号：这里只是重建量程，不该触发「越界纠正」把值改走
@@ -950,8 +950,8 @@ class VideoDialog(QDialog):
         弹窗是每次新建的，所以打开时由主窗口灌一次；模型没加载就传空，
         页面会禁用开始按钮并说明原因。
 
-        类别来自模型（不是 sidecar），所以直接填列表、默认全勾上——
-        用户要的就是「把模型认得的东西都画出来」。
+        类别来自模型（不是 sidecar），所以直接填列表、默认全勾上，
+        即把模型识别到的类别全部绘制出来。
         """
         self._render_class_names = [str(n) for n in (class_names or [])]
         self._render_model_name = model_name or ""

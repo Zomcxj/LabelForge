@@ -256,10 +256,9 @@ class LabelManager(QObject):
           的单个框，`stats` 模式删当前图里该标签的全部框；
         - **都没选**（焦点就在画布上但没点框）→ 删掉**当前图全部**标签框。
 
-        用户要求「要选中一个才能删除」改成「支持焦点在画布上就能删除」：原来
-        一上来就问 `label_list.selectedItems()`、空就直接 return，于是焦点明明
-        在画布上、快捷键也照常送达（`QShortcut` 本来就不受焦点影响），却什么都
-        不发生。
+        注意不能一上来就问 `label_list.selectedItems()`、空就直接 return：
+        那样焦点明明在画布上、快捷键也照常送达（`QShortcut` 本来就不受焦点
+        影响），却什么都不发生。
         """
         selected_items = self.editor.label_list.selectedItems()
         canvas_selection = self._canvas_selection_state()
@@ -275,7 +274,7 @@ class LabelManager(QObject):
             self._finish_label_delete(current_index)
             return
         if canvas_selection == "stale":
-            # 画布上「看着像选中了」但下标全是脏的（切图/重推理后残留）：
+            # 画布状态显示为已选中，但下标全部失效（切图/重推理后残留）：
             # 这种状态下**什么都不做**，否则会以「没选中」为由删光整图的框。
             return
 

@@ -24,7 +24,7 @@ MAX_PEN_WIDTH = 6
 MIN_FONT_PIXELS = 10
 MAX_FONT_PIXELS = 72
 
-# 类别没配颜色时的兜底（与画布默认色系一致）
+# 类别未配置颜色时使用的默认色（与画布默认色系一致）
 DEFAULT_COLOR = (0, 255, 128)
 # 坐标钳制范围：够大不会切掉有效几何，又不至于让 Qt 光栅化溢出
 COORD_LIMIT = 32000.0
@@ -66,7 +66,7 @@ def _parse_hex(value):
 
 
 def color_for_label(label_colors, label):
-    """类别色；没配或颜色串损坏时用兜底色。"""
+    """类别色；未配置或颜色串损坏时使用默认色。"""
     found = _parse_hex((label_colors or {}).get(str(label or "")))
     return found if found is not None else DEFAULT_COLOR
 

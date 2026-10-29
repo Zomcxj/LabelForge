@@ -45,8 +45,8 @@ def box_from_labelme_shape(shape):
         box["points"] = [list(p) for p in points]
     if "visible" in shape:
         box["visible"] = shape["visible"]
-    # 置信度按 X-AnyLabeling 的约定存顶层 "score"。手工框没有这个键，
-    # 只有推理结果带；缺失即 None，界面据此决定要不要显示数字。
+    # 置信度存顶层 "score" 字段。手工框没有这个键，只有推理结果带；
+    # 缺失即 None，界面据此决定要不要显示数字。
     if isinstance(shape.get("score"), (int, float)) and not isinstance(shape["score"], bool):
         box["score"] = float(shape["score"])
     # 自定义 flag（如质检豁免 tiny_keep）要跟着 box 走，否则载入即丢、
@@ -76,8 +76,8 @@ def labelme_shape_from_box(box):
         "shape_type": shape_type,
         "flags": flags,
     }
-    # 置信度写顶层 score，跟 X-AnyLabeling 保持一致；没有就写 null 占位，
-    # 让 JSON 里这个字段始终存在，外部工具读取时不用判键是否存在。
+    # 置信度写顶层 score，没有就写 null 占位，让 JSON 里这个字段始终存在，
+    # 外部工具读取时不用判键是否存在。
     score = box.get("score")
     if isinstance(score, bool) or not isinstance(score, (int, float)):
         score = None
@@ -119,8 +119,7 @@ def rotation_angle_degrees(points):
 def box_display_label(box, show_score=False):
     """标签显示文本：类别[分组] 角度，选带置信度。
 
-    置信度跟着类别名一起显示（参考 X-AnyLabeling 的 show_scores），
-    由调用方按「显示置信度」开关传入 show_score。
+    置信度跟着类别名一起显示，由调用方按「显示置信度」开关传入 show_score。
     """
     label = box.get("label", "") if isinstance(box, dict) else ""
     text = format_label_display(label, box.get("group_id") if isinstance(box, dict) else None)

@@ -1,17 +1,17 @@
 """推理范围面板：全图 / 滑窗 / 区域。
 
 滑窗参数**内嵌在本面板里**（宽/高/重叠 + 窗口数预估），点「滑窗」
-直接就能调参。但窗口网格**不在面板里画**——它直接叠画在编辑区的**主画布**上
-（用户要求「直接在画布展示，不要单独小窗显示全图」）；区域框同理。本面板只
-发 `overlay_changed` 让宿主重画，面板自身没有任何缩略图。
+直接就能调参。但窗口网格**不在面板里画**——它直接叠画在编辑区的**主画布**上，
+不另开小窗显示全图；区域框同理。本面板只发 `overlay_changed` 让宿主重画，
+面板自身没有任何缩略图。
 
 区域沿用画布上的临时区域（`region_boxes`），「编辑区域」直接在背景图上画。
 
 **只有选中「滑窗」时滑窗参数才可用**，选中「区域」时同理只有区域相关可用；
-未选中的那一组**置灰但不隐藏**——用户要的是「未选中滑窗时不能修改点击」，
-同时还能一眼看到另外两种模式当前的参数与区域，不必来回切换核对。
+未选中的那一组**置灰但不隐藏**：既不能修改，又能一眼看到另外两种模式当前的
+参数与区域，不必来回切换核对。
 
-面板是**非模态**的：弹窗开着时用户仍要点画布画区域，模态会吃掉发往画布的
+面板是**非模态**的：弹窗开着时仍需点画布画区域，模态会拦截发往画布的
 鼠标事件（Qt 只把输入送给模态窗及其子窗口），那样「点编辑区域直接在图上画」
 根本用不了。面板只负责收集选择，校验与快照由 `mixins/inference.py` 在启动
 任务前完成。
@@ -73,7 +73,7 @@ class ScopePanel(QDialog):
         self._build_ui()
         self._apply_style()
         self.set_mode(mode)
-        # 非模态：`exec_()` 的应用级模态会吃掉发往画布的鼠标事件，使
+        # 非模态：`exec_()` 的应用级模态会拦截发往画布的鼠标事件，使
         # 「点编辑区域直接在背景图上画」不可用。
         self.setModal(False)
 
@@ -82,13 +82,12 @@ class ScopePanel(QDialog):
         layout.setSpacing(6)
 
         # 三段（全图/滑窗/区域）都在**同一个窗口**里，不拆弹窗；但各自有自己
-        # 的分组框，选中的那段可编辑、其余置灰。用户要求「还在一个窗口，补全
-        # 内容，分割一下」+「全部显示各自内容」——所以用置灰而不是隐藏，用户
-        # 一眼能看到另外两种模式当前的参数/区域，不必来回切换核对。
+        # 的分组框，选中的那段可编辑、其余置灰。用置灰而不是隐藏，
+        # 这样一眼能看到另外两种模式当前的参数/区域，不必来回切换核对。
         #
         # 每段拆成「标题行 + 内容体」两部分：`setEnabled` 只作用于**内容体**。
-        # 整段禁用会连标题行里的单选按钮一起点不动，用户就切不过去了
-        # （整段禁用时点别的模式没反应）——所以按钮必须一直可点。
+        # 整段禁用会连带禁用标题行里的单选按钮，导致无法切换模式，
+        # 所以按钮必须始终保持可用。
         self._buttons = {}
         self.sections = {}
         self._section_bodies = {}
@@ -129,10 +128,10 @@ class ScopePanel(QDialog):
             reference_size=self._reference, spec=self._windows)
         self._section_bodies[MODE_WINDOW].layout().addWidget(self.window_params)
 
-        # 区域段改成**按钮驱动**：用户要求「画区域也加一个按钮啊 点一下画一个」。
-        # 原先的「选中『区域』就自动进入可编辑态」要拆掉——那个自动进入的会话
-        # 会独占左键，标签框就再也点不到了；现在只有点了这个按钮，下一次在图上
-        # 拖动才画区域，画完立刻退出，其余时间画布与平时完全一样。
+        # 区域段是**按钮驱动**的：不能让「选中『区域』就自动进入可编辑态」，
+        # 那个自动进入的会话会独占左键，标签框就再也点不到了。
+        # 现在只有点了这个按钮，下一次在图上拖动才画区域，画完立刻退出，
+        # 其余时间画布与平时完全一样。
         row = QHBoxLayout()
         self.add_region_btn = QPushButton(tr("添加区域"))
         self.add_region_btn.setObjectName("scopeAddRegion")
@@ -145,9 +144,8 @@ class ScopePanel(QDialog):
         row.addStretch()
         self._section_bodies[MODE_ROI].layout().addLayout(row)
 
-        # 已画区域的明细：每条显示坐标 + 尺寸，右侧带删除按钮。用户要求
-        # 「区域画完后在推理范围窗口显示该框的坐标 加一个删除按钮」——
-        # 之前这里只有一个「N 个区域」的计数，看不出框在哪，也没法删。
+        # 已画区域的明细：每条显示坐标 + 尺寸，右侧带删除按钮。
+        # 只显示计数无法判断位置，也无法删除。
         self.region_list = QListWidget()
         self.region_list.setObjectName("scopeRegionList")
         self.region_list.setMaximumHeight(110)
@@ -160,8 +158,7 @@ class ScopePanel(QDialog):
         self.warn_label.setWordWrap(True)
         layout.addWidget(self.warn_label)
 
-        # 用户要求「选中某推理方式立马刷新不需要点击确定，可以把确定取消
-        # 按钮删除」：面板不再是「编辑-确认」的两段式，改成纯实时面板。
+        # 面板是纯实时的，不是「编辑-确认」两段式：没有确定/取消按钮，
         # 关窗只剩右上角 X，且**关窗不回滚**——所有改动都已在 `_refresh`
         # 里经 `overlay_changed` 即时写回宿主。
 
@@ -225,7 +222,7 @@ class ScopePanel(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # 左上角对齐锚点（=「标签管理」区左上角），用户要求「始终对齐」。
+        # 左上角对齐锚点（=「标签管理」区左上角）。
         place_within(self, self._anchor_rect, align="top-left")
         sync_titlebar(self)
 
@@ -249,16 +246,16 @@ class ScopePanel(QDialog):
 
         这里**不能**按「保留 checked[0]、清掉其余」来写：`checked` 是按字典序
         （full, window, roi）收集的，从「滑窗」点「区域」时得到
-        `['window', 'roi']`，清掉 `checked[1:]` 正好把用户刚点的那个清掉，
+        `['window', 'roi']`，清掉 `checked[1:]` 正好把刚点击的那个清掉，
         表现为「点了没反应」。所以要以**信号带进来的那个按钮**为准：
         它 `checked=True` 时就保留它、取消其余；它变回 `False`（用户把当前项
-        又点了一下）时兜底回「全图」，保证任何时候恰好有一个选中项。
+        又点了一下）时回退到「全图」，保证任何时候恰好有一个选中项。
         """
         source = self.sender()
         if checked and source is not None:
             self._keep_only(source)
             return
-        # 没有 source（直接调用、测试里模拟）或按钮被取消选中：按字典序兜底
+        # 没有 source（直接调用、测试中模拟）或按钮被取消选中：按字典序回退
         if not checked and source is None:
             self._keep_only(self._buttons.get(self._selected_mode())
                             or self._buttons[MODE_FULL])
@@ -326,8 +323,8 @@ class ScopePanel(QDialog):
 
     def _rebuild_region_list(self):
         # 行控件是 `setItemWidget` 挂上去的，`clear()` **不会**回收它：不显式
-        # 收走的话旧行会一直挂在面板上（切语言重建几轮就攒一堆，而且它们还能
-        # 被 findChildren 找到、文本停在上一门语言）。所以先把旧行摘下来。
+        # 回收的话旧行会一直挂在面板上（切换语言重建几次即不断累积，而且它们
+        # 仍能被 findChildren 找到、文本停在上一种语言）。所以先把旧行移除。
         for index in range(self.region_list.count()):
             old = self.region_list.itemWidget(self.region_list.item(index))
             if old is not None:
@@ -344,9 +341,9 @@ class ScopePanel(QDialog):
     def _build_region_row(self, index, region):
         """单条区域：`#N  (x, y) 宽×高` + 锁按钮 + 删除按钮。
 
-        锁按钮是**每条各自**的（用户要求「区域列表增加锁定按钮，不锁定默认
-        最上层与检测框一样可修改，锁定后最底层不可修改」）。按钮文字直接显示
-        当前状态的反操作，比一个勾选框更直白：写着「锁定」就是还能锁。
+        锁按钮是**每条各自**的：不锁定默认最上层、与检测框一样可修改，
+        锁定后最底层、不可修改。按钮文字直接显示当前状态的反操作，
+        比一个勾选框更直白：写着「锁定」就是还能锁。
         """
         row = QWidget()
         line = QHBoxLayout(row)
@@ -390,9 +387,9 @@ class ScopePanel(QDialog):
     def set_anchor_rect(self, rect):
         """面板竖直位置要对齐的那块区域（由宿主按两个列表算出来）。
 
-        用户澄清「上面是层级不是位置」：面板在层级/顺序上要落在背景图列表
-        与标签列表**中间**，所以这里收到的是那两个列表之间的那条带，而不是
-        整个侧栏——只对齐侧栏顶部会一直盖住背景图列表。
+        面板在层级/顺序上要落在背景图列表与标签列表**中间**，所以这里收到
+        的是那两个列表之间的那条带，而不是整个侧栏——只对齐侧栏顶部会一直
+        盖住背景图列表。
         """
         self._anchor_rect = rect
 
@@ -425,8 +422,8 @@ class ScopePanel(QDialog):
         mode = self.mode()
         needs_window = mode == MODE_WINDOW
         needs_region = mode == MODE_ROI
-        # 三段始终可见、各自显示自己的内容（用户要求「全部显示各自内容」），
-        # 只有选中那段可编辑、其余置灰——置灰既能看到当前值又改不动。
+        # 三段始终可见、各自显示自己的内容，只有选中那段可编辑、其余置灰——
+        # 置灰既能查看当前值又无法修改。
         for _mode, body in self._section_bodies.items():
             body.setEnabled(_mode == mode)
         # 组框的 `setEnabled(False)` 会连带禁用里面的输入框，所以滑窗参数

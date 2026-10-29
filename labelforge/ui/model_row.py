@@ -14,7 +14,7 @@ from .theme import ThemeManager
 
 # 置信度 / NMS 两个输入框的宽度。
 # 58px 会把小数末位裁掉：可编辑区只剩 34px，而 "0.01" 需要 48px，
-# 于是显示成 "0.0"（用户报的「缺了一位小数」）。
+# 于是显示成 "0.0"，丢掉小数末位。
 # 74px 是项目主题下的最小可用值，可编辑区刚好 48px。
 # 注意别用裸 QDoubleSpinBox 量：项目 QSS 的内边距更宽，量出来会偏小。
 _THRESHOLD_SPIN_WIDTH = 74
@@ -58,7 +58,7 @@ class ModelRow(QWidget):
         self._model_name = ""
         layout.addWidget(self.name_label)
 
-        # 功能之间用 '-' 隔开（用户要求）：7 组 = 加载模型+模型名 | 置信度+NMS
+        # 功能之间用 '-' 隔开：7 组 = 加载模型+模型名 | 置信度+NMS
         # | 输入尺寸 | 覆盖/补充 | 类别筛选 | 推理范围+摘要 | 目标张号。
         # 置信度与 NMS 同组，中间**不**隔。
         self._add_param_separator(layout)
@@ -88,14 +88,13 @@ class ModelRow(QWidget):
 
         # 输入尺寸只对**动态轴**模型有意义（静态轴模型的尺寸由模型自身决定）。
         # 静态模型下整组控件（标签 + 两个输入框 + "x"）直接不显示，而不是
-        # 「显示但禁用」——用户要求「静态模型直接不加载，动态的才显示」，
-        # 摆一组改不动的控件只会让人反复去点它。
+        # 「显示但禁用」——摆放一组无法修改的控件只会被反复点击。
         self.size_lbl = QLabel(tr("输入尺寸"))
         layout.addWidget(self.size_lbl)
         self.size_spin_w = QSpinBox()
         self.size_spin_w.setRange(32, 8192)
         # 与 conf / NMS 用同一个宽度常量：它们在同一行里并排，宽度不一会显得
-        # 参差不齐（用户要求「输入尺寸的按钮宽度和 conf、NMS 保持一致」）。
+        # 参差不齐，所以与 conf / NMS 用同一个宽度常量。
         self.size_spin_w.setFixedWidth(_THRESHOLD_SPIN_WIDTH)
         self.size_spin_w.setToolTip(tr("动态轴模型需要指定；静态轴模型按模型自身尺寸推理"))
         self.size_spin_w.valueChanged.connect(self._emit_size)
@@ -147,12 +146,12 @@ class ModelRow(QWidget):
         self.scope_summary_label.setObjectName("modelRowScope")
         layout.addWidget(self.scope_summary_label)
 
-        # 批量的「张数范围」放在推理范围右侧（用户要求）。语义是**结束张号**：
+        # 批量的「张数范围」放在推理范围右侧。语义是**结束张号**：
         # 当前图是第 200 张时填 300 → 跑 200~300；填 100 → 跑 100~200。所以
         # 它表达的是「从当前图到第 N 张」这条区间，方向由两边大小自动决定。
         #
-        # 前缀名加在输入框**自己左边**：用户说的是「范围推理右侧的序号加一个
-        # 前缀名」——即推理范围按钮右侧那个序号，光一个数字看不出是什么。
+        # 前缀名加在输入框**自己左边**：推理范围按钮右侧仅有一个序号时，
+        # 无法判断该数字的含义。
         self._add_param_separator(layout)
         self.batch_to_label = QLabel(tr("目标张号"))
         layout.addWidget(self.batch_to_label)
@@ -225,8 +224,8 @@ class ModelRow(QWidget):
         """加载完成后填入模型信息。
 
         **动态轴**模型的尺寸必须由用户指定，所以整组「输入尺寸」控件显示且可编辑；
-        **静态轴**模型的尺寸由模型自身决定，整组直接**不显示**（用户要求「静态
-        模型直接不加载，动态的才显示」）——摆一组改不动的输入框只会让人反复去点它。
+        **静态轴**模型的尺寸由模型自身决定，整组直接**不显示**——摆一组
+        无法修改的输入框只会被反复点击。
 
         端到端模型（v26）导出时已内置 NMS，界面上的 NMS 值改了不起作用，
         因此禁用并标注，免得用户以为调了没反应。
@@ -260,7 +259,7 @@ class ModelRow(QWidget):
         隐藏而不是禁用：静态模型的尺寸不可改，留着只会误导。
 
         两侧的分隔符跟着一起藏**掉一个**：这组如果看不见，它左右那两条 `-`
-        就会挨在一起，显示成 `NMS [0.45] - - 覆盖`，看着像多打了一个。
+        就会挨在一起，显示成 `NMS [0.45] - - 覆盖`，形似多出一个分隔符。
         组收起时只留左边那条，于是读起来仍是「… NMS - 覆盖 …」。
         """
         for widget in (self.size_lbl, self.size_spin_w, self.size_sep_label,
@@ -277,7 +276,7 @@ class ModelRow(QWidget):
         """没有模型时的样子：显示引擎默认值，只留加载按钮可点。
 
         必须显式填默认值：QDoubleSpinBox 初值是 setRange 的下限，
-        不填就会显示成 0.01 / 0.05 / 32x32 这些占位数字，看着像参数被改坏了。
+        不填就会显示成 0.01 / 0.05 / 32x32 这些占位数字，形似参数异常。
         """
         from ..engine.onnx_inference import (
             DEFAULT_CONF, DEFAULT_INPUT_SIZE, DEFAULT_IOU,
@@ -401,8 +400,8 @@ class ModelRow(QWidget):
         total = int(total or 0)
         spin = self.batch_to_spin
         spin.setMaximum(max(0, total))
-        # 默认值 = 最后一张（用户要求）。用户改过就不再覆盖，否则他一填完
-        # 换数据集，输入的意图就被抹掉了。
+        # 默认值 = 最后一张。手动填过就不再覆盖，否则一换数据集，
+        # 输入的意图就被抹掉了。
         if not self._batch_to_user_set:
             spin.blockSignals(True)
             spin.setValue(max(0, total))

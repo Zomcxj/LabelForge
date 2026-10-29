@@ -423,8 +423,8 @@ class ImageLoaderMixin:
                 # **不要**在这里预置 `detection_boxes_dict[idx] = []`：缓存判据是
                 # 「下标在不在字典里」（空列表也是有效缓存），预置空列表等于告诉
                 # `_load_detection_boxes_for_index()`「这张已加载过、结果就是空的」，
-                # 磁盘上的框永远读不进来——用户报的「加载数据集把标签吃掉、
-                # 绿点变橙点再变空心」就是这个（大文件夹走这条流式加载路径）。
+                # 磁盘上的框永远读不进来（大文件夹走这条流式加载路径，症状是
+                # 标签丢失、状态圆点由绿变橙再变空心）。
                 # 缓存由 `_load_detection_boxes_for_index()` 自己填。
                 self._pending_image_index += 1
                 if time.perf_counter() >= deadline:
@@ -630,8 +630,8 @@ class ImageLoaderMixin:
         缓存判据是「**这个下标在不在字典里**」，不能写成 `len(...) > 0`。
         空列表（0 框）也是有效缓存：覆盖模式刚把这张图清空时，若把空缓存
         当成「没加载过」而重读磁盘，磁盘上的旧 json 会把刚清掉的框又搬回来，
-        连带 `detection_boxes_dict[index]` 也被旧内容覆盖——用户报的
-        「一键推理跑完不更新结果，切到那张图又恢复原样」就是这个。
+        连带 `detection_boxes_dict[index]` 也被旧内容覆盖（症状是推理跑完
+        不更新结果，切到那张图又恢复原样）。
         """
         from_cache = index in self.detection_boxes_dict
         if from_cache:

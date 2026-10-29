@@ -2,7 +2,7 @@
 
 判据原先写了三份 —— 画布交互两处（悬停、点选）与右键菜单各一份，坐标换算
 和三种形状的分支逐字重复。三份一旦分叉，就会出现「能点中但右键找不到这个框」
-这类不一致，而这类问题从代码上看不出来。
+这类不一致，而这类问题无法通过阅读代码发现。
 
 坐标换算走 `canvas_point_of` / `canvas_rect_of`，命中判定走 `box_hit_by_cursor`。
 """
@@ -20,7 +20,7 @@ def iter_boxes_by_hit_priority(boxes, selected=(), visible=None):
     关键点又在其余关键点之上。
 
     画布点选与右键菜单必须共用同一个顺序，否则会出现「能点中、右键却选到
-    底下那个框」—— 用户报过：关键点落在检测框里时，右键改的是框不是点。
+    底下那个框」—— 关键点落在检测框里时，右键必须改点而不是框。
     """
     indexed = [(i, b) for i, b in enumerate(boxes)
                if visible is None or visible(b)]

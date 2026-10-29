@@ -197,7 +197,7 @@ class MemoryRecordMixin:
             self.background_dataset_labels = set()
         if not hasattr(self, 'imported_background_labels'):
             self.imported_background_labels = set()
-        # 记录里的类别不算「扫描结果」，放进 imported 才能扛住之后的重新扫描
+        # 记录里的类别不计入「扫描结果」；放进 imported 才能在后续重新扫描时保留
         self.imported_background_labels.update(restored)
         self.background_dataset_labels.update(restored)
         self.global_labels.update(restored)

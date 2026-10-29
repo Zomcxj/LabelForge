@@ -21,8 +21,8 @@ def _equalize_dock_sizes(host, docks, last_norm, qt):
     `last_norm` 记的是上一次**观察到的宽度组合**，用来挡住「布局还没生效、
     又读到同一份旧几何」造成的重复 resizeDocks。不能按目标宽度记：把一行
     拖成 200/400 时平均值还是原来的 300，会被判成「已经归一化过」而永远
-    跳过，这一行再也回不到 1:1 —— 用户报的「无法一比一划分」就是这个。
-    读到已均衡就删掉记录，用户下次再拖偏仍能纠正。
+    跳过，这一行再也回不到 1:1。读到已均衡就删掉记录，
+    下次再拖偏仍能纠正。
     """
     if len(docks) < 2:
         return
@@ -60,7 +60,7 @@ def _equalize_dock_sizes(host, docks, last_norm, qt):
     # 每一列的 dock 等高（1:1）。
     # 这一分支原先只在「四个 dock 全部堆成一列」时才生效，而默认排布是
     # 2×2（左列 class/size，右列 iou/aspect），于是同一列上下两个图表被拖成
-    # 1:2 / 2:1 后再也没人纠正 —— 用户报的「右侧每次都是 1:2 或者 2:1」。
+    # 1:2 / 2:1 后再也没人纠正。
     columns = []
     for dock, g in items:
         placed = False
@@ -368,8 +368,8 @@ class StatsMixin:
         layout.addWidget(host)
         # ⑦ 先在 UI 线程拿**内存缓存**（有就是现成的，立刻显示），磁盘扫描交给
         # 后台线程：原先 `_collect_bg_stats_for_dialog()` 会在主线程把每个
-        # sidecar json 解析两遍，数据集一大就要好几秒（用户报的「统计有时候
-        # 需要 5s 才能打开」）。现在弹窗先出来，扫描完成再填充。
+        # sidecar json 解析两遍，数据集一大就要好几秒。现在弹窗先出来，
+        # 扫描完成再填充。
         bg_stats = self._cached_bg_stats_only()
         bg_tasks = {}
         bg_table = QTableWidget(len(bg_stats), 4)
@@ -438,11 +438,10 @@ class StatsMixin:
                 bg_table.blockSignals(False)
                 return
             # 故意**不拦重名**：改成已存在的标签 = 把这一类合并进那一类
-            # （用户场景：把 `drone` 并进 `Drone`）。底层
-            # `rename_detection_label` 本来就支持合并——它显式取
-            # `target_exists`，把两组的框合到一起、数量相加、保留目标颜色。
-            # 这里原先挡了一道「重名就弹回原名」，于是用户在统计窗口里怎么改都
-            # 改不动，还以为功能坏了。
+            # （例如把 `drone` 并进 `Drone`）。底层 `rename_detection_label`
+            # 本来就支持合并——它显式取 `target_exists`，把两组的框合到一起、
+            # 数量相加、保留目标颜色。挡一道「重名就弹回原名」会让改名的操作
+            # 在统计窗口里完全失效。
             if self.label_manager.rename_detection_label(old_label, new_label):
                 item.setData(QtCore.UserRole, new_label)
                 self._health_scan_generation = getattr(self, '_health_scan_generation', 0) + 1
@@ -497,15 +496,14 @@ class StatsMixin:
                 paste_table.blockSignals(False)
                 return
             # 与背景图表同一口径：不拦重名，重名走底层合并（`rename_paste_label`
-            # 会把旧名的全部项改成新名并归并颜色）。两处必须一致，否则「背景图
-            # 能合并、贴图不能合并」这种半修状态又要被用户抓到。
+            # 会把旧名的全部项改成新名并归并颜色）。两处必须一致，否则会出现
+            # 「背景图能合并、贴图不能合并」这种不一致状态。
             if self.label_manager.rename_paste_label(old_label, new_label, rewrite_disk=True):
                 self._health_scan_generation = getattr(self, '_health_scan_generation', 0) + 1
                 # 必须**重建整张表**，不能只改当前行：改名到已存在的标签是
-                # 合并，两行要并成一行（旧的只改本行，于是出现两行同名的
-                # `badge` 各带一个计数——用户看到的「改不过去」的另一半）。
-                # 背景图表早就这么做了（`_reload_stats_bg_table`），贴图这边
-                # 先前漏了。
+                # 合并，两行要并成一行（只改本行的话会出现两行同名的 `badge`
+                # 各带一个计数，看起来像没改成功）。
+                # 背景图表走的是 `_reload_stats_bg_table`，这里与之对齐。
                 self._reload_stats_paste_table_from_session(paste_table, dialog)
                 self.canvas.update()
             else:
@@ -540,11 +538,11 @@ class StatsMixin:
             paste_count=sum(paste_stats.values()))
 
         # ⑦ 立刻显示弹窗，再后台扫盘填充背景表：扫描期间先摆一句「正在统计…」，
-        # 免得用户对着空表以为没数据。`exec_()` 之前就起线程，弹窗一出来扫描
+        # 免得对着空表以为没数据。`exec_()` 之前就起线程，弹窗一出来扫描
         # 已经在跑了。
         def _on_stats_ready(counts, tasks):
             # 结果一律先落缓存（重命名/改色走的是同一份缓存），再决定要不要刷新表格。
-            # **不能**用 `dialog.isVisible()` 当「用户是否已关掉」的判据：首帧
+            # **不能**用 `dialog.isVisible()` 当「是否已关掉」的判据：首帧
             # 还没来得及显示时它就是 False，那样表格会永远停在「正在统计…」。
             # 关掉弹窗的信号是 `finished`（见下方 _on_closed）。
             self._cache_bg_stats(counts, tasks)
@@ -773,8 +771,8 @@ class StatsMixin:
 
         def normalize():
             _equalize_dock_sizes(host, list(d.values()), last_norm, Qt)
-            # 排布动过就把左右比例也拉回默认（表格 1/3 : 图表 2/3）。用户拖标题
-            # 栏本意是想调比例，结果把面板搬走了，事后比例会跟着乱掉。
+            # 排布动过就把左右比例也拉回默认（表格 1/3 : 图表 2/3）。拖标题栏
+            # 本意是调比例，结果把面板搬走了，事后比例会跟着乱掉。
             apply_ratio()
 
         dialog._apply_dock_ratio = apply_ratio

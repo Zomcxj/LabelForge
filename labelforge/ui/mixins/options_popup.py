@@ -295,7 +295,7 @@ class OptionsPopupMixin:
         """切换「空标签文件删除」。
 
         只改标志位，不删也不补任何已存在的 json：这是**切图时**的行为开关，
-        下次切图才生效。否则一关掉就得凭空造出一堆空 json 才「一致」。
+        下次切图才生效。否则一关掉就得凭空生成大量空 json 才算「一致」。
         """
         self._delete_empty_json_on_switch = bool(checked)
         if hasattr(self, 'delete_empty_json_action'):

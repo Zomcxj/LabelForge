@@ -673,7 +673,7 @@ def _read_sidecar_boxes_for_compose(image_path):
 
     - sidecar 不存在 → `([], False)`：按无标签画面写入，计入「无标注」。
     - 存在但读不出来/结构不对 → 抛 `VideoError`。**不当作无标注**：
-      损坏的标注静默变成干净画面，用户会以为这段本来就没标。
+      损坏的标注静默变成干净画面，会表现为这段本来就没标。
     - 正常解析出框 → `(boxes, True)`；shapes 为空（或没解析出有效框）
       也是 `([], False)`——画面上确实没有框。
     """
@@ -731,12 +731,11 @@ def scan_sidecar_labels(image_paths):
 def _slice_paths(paths, start_index=None, end_index=None):
     """按「从第几张到第几张」裁出要合成的图片（**都是包含端点的下标**）。
 
-    用户要求「视频合成支持选择从哪张到哪张，默认 0 到最后」。裁在**建
-    plan 之前**：这样帧号、进度、清单时长全都基于裁过的序列，不需要在
-    循环里到处判范围（漏一处就会写出越界的帧）。
+    裁在**建 plan 之前**：这样帧号、进度、清单时长全都基于裁过的序列，
+    不需要在循环里到处判范围（漏一处就会写出越界的帧）。
 
     两端都可以为 None（= 不裁那一端）。越界不报错而是夹紧——界面上的
-    上限就是图片张数，用户手输超了不该让整次合成失败。`start > end`
+    上限就是图片张数，手动输入超了不该让整次合成失败。`start > end`
     是真的没得合成，返回空列表由调用方报错。
     """
     total = len(paths)
@@ -1113,7 +1112,7 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
                 rgb = draw_boxes(rgb, boxes, render)
 
             # write() 的 Python 返回值是 None，不是成功布尔值，不能判失败；
-            # 尺寸不符的帧会被静默丢弃，所以尺寸由回读验收兜底
+            # 尺寸不符的帧会被静默丢弃，因此尺寸由回读验收环节校验
             writer.write(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
             frames_written += 1
             if on_frame is not None:

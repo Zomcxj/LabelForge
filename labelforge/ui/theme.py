@@ -10,7 +10,7 @@ class ThemeMode(Enum):
     DARK = "dark"
 
 
-# 界面主字体。JetBrains Mono 排在第一位（用户指定的观感），中文由
+# 界面主字体。JetBrains Mono 排在第一位，中文由
 # Microsoft YaHei 承接——JetBrains Mono 没有中文字形，系统会自动回落。
 UI_FONT_FAMILY = "'JetBrains Mono', 'Microsoft YaHei', 'Segoe UI', sans-serif"
 # 等宽字体只留给坐标、阈值这类需要对齐的数字。
@@ -61,7 +61,7 @@ LIGHT_THEME = {
     "text_primary": "#1F1F1F",
     "button_text": "#1F1F1F",
     "text_secondary": "#1F1F1F",
-    # 禁用文字也要读得清：用户得看懂这一项是什么，才能判断要不要启用它。
+    # 禁用文字仍需具备可读性：需要能辨认该项内容，才能判断是否启用。
     # 用虚线边框表达「不可用」，不用把字压到看不见。
     "text_disabled": "#8A8A8A",
     "accent": "#2196F3",
@@ -362,7 +362,7 @@ class ThemeManager:
             }}
             /* 列表项的勾选框由样式自己画，不继承 QCheckBox::indicator。不显式
                给规则的话勾会走平台原生样式（Windows 下是缩在左上角、溢出色块
-               的小勾），和旁边的复选框完全不是一个样子，暗色主题下几乎看不出
+               的小勾），与旁边的复选框外观不一致，暗色主题下几乎无法辨认
                勾没勾上。 */
             QListWidget::indicator, QListView::indicator {{
                 width: 14px;

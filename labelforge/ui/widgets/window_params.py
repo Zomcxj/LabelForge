@@ -4,10 +4,10 @@
 - `ScopePanel` 把它**内嵌**在范围弹窗里；
 - `SlidingWindowDialog` 仍单独存在，供需要独立窗口的路径使用。
 
-**这里没有预览图**：窗口网格直接画在编辑区的**主画布**上（用户明确要求
-「直接在画布展示，不要单独小窗显示全图」）。控件只负责参数与「现在会切出
-多少窗」的文字，网格的绘制由 `mixins/inference.py` 交给画布完成；本控件把
-`changed` 发出去，宿主据此重画网格。
+**这里没有预览图**：窗口网格直接画在编辑区的**主画布**上，不另开小窗显示
+全图。控件只负责参数与「现在会切出多少窗」的文字，网格的绘制由
+`mixins/inference.py` 交给画布完成；本控件把 `changed` 发出去，
+宿主据此重画网格。
 
 窗口数一律以 `iter_windows()` 的实际结果为准，不用 `size_for_count()` 反推
 ——后者取整后可能多出一窗。非法参数的口径也与引擎一致（`重叠 >= 窗口尺寸`
@@ -17,12 +17,11 @@
 模板只回填输入框，**不生效**：必须由宿主的「确定」才写回。控件自身不写模板
 ——写模板由调用方在确定之后做。
 
-**只有选中「滑窗」时才可编辑**（用户要求）：`set_editable(False)` 会把输入框
-一并禁用，既点不动也改不动。
+**只有选中「滑窗」时才可编辑**：`set_editable(False)` 会把输入框一并禁用，
+既无法点击也无法修改。
 
-**没有模板**：早先这里有一排「模板」按钮，与数据增强共用 `crop_templates`
-（双向同步）。用户要求「推理滑窗不要模板了，也不与数据增强同步模板」，那排
-按钮与同步逻辑都已删除；滑窗参数只认当前输入框里的值。
+**没有模板**：模板按钮与数据增强的 `crop_templates` 同步逻辑都不在这里，
+滑窗参数只认当前输入框里的值。
 """
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -38,9 +37,8 @@ DEFAULT_WINDOW = 640
 DEFAULT_OVERLAP = 200
 MIN_WINDOW = 8                  # 与 crop_dialog 的窗口下限一致
 MANY_WINDOWS = 1000             # 超过就提醒一句：每张图要跑这么多窗
-# 最低可见比例：数据增强侧也有同名概念，但**推理侧不再跟它同步**（用户
-# 明确「推理滑窗不要模板了，也不与数据增强同步模板」），所以这个默认值只
-# 服务推理侧自己的输入框。0.8 是用户指定的默认值。
+# 最低可见比例：数据增强侧也有同名概念，但**推理侧不跟它同步**，
+# 所以这里的默认值只服务推理侧自己的输入框。
 MIN_VISIBLE = 0.5
 DEFAULT_MIN_VISIBLE = 0.8
 
@@ -58,7 +56,7 @@ class WindowParamsWidget(QWidget):
         self._linking = True
         self._build_ui()
         self._apply_style()
-        # 配置里的值可能是旧版本写坏的字符串/None，逐项兜底，不整个崩掉
+        # 配置里的值可能是旧版本写入的字符串/None，逐项回退默认值，避免整体失败
         legacy_overlap = _as_int(spec.get("overlap"), DEFAULT_OVERLAP)
         for spin, key, fallback in ((self._w, "w", DEFAULT_WINDOW),
                                     (self._h, "h", DEFAULT_WINDOW),
@@ -137,8 +135,7 @@ class WindowParamsWidget(QWidget):
 
         # 曾经这里有个缩略预览小图，已删除：网格改画在主画布上。
         # 曾经这里还有一排「模板」按钮（与数据增强共用 `crop_templates`），
-        # 也已删除：用户要求「推理滑窗不要模板了，也不与数据增强同步模板」。
-        # 滑窗参数就是当前输入框里的值，不再被另一处的模板列表影响。
+        # 也已删除，滑窗参数就是当前输入框里的值，不受另一处的模板列表影响。
 
         root.addLayout(body)
 
@@ -208,8 +205,8 @@ class WindowParamsWidget(QWidget):
     def set_editable(self, editable):
         """是否可编辑：只有选中「滑窗」时才允许改参数与点模板。
 
-        禁用而不是仅隐藏——用户要求「未选中滑窗时不能修改点击」。禁用后
-        输入框仍显示当前值，用户还能核对「这次会跑多大窗口」。
+        禁用而不是仅隐藏——隐藏后无法判断当前参数的规模。禁用后输入框仍
+        显示当前值，可以核对「这次会跑多大窗口」。
         """
         self._editable = bool(editable)
         for widget in self._editable_widgets():
@@ -295,7 +292,7 @@ def _as_int(value, fallback):
 def _as_visible_percent(value):
     """最低可见比例（存的是 0.5~1.0 的小数）→ 界面用的百分比整数。
 
-    坏值、越界值都退回默认，而不是让整个控件崩掉：这个值来自配置或模板，
+    坏值、越界值都退回默认值，避免整个控件异常：这个值来自配置或模板，
     可能是旧版本写的、也可能被人手改坏。
     """
     if value is None:

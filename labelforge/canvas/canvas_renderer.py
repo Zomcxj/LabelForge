@@ -23,7 +23,7 @@ class CanvasRendererMixin:
         """绘制事件
 
         paintEvent 内未捕获的异常会让 Qt 直接终止进程（0xC0000409，无
-        traceback），所以整段绘制都包在兜底里：失败只降级为一条日志和
+        traceback），因此整段绘制都包在异常保护内：失败只降级为一条日志和
         一个错误提示，应用继续运行。
         """
         try:
@@ -32,7 +32,7 @@ class CanvasRendererMixin:
             self._report_paint_failure(exc)
 
     def _paint_scene(self, event):
-        """实际绘制流程；异常由 paintEvent 兜底。
+        """实际绘制流程；异常由 paintEvent 捕获处理。
 
         每个 QPainter 都必须用 finally 收尾：异常时 traceback 会持有本帧，
         未 end() 的 painter 会一直存活到 except 块结束，届时 Qt 在
@@ -76,7 +76,7 @@ class CanvasRendererMixin:
 
             sp.setOpacity(self.shape_opacity)
 
-            # 区域分**两趟**画，检测框夹在中间（用户要求：未锁区域在「最上层」、
+            # 区域分**两趟**画，检测框夹在中间（未锁区域在「最上层」、
             # 锁定的在「最底层」）：
             #   锁定的区域  → 检测框 → 贴图项 → 未锁定的区域
             # 这样未锁区域压住框、锁定的被框压住，与点击优先级一一对应
@@ -189,8 +189,8 @@ class CanvasRendererMixin:
     def _show_scope_grid(self):
         """是否在主画布上画滑窗网格。
 
-        条件：范围面板开着**且**当前选的是「滑窗」。用户要求「滑窗和区域各自
-        的内容直接显示在画布上」——所以切到区域时网格就该消失，只剩区域框；
+        条件：范围面板开着**且**当前选的是「滑窗」。滑窗和区域的内容各自
+        直接显示在画布上，所以切到区域时网格就该消失，只剩区域框；
         关掉面板则两者都不显示（它只是调参时的参照）。
         """
         if not getattr(self._editor, '_scope_panel_open', False):
@@ -202,12 +202,11 @@ class CanvasRendererMixin:
         """把滑窗的窗口网格画在主画布上（换算到背景图坐标）。
 
         每个窗口的**左下角**标出行列号 `r1c1`，与数据增强预览里标的号
-        同源同格式（用户要求「滑窗在画布上左下显示 r1c1 同数据增强中的」），
-        所以这里用 `iter_windows_with_index()` 而不是自己排行列。
+        同源同格式，所以这里用 `iter_windows_with_index()` 而不是自己排行列。
 
         窗口起点复用引擎的窗口数学，与「每张图 X × Y = N 个窗口」的文字
-        同源，画的格子就是要跑的窗口。参数非法时什么都不画（不是画一半），
-        否则用户会以为「这些窗会跑」。
+        同源，画的格子就是要跑的窗口。参数非法时整体不绘制，而不是只画
+        一部分——画出的格子与实际会跑的窗口必须一致。
         """
         spec = getattr(self._editor, '_scope_window_spec', None)
         if not spec:
@@ -280,7 +279,7 @@ class CanvasRendererMixin:
     def _region_draw_visible(self):
         """临时区域框是否该画：贴图模式，或**区域绘制态**中（含面板开着时）。
 
-        面板开着时在标注模式画区域也要看得见，否则用户看不到自己在画什么。
+        面板开着时在标注模式画区域也要可见，否则无法确认绘制位置。
         只影响「画不画临时框」，不改交互。
         """
         return self._is_paste_mode() or bool(
@@ -290,7 +289,7 @@ class CanvasRendererMixin:
     def _show_regions(self):
         """是否画区域轮廓：贴图模式，或推理范围选了区域。
 
-        推理用区域时要在标注模式也看得见范围，否则用户不知道框为什么只出现在
+        推理用区域时要在标注模式也显示范围，否则无法判断框为什么只出现在
         某块地方。编辑仍然只在贴图模式（`_is_paste_mode()` 不动，免得影响
         贴图交互）。
         """
@@ -364,9 +363,7 @@ class CanvasRendererMixin:
     def _draw_region_handles(self, painter, x, y, w, h, color):
         """区域缩放手柄：**只画四角**，与检测框完全同一套画法。
 
-        用户第 11 轮：「推理范围内的区域编辑要和检测框的编辑一致，检测框选中
-        句柄会变成正方形」——所以这里不再自己画一套白圆圈，改成与
-        `_draw_box_handles()` 一模一样的两态：
+        手柄与检测框完全同一套画法，与 `_draw_box_handles()` 一样的两态：
 
         - **悬停**：白色正方形（`hover_region_handle` 命中的那一个）
         - **常态**：白色底圆减去区域内部，再叠一个区域色的实心圆
@@ -374,8 +371,6 @@ class CanvasRendererMixin:
         **只画四个角**：检测框 `_draw_box_handles()` 的 `corners` 就是四个角，
         边中点一个都不画——这是逐像素核对过的，不是推断。四边中点虽然仍能
         抓（`_region_handle_at()` 认八处），但**不画**，与检测框保持一致。
-
-        （第 11 轮曾错画成八个，用户当场纠正：「检测框也只有四个点」。）
 
         半径用 `_region_handle_draw_size()`：与命中判定同一套随缩放放大的
         口径，保证「看到的圆」就是「抓得到的圆」。
@@ -456,8 +451,8 @@ class CanvasRendererMixin:
     def _get_region_border_pen(self, color, is_selected):
         """区域边框笔：**复用检测框那把尺子，整体 +1**。
 
-        用户要求「区域画图的框句柄大小和边框粗细只比检测框参数 +1」，所以
-        这里不自己定粗细，而是拿 `BOX_BORDER_CONFIG['width']` 加 1，再套上
+        边框粗细只比检测框参数 +1，所以这里不自己定粗细，
+        而是拿 `BOX_BORDER_CONFIG['width']` 加 1，再套上
         与 `_get_box_border_pen()` **同一套**「选中 ×1.5、夹在 1..4」的规则。
         两边算法一致，以后检测框改粗细，区域自动跟着走。
         """
@@ -731,8 +726,8 @@ class CanvasRendererMixin:
         字号只跟设置里的「类别名字号」走，不做缩放反向补偿——补偿系数
         经适配缩放间接依赖原图尺寸（大图适配后字号被放大、小图被压小），
         与导出视频的口径（字号只由设置字号与画面高度决定，见
-        video_render.label_font_pixels）不一致。用户裁定：不考虑图片
-        原尺寸。缩放时文字保持屏幕上的大小，与框的相对大小随缩放变化。
+        video_render.label_font_pixels）不一致。这里不考虑图片原尺寸：
+        缩放时文字保持屏幕上的大小，与框的相对大小随缩放变化。
         """
         base = DETECTION_BOX_CONFIG.get('label_font_size', 9)
         font_size = max(5, min(15, int(round(base))))

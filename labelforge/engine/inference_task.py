@@ -38,7 +38,7 @@ def _normalize_window_spec(raw):
     校验留给 `normalize_scope()` 在真正跑任务时做。
 
     `min_visible`（跨窗去重的最低可见比例）与模板侧的策略**故意不同**：
-    模板侧越界即丢（用户手填的一条记录，丢了没损失），这里则钳到合法
+    模板侧越界即丢（手填的一条记录，丢了没损失），这里则钳到合法
     区间。理由是这份 spec 存的是「上次用过的参数」——因为它越界就整份
     丢弃，会让用户上次设的窗口尺寸莫名其妙消失，且失败是静默的。
     缺字段时补 `DEFAULT_CROP_MIN_VISIBLE`，好让旧版本存的 spec 仍能加载。
@@ -147,8 +147,8 @@ def resolve_class_names(model_path, session, read_names=None):
     """解析类别名，返回 (names, source)。
 
     source 为 "file"（同级同名 txt）、"metadata"（模型自带 names）或 "missing"。
-    找不到就报 missing，由调用方决定是否让用户手输；这里不编造 0 1 2 3，
-    否则标注里会写进一堆无意义的类名。
+    找不到就报 missing，由调用方决定是否要求手动输入；这里不编造 0 1 2 3，
+    否则标注里会写入大量无意义的类名。
     """
     from labelforge.engine.onnx_inference import metadata_class_names, read_class_names
 
@@ -227,12 +227,11 @@ def merge_boxes(existing, detected, replace_auto=False, class_filter=None):
     """把推理结果并入现有标注。
 
     `replace_auto=True`（界面上的「覆盖」）时**先清掉这一图现有的所有检测框**
-    ——人工画的也清——再并入本次结果。用户明确要求「手动绘制的没有覆盖，应该
-    都覆盖」：覆盖的语义是「本图检测框完全重来」。早先只清上一轮推理框，手工
-    框与本轮结果叠在一起，看着像框重复了。
+    ——人工画的也清——再并入本次结果：「覆盖」的语义是本图检测框完全重来。
+    只清上一轮推理框的话，手工框会与本轮结果叠在一起。
 
-    **贴图一律保留**（用户明确「只清检测框，贴图保留」）。`existing` 来自
-    sidecar，里面混着贴图条目；贴图是另一条存储线，丢了就是丢用户的素材。
+    **贴图一律保留**。`existing` 来自 sidecar，里面混着贴图条目；贴图是
+    另一条存储线，不能被这一步连带清掉。
 
     class_filter 给定时做严格筛选：覆盖没开时，上一轮推理留下的、类别不在
     白名单里的框也要一并丢掉。否则筛选只能「加」不能「减」——上一次没筛跑出
@@ -512,7 +511,7 @@ def sidecar_path(image_path):
 def remove_empty_sidecar(image_path):
     """json 里没有任何 shape 就删掉它，返回是否删除。
 
-    推理无检出时若留下 shapes 为 [] 的 json，数据集里会多出一堆空文件，
+    推理无检出时若留下 shapes 为 [] 的 json，数据集中会多出大量空文件，
     后续扫描与训练都要额外过滤；只有确实无标注时才删，损坏的文件不动。
     """
     import json
@@ -600,7 +599,7 @@ def write_one_result(result, existing=None, replace_auto=False,
     """把单张结果合并后写进它的 sidecar；返回是否真的写了盘。
 
     `existing` 给 None 表示从磁盘读（调用方有更新鲜的内存时应当传进来）。
-    没检出且合并后仍无任何标注的不写盘：否则数据集里会多出一堆 shapes 为 []
+    没检出且合并后仍无任何标注的不写盘：否则数据集中会多出大量 shapes 为 []
     的空 json。已有标注（人工/贴图/多边形）的图照常写回，因为 replace_auto
     可能刚好删掉了上一轮的推理框。
 
@@ -638,7 +637,7 @@ def write_results(results, memory_boxes=None, replace_auto=False, skip_index=Non
     界面按每张完成就刷新列表圆点，用户也要能随时看到已写出的 json。
 
     memory_boxes 里已有的图以内存为准：内存可能比磁盘新，直接读盘会把
-    用户刚做的编辑当成不存在，进而丢掉。skip_index 交给调用方用正常保存
+    刚做的编辑当成不存在，进而丢掉。skip_index 交给调用方用正常保存
     流程处理（当前显示图还涉及贴图与画布状态）。
 
     class_filter 会传给 merge_boxes，把上一轮不在白名单里的推理框也清掉。

@@ -41,7 +41,7 @@ DEFAULT_IOU = 0.45
 _MIN_CLASSES = 1
 # 类别数上限取 80（COCO 的量级）。自己训练的模型基本不会超过这个数，超了说明
 # 多半是把候选数当成了通道轴。真有大类别数（如 OpenImages 600 类）的模型，
-# 判不出来会提示显式选择格式，用户选一次即可，不会静默用错。
+# 判不出来会提示显式选择格式，选一次即可，不会静默用错。
 _MAX_PLAUSIBLE_CLASSES = 80
 _MIN_ANCHORS_FOR_AUTO = 100
 
@@ -233,7 +233,7 @@ def guess_class_count(shape):
         return None
     rows, cols = dims
     # 端到端与「类别很少的 v5/v8」在 shape 上无法区分（[1, N, 6] 两种解释
-    # 都成立），这种小形状一律不给数，宁可让用户自己填。
+    # 都成立），这种小形状一律不给数，宁可交由手动填写。
     if cols <= END2END_ROW and rows <= DEFAULT_MAX_DET:
         return None
     if cols > rows:
@@ -246,7 +246,7 @@ def guess_class_count(shape):
 
 
 def detect_output_format(shape, num_classes=None):
-    """按输出 shape 推断格式，推断不出返回 None（调用方须让用户显式指定）。
+    """按输出 shape 推断格式，推断不出返回 None（调用方须要求显式指定）。
 
     检测头的两个轴一个是候选（锚点）轴、一个是通道轴（5+C 或 4+C）。类别数
     未知时只能靠轴序：
@@ -258,7 +258,7 @@ def detect_output_format(shape, num_classes=None):
     [1, 25200, 9]）被判成「无法判断格式」而加载不了。
 
     判据是「把某一轴当通道轴解出的 C 是否合理」，另一轴同时要够大像候选数。
-    两边都推不出结果时返回 None，交回用户显式指定——猜错会把 objectness 当
+    两边都推不出结果时返回 None，交回调用方显式指定——猜错会把 objectness 当
     类别分数、把列当行读，静默产出错误标注。
 
     末维恰为 6、行数在 max_det 以内且远多于 6 时按端到端解释。但 6 也可能
@@ -292,7 +292,7 @@ def detect_output_format(shape, num_classes=None):
     #                  84 不够，所以不是 v8
     #
     # 末轴恰为 END2END_ROW 时不认 v5：那是端到端的行宽，读成 v5 会解出 C=1，
-    # 与端到端导出撞车，宁可让用户显式指定。
+    # 与端到端导出冲突，因此要求显式指定。
     #
     # 两边都成立（not as_v8 / not as_v5 那两处）在当前常量下不会发生——类别
     # 数上限 80 让 v5 要求 cols<=85、v8 要求 cols>=100，天然互斥。守卫留着，
@@ -313,7 +313,7 @@ def detect_output_format(shape, num_classes=None):
 def pick_detection_output(outputs):
     """从模型输出里挑出唯一的检测头，返回 (下标, shape)。
 
-    YOLOv5 训练导出的第三方模型常带一堆辅助输出：主检测头是 3 维的
+    YOLOv5 训练导出的第三方模型常带多个辅助输出：主检测头是 3 维的
     [1, 锚点数, 5+C]，另外还挂出每个 stride 的原始头（5 维
     [1, 每格锚数, H, W, 5+C]，值还没解码）。这些辅助输出不参与推理，
     但只要多挂了一个，模型就变成"多输出"，直接报"仅支持单输出"会把
@@ -321,7 +321,7 @@ def pick_detection_output(outputs):
 
     判别只看形状，不靠输出名（名字在不同导出脚本里毫无规律）：
       3 维的只有一个 -> 就是它；
-      3 维的一个都没有，或有多个 -> 说不清是谁，报错让用户显式指定，
+      3 维的一个都没有，或有多个 -> 说不清是谁，报错要求显式指定，
       绝不瞎猜（挑错会静默产出错误标注）。
     """
     candidates = [
@@ -432,7 +432,7 @@ def metadata_class_names(session):
     """从 ONNX 元数据取类别表，取不到返回空表。
 
     ultralytics 导出会把 names 写成 "{0: 'person', ...}" 这类字典字面量；
-    能解析就按 key 排序还原 id 顺序，格式不认识时返回空表交给调用方兜底。
+    能解析就按 key 排序还原 id 顺序，格式无法识别时返回空表，由调用方处理。
     放在本模块是为了让格式识别能用上模型自带的类别数。
     """
     try:
@@ -511,8 +511,8 @@ class OnnxDetector:
         if len(inputs) != 1:
             raise InferenceError(f"模型输入个数为 {len(inputs)}，仅支持单输入检测模型")
         self._input_name = inputs[0].name
-        # 没显式给类别表时用模型自带的：否则标签会静默变成空串，
-        # 保存出去的标注看不出是哪一类。
+        # 未显式指定类别表时用模型自带的：否则标签会静默变成空串，
+        # 保存出去的标注无法区分类别。
         if not self.class_names:
             self.class_names = metadata_class_names(self._session)
         return self._session
@@ -534,7 +534,7 @@ class OnnxDetector:
     def model_input_size(self):
         """模型输入 (width, height)。
 
-        静态轴直接取 shape；动态轴用用户指定的尺寸，没有就用 640×640 默认值，
+        静态轴直接取 shape；动态轴用调用方指定的尺寸，没有就用 640×640 默认值，
         该值在模型行里可以随时改。
         """
         self._ensure_session()

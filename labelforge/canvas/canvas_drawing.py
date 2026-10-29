@@ -15,14 +15,13 @@ class CanvasDrawingMixin:
     def _region_editing_allowed(self):
         """现在允许编辑区域框吗（**当前模式是否有在调的入口**）。
 
-        用户要求「区域框可以调整大小和位置，只在面板开着时允许」——范围面板正是
-        调推理区域的地方，此时画布常停在标注模式，光靠 `_is_paste_mode()` 会让
-        区域框完全拖不动。
-
-        第 11 轮去掉贴图区域面板后，两份区域的编辑入口不对称了：
+        两种模式的编辑入口不对称：
         - 标注模式 → 范围面板（`_scope_panel_open`）开着才允许，管推理区域
         - 贴图模式 → 恒允许：贴图区域没有面板，画布右键就是它的编辑入口，
           再要求「某个面板开着」就等于谁也改不了它
+
+        标注模式下画布常停在标注模式，只靠 `_is_paste_mode()` 会让区域框
+        完全拖不动，所以这里要额外看范围面板的开关。
 
         只放行**未锁定**的区域：锁定的区域要「最底层、不可修改」，由
         `_region_at()` 跳过它，这里不必再判一次。
@@ -34,10 +33,9 @@ class CanvasDrawingMixin:
     def _region_editable(self, index=None):
         """区域现在可编辑吗——**点击与滚轮共用同一把尺子**。
 
-        用户要求「区域的编辑应该和标签一致：滚动缩放、单边调整、四个角拖动」。
-        平移/缩放/手柄这三件事在有 `_region_editing_allowed()` 之前就都实现了，
-        但滚轮那条分支当时只认 `_is_paste_mode()`，于是面板开着（画布停在标注
-        模式）时滚轮静默失效，看起来就像「区域不能像标签那样缩放」。
+        区域的编辑口径与标签一致：滚动缩放、单边调整、四个角拖动。
+        平移/缩放/手柄都走 `_region_editing_allowed()`，滚轮那条分支也必须走
+        同一个判据——否则面板开着（画布停在标注模式）时滚轮会静默失效。
 
         所以把判据收拢到这一处：贴图模式**或**面板开着都能编辑。锁定的区域不算
         （`index` 给定时顺带查一下）。
@@ -111,9 +109,9 @@ class CanvasDrawingMixin:
     def _after_region_committed(self):
         """落笔后复位绘制态（一个按钮只画一个区域），并让宿主刷新区域明细。
 
-        用户要求「画区域也加一个面板按钮，点一下画一个」——所以画完就退出绘制
-        态，不会再连着画下一个；要再画就再点一次按钮。宿主那侧要靠回调把新
-        区域刷进面板列表，所以复位前后都要通知一声。
+        画完立即退出绘制态：一个按钮只画一个区域，不会再连着画下一个，
+        要再画就再点一次按钮。宿主那侧靠回调把新区域刷进面板列表，
+        所以复位前后都要通知一声。
         """
         self._notify_region_changed()
         self._reset_region_drawing_state()
@@ -579,7 +577,7 @@ class CanvasDrawingMixin:
                 self._editor.detection_boxes[box_index].copy()
         if hasattr(self._editor, '_sync_pasted_boxes_to_cache'):
             # 带上被拖框的下标：缓存回写只认「拖的是不是粘贴副本」，
-            # 不带上就会拖动任何框都回写（用户报的 bug）。
+            # 不带上就会对任何框都回写。
             self._editor._sync_pasted_boxes_to_cache(box_index=box_index)
 
     def _sync_all_detection_boxes_to_dict(self):

@@ -174,7 +174,7 @@ class VideoMixin:
         """把弹窗的叠加选项变成 `RenderSpec`；没有选项就返回 None。
 
         类别色在这里（主线程）取好：`get_label_color` 会改缓存、写配置，
-        后台线程不能调用它。没取到颜色的类别走渲染模块的兜底色。
+        后台线程不能调用它。未取到颜色的类别使用渲染模块的默认色。
         """
         if not options:
             return None
@@ -240,7 +240,7 @@ class VideoMixin:
         self._close_video_dialog(tr("合成完成"))
         self.status_label.setText(text)
         # 完成提示合并成一条：无标注张数塞进同一句话，不再单独弹窗打断
-        # （有帧没有标注时画面是干净的，不说明的话用户会以为漏画了）
+        # （有帧没有标注时画面是干净的，不说明的话会误认为漏画了）
         message = f"{tr('输出文件')}: {result.output_path}"
         if result.unlabeled_count:
             message += (f"\n{result.unlabeled_count} "
@@ -319,7 +319,7 @@ class VideoMixin:
         self._busy = False
         if result.cancelled:
             # ④A 最慢（18 秒视频要推理 541 次），跑完的帧不白费：引擎会留一个
-            # 能播的半成品。报出它在哪、有多长，用户能直接用，不用从头再来。
+            # 能播的半成品。报出它在哪、有多长，可直接使用，不用从头再来。
             partial = getattr(result, "partial_path", "")
             self._close_video_dialog(tr("已取消推理成片"))
             if partial:

@@ -611,7 +611,7 @@ class CropConfigDialog(QDialog):
 
         两轴都要解 n·c − (n−1)·ov = L：同一重叠未必让两轴同时整除，整除的那轴
         精确铺满，不整除的那轴用 ceil 取最小可行窗口（末窗贴边、数量仍达标），
-        保证「改重叠」不会把数量顶掉。
+        保证「改重叠」不会覆盖数量。
         """
         for spin, length, count in ((self._w, rw, self._cols.value()),
                                     (self._h, rh, self._rows.value())):
@@ -638,8 +638,8 @@ class CropConfigDialog(QDialog):
         rw, rh = self._ref_size()
         if not rw:
             return
-        # 先把上一轮的区间收窄放开：否则新算出的派生值会被旧范围静默钳掉
-        # （锁 cnt+ov 后改重叠，w 反推 734 会被旧下界 800 吃掉）
+        # 先解除上一轮的区间收窄：否则新算出的派生值会被旧范围静默截断
+        # （例如锁 cnt+ov 后改重叠，宽高反推值 734 会被旧下界 800 覆盖）。
         self._relax_ranges()
         locked = set(self._lock_order)
         cnt_l, ov_l, size_l = "cnt" in locked, "ov" in locked, "size" in locked
@@ -681,8 +681,8 @@ class CropConfigDialog(QDialog):
             elif source in ("w", "h", "square") and not self._fill.isChecked():
                 # 不开填充：宽高与重叠互相反推，两轴都保持恰好铺满（同步）。
                 # 开填充则不反推——等步长落位下两轴不可能都精确，差多少补多少，
-                # 强行反推只会把用户定的宽高顶掉。
-                # 只认「用户真的改了宽高」：套模板/换图/开关填充时宽高是给定的，
+                # 强行反推会覆盖用户设定的宽高。
+                # 仅在宽高确实被手动修改时反推：套模板/换图/开关填充时宽高是给定的，
                 # 派生会直接把模板值改掉。
                 self._derive_flush_from_size(source, rw, rh)
 
@@ -737,7 +737,7 @@ class CropConfigDialog(QDialog):
         """把宽高/重叠的输入范围钳到「当前值所在的合规段」——用户拖不出超限值。
 
         重叠的段必须同时叠加半窗上限：否则段会越过该上限，随后 _clamp_ov_max 再钳一次
-        就得到空区间，重叠值反被吃掉（实测 114 被钳到 100 后合规段失效）。
+        就得到空区间，重叠值会被覆盖（实测 114 被钳到 100 后合规段失效）。
         返回是否真的钳动了当前值（setRange 会顺带钳值，这属于静默改动，须提示）。
         """
         ov = self._ov.value()
@@ -912,7 +912,7 @@ class CropConfigDialog(QDialog):
         total_n = len(self._images)
         est_n = kept * len(self._images)
         txt = tr("crop_estimate").format(total=total_n, est=est_n)
-        # 摘要行里两个数字是用户真正要看的结论，其余是说明文字。把数字加粗
+        # 摘要行里这两个数字是结论数据，其余是说明文字。把数字加粗
         # 并套强调色，扫一眼就能拿到，不用读完整句。
         accent = ThemeManager.get_theme()["accent"]
         txt = txt.replace(str(total_n), f'<b style="color:{accent}">{total_n}</b>', 1)

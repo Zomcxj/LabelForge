@@ -1438,8 +1438,7 @@ def convert_dataset(dataset, output_format: str, output_dir: str,
         if fmt == "coco":
             # COCO 标注是单个 json，必须整体写出，无法分块；
             # 进度与取消在逐张拷图循环里给——整段写完才报一次的话，
-            # 大数据集整个写出阶段进度条都停在上一阶段留下的 100%
-            #（用户实测：六七千张卡在 100%）
+            # 大数据集整个写出阶段进度条都停在上一阶段留下的 100%。
             _write_coco(dataset, layout, on_progress=on_progress,
                         is_interrupted=is_interrupted)
         else:
@@ -1493,8 +1492,7 @@ def convert_paths(input_format: str, images_dir: str, annotations_path: str,
     """
     # 读/写/校验三阶段各遍历同一批 N 张图。把三段进度折算成 0→3N 的
     # 单条连续进度：不折算的话进度条会三次 0→100% 反复横跳，且阶段
-    # 衔接处停在 100% 空转（用户实测：到 100% 后又快速加载一遍才关闭；
-    # 六七千张的大数据集卡在 100%）。
+    # 衔接处停在 100% 空转。
     if on_progress is not None:
         phase = {"n": 0, "per": None}
 

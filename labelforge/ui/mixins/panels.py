@@ -119,7 +119,7 @@ class PanelsMixin:
         from PySide6.QtCore import QEvent
         scroll = getattr(self, '_canvas_scroll_area', None)
         if scroll is not None and event.type() == QEvent.Type.Resize:
-            # 退出时滚动区可能已析构，碰一下就会 0xC0000005，故包起来
+            # 退出时滚动区可能已析构，访问会触发 0xC0000005，因此包在 try 中
             try:
                 if obj is scroll.viewport():
                     self._position_canvas_adjustment(scroll)

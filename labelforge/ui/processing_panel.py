@@ -108,7 +108,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         exports 里。判据是「数据集是否变了」而非「输入框是否为空」——旧实现只在为空时
         回填，记忆切换数据集后框里仍是旧路径，于是导出路径不跟着走。
         注意只在数据集变化时写入：_refresh_texts 也会被切语言等无关场合调用，
-        每次都无脑覆盖会把用户手输的路径冲掉。
+        每次都无脑覆盖会把手动输入的路径冲掉。
         """
         session = os.path.normcase(os.path.normpath(self._get_session_dir() or ""))
         if session and session != getattr(self, '_last_session_dir', None):
@@ -450,8 +450,8 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         except Exception as e:
             from ..core.exception_hook import _write_log
             _write_log(f"读取图片尺寸失败 {img_path}: {e}")
-        # 兜底：read_image_size 认不出的格式仍走 QImage 解码；
-        # 解不出依旧 (0, 0)，日志与异常处理照旧。
+        # 回退路径：read_image_size 无法识别的格式仍走 QImage 解码；
+        # 仍解不出则返回 (0, 0)，日志与异常处理不变。
         try:
             from PySide6.QtGui import QImage
             img = QImage(img_path)
@@ -677,7 +677,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         # 置忙必须先于 _ensure_boxes_loaded：后者每 5 张图 processEvents()
         # 一次，读盘期间按钮尚未 disabled 时连点可重入（审计 P5）。
         # 置忙之后的提前 return 都要 _button_ready，否则校验失败卡死按钮；
-        # 同步前奏抛异常由 _busy_guarded 兜底恢复（终审 I-2）。
+        # 同步前奏抛出异常时由 _busy_guarded 负责恢复状态（终审 I-2）。
         self._busy_guarded(self._aug_btn, self._aug_clear_btn, self._run_augment_body)
 
     def _run_augment_body(self):
@@ -869,7 +869,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         """显示三个比例的合计，不足 1 时标红提示。
 
         上限已被 _on_split_changed 钳住，所以合计只可能 <= 1；小于 1 意味着
-        有一部分样本不会被写进任何一份（划分器按比例截取），用户看不出来。
+        有一部分样本不会被写进任何一份（划分器按比例截取），且无法察觉。
         """
         lbl = getattr(self, '_split_total_lbl', None)
         if lbl is None:
