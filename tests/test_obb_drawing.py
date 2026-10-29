@@ -183,16 +183,14 @@ def test_obb_exporter_writes_eight_coordinates(tmp_path):
 
     out = tmp_path / "out"
     exporter = YoloExporter(str(out), mode="obb")
-    exporter._ensure_dirs()
-    classes = ["car"]
-    exporter._write_classes_file(classes)
-    exporter._write_one({
+    exporter.run([], {}, ["car"], input_data=[{
         "stem": "img1", "width": 100, "height": 100,
         "boxes": [{
             "label": "car", "shape_type": "rotation",
             "points": [[0, 0], [50, 0], [50, 50], [0, 50]],
         }],
-    }, classes)
+        "image": None, "img_path": "",
+    }])
     text = (out / "labels" / "img1.txt").read_text().strip()
     assert text == "0 0.000000 0.000000 0.500000 0.000000 0.500000 0.500000 0.000000 0.500000"
 

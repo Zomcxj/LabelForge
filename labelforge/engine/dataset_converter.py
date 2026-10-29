@@ -142,23 +142,51 @@ class Detections:
 
 @dataclass
 class Dataset:
-    """一个已加载的数据集：类别表 + 图片路径 + 逐图标注 + 逐图尺寸。"""
+    """一个已加载的数据集：类别表 + 图片路径 + 逐图标注 + 逐图尺寸。
+
+    ``output_names`` 用于「内存里的键」与「写出时的文件名」不一致的场合
+    （例如画布内合成的图没有源文件路径）。键 → 文件名（不含扩展名）；
+    缺省时取 ``image_paths`` 里的 basename。
+    """
 
     classes: List[str]
     image_paths: List[str]
     annotations: Dict[str, Detections] = field(default_factory=dict)
     image_sizes: Dict[str, Tuple[int, int]] = field(default_factory=dict)
+    #: 键 -> 写出用的文件名（含扩展名）。仅当键不是真实文件路径时需要。
+    output_names: Dict[str, str] = field(default_factory=dict)
+    #: 键 -> 源图路径。为 None 表示没有源图（内存图已由调用方落盘）。
+    source_of: Dict[str, Optional[str]] = field(default_factory=dict)
+
+    def name_of(self, path: str) -> str:
+        """该条目写出时用的文件名（含扩展名）。"""
+        named = self.output_names.get(path)
+        if named:
+            return named
+        return os.path.basename(path)
+
+    def source_path_of(self, path: str) -> Optional[str]:
+        """该条目对应的源图路径；没有源图时返回 None。"""
+        if path in self.source_of:
+            return self.source_of[path]
+        return path if os.path.isfile(path) else None
 
     def size_of(self, path: str) -> Tuple[int, int]:
-        """返回 (width, height)；缓存缺失时现场读文件头，避免静默写出错误坐标。"""
+        """返回 (width, height)。
+
+        缓存命中就用缓存（没有源文件的条目只能靠它）；未命中时才去读文件头，
+        读不出来就报错，避免静默写出错误坐标。
+        """
         size = self.image_sizes.get(path)
-        if not size:
-            size = read_image_size(path)
+        if size:
+            return size
+        source = self.source_path_of(path)
+        if source and os.path.isfile(source):
+            size = read_image_size(source)
             if size:
                 self.image_sizes[path] = size
-        if not size:
-            raise DatasetToolError(f"无法读取图片尺寸：{path}")
-        return size
+                return size
+        raise DatasetToolError(f"无法读取图片尺寸：{self.name_of(path)}")
 
 
 # ==========================================================================
@@ -919,11 +947,19 @@ def _num(value: float) -> str:
     return f"{rounded:.2f}".rstrip("0").rstrip(".")
 
 
-def _copy_image(path: str, images_dir: str) -> None:
+def _copy_image(dataset: Dataset, path: str, images_dir: str) -> None:
+    """把该条目的源图复制到输出目录，文件名用 ``dataset.name_of(path)``。
+
+    没有源图（内存里合成的图、或键只是占位符）时什么都不做——这类条目的
+    图片由调用方自己落盘，这里不该去复制一个不存在的路径。
+    """
+    source = dataset.source_path_of(path)
+    if not source or not os.path.isfile(source):
+        return
     os.makedirs(images_dir, exist_ok=True)
-    destination = os.path.join(images_dir, os.path.basename(path))
-    if os.path.abspath(destination) != os.path.abspath(path):
-        shutil.copy2(path, destination)
+    destination = os.path.join(images_dir, dataset.name_of(path))
+    if os.path.abspath(destination) != os.path.abspath(source):
+        shutil.copy2(source, destination)
 
 
 def _write_yolo(dataset: Dataset, layout: dict, first: bool,
@@ -933,15 +969,33 @@ def _write_yolo(dataset: Dataset, layout: dict, first: bool,
             fh.write("names: [" + ", ".join(_quote_yaml(name)
                                             for name in dataset.classes) + "]\n")
     for path in dataset.image_paths:
-        _copy_image(path, layout["images"])
+        _copy_image(dataset, path, layout["images"])
         width, height = dataset.size_of(path)
         annotations = dataset.annotations.get(path) or _empty_detections()
-        stem = os.path.splitext(os.path.basename(path))[0]
+        stem = os.path.splitext(dataset.name_of(path))[0]
         lines = _yolo_lines_for(annotations, task, width, height)
         label_path = os.path.join(layout["annotations"], stem + ".txt")
         os.makedirs(layout["annotations"], exist_ok=True)
         with open(label_path, "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + ("\n" if lines else ""))
+
+
+def _clamped_xyxy(x1, y1, x2, y2, width: int, height: int):
+    """把框钳到图像范围内；退化（宽或高不足 1px）时返回 None。
+
+    YOLO/COCO/VOC 三种格式都要这一步：标注可能来自推理（越界）或手绘
+    （退化尺寸），写出前必须钳住，否则归一化坐标会超过 1、COCO 的 bbox
+    会落到图外、VOC 的 xmax 会大于图片宽度。
+    """
+    if not width or not height:
+        return None
+    left = max(0.0, min(float(x1), float(width)))
+    top = max(0.0, min(float(y1), float(height)))
+    right = max(0.0, min(float(x2), float(width)))
+    bottom = max(0.0, min(float(y2), float(height)))
+    if right - left < 1 or bottom - top < 1:
+        return None
+    return left, top, right, bottom
 
 
 def _yolo_lines_for(det: "Detections", task: str, width: int, height: int) -> List[str]:
@@ -967,7 +1021,11 @@ def _yolo_lines_for(det: "Detections", task: str, width: int, height: int) -> Li
             if not slot["box"]:
                 continue
             x1, y1, x2, y2 = slot["box"]
-            line = yolo_pose_line(slot["cls"], (x1, y1, x2 - x1, y2 - y1),
+            clamped = _clamped_xyxy(x1, y1, x2, y2, width, height)
+            if clamped is None:
+                continue
+            cx1, cy1, cx2, cy2 = clamped
+            line = yolo_pose_line(slot["cls"], (cx1, cy1, cx2 - cx1, cy2 - cy1),
                                   slot["kpts"], width, height)
             if line:
                 lines.append(line)
@@ -990,11 +1048,13 @@ def _yolo_lines_for(det: "Detections", task: str, width: int, height: int) -> Li
                 lines.append(line)
         else:  # det / hbb：所有形状取外接框
             x1, y1, x2, y2 = det.box_xyxy[i]
-            if not width or not height:
+            clamped = _clamped_xyxy(x1, y1, x2, y2, width, height)
+            if clamped is None:
                 continue
-            lines.append(f"{cls} {(x1 + x2) / 2 / width:.6f} "
-                         f"{(y1 + y2) / 2 / height:.6f} "
-                         f"{(x2 - x1) / width:.6f} {(y2 - y1) / height:.6f}")
+            cx1, cy1, cx2, cy2 = clamped
+            lines.append(f"{cls} {(cx1 + cx2) / 2 / width:.6f} "
+                         f"{(cy1 + cy2) / 2 / height:.6f} "
+                         f"{(cx2 - cx1) / width:.6f} {(cy2 - cy1) / height:.6f}")
     return lines
 
 
@@ -1008,21 +1068,25 @@ def _write_coco(dataset: Dataset, layout: dict,
     for index, path in enumerate(dataset.image_paths, start=1):
         if is_interrupted and is_interrupted():
             raise _Cancelled()
-        _copy_image(path, images_dir)
+        _copy_image(dataset, path, images_dir)
         width, height = dataset.size_of(path)
-        images.append({"id": index, "file_name": os.path.basename(path),
+        images.append({"id": index, "file_name": dataset.name_of(path),
                        "width": width, "height": height})
         detections = dataset.annotations.get(path) or _empty_detections()
         for class_id, (x1, y1, x2, y2) in zip(detections.class_id,
                                               detections.box_xyxy):
+            clamped = _clamped_xyxy(x1, y1, x2, y2, width, height)
+            if clamped is None:
+                continue
+            cx1, cy1, cx2, cy2 = clamped
             counter += 1
             annotations.append({
                 "id": counter,
                 "image_id": index,
                 "category_id": class_id + 1,
-                "bbox": [round(float(x1), 6), round(float(y1), 6),
-                         round(float(x2 - x1), 6), round(float(y2 - y1), 6)],
-                "area": round(float(x2 - x1) * float(y2 - y1), 6),
+                "bbox": [round(cx1, 6), round(cy1, 6),
+                         round(cx2 - cx1, 6), round(cy2 - cy1, 6)],
+                "area": round((cx2 - cx1) * (cy2 - cy1), 6),
                 "iscrowd": 0,
             })
         if on_progress:
@@ -1044,12 +1108,12 @@ def _write_voc(dataset: Dataset, layout: dict) -> None:
     annotations_dir = layout["annotations"]
     os.makedirs(annotations_dir, exist_ok=True)
     for path in dataset.image_paths:
-        _copy_image(path, images_dir)
+        _copy_image(dataset, path, images_dir)
         width, height = dataset.size_of(path)
         detections = dataset.annotations.get(path) or _empty_detections()
         root = ET.Element("annotation")
         ET.SubElement(root, "folder").text = "images"
-        ET.SubElement(root, "filename").text = os.path.basename(path)
+        ET.SubElement(root, "filename").text = dataset.name_of(path)
         size_node = ET.SubElement(root, "size")
         ET.SubElement(size_node, "width").text = _num(width)
         ET.SubElement(size_node, "height").text = _num(height)
@@ -1057,6 +1121,10 @@ def _write_voc(dataset: Dataset, layout: dict) -> None:
         ET.SubElement(root, "segmented").text = "0"
         for class_id, (x1, y1, x2, y2) in zip(detections.class_id,
                                               detections.box_xyxy):
+            clamped = _clamped_xyxy(x1, y1, x2, y2, width, height)
+            if clamped is None:
+                continue
+            x1, y1, x2, y2 = clamped
             node = ET.SubElement(root, "object")
             ET.SubElement(node, "name").text = dataset.classes[class_id]
             ET.SubElement(node, "pose").text = "Unspecified"
@@ -1069,7 +1137,7 @@ def _write_voc(dataset: Dataset, layout: dict) -> None:
             ET.SubElement(box_node, "ymax").text = _num(y2)
         tree = ET.ElementTree(root)
         tree.write(os.path.join(annotations_dir,
-                                os.path.splitext(os.path.basename(path))[0] + ".xml"),
+                                os.path.splitext(dataset.name_of(path))[0] + ".xml"),
                    encoding="utf-8", xml_declaration=True)
 
 
@@ -1077,7 +1145,7 @@ def _write_labelme(dataset: Dataset, layout: dict) -> None:
     target_dir = layout["annotations"]
     os.makedirs(target_dir, exist_ok=True)
     for path in dataset.image_paths:
-        _copy_image(path, layout["images"])
+        _copy_image(dataset, path, layout["images"])
         width, height = dataset.size_of(path)
         detections = dataset.annotations.get(path) or _empty_detections()
         shapes = []
@@ -1107,25 +1175,36 @@ def _write_labelme(dataset: Dataset, layout: dict) -> None:
             "version": "5.3.1",
             "flags": {},
             "shapes": shapes,
-            "imagePath": os.path.basename(path),
+            "imagePath": dataset.name_of(path),
             "imageData": None,
             "imageHeight": height,
             "imageWidth": width,
         }
         json_path = os.path.join(target_dir,
-                                 os.path.splitext(os.path.basename(path))[0] + ".json")
+                                 os.path.splitext(dataset.name_of(path))[0] + ".json")
         with open(json_path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, ensure_ascii=False, indent=2)
 
 
 def _write_chunk(chunk: "Dataset", output_format: str, layout: dict,
-                 first: bool, task: str = "det") -> None:
+                 first: bool, task: str = "det",
+                 is_interrupted: Optional[Callable] = None) -> None:
+    """按格式写出一个分块。
+
+    COCO 的标注是**单个 json**，只能整体写出、无法分块；调用方应在只传
+    一个分块时用它。``layout["annotations"]`` 对 coco 是文件路径、对
+    yolo/voc/labelme 是目录，这里按格式区分，不能一律当目录用。
+    """
     if output_format == "yolo":
         _write_yolo(chunk, layout, first, task)
     elif output_format == "voc":
         _write_voc(chunk, layout)
-    else:
+    elif output_format == "coco":
+        _write_coco(chunk, layout, is_interrupted=is_interrupted)
+    elif output_format == "labelme":
         _write_labelme(chunk, layout)
+    else:
+        raise DatasetToolError(f"不支持的输出格式：{output_format}")
 
 
 def _slice_dataset(dataset: Dataset, paths: List[str]) -> Dataset:
@@ -1137,6 +1216,12 @@ def _slice_dataset(dataset: Dataset, paths: List[str]) -> Dataset:
                      for path in paths if path in dataset.annotations},
         image_sizes={path: dataset.image_sizes[path]
                      for path in paths if path in dataset.image_sizes},
+        # 两个名字/来源映射必须一起带过来：丢了它们，写出层会退回到
+        # 「拿键当文件名」，导出的文件就变成 `a#0.txt` 这种。
+        output_names={path: dataset.output_names[path]
+                      for path in paths if path in dataset.output_names},
+        source_of={path: dataset.source_of[path]
+                   for path in paths if path in dataset.source_of},
     )
 
 

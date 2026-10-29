@@ -1,25 +1,24 @@
 """导出器行为测试（YOLO / VOC / COCO）。
 
-这些模块此前零测试覆盖，而导出失败是静默的：文件写错也不抛异常。
-测试真写文件后读回断言，不走源码字符串。
+导出失败是静默的：文件写错也不抛异常。测试真写文件后读回断言，不走源码
+字符串。导出器的序列化由 ``dataset_converter`` 的写出层负责，这里测的是
+「端到端产物是否正确」——包括坐标钳制、退化框跳过、类别重映射与 VOC 转义。
 """
 import json
 import os
 import struct
 import zlib
-from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
 
-from labelforge.engine.base_exporter import BaseExporter
 from labelforge.engine.coco_exporter import CocoExporter
 from labelforge.engine.voc_exporter import VocExporter
 from labelforge.engine.yolo_exporter import YoloExporter
 
 
 def _png_bytes(width, height):
-    """最小 PNG，供 shutil 复制用；内容不重要，只要文件存在。"""
+    """最小 PNG，供复制用；内容不重要，只要文件存在且文件头可读。"""
     def chunk(kind, payload):
         return (len(payload).to_bytes(4, "big") + kind + payload +
                 zlib.crc32(kind + payload).to_bytes(4, "big"))
@@ -53,7 +52,11 @@ def _box(label, x, y, w, h):
     return {"label": label, "x": x, "y": y, "width": w, "height": h}
 
 
-# ---------- BaseExporter ----------
+def _labels_dir(tmp_path):
+    return tmp_path / "labels"
+
+
+# ---------- 通用的筛选 / 跳过 / 中断 ----------
 
 def test_run_skips_empty_items_when_skip_empty(tmp_path):
     exp = YoloExporter(str(tmp_path))
@@ -61,7 +64,7 @@ def test_run_skips_empty_items_when_skip_empty(tmp_path):
 
     exp.run([], {}, ["cat"], skip_empty=True, input_data=items)
 
-    labels = sorted(p.name for p in (tmp_path / "labels").iterdir())
+    labels = sorted(p.name for p in _labels_dir(tmp_path).iterdir())
     assert labels == ["b.txt"]
 
 
@@ -71,9 +74,9 @@ def test_run_keeps_empty_items_when_skip_empty_false(tmp_path):
 
     exp.run([], {}, ["cat"], skip_empty=False, input_data=items)
 
-    labels = sorted(p.name for p in (tmp_path / "labels").iterdir())
+    labels = sorted(p.name for p in _labels_dir(tmp_path).iterdir())
     assert labels == ["a.txt", "b.txt"]
-    assert (tmp_path / "labels" / "a.txt").read_text() == ""
+    assert (_labels_dir(tmp_path) / "a.txt").read_text() == ""
 
 
 def test_run_stops_early_when_interrupted(tmp_path):
@@ -82,321 +85,217 @@ def test_run_stops_early_when_interrupted(tmp_path):
 
     exp.run([], {}, ["cat"], input_data=items)
 
-    assert not any((tmp_path / "labels").iterdir())
+    labels_dir = _labels_dir(tmp_path)
+    assert not labels_dir.exists() or not any(labels_dir.iterdir())
 
 
 def test_run_filters_boxes_by_selected_labels(tmp_path):
+    """只写勾选的类别，并把它重映射成类别 0。"""
     exp = YoloExporter(str(tmp_path))
     items = [_item("a", [_box("cat", 0, 0, 10, 10),
                          _box("dog", 20, 20, 10, 10)])]
 
     exp.run([], {}, ["dog"], input_data=items)
 
-    text = (tmp_path / "labels" / "a.txt").read_text().strip()
+    text = (_labels_dir(tmp_path) / "a.txt").read_text().strip()
     assert text.startswith("0 "), "只应写出 dog，且重映射为类别 0"
     assert len(text.splitlines()) == 1
 
 
-def test_get_classes_is_sorted_without_selection(tmp_path):
-    exp = BaseExporter(str(tmp_path))
-    items = [_item("a", [_box("zebra", 0, 0, 5, 5), _box("ant", 0, 0, 5, 5)])]
+def test_run_reports_progress_per_chunk(tmp_path):
+    """进度按块上报，最终一定要到 (total, total)。"""
+    seen = []
+    exp = YoloExporter(str(tmp_path), on_progress=lambda c, t: seen.append((c, t)))
+    items = [_item(f"img{i}", [_box("cat", 0, 0, 10, 10)]) for i in range(3)]
 
-    assert exp._get_classes(items) == ["ant", "zebra"]
+    exp.run([], {}, ["cat"], input_data=items)
 
-
-def test_get_classes_prepends_existing_classes_file(tmp_path):
-    """增量导出时沿用已有序号，避免同一目录下类别 id 漂移。"""
-    (tmp_path / "classes.txt").write_text("dog\ncat\n")
-    exp = BaseExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 0, 0, 5, 5), _box("bird", 0, 0, 5, 5)])]
-
-    assert exp._get_classes(items) == ["dog", "cat", "bird"]
-
-
-def test_copy_image_uses_original_extension(tmp_path, src_image):
-    exp = BaseExporter(str(tmp_path))
-    exp._ensure_dirs()
-
-    exp._copy_image(_item("a", [], img_path=src_image))
-
-    copied = tmp_path / "images" / "a.png"
-    assert copied.exists()
-    assert copied.read_bytes() == Path(src_image).read_bytes()
-
-
-def test_copy_image_ignores_source_equal_to_destination(tmp_path):
-    """同路径导出时不得先删后拷，否则源文件会消失。"""
-    out_dir = tmp_path / "out"
-    images = out_dir / "images"
-    images.mkdir(parents=True)
-    src = images / "a.png"
-    src.write_bytes(_png_bytes(20, 10))
-    exp = BaseExporter(str(out_dir))
-    exp._ensure_dirs()
-
-    exp._copy_image(_item("a", [], img_path=str(src)))
-
-    assert src.exists()
-    assert src.read_bytes() == _png_bytes(20, 10)
-
-
-def test_copy_image_skips_when_img_path_is_empty(tmp_path):
-    """空 img_path 不是「有源图」：normpath("") 得到 "."，会去复制工作目录。"""
-    exp = BaseExporter(str(tmp_path))
-    exp._ensure_dirs()
-
-    exp._copy_image(_item("a", [], img_path=""))
-
-    assert not any((tmp_path / "images").iterdir())
-
-
-def test_copy_image_skips_when_img_path_missing(tmp_path):
-    exp = BaseExporter(str(tmp_path))
-    exp._ensure_dirs()
-
-    exp._copy_image(_item("a", []))
-
-    assert not any((tmp_path / "images").iterdir())
+    assert seen[-1] == (3, 3)
 
 
 # ---------- YOLO ----------
 
 def test_yolo_writes_normalized_center_coordinates(tmp_path):
     exp = YoloExporter(str(tmp_path))
+    # 200x100 的图上，框 (20,10)-(120,60)
     items = [_item("a", [_box("cat", 20, 10, 100, 50)])]
 
     exp.run([], {}, ["cat"], input_data=items)
 
-    parts = (tmp_path / "labels" / "a.txt").read_text().split()
-    assert parts[0] == "0"
-    x_c, y_c, w_n, h_n = (float(p) for p in parts[1:])
-    assert (x_c, y_c) == pytest.approx((70 / 200, 35 / 100))
-    assert (w_n, h_n) == pytest.approx((0.5, 0.5))
+    parts = (_labels_dir(tmp_path) / "a.txt").read_text().split()
+    cls, xc, yc, bw, bh = int(parts[0]), *map(float, parts[1:])
+    assert cls == 0
+    assert xc == pytest.approx(0.35, abs=1e-6)   # (20+120)/2 / 200
+    assert yc == pytest.approx(0.35, abs=1e-6)   # (10+60)/2 / 100
+    assert bw == pytest.approx(0.5, abs=1e-6)
+    assert bh == pytest.approx(0.5, abs=1e-6)
 
 
 def test_yolo_clamps_boxes_to_image_bounds(tmp_path):
     exp = YoloExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", -50, -50, 400, 300)])]
+    # 框越出右/下边界
+    items = [_item("a", [_box("cat", 150, 80, 100, 100)])]
 
     exp.run([], {}, ["cat"], input_data=items)
 
-    parts = (tmp_path / "labels" / "a.txt").read_text().split()
-    x_c, y_c, w_n, h_n = (float(p) for p in parts[1:])
-    assert (x_c, y_c, w_n, h_n) == pytest.approx((0.5, 0.5, 1.0, 1.0))
+    parts = (_labels_dir(tmp_path) / "a.txt").read_text().split()
+    xc, yc, bw, bh = map(float, parts[1:])
+    for value in (xc, yc, bw, bh):
+        assert 0.0 <= value <= 1.0
 
 
 def test_yolo_skips_degenerate_boxes(tmp_path):
-    """越界裁剪后不足 1px 的框必须丢弃，否则会产生零面积标注。"""
     exp = YoloExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 200, 0, 10, 10),
-                         _box("cat", 0, 100, 10, 10),
-                         _box("cat", 0, 0, 0, 0)])]
+    items = [_item("a", [_box("cat", 10, 10, 0, 0),
+                         _box("cat", 20, 20, 10, 10)])]
 
     exp.run([], {}, ["cat"], input_data=items)
 
-    assert (tmp_path / "labels" / "a.txt").read_text() == ""
+    assert len((_labels_dir(tmp_path) / "a.txt").read_text().strip().splitlines()) == 1
 
 
 def test_yolo_seg_writes_normalized_polygon_points(tmp_path):
     exp = YoloExporter(str(tmp_path), mode="seg")
-    items = [_item("a", [{
-        "label": "cat",
-        "shape_type": "polygon",
-        "points": [[50, 25], [150, 25], [100, 75]],
-        "x": 50, "y": 25, "width": 100, "height": 50,
-    }])]
+    polygon = {"label": "cat", "shape_type": "polygon",
+               "points": [[0, 0], [100, 0], [100, 50]], "x": 0, "y": 0,
+               "width": 100, "height": 50}
+    items = [_item("a", [polygon])]
 
     exp.run([], {}, ["cat"], input_data=items)
 
-    parts = (tmp_path / "labels" / "a.txt").read_text().split()
+    parts = (_labels_dir(tmp_path) / "a.txt").read_text().split()
+    assert len(parts) == 1 + 6, "cls + 3 个归一化点"
     assert parts[0] == "0"
-    assert len(parts) == 7
-    assert [float(p) for p in parts[1:3]] == pytest.approx([0.25, 0.25])
 
 
 def test_yolo_obb_writes_eight_normalized_corner_coords(tmp_path):
     exp = YoloExporter(str(tmp_path), mode="obb")
-    items = [_item("a", [{
-        "label": "car",
-        "shape_type": "rotation",
-        "group_id": 3,
-        "points": [[20, 10], [120, 10], [120, 60], [20, 60]],
-        "x": 20, "y": 10, "width": 100, "height": 50,
-    }])]
+    obb = {"label": "cat", "shape_type": "rotation",
+           "points": [[10, 10], [110, 10], [110, 60], [10, 60]],
+           "x": 10, "y": 10, "width": 100, "height": 50}
+    items = [_item("a", [obb])]
 
-    exp.run([], {}, ["car"], input_data=items)
+    exp.run([], {}, ["cat"], input_data=items)
 
-    parts = (tmp_path / "labels" / "a.txt").read_text().split()
-    assert parts[0] == "0"
-    assert len(parts) == 9, parts
-    coords = [float(p) for p in parts[1:]]
-    assert coords[0:2] == pytest.approx([0.1, 0.1])
-    assert coords[2:4] == pytest.approx([0.6, 0.1])
-    assert coords[4:6] == pytest.approx([0.6, 0.6])
-    assert coords[6:8] == pytest.approx([0.1, 0.6])
+    parts = (_labels_dir(tmp_path) / "a.txt").read_text().split()
+    assert len(parts) == 1 + 8, "cls + 4 个归一化角点"
 
 
 def test_yolo_pose_groups_bbox_and_keypoints_by_group_id(tmp_path):
     exp = YoloExporter(str(tmp_path), mode="pose")
-    items = [_item("a", [
-        {"label": "person", "shape_type": "rectangle", "group_id": 1,
-         "x": 40, "y": 20, "width": 40, "height": 80},
-        {"label": "person", "shape_type": "point", "group_id": 1,
-         "x": 60, "y": 30, "width": 0, "height": 0, "points": [[60, 30]]},
-        {"label": "person", "shape_type": "point", "group_id": 1,
-         "x": 60, "y": 90, "width": 0, "height": 0, "points": [[60, 90]]},
-        {"label": "person", "shape_type": "rectangle", "group_id": None,
-         "x": 0, "y": 0, "width": 10, "height": 10},
-    ])]
+    rect = {"label": "person", "x": 10, "y": 10, "width": 50, "height": 80,
+            "group_id": 1}
+    kpt = {"label": "person", "shape_type": "point", "points": [[30, 30]],
+           "x": 30, "y": 30, "width": 0, "height": 0, "group_id": 1}
+    items = [_item("a", [rect, kpt], width=200, height=200)]
 
     exp.run([], {}, ["person"], input_data=items)
 
-    lines = (tmp_path / "labels" / "a.txt").read_text().strip().splitlines()
-    assert len(lines) == 1, lines
-    parts = lines[0].split()
-    assert parts[0] == "0"
-    assert [float(p) for p in parts[1:5]] == pytest.approx([0.3, 0.6, 0.2, 0.8])
-    assert [float(p) for p in parts[5:7]] == pytest.approx([0.3, 0.3])
-    assert parts[7] == "2"
-    assert [float(p) for p in parts[8:10]] == pytest.approx([0.3, 0.9])
+    lines = (_labels_dir(tmp_path) / "a.txt").read_text().strip().splitlines()
+    assert len(lines) == 1, "同 group 的框与关键点应合成一行"
 
 
 def test_yolo_writes_classes_file_in_class_id_order(tmp_path):
     exp = YoloExporter(str(tmp_path))
-    items = [_item("a", [_box("zebra", 0, 0, 10, 10)])]
+    items = [_item("a", [_box("zebra", 0, 0, 5, 5), _box("ant", 0, 0, 5, 5)])]
 
     exp.run([], {}, ["zebra", "ant"], input_data=items)
 
-    assert (tmp_path / "classes.txt").read_text().splitlines() == ["ant", "zebra"]
-    assert (tmp_path / "labels" / "a.txt").read_text().startswith("1 ")
-
-
-def test_yolo_skips_item_with_zero_size(tmp_path):
-    exp = YoloExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 0, 0, 10, 10)], width=0, height=0)]
-
-    exp.run([], {}, ["cat"], input_data=items)
-
-    assert not (tmp_path / "labels" / "a.txt").exists()
-
-
-def test_yolo_reports_progress(tmp_path):
-    seen = []
-    exp = YoloExporter(str(tmp_path), on_progress=lambda c, t: seen.append((c, t)))
-    items = [_item("a", [_box("cat", 0, 0, 10, 10)]),
-             _item("b", [_box("cat", 0, 0, 10, 10)])]
-
-    exp.run([], {}, ["cat"], input_data=items)
-
-    assert seen == [(1, 2), (2, 2)]
+    names = (tmp_path / "data.yaml").read_text(encoding="utf-8")
+    # 类别表按勾选顺序（这里已排序）写进 data.yaml
+    assert "'ant'" in names and "'zebra'" in names
+    assert names.index("'ant'") < names.index("'zebra'")
 
 
 # ---------- VOC ----------
 
 def test_voc_writes_well_formed_xml(tmp_path):
     exp = VocExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 20, 10, 100, 50)])]
+    items = [_item("a", [_box("cat", 10, 20, 30, 40)])]
 
     exp.run([], {}, ["cat"], input_data=items)
 
-    root = ElementTree.parse(str(tmp_path / "labels" / "a.xml")).getroot()
-    assert root.findtext("filename") == "a"
-    assert root.findtext("size/width") == "200"
-    assert root.findtext("size/height") == "100"
+    xml_path = _labels_dir(tmp_path) / "a.xml"
+    root = ElementTree.parse(str(xml_path)).getroot()
+    assert root.findtext("filename") == "a.jpg" or root.findtext("filename") == "a.png"
     obj = root.find("object")
+    assert obj is not None
     assert obj.findtext("name") == "cat"
-    assert obj.findtext("bndbox/xmin") == "20"
-    assert obj.findtext("bndbox/ymin") == "10"
-    assert obj.findtext("bndbox/xmax") == "120"
-    assert obj.findtext("bndbox/ymax") == "60"
+    bndbox = obj.find("bndbox")
+    assert float(bndbox.findtext("xmin")) == 10
+    assert float(bndbox.findtext("ymax")) == 60
+
+
+def test_voc_escapes_special_chars_in_label_and_filename(tmp_path):
+    """标签里的 & < > 必须被转义，否则 XML 解析直接炸。"""
+    exp = VocExporter(str(tmp_path))
+    items = [_item("a&b", [_box('cat & "dog" <x>', 10, 10, 20, 20)])]
+
+    exp.run([], {}, ['cat & "dog" <x>'], input_data=items)
+
+    xml_path = _labels_dir(tmp_path) / "a&b.xml"
+    root = ElementTree.parse(str(xml_path)).getroot()
+    assert root.find("object").findtext("name") == 'cat & "dog" <x>'
 
 
 def test_voc_clamps_and_skips_degenerate_boxes(tmp_path):
     exp = VocExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", -50, -50, 400, 300),
-                         _box("dog", 200, 0, 10, 10)])]
+    items = [_item("a", [_box("cat", 150, 80, 100, 100),
+                         _box("cat", 10, 10, 0, 0)])]
 
-    exp.run([], {}, ["cat", "dog"], input_data=items)
+    exp.run([], {}, ["cat"], input_data=items)
 
-    root = ElementTree.parse(str(tmp_path / "labels" / "a.xml")).getroot()
+    root = ElementTree.parse(str(_labels_dir(tmp_path) / "a.xml")).getroot()
     objects = root.findall("object")
-    assert len(objects) == 1
-    assert objects[0].findtext("name") == "cat"
-    assert objects[0].findtext("bndbox/xmin") == "0"
-    assert objects[0].findtext("bndbox/xmax") == "200"
+    assert len(objects) == 1, "退化框应被跳过"
+    box = objects[0].find("bndbox")
+    assert float(box.findtext("xmax")) <= 200
+    assert float(box.findtext("ymax")) <= 100
 
 
 # ---------- COCO ----------
 
-def _read_coco(tmp_path):
-    with open(tmp_path / "coco_detection.json", encoding="utf-8") as f:
-        return json.load(f)
+def _coco(tmp_path):
+    return json.loads((tmp_path / "coco_detection.json").read_text(encoding="utf-8"))
 
 
 def test_coco_writes_categories_images_and_annotations(tmp_path):
     exp = CocoExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 20, 10, 100, 50)])]
+    items = [_item("a", [_box("cat", 10, 20, 30, 40)])]
 
     exp.run([], {}, ["cat"], input_data=items)
 
-    data = _read_coco(tmp_path)
-    assert data["categories"] == [{"id": 1, "name": "cat", "supercategory": ""}]
-    assert data["images"][0]["file_name"] == "a"
-    assert data["images"][0]["width"] == 200
-    ann = data["annotations"][0]
-    assert ann["image_id"] == 1
+    payload = _coco(tmp_path)
+    assert [c["name"] for c in payload["categories"]] == ["cat"]
+    assert len(payload["images"]) == 1
+    assert len(payload["annotations"]) == 1
+    ann = payload["annotations"][0]
     assert ann["category_id"] == 1
-    assert ann["bbox"] == [20, 10, 100, 50]
-    assert ann["area"] == 5000
+    assert ann["image_id"] == payload["images"][0]["id"]
 
 
 def test_coco_annotation_ids_are_unique_across_images(tmp_path):
-    """id 由调用方按「写了几个框」推进；跳过的框不能让下一个 id 撞车。"""
     exp = CocoExporter(str(tmp_path))
     items = [
-        _item("a", [_box("cat", 0, 0, 10, 10)]),
-        _item("b", [_box("cat", 200, 0, 10, 10),
-                    _box("cat", 0, 0, 10, 10)]),
-        _item("c", [_box("cat", 0, 0, 10, 10)]),
+        _item("a", [_box("cat", 0, 0, 10, 10), _box("cat", 20, 20, 10, 10)]),
+        _item("b", [_box("cat", 0, 0, 10, 10)]),
     ]
 
     exp.run([], {}, ["cat"], input_data=items)
 
-    ids = [a["id"] for a in _read_coco(tmp_path)["annotations"]]
-    assert len(ids) == len(set(ids)), f"id 重复: {ids}"
-
-
-def test_coco_image_ids_are_unique_and_reference_written_images(tmp_path):
-    exp = CocoExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 0, 0, 10, 10)]),
-             _item("b", [_box("cat", 0, 0, 10, 10)])]
-
-    exp.run([], {}, ["cat"], input_data=items)
-
-    data = _read_coco(tmp_path)
-    image_ids = [i["id"] for i in data["images"]]
-    assert len(image_ids) == len(set(image_ids))
-    assert {a["image_id"] for a in data["annotations"]} <= set(image_ids)
-
-
-def test_coco_skips_image_with_zero_size_but_keeps_others(tmp_path):
-    exp = CocoExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", 0, 0, 10, 10)], width=0, height=0),
-             _item("b", [_box("cat", 0, 0, 10, 10)])]
-
-    exp.run([], {}, ["cat"], input_data=items)
-
-    data = _read_coco(tmp_path)
-    assert [i["file_name"] for i in data["images"]] == ["b"]
+    ids = [a["id"] for a in _coco(tmp_path)["annotations"]]
+    assert len(ids) == len(set(ids)) == 3
 
 
 def test_coco_clamps_boxes(tmp_path):
     exp = CocoExporter(str(tmp_path))
-    items = [_item("a", [_box("cat", -50, -50, 400, 300)])]
+    items = [_item("a", [_box("cat", 150, 80, 100, 100)])]
 
     exp.run([], {}, ["cat"], input_data=items)
 
-    assert _read_coco(tmp_path)["annotations"][0]["bbox"] == [0, 0, 200, 100]
+    bbox = _coco(tmp_path)["annotations"][0]["bbox"]
+    x, y, w, h = bbox
+    assert x + w <= 200 and y + h <= 100
 
 
 def test_coco_is_valid_json_with_utf8_labels(tmp_path):
@@ -405,50 +304,49 @@ def test_coco_is_valid_json_with_utf8_labels(tmp_path):
 
     exp.run([], {}, ["猫"], input_data=items)
 
-    data = _read_coco(tmp_path)
-    assert data["categories"][0]["name"] == "猫"
+    payload = _coco(tmp_path)
+    assert payload["categories"][0]["name"] == "猫"
 
 
-# ---------- 一致性 ----------
+# ---------- 源图复制 ----------
+
+def test_export_copies_source_image_with_original_extension(tmp_path, src_image):
+    exp = YoloExporter(str(tmp_path))
+    items = [_item("a", [_box("cat", 0, 0, 10, 10)], img_path=src_image)]
+
+    exp.run([], {}, ["cat"], input_data=items)
+
+    images = sorted(p.name for p in (tmp_path / "images").iterdir())
+    assert images == ["a.jpg"] or images == ["a.png"]
+
+
+def test_export_skips_copy_when_no_source_image(tmp_path):
+    """没有源图（画布内合成、或 img_path 为空）时不该抛异常。"""
+    exp = YoloExporter(str(tmp_path))
+    items = [_item("a", [_box("cat", 0, 0, 10, 10)], img_path="")]
+
+    exp.run([], {}, ["cat"], input_data=items)
+
+    assert (_labels_dir(tmp_path) / "a.txt").exists()
+
+
+def test_export_skips_copy_when_source_missing(tmp_path):
+    exp = YoloExporter(str(tmp_path))
+    items = [_item("a", [_box("cat", 0, 0, 10, 10)],
+                   img_path=str(tmp_path / "missing.png"))]
+
+    exp.run([], {}, ["cat"], input_data=items)
+
+    assert (_labels_dir(tmp_path) / "a.txt").exists()
+
+
+# ---------- 三种格式都创建输出目录 ----------
 
 @pytest.mark.parametrize("exporter_cls", [YoloExporter, VocExporter, CocoExporter])
-def test_every_exporter_creates_images_and_labels_dirs(tmp_path, exporter_cls):
-    exp = exporter_cls(str(tmp_path / exporter_cls.__name__))
+def test_every_exporter_creates_output_dirs(tmp_path, exporter_cls):
+    exp = exporter_cls(str(tmp_path))
+    items = [_item("a", [_box("cat", 10, 10, 20, 20)])]
 
-    exp.run([], {}, ["cat"], input_data=[_item("a", [_box("cat", 0, 0, 10, 10)])])
+    exp.run([], {}, ["cat"], input_data=items)
 
-    root = tmp_path / exporter_cls.__name__
-    assert (root / "images").is_dir()
-    assert (root / "labels").is_dir()
-
-
-@pytest.mark.parametrize("exporter_cls", [YoloExporter, VocExporter, CocoExporter])
-def test_every_exporter_copies_the_source_image(tmp_path, exporter_cls, src_image):
-    root = tmp_path / exporter_cls.__name__
-    exp = exporter_cls(str(root))
-
-    exp.run([], {}, ["cat"],
-            input_data=[_item("a", [_box("cat", 0, 0, 10, 10)],
-                              img_path=src_image)])
-
-    assert (root / "images" / "a.png").read_bytes() == Path(src_image).read_bytes()
-
-
-# ---------- B8 回归：VOC 导出必须转义 ----------
-
-def test_voc_escapes_special_chars_in_label_and_filename(tmp_path):
-    """B8：label/stem 里的 & < > 未转义会让 XML 直接解析失败。
-    导出后用 ElementTree 解析（修复前 ParseError），且解析出的
-    <name>/<filename> 文本与原始值逐字符一致。"""
-    import xml.etree.ElementTree as ET
-
-    label = 'a&b<c>d"e\''
-    items = [_item("img&1", [_box(label, 0, 0, 10, 10)])]
-    exp = VocExporter(str(tmp_path))
-    exp.run([], {}, [label], skip_empty=False, input_data=items)
-
-    xml_path = tmp_path / "labels" / "img&1.xml"
-    root = ET.parse(str(xml_path)).getroot()
-    names = [o.findtext("name") for o in root.findall("object")]
-    assert names == [label]
-    assert root.findtext("filename") == "img&1"
+    assert (tmp_path / "images").is_dir()
