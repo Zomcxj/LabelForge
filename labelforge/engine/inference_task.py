@@ -76,10 +76,15 @@ def _clamp_min_visible(raw):
 
 def normalize_settings(settings):
     """把界面/配置里的原始值规整成可用的模型配置，越界值钳到合法范围。"""
+    from labelforge.engine.onnx_tasks import SUPPORTED_TASKS
+
     settings = dict(settings or {})
     fmt = str(settings.get("output_format") or "auto").strip().lower()
     if fmt not in ("auto",) + SUPPORTED_FORMATS:
         fmt = "auto"
+    task = str(settings.get("task") or "auto").strip().lower()
+    if task not in ("auto",) + tuple(SUPPORTED_TASKS):
+        task = "auto"
     size = settings.get("input_size")
     if size:
         try:
@@ -98,6 +103,7 @@ def normalize_settings(settings):
         "model_path": str(settings.get("model_path") or ""),
         "class_names_path": str(settings.get("class_names_path") or ""),
         "output_format": fmt,
+        "task": task,
         "conf_threshold": _clamp_float(settings.get("conf_threshold"), DEFAULT_CONF, MIN_SCORE, MAX_SCORE),
         "iou_threshold": _clamp_float(settings.get("iou_threshold"), DEFAULT_IOU, MIN_IOU, MAX_IOU),
         "input_size": size,
@@ -195,7 +201,25 @@ def build_detector(settings, read_names=None):
         iou_threshold=settings["iou_threshold"],
         input_size=settings["input_size"],
         providers=settings["providers"],
+        task=settings["task"],
     )
+
+
+def class_label_of(box):
+    """box 的类别名归属。
+
+    pose 的关键点自身 label 是关键点名字（nose 等），类别要按所属实例算；
+    实例类别在解码时写进 `pose_class`，落盘后留在 `flags` 里，两处都要读。
+    """
+    if not isinstance(box, dict):
+        return ""
+    owner = box.get("pose_class")
+    if owner:
+        return str(owner)
+    flags = box.get("flags")
+    if isinstance(flags, dict) and flags.get("pose_class"):
+        return str(flags["pose_class"])
+    return str(box.get("label") or "")
 
 
 def filter_by_class(boxes, class_filter):
@@ -208,7 +232,7 @@ def filter_by_class(boxes, class_filter):
     if class_filter is None:
         return list(boxes)
     allowed = {str(c) for c in class_filter if str(c).strip()}
-    return [b for b in boxes if b.get("label") in allowed]
+    return [b for b in boxes if class_label_of(b) in allowed]
 
 
 def is_auto_box(box):
@@ -250,16 +274,51 @@ def merge_boxes(existing, detected, replace_auto=False, class_filter=None):
             continue
         # 未覆盖时只做严格筛选：只清推理框，人工框无论类别都保留
         if (class_filter is not None and is_auto_box(box)
-                and box.get("label") not in class_filter):
+                and class_label_of(box) not in class_filter):
             continue
         kept.append(box)
+    # 切点必须取**实际保留下来的**原有标注数，不能取 len(existing)：
+    # 覆盖模式与类别筛选都会丢掉原有框，用原长度当切点会让前几个新结果
+    # 被当成「已有标注」而不发分组号——姿态实例框与它的前几个关键点就掉组。
+    split_index = len(kept)
     for box in detected or []:
         merged = dict(box)
         flags = dict(merged.get("flags") or {})
         flags[SOURCE_KEY] = True
         merged["flags"] = flags
         kept.append(merged)
-    return kept
+    return _remap_pose_groups(kept, split_index)
+
+
+def _remap_pose_groups(boxes, split_index):
+    """给本次新并入的 pose 实例分配不冲突的 group_id。
+
+    解码时按帧内序号 1..N 记在 `pose_group` 上，直接落盘会与图里已有的分组号
+    撞车（撞上就变成「关键点挂到别人框上」）。这里从已有最大号往后发。
+    `split_index` 之前是原有标注，之后是本次结果。
+    """
+    split_index = max(0, min(int(split_index), len(boxes)))
+    used = set()
+    for box in boxes[:split_index]:
+        gid = box.get("group_id")
+        if isinstance(gid, int) and not isinstance(gid, bool):
+            used.add(gid)
+    next_id = (max(used) + 1) if used else 1
+    mapping = {}
+    out = list(boxes[:split_index])
+    for box in boxes[split_index:]:
+        item = dict(box)
+        tag = item.pop("pose_group", None)
+        if tag is not None:
+            if tag not in mapping:
+                while next_id in used:
+                    next_id += 1
+                mapping[tag] = next_id
+                used.add(next_id)
+                next_id += 1
+            item["group_id"] = mapping[tag]
+        out.append(item)
+    return out
 
 
 def mark_auto_boxes(boxes):

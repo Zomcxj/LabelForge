@@ -265,10 +265,14 @@ class EventHandlerMixin:
         if box.get("shape_type") != "rotation" or len(box.get("points") or []) != 4:
             return
         import math
-        from .shape_io import rotate_points, rotation_center, rotation_points_bbox
+        from .shape_io import (order_rotation_points, rotate_points,
+                               rotation_center, rotation_points_bbox)
         step = math.radians(float(OBB_CONFIG.get('rotate_step', 1)) or 1)
         self.save_undo_state()
-        box["points"] = rotate_points(box["points"], rotation_center(box["points"]), direction * step)
+        # 旋转后把起点归回最靠左上：手绘与推理统一按这个角放类别名
+        box["points"] = order_rotation_points(
+            rotate_points(box["points"], rotation_center(box["points"]),
+                          direction * step))
         box["x"], box["y"], box["width"], box["height"] = rotation_points_bbox(box["points"])
         if self.current_background_index >= 0:
             self.detection_boxes_dict[self.current_background_index] = list(self.detection_boxes)

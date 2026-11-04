@@ -815,7 +815,9 @@ class CanvasRendererMixin:
         painter.restore()
         if label and getattr(self._editor, 'show_label_names_checkbox', None) and self._editor.show_label_names_checkbox.isChecked():
             from ..engine.shape_io import box_display_label
-            text = box_display_label(box, show_score=self._show_scores())
+            # 旋转框的角度画在矩形中心，这里只留类别与置信度
+            text = box_display_label(box, show_score=self._show_scores(),
+                                     with_angle=False)
             self._draw_box_label(painter, pts[0].x(), pts[0].y(), text, QColor(lr, lg, lb))
         if is_selected:
             size = DETECTION_BOX_CONFIG['resize_handle_size']
@@ -827,27 +829,54 @@ class CanvasRendererMixin:
             painter.restore()
 
     def _draw_rotation_handle(self, painter, box, background_rect):
-        """旋转手柄：从 p0-p1 边中点向外的黑圈白心圆点。"""
-        from ..engine.shape_io import rotation_handle_point
+        """旋转手柄与角度都画在矩形中心。
+
+        手柄放中心是为了「捏住就往哪边转」的直觉，也与拖拽时的旋转中心
+        （`rotation_center`）重合；类别与置信度仍留在左上角。
+        """
+        from ..engine.shape_io import rotation_center
         points = box.get("points") or []
         if len(points) != 4:
             return
-        handle = rotation_handle_point(points, 20 / max(self.background_scale, 1e-6))
-        if handle is None:
+        center = rotation_center(points)
+        if center is None:
             return
-        hx = handle[0] * self.background_scale + background_rect.left()
-        hy = handle[1] * self.background_scale + background_rect.top()
-        mid_x = (points[0][0] + points[1][0]) / 2 * self.background_scale + background_rect.left()
-        mid_y = (points[0][1] + points[1][1]) / 2 * self.background_scale + background_rect.top()
+        cx = center[0] * self.background_scale + background_rect.left()
+        cy = center[1] * self.background_scale + background_rect.top()
         radius = 6
         painter.save()
         painter.setPen(QPen(QColor(0, 0, 0), 1))
-        painter.drawLine(QPointF(mid_x, mid_y), QPointF(hx, hy))
-        painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(0, 0, 0))
-        painter.drawEllipse(QPointF(hx, hy), radius, radius)
+        painter.drawEllipse(QPointF(cx, cy), radius, radius)
         painter.setBrush(QColor(255, 255, 255))
-        painter.drawEllipse(QPointF(hx, hy), radius - 2, radius - 2)
+        painter.drawEllipse(QPointF(cx, cy), radius - 2, radius - 2)
+        painter.restore()
+        self._draw_rotation_angle(painter, box, cx, cy, radius)
+
+    def _draw_rotation_angle(self, painter, box, cx, cy, radius):
+        """角度文字画在手柄右侧，底色调与类别标签一致。"""
+        from ..engine.shape_io import rotation_angle_degrees
+        angle = rotation_angle_degrees(box.get("points") or [])
+        if angle >= 359.5:
+            angle = 0.0
+        text = f"{angle:.0f}°"
+        label_color_hex = self._editor.get_label_color(box.get("label", ""))
+        bg_color = QColor(label_color_hex)
+        base = DETECTION_BOX_CONFIG.get('label_font_size', 9)
+        font_size = max(5, min(15, int(round(base))))
+        painter.save()
+        font = painter.font()
+        font.setPointSize(font_size)
+        painter.setFont(font)
+        metrics = QFontMetrics(font)
+        text_width = metrics.horizontalAdvance(text)
+        text_height = metrics.height()
+        left = int(cx + radius + 3)
+        top = int(cy - text_height / 2)
+        painter.fillRect(QRectF(left, top, text_width + 4, text_height), bg_color)
+        painter.setPen(QColor(0, 0, 0))
+        painter.drawText(QRectF(left + 2, top, text_width, text_height),
+                         Qt.AlignLeft | Qt.AlignVCenter, text)
         painter.restore()
 
     def _draw_point_shape(self, painter, box, background_rect, is_selected, is_pressed_label,

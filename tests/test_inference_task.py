@@ -1055,3 +1055,111 @@ def test_detect_in_scope_drops_boxes_whose_center_is_outside_every_region():
 
     labels = sorted(b["label"] for b in boxes)
     assert labels == ["in"], f"区域外的框没被丢掉：{labels}"
+
+
+# ---------- 多任务：类别归属与 pose 分组 ----------
+
+def test_class_label_of_prefers_pose_owner():
+    from labelforge.engine.inference_task import class_label_of
+
+    assert class_label_of({"label": "person"}) == "person"
+    assert class_label_of({"label": "nose", "pose_class": "person"}) == "person"
+    assert class_label_of({"label": "nose", "flags": {"pose_class": "person"}}) == "person"
+    assert class_label_of({}) == ""
+
+
+def test_filter_by_class_keeps_pose_keypoints_with_their_owner():
+    from labelforge.engine.inference_task import filter_by_class
+
+    boxes = [
+        {"label": "person", "pose_class": "person", "shape_type": "rectangle"},
+        {"label": "nose", "pose_class": "person", "shape_type": "point"},
+        {"label": "car", "pose_class": "car", "shape_type": "rectangle"},
+        {"label": "wheel", "pose_class": "car", "shape_type": "point"},
+    ]
+    kept = filter_by_class(boxes, {"person"})
+    assert [b["label"] for b in kept] == ["person", "nose"]
+
+
+def test_merge_boxes_gives_pose_instances_fresh_group_ids():
+    from labelforge.engine.inference_task import merge_boxes
+
+    existing = [
+        {"label": "manual", "x": 0, "y": 0, "width": 10, "height": 10,
+         "shape_type": "rectangle", "group_id": 1},
+        {"label": "nose", "x": 1, "y": 1, "width": 0, "height": 0,
+         "shape_type": "point", "group_id": 1},
+    ]
+    detected = [
+        {"label": "person", "x": 100, "y": 100, "width": 50, "height": 80,
+         "shape_type": "rectangle", "pose_group": 1, "pose_class": "person"},
+        {"label": "nose", "x": 120, "y": 120, "width": 0, "height": 0,
+         "shape_type": "point", "pose_group": 1, "pose_class": "person"},
+        {"label": "person", "x": 300, "y": 100, "width": 50, "height": 80,
+         "shape_type": "rectangle", "pose_group": 2, "pose_class": "person"},
+        {"label": "nose", "x": 320, "y": 120, "width": 0, "height": 0,
+         "shape_type": "point", "pose_group": 2, "pose_class": "person"},
+    ]
+    merged = merge_boxes(existing, detected, replace_auto=False)
+
+    manual = [b for b in merged if b["label"] == "manual"]
+    assert manual[0]["group_id"] == 1, "人工标注的分组号不能被改写"
+
+    new_groups = {b["group_id"] for b in merged if b.get("pose_class")}
+    assert len(new_groups) == 2, f"两个实例应拿到两个新分组号：{new_groups}"
+    assert 1 not in new_groups, "新分组号不能与已有分组号冲突"
+    assert all(b.get("pose_group") is None for b in merged), "pose_group 是解码期的临时标记"
+
+
+def test_merge_boxes_filters_old_auto_pose_points_by_owner():
+    from labelforge.engine.inference_task import merge_boxes
+
+    existing = [
+        {"label": "person", "x": 0, "y": 0, "width": 10, "height": 10,
+         "shape_type": "rectangle", "pose_class": "person",
+         "flags": {"inference": True}},
+        {"label": "nose", "x": 1, "y": 1, "width": 0, "height": 0,
+         "shape_type": "point", "pose_class": "person",
+         "flags": {"inference": True}},
+    ]
+    merged = merge_boxes(existing, [], replace_auto=False,
+                         class_filter={"car"})
+    assert merged == [], "类别筛选要把不再需要的旧推理框连同关键点一起清掉"
+
+
+def test_merge_boxes_assigns_pose_groups_even_when_replace_auto_drops_existing():
+    """覆盖模式会先清掉原有框，切点必须跟着变。
+
+    用 `len(existing)` 当切点会让前 len(existing) 个**新**结果被当成原有标注，
+    于是姿态实例框和它的前几个关键点拿不到 group_id（用户报的「矩形没有组别，
+    关键点有的也没有组别」）。
+    """
+    from labelforge.engine.inference_task import merge_boxes
+
+    def pose(label="person", tag=1, shape="rectangle"):
+        return {"label": label, "x": 100, "y": 100, "width": 50, "height": 80,
+                "shape_type": shape, "pose_group": tag, "pose_class": "person"}
+
+    detected = [pose(), pose("nose", shape="point"), pose("eye", shape="point")]
+    old = [dict(item, flags={"inference": True}) for item in detected]
+
+    merged = merge_boxes(old, detected, replace_auto=True)
+    assert len(merged) == 3
+    for box in merged:
+        assert box.get("group_id") == 1, f"{box['label']} 没拿到分组号：{box.get('group_id')}"
+
+
+def test_merge_boxes_pose_groups_avoid_existing_manual_group():
+    from labelforge.engine.inference_task import merge_boxes
+
+    manual = [{"label": "person", "x": 0, "y": 0, "width": 10, "height": 10,
+               "shape_type": "rectangle", "group_id": 2}]
+    detected = [
+        {"label": "person", "x": 100, "y": 100, "width": 50, "height": 80,
+         "shape_type": "rectangle", "pose_group": 1, "pose_class": "person"},
+        {"label": "nose", "x": 120, "y": 120, "width": 0, "height": 0,
+         "shape_type": "point", "pose_group": 1, "pose_class": "person"},
+    ]
+    merged = merge_boxes(manual, detected, replace_auto=False)
+    assert merged[0]["group_id"] == 2, "人工标注的分组号不能被改写"
+    assert merged[1]["group_id"] == 3 and merged[2]["group_id"] == 3

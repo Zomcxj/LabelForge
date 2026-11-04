@@ -1250,8 +1250,13 @@ class _Detector:
     active_providers = ["CPUExecutionProvider"]
     class_names = ["person", "car"]
 
+    task = "auto"
+
     def resolve_format(self):
         return "v8"
+
+    def resolve_task(self):
+        return "det"
 
     def is_dynamic_input(self):
         return False
@@ -2362,7 +2367,8 @@ w.region_boxes = [{'x': 100, 'y': 100, 'width': 700, 'height': 500}]
 w.region_fixed = False
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 
@@ -3149,7 +3155,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 
@@ -3206,7 +3213,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 
@@ -3253,7 +3261,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 
@@ -3303,7 +3312,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 # 要有真背景图，`get_background_rect()` 才有意义（否则命中点算不准）
@@ -3404,7 +3414,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 w.detection_boxes = []
@@ -3489,7 +3500,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 w.detection_boxes = []
@@ -3544,7 +3556,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 img = QImage(1000, 800, QImage.Format_RGB888)
@@ -3618,7 +3631,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 img = QImage(1000, 800, QImage.Format_RGB888)
@@ -3695,7 +3709,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 img = QImage(1000, 800, QImage.Format_RGB888)
@@ -3770,7 +3785,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 img = QImage(1000, 800, QImage.Format_RGB888)
@@ -3858,7 +3874,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 w._open_scope_panel()
@@ -3956,7 +3973,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 w._on_model_loaded(w._detector, (640, 640), 'model')
@@ -4007,7 +4025,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 w._open_scope_panel()
@@ -4372,7 +4391,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 img = QImage(1000, 800, QImage.Format_RGB888)
@@ -4906,7 +4926,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 img = QImage(1000, 800, QImage.Format_RGB888)
@@ -5287,7 +5308,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 img = QImage(600, 400, QImage.Format_RGB888)
@@ -5339,7 +5361,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 w.current_background = QPixmap.fromImage(
@@ -5378,7 +5401,8 @@ w.show()
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 w.current_background = QPixmap.fromImage(
@@ -5432,7 +5456,8 @@ w.canvas.resize(900, 700)
 app.processEvents()
 w._detector = type('D', (), {'model_path': 'm.onnx', 'conf_threshold': .25,
                             'iou_threshold': .45, 'class_names': [],
-                            'resolve_format': lambda s: 'v8',
+                            'resolve_format': lambda s: 'v8', 'resolve_task': lambda s: 'det',
+                              'task': 'auto',
                             'is_dynamic_input': lambda s: False,
                             'active_providers': ['CPU']})()
 w._on_model_loaded(w._detector, (640, 640), 'test')

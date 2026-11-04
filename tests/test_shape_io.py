@@ -330,3 +330,68 @@ def test_box_display_label_keeps_angle_before_score():
 def test_box_display_label_without_score_key():
     """老数据没有 score，显示时不能冒出 "None"。"""
     assert box_display_label({"label": "car"}, show_score=True) == "car"
+
+
+# ---------- 旋转框起点口径 ----------
+
+def test_order_rotation_points_starts_at_the_top_left_corner():
+    """起点必须是最靠左上的那个角。
+
+    画布把类别名画在 points[0]、把旋转手柄挂在 p0→p1 的边中点，手绘旋转框
+    从拖拽起点（视觉左上）开始；推理结果的起点如果落在别的角，同一个框的
+    标签和手柄就会跑到另一头。
+    """
+    from labelforge.engine.shape_io import order_rotation_points
+
+    # 顺时针给出、但起点在右下角
+    rotated = [[100.0, 100.0], [0.0, 100.0], [0.0, 0.0], [100.0, 0.0]]
+    ordered = order_rotation_points(rotated)
+    assert ordered[0] == [0.0, 0.0], ordered
+    assert ordered == [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]
+
+
+def test_order_rotation_points_is_a_cyclic_shift_not_a_sort():
+    """只能是循环移位：重排会打乱顶点顺序，框会自交。"""
+    from labelforge.engine.shape_io import order_rotation_points
+
+    diamond = [[50.0, 0.0], [100.0, 50.0], [50.0, 100.0], [0.0, 50.0]]
+    ordered = order_rotation_points(diamond)
+    assert ordered[0] == [50.0, 0.0]
+    for offset in range(4):
+        assert ordered[offset] in diamond
+    # 相邻关系不变（循环同构）
+    for offset in range(4):
+        index = diamond.index(ordered[offset])
+        assert ordered[(offset + 1) % 4] == diamond[(index + 1) % 4]
+
+
+def test_order_rotation_points_handles_flat_boxes_and_bad_input():
+    from labelforge.engine.shape_io import order_rotation_points
+
+    # 水平放置：最上沿有两个角平手，取最靠左的，正是手绘的左上角
+    flat = [[100.0, 0.0], [100.0, 20.0], [0.0, 20.0], [0.0, 0.0]]
+    assert order_rotation_points(flat)[0] == [0.0, 0.0]
+    assert order_rotation_points([[1.0, 2.0], [3.0, 4.0]]) == [[1.0, 2.0], [3.0, 4.0]]
+    assert order_rotation_points([]) == []
+
+
+def test_order_rotation_points_normalizes_counter_clockwise_input():
+    """逆时针输入要翻成顺时针，否则旋转手柄会被画到框内。
+
+    手柄沿 p0→p1 的外法线放，外法线方向由绕向决定；手绘是顺时针，
+    推理结果也必须归一化成顺时针。
+    """
+    from labelforge.engine.shape_io import order_rotation_points
+
+    ccw = [[0.0, 0.0], [0.0, 100.0], [100.0, 100.0], [100.0, 0.0]]
+    ordered = order_rotation_points(ccw)
+    assert ordered == [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]
+
+
+def test_hand_drawn_rotation_points_round_trip_the_orderer():
+    """手绘口径过一遍整理函数应当原样返回。"""
+    from labelforge.engine.shape_io import (order_rotation_points,
+                                            rect_to_rotation_points)
+
+    hand = rect_to_rotation_points(30.0, 40.0, 200.0, 60.0)
+    assert order_rotation_points(hand) == hand

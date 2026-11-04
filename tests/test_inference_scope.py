@@ -591,3 +591,40 @@ def test_window_grid_shape_agrees_with_the_augmenter():
     assert rows * cols == len(indexed)
     assert max(c for *_r, c in indexed) == cols
     assert max(r for *_x, r, _c in indexed) == rows
+
+
+def test_merge_scope_results_shifts_shape_points_too():
+    """跨窗合并要连多边形 / 旋转框 / 关键点的顶点一起平移。
+
+    只平移 bbox 会让形状留在窗口坐标里：同一个目标在两个窗口各出一份，
+    合并后画面上出现一片偏移的多边形。
+    """
+    from labelforge.engine.inference_scope import merge_scope_results
+
+    chunks = [
+        (100, 50, [{
+            "label": "car", "x": 10.0, "y": 20.0, "width": 30.0, "height": 40.0,
+            "score": 0.9, "class_id": 0, "shape_type": "polygon",
+            "points": [[10.0, 20.0], [40.0, 20.0], [40.0, 60.0], [10.0, 60.0]],
+        }]),
+    ]
+    merged = merge_scope_results(chunks, 0.5, image_size=(800, 600))
+    assert len(merged) == 1
+    assert merged[0]["x"] == 110.0 and merged[0]["y"] == 70.0
+    assert merged[0]["points"] == [[110.0, 70.0], [140.0, 70.0],
+                                   [140.0, 110.0], [110.0, 110.0]]
+
+
+def test_merge_scope_results_clamps_points_into_image():
+    from labelforge.engine.inference_scope import merge_scope_results
+
+    chunks = [
+        (90, 90, [{
+            "label": "car", "x": 0.0, "y": 0.0, "width": 40.0, "height": 40.0,
+            "score": 0.9, "class_id": 0, "shape_type": "point",
+            "points": [[0.0, 0.0]],
+        }]),
+    ]
+    merged = merge_scope_results(chunks, 0.5, image_size=(100, 100))
+    assert merged[0]["points"] == [[90.0, 90.0]]
+    assert merged[0]["x"] + merged[0]["width"] <= 100.0

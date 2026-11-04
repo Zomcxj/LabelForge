@@ -177,11 +177,29 @@ def test_yolov8_accepts_transposed_layout():
     assert out["class_ids"][0] == 1
 
 
-def test_yolov8_ambiguous_layout_rejected():
-    # num_classes=1 时 4+C=5，形状 5x5 无法判断是通道优先还是转置 → 必须报错
+def test_yolov8_ambiguous_layout_prefers_rows_as_anchors():
+    # num_classes=1 时 4+C=5，形状 5x5 无法判断方向；按「行是候选」解释，
+    # 与 ultralytics 常规导出方向一致。候选数恰好等于 4+C 的导出属于极小
+    # 特例（5 个候选），解出来为空但不会把整批标注解错。
     raw = np.zeros((1, 5, 5), dtype=np.float32)
-    with pytest.raises(InferenceError):
-        decode_yolov8(raw, 0.25, num_classes=1)
+    decoded = decode_yolov8(raw, 0.25, num_classes=1)
+    assert decoded["boxes"].shape == (0, 4)
+
+
+def test_yolov8_accepts_transposed_export_with_class_table():
+    """84x8400 与 8400x84 两种方向都要认。
+
+    只认「通道在前」会把第三方转置导出整批解错：行被当成通道、列被当成
+    候选，坐标与分数一起错位。
+    """
+    base = np.zeros((1, 84, 8400), dtype=np.float32)
+    base[0, :4, 0] = [320, 320, 40, 80]
+    base[0, 4 + 2, 0] = 0.9
+    for raw in (base, np.transpose(base, (0, 2, 1))):
+        decoded = decode_yolov8(raw, 0.25, num_classes=80)
+        assert decoded["boxes"].shape == (1, 4)
+        assert np.allclose(decoded["boxes"][0], [300, 280, 340, 360])
+        assert int(decoded["class_ids"][0]) == 2
 
 
 def test_yolov8_rejects_shape_mismatch_with_class_table():
@@ -385,6 +403,19 @@ class _FakeSession:
             shape = [1, 3, 640, 640]
             type = "tensor(float)"
         return [_In()]
+
+    def get_outputs(self):
+        class _Out:
+            pass
+        out = _Out()
+        out.name = "output"
+        out.shape = tuple(self._raw.shape)
+        return [out]
+
+    def get_modelmeta(self):
+        class _Meta:
+            custom_metadata_map = {}
+        return _Meta()
 
 
 def _detector_with_output(raw, num_classes=80):

@@ -5,8 +5,8 @@
 """
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QLabel, QPushButton, QDoubleSpinBox, QSpinBox,
-    QToolButton,
+    QWidget, QHBoxLayout, QLabel, QPushButton, QComboBox, QDoubleSpinBox,
+    QSpinBox, QToolButton,
 )
 
 from .i18n import t as tr
@@ -30,12 +30,23 @@ class ModelRow(QWidget):
     filter_requested = Signal()
     scope_requested = Signal()
     batch_to_changed = Signal(int)
+    task_changed = Signal(str)
     closed = Signal()
+
+    #: 任务下拉的取值与显示名；顺序固定，索引即 combo 的行号
+    TASK_ITEMS = (
+        ("auto", "自动"),
+        ("det", "检测"),
+        ("seg", "分割"),
+        ("obb", "旋转框"),
+        ("pose", "姿态"),
+    )
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("modelRow")
         self._end2end = False
+        self._resolved_task = ""
         self._build_ui()
         self._apply_style()
         self.clear_model()
@@ -57,6 +68,17 @@ class ModelRow(QWidget):
         self.name_label.setObjectName("modelRowName")
         self._model_name = ""
         layout.addWidget(self.name_label)
+
+        # 任务下拉：默认「自动」，按模型元数据/输出形状判定。改它只换后处理，
+        # 不重建会话，所以可以在不重新加载模型的情况下纠正判错的任务。
+        self.task_combo = QComboBox()
+        self.task_combo.setObjectName("modelRowTask")
+        self.task_combo.setFixedHeight(24)
+        self.task_combo.setToolTip(tr("推理任务：自动按模型判定，也可手动指定"))
+        for value, label in self.TASK_ITEMS:
+            self.task_combo.addItem(tr(label), value)
+        self.task_combo.currentIndexChanged.connect(self._emit_task)
+        layout.addWidget(self.task_combo)
 
         # 功能之间用 '-' 隔开：7 组 = 加载模型+模型名 | 置信度+NMS
         # | 输入尺寸 | 覆盖/补充 | 类别筛选 | 推理范围+摘要 | 目标张号。
@@ -220,7 +242,7 @@ class ModelRow(QWidget):
         self._apply_style()
 
     def set_model(self, name, conf, iou, size, active_providers=None, dynamic=False,
-                  end2end=False):
+                  end2end=False, resolved_task=""):
         """加载完成后填入模型信息。
 
         **动态轴**模型的尺寸必须由用户指定，所以整组「输入尺寸」控件显示且可编辑；
@@ -234,6 +256,8 @@ class ModelRow(QWidget):
         self._model_name = name
         self._end2end = bool(end2end)
         self.name_label.setToolTip(self._tooltip(name, size, active_providers))
+        if resolved_task:
+            self.set_resolved_task(resolved_task)
         for widget, value in ((self.conf_spin, conf), (self.iou_spin, iou)):
             widget.blockSignals(True)
             widget.setValue(value)
@@ -286,6 +310,10 @@ class ModelRow(QWidget):
         self._end2end = False
         self.name_label.setText(tr("尚未加载模型"))
         self.name_label.setToolTip("")
+        self.set_resolved_task("")
+        self.task_combo.blockSignals(True)
+        self.task_combo.setCurrentIndex(0)
+        self.task_combo.blockSignals(False)
         for widget, value in ((self.conf_spin, DEFAULT_CONF),
                               (self.iou_spin, DEFAULT_IOU)):
             widget.blockSignals(True)
@@ -341,6 +369,10 @@ class ModelRow(QWidget):
         self.iou_lbl.setText(tr("NMS"))
         self.size_lbl.setText(tr("输入尺寸"))
         self.batch_to_label.setText(tr("目标张号"))
+        self.task_combo.setToolTip(tr("推理任务：自动按模型判定，也可手动指定"))
+        for index, (_value, label) in enumerate(self.TASK_ITEMS):
+            self.task_combo.setItemText(index, tr(label))
+        self.set_resolved_task(self._resolved_task)
         self.name_label.setText(self._model_name or tr("尚未加载模型"))
         self._refresh_replace_text()
         # 筛选按钮的计数文案由主窗口按当前选择重设
@@ -369,6 +401,40 @@ class ModelRow(QWidget):
         return self.replace_btn.isChecked()
 
     # ---------- 内部 ----------
+
+    def _emit_task(self, index=None):
+        """任务下拉改动：把取值交给主窗口写回 detector（不重建会话）。"""
+        value = self.task_combo.currentData() or "auto"
+        self.task_changed.emit(str(value))
+
+    def current_task(self):
+        return str(self.task_combo.currentData() or "auto")
+
+    def set_task(self, task, resolved=""):
+        """同步下拉与「实际用的任务」提示。
+
+        `resolved` 是引擎判定出来的任务：选「自动」时把它显示在下拉右侧，
+        免得用户不知道这模型到底按哪种任务在解。
+        """
+        index = self.task_combo.findData(str(task or "auto"))
+        if index >= 0 and index != self.task_combo.currentIndex():
+            self.task_combo.blockSignals(True)
+            self.task_combo.setCurrentIndex(index)
+            self.task_combo.blockSignals(False)
+        self.set_resolved_task(resolved)
+
+    def set_resolved_task(self, resolved):
+        """在模型名后显示实际任务；空值表示尚未判定。"""
+        self._resolved_task = str(resolved or "")
+        name = self._model_name or tr("尚未加载模型")
+        label = self._task_label(self._resolved_task)
+        self.name_label.setText(f"{name}  ·  {label}" if label else name)
+
+    def _task_label(self, task):
+        for value, text in self.TASK_ITEMS:
+            if value == task:
+                return tr(text)
+        return ""
 
     def _emit_thresholds(self, _value=None):
         conf, iou = self.thresholds()

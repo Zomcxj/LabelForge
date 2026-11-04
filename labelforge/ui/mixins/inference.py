@@ -93,16 +93,20 @@ class InferenceMixin:
         self._load_model_with_names(path, self._saved_class_names(path), saved)
 
     def _saved_inference_settings(self):
-        """上次用过的输入尺寸；阈值与窗口参数另有来源，这里不给。
+        """上次用过的输入尺寸与任务；阈值与窗口参数另有来源，这里不给。
 
         阈值（置信度/NMS）**刻意不读回**：它们是「这次要怎么看」的临时
         旋钮，跨启动沿用会让用户对着自己忘了调过的值犯迷糊——框多框少
         说不清。不给键即可，worker 拿到 None 就走引擎默认值。
+
+        任务要读回：手动指定过 seg / obb / pose 的模型，靠元数据判不出来时
+        每次启动都得重选一遍，那是纯折磨。默认仍是「自动」。
         """
         from ...core import config_manager
         settings = config_manager.load_all().get('inference_settings') or {}
         return {
             "input_size": settings.get("input_size"),
+            "task": settings.get("task") or "auto",
         }
 
     def _saved_class_names(self, model_path):
@@ -152,7 +156,10 @@ class InferenceMixin:
 
         self._detector = detector
         self._model_size = size
-        self._model_format = detector.resolve_format()
+        # seg / obb / pose 没有「输出格式」可判；只有检测模型才解析，
+        # 否则给一个和实际布局对不上的 v5/v8 标签
+        self._model_format = (detector.resolve_format()
+                              if detector.resolve_task() == "det" else None)
         # 不要把这里当成「数据集快照」定稿：加载模型与「跑哪份数据集」是两回事，
         # 在这里记下来会让「先加载模型、再切数据集」之后的推理结果全被丢弃。
         # 快照在 `_start_inference` 里按当次任务记。
@@ -161,7 +168,11 @@ class InferenceMixin:
             os.path.basename(detector.model_path), detector.conf_threshold,
             detector.iou_threshold, size, detector.active_providers,
             dynamic=detector.is_dynamic_input(),
-            end2end=self._model_format == FORMAT_V26)
+            end2end=self._model_format == FORMAT_V26,
+            resolved_task=detector.resolve_task())
+        # 加载后把「记住的任务」同步回下拉：模型自己说了算（元数据），
+        # 否则用户上次手动选的值
+        row.set_task(detector.task, detector.resolve_task())
         # 贴图模式下不该把参数行又弹出来；
         # 走 mode-aware 的同步，标注模式才会真的 show。
         if getattr(self, 'edit_mode', 'annotate') == 'paste':
@@ -195,6 +206,7 @@ class InferenceMixin:
         row = ModelRow(self)
         row.thresholds_changed.connect(self._on_model_thresholds_changed)
         row.input_size_changed.connect(self._on_model_size_changed)
+        row.task_changed.connect(self._on_model_task_changed)
         row.load_requested.connect(self._load_inference_model)
         row.filter_requested.connect(self._open_class_filter)
         row.scope_requested.connect(self._open_scope_panel)
@@ -283,6 +295,26 @@ class InferenceMixin:
         if detector is None:
             return
         detector.set_input_size((width, height))
+        self._save_inference_settings()
+
+    def _on_model_task_changed(self, task):
+        """任务下拉改动：只换后处理，不重建会话。
+
+        改完立刻把引擎判定的结果写回行上，免得「选了分割但模型其实按检测解」
+        这种状态没人看得见。
+        """
+        detector = getattr(self, '_detector', None)
+        if detector is None:
+            return
+        try:
+            detector.set_task(task)
+            resolved = detector.resolve_task()
+        except Exception as exc:
+            self._inference_warn(str(exc))
+            return
+        row = getattr(self, 'model_row', None)
+        if row is not None:
+            row.set_resolved_task(resolved)
         self._save_inference_settings()
 
     # ---------- 推理范围 ----------
@@ -1032,6 +1064,8 @@ class InferenceMixin:
         config_manager.save_all(inference_settings={
             "model_path": detector.model_path,
             "input_size": (width, height),
+            # 任务：手动指定过就记住，下次加载同一模型不用再选一遍
+            "task": getattr(detector, "task", "auto"),
             # 只存窗口参数；范围模式不存，每次启动都回到全图，避免恢复出一个
             # 没有 ROI 的区域模式。
             "window_spec": dict(getattr(self, '_window_spec', None) or {}),

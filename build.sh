@@ -294,6 +294,9 @@ a = Analysis(
         'labelforge.engine.inference_scope',
         'labelforge.engine.onnx_inference', 'labelforge.engine.inference_image',
         'labelforge.engine.inference_task',
+        # seg / obb / pose 的后处理模块：被 onnx_inference 静态导入，
+        # 显式列出以免打包时因分析顺序漏收
+        'labelforge.engine.onnx_tasks',
         'labelforge.ui.video_dialog', 'labelforge.ui.mixins.video',
         'labelforge.engine.video_io', 'labelforge.engine.video_render',
         'numpy',

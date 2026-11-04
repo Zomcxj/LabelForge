@@ -1,4 +1,7 @@
-"""ONNX 检测推理：输入 RGB，只支持未内置 NMS 的 v5/v8 常规检测导出。
+"""ONNX 推理：输入 RGB，支持检测、分割、旋转框、姿态四种任务的导出模型。
+
+det 走 v5 / v8 / v26 三条既有解码路径；seg / obb / pose 的后处理在
+`onnx_tasks` 里，本模块只负责调度、逆变换与内部 box 组装。
 
 onnxruntime 延迟导入，缺少该依赖时本模块仍可导入，纯计算部分可独立测试。
 """
@@ -6,6 +9,14 @@ import ast
 from typing import List, NamedTuple
 
 import numpy as np
+
+from .onnx_tasks import (
+    SUPPORTED_TASKS, TASK_DET, TASK_OBB, TASK_POSE, TASK_SEG, TaskError,
+    decode_task, detect_task_from_outputs, end2end_from_metadata,
+    kpt_shape_from_metadata, nms_rotated, pose_keypoint_names, proto_index,
+    task_from_metadata,
+)
+from .shape_io import order_rotation_points, start_at_top_left
 
 LETTERBOX_FILL = 114
 
@@ -106,6 +117,37 @@ def unletterbox_boxes(boxes, geometry, src_w, src_h):
     return out, keep
 
 
+def unletterbox_points(points, geometry, src_w, src_h, clip=True):
+    """模型的顶点坐标（多边形 / 旋转框角点 / 关键点）还原到原图。
+
+    `clip=True` 时钳到图内；**旋转框要传 False**：逐点钳制会把矩形切成四边形
+    （贴边的框尤其明显），四个角不再互相垂直。图外的旋转框是正常情况，
+    画布照常绘制。
+    """
+    arr = np.asarray(points, dtype=np.float32).reshape(-1, 2)
+    if arr.size == 0:
+        return arr.reshape(0, 2)
+    if geometry.scale <= 0:
+        raise InferenceError(f"缩放系数非法: {geometry.scale}")
+    out = arr.copy()
+    out[:, 0] = (out[:, 0] - geometry.pad_x) / geometry.scale
+    out[:, 1] = (out[:, 1] - geometry.pad_y) / geometry.scale
+    if clip:
+        np.clip(out[:, 0], 0, src_w, out=out[:, 0])
+        np.clip(out[:, 1], 0, src_h, out=out[:, 1])
+    return out
+
+
+def points_bbox(points):
+    """顶点集的轴对齐外接矩形 (x, y, width, height)。"""
+    arr = np.asarray(points, dtype=np.float32).reshape(-1, 2)
+    if arr.size == 0:
+        return None
+    x1, y1 = float(arr[:, 0].min()), float(arr[:, 1].min())
+    x2, y2 = float(arr[:, 0].max()), float(arr[:, 1].max())
+    return x1, y1, x2 - x1, y2 - y1
+
+
 def _as_2d(raw, name):
     """(1, A, B) 或 (A, B) 统一成 2D；其它维度拒绝。"""
     arr = np.asarray(raw, dtype=np.float32)
@@ -163,10 +205,10 @@ def decode_yolov8(raw, conf_threshold, num_classes=None):
     expected = None if num_classes is None else 4 + num_classes
     a, b = arr.shape
     if expected is not None:
-        if a == expected and b == expected:
-            raise InferenceError(
-                f"YOLOv8/YOLO11 输出 {arr.shape} 两种布局无法区分，请显式指定格式")
-        if a == expected:
+        # 只有一列是候选数时另一列就是通道轴；两列都不等于 4+C 说明模型与
+        # 类别表对不上。候选数恰好等于 4+C 的极小导出（如 [1, 5, 6]）分不清
+        # 方向，按「行是候选」解释——ultralytics 的常规导出都是这个方向。
+        if a == expected and b != expected:
             arr = arr.T
         elif b != expected:
             raise InferenceError(
@@ -461,12 +503,15 @@ class OnnxDetector:
 
     def __init__(self, model_path, class_names=None, output_format="auto",
                  conf_threshold=None, iou_threshold=None,
-                 input_size=None, providers=None):
+                 input_size=None, providers=None, task="auto"):
         if output_format not in ("auto",) + SUPPORTED_FORMATS:
             raise InferenceError(f"不支持的输出格式: {output_format!r}")
+        if task not in ("auto",) + SUPPORTED_TASKS:
+            raise InferenceError(f"不支持的推理任务: {task!r}")
         self.model_path = model_path
         self.class_names = list(class_names or [])
         self.output_format = output_format
+        self.task = task
         # 阈值默认值只在这里定义一份，界面与批量任务都从这里取
         self.conf_threshold = float(
             DEFAULT_CONF if conf_threshold is None else conf_threshold)
@@ -477,6 +522,9 @@ class OnnxDetector:
         self._session = None
         self._input_name = None
         self._resolved_format = None
+        self._resolved_task = None
+        self._kpt_shape = None
+        self._kpt_names = None
         # 检测头在输出列表里的下标；带辅助输出的模型不是 0
         self._output_index = 0
 
@@ -490,6 +538,73 @@ class OnnxDetector:
     def set_input_size(self, input_size):
         """改动态轴模型的输入尺寸；只影响后续 detect，不重建会话。"""
         self.input_size = input_size
+
+    def set_task(self, task):
+        """改推理任务：只换后处理，不重建会话（与改阈值同一条路径）。
+
+        传 "auto" 会清掉已解析的结果，下次推理重新按元数据与形状判定。
+        """
+        if task not in ("auto",) + SUPPORTED_TASKS:
+            raise InferenceError(f"不支持的推理任务: {task!r}")
+        self.task = task
+        self._resolved_task = None if task == "auto" else task
+
+    def resolve_task(self):
+        """推理任务：用户指定优先，否则读模型元数据的 task，再退到形状推断。
+
+        两条都推不出时按 det 处理——这是历史行为，随后 `resolve_format()` 仍会
+        校验布局，真解不了会在那里报错，不会静默产出错误标注。
+        """
+        if self.task in SUPPORTED_TASKS:
+            return self.task
+        if self._resolved_task:
+            return self._resolved_task
+        self._ensure_session()
+        task = task_from_metadata(self.session)
+        if task is None and self.output_format in SUPPORTED_FORMATS:
+            # 显式选过 v5 / v8 / v26 就是在声明「这是检测模型」：这三种格式本身
+            # 只描述检测头布局，而形状上 4+C 与 4+C+1 常常撞车（80 类检测 85 列
+            # 与 80 类 OBB 也是 85 列），按形状猜会把显式的检测模型判成 OBB。
+            task = TASK_DET
+        if task is None:
+            num_classes = len(self.class_names) or len(metadata_class_names(self.session))
+            try:
+                fmt = self.resolve_format()
+            except InferenceError:
+                fmt = None
+            if fmt is not None:
+                # 检测头布局已经认出来了（v5 的 5+C、v8 的 4+C 都按类别数校验
+                # 通过），这就是检测模型。再拿同一条形状去猜 OBB 只会被
+                # 「4+C 差一列」骗过去：80 类检测 85 列与 80 类 OBB 同形。
+                task = TASK_DET
+            else:
+                task = detect_task_from_outputs(
+                    self.session.get_outputs(), num_classes or None,
+                    kpt_shape_from_metadata(self.session))
+        self._resolved_task = task or TASK_DET
+        return self._resolved_task
+
+    def kpt_shape(self):
+        """关键点 (个数, 每点维数)；非姿态模型返回 (0, 3)。"""
+        if self._kpt_shape is None:
+            self._ensure_session()
+            self._kpt_shape = kpt_shape_from_metadata(self.session) or (0, 3)
+        return self._kpt_shape
+
+    def keypoint_names(self):
+        """关键点名（如 nose / left_eye ...）；模型没写返回空表。"""
+        if self._kpt_names is None:
+            self._ensure_session()
+            self._kpt_names = pose_keypoint_names(self.session)
+        return list(self._kpt_names)
+
+    def resolve_end2end(self):
+        """是否已内置 NMS 的端到端导出；判不出返回 None（交给通道数判断）。"""
+        self._ensure_session()
+        flag = end2end_from_metadata(self.session)
+        if flag is None and self.resolve_task() == TASK_DET:
+            flag = self.resolve_format() == FORMAT_V26
+        return flag
 
     def _ensure_session(self):
         if self._session is not None:
@@ -579,12 +694,15 @@ class OnnxDetector:
         return fmt
 
     def detect(self, rgb, resize_fn, conf_threshold=None, iou_threshold=None):
-        """对单张 RGB 图（H, W, 3 uint8）推理，返回原图坐标下的内部框列表。
+        """对单张 RGB 图（H, W, 3 uint8）推理，返回原图坐标下的内部 box 列表。
 
         resize_fn(src_rgb, geometry, fill) 由调用方注入，返回 (dst_h, dst_w, 3)
         的 letterbox 画布；这样本模块不绑定具体图像库。
 
         阈值按调用传入，不烘焙进会话：界面改完阈值可以直接重跑，不必重建模型。
+
+        返回的 box 自带 `shape_type`：det 是 rectangle，seg 是 polygon，
+        obb 是 rotation，pose 是 rectangle 加若干 point（同 `pose_group` 归为一实例）。
         """
         if rgb is None or getattr(rgb, "ndim", None) != 3 or rgb.shape[2] != 3:
             shape = None if rgb is None else getattr(rgb, "shape", None)
@@ -599,6 +717,11 @@ class OnnxDetector:
         tensor = np.transpose(canvas.astype(np.float32) / 255.0, (2, 0, 1))[None, ...]
 
         outputs = self._ensure_session().run(None, {self._input_name: tensor})
+        task = self.resolve_task()
+        if task != TASK_DET:
+            return self._detect_task(task, outputs, geometry, src_w, src_h,
+                                     conf, iou, (dst_w, dst_h))
+
         fmt = self.resolve_format()
         decoded = decode_predictions(
             outputs[self._output_index], fmt, conf,
@@ -613,3 +736,154 @@ class OnnxDetector:
         if not kept:
             return []
         return boxes_to_internal(boxes[kept], scores[kept], class_ids[kept], self.class_names)
+
+    def _detect_task(self, task, outputs, geometry, src_w, src_h, conf, iou,
+                     input_size):
+        """seg / obb / pose 的解码、逆变换、去重与内部 box 组装。"""
+        try:
+            head_index, _ = pick_detection_output(self.session.get_outputs())
+        except InferenceError as exc:
+            raise InferenceError(f"{task} 模型输出无法定位推理头：{exc}") from exc
+        protos = None
+        if task == TASK_SEG:
+            found = proto_index(self.session.get_outputs())
+            if found is None:
+                raise InferenceError(
+                    "分割模型缺少掩膜原型输出（4 维、通道 32），无法生成多边形")
+            protos = outputs[found[0]]
+        end2end = self.resolve_end2end()
+        try:
+            detections = decode_task(
+                task, outputs[head_index], protos=protos,
+                num_classes=len(self.class_names) or None,
+                kpt_shape=self.kpt_shape(), end2end=end2end,
+                input_size=input_size, conf_threshold=conf)
+        except TaskError as exc:
+            raise InferenceError(str(exc)) from exc
+
+        items = self._build_task_boxes(task, detections, geometry, src_w, src_h)
+        if not items:
+            return []
+        if end2end:
+            # 端到端导出已内置 NMS，与检测路径同一口径，不再补做
+            return items
+        if task == TASK_POSE:
+            return self._nms_pose(items, iou)
+        if task == TASK_OBB:
+            # 旋转框按真实多边形 IoU 去重：外接矩形口径会把交叉的长条框
+            # 当成同一个（它们的 AABB 几乎重合）
+            return [items[i] for i in nms_rotated(items, iou)]
+        boxes = np.array([[b["x"], b["y"], b["x"] + b["width"],
+                           b["y"] + b["height"]] for b in items], dtype=np.float32)
+        scores = np.array([float(b.get("score", 0.0)) for b in items], dtype=np.float32)
+        class_ids = np.array([int(b.get("class_id", -1)) for b in items], dtype=np.int64)
+        kept = nms_per_class(boxes, scores, class_ids, iou)
+        return [items[i] for i in kept]
+
+    @staticmethod
+    def _nms_pose(items, iou):
+        """姿态按**实例**去重：只对实例框做 NMS，关键点跟着自己的实例走。
+
+        直接把所有形状丢进 NMS 会出事：关键点的框是零面积，与任何框的 IoU 都是
+        0，实例框被抑制后它们照样留着，结果是一堆挂在已消失实例上的孤儿点。
+        """
+        rects = [b for b in items if b.get("shape_type") == "rectangle"]
+        points = [b for b in items if b.get("shape_type") != "rectangle"]
+        if not rects:
+            return []
+        boxes = np.array([[b["x"], b["y"], b["x"] + b["width"],
+                           b["y"] + b["height"]] for b in rects], dtype=np.float32)
+        scores = np.array([float(b.get("score", 0.0)) for b in rects], dtype=np.float32)
+        class_ids = np.array([int(b.get("class_id", -1)) for b in rects], dtype=np.int64)
+        kept = nms_per_class(boxes, scores, class_ids, iou)
+        kept_groups = {rects[i].get("pose_group") for i in kept}
+        out = [rects[i] for i in kept]
+        out.extend(b for b in points if b.get("pose_group") in kept_groups)
+        return out
+
+    def _build_task_boxes(self, task, detections, geometry, src_w, src_h):
+        """把解码结果转成内部 box 列表，完成逆变换与退化过滤。"""
+        out = []
+        pose_groups = 0
+        for det in detections:
+            cid = int(det.get("class_id", -1))
+            label = self.class_names[cid] if 0 <= cid < len(self.class_names) else ""
+            score = float(det.get("score", 0.0))
+            if task == TASK_SEG:
+                points = det.get("points")
+                if points:
+                    mapped = unletterbox_points(points, geometry, src_w, src_h)
+                    # 起点对齐手绘多边形：画布把类别名画在 points[0]
+                    ordered = start_at_top_left(mapped.tolist())
+                    bbox = points_bbox(ordered)
+                    if bbox is None or bbox[2] <= 0 or bbox[3] <= 0:
+                        continue
+                    out.append({
+                        "x": bbox[0], "y": bbox[1],
+                        "width": bbox[2], "height": bbox[3],
+                        "label": label, "score": score, "class_id": cid,
+                        "shape_type": "polygon",
+                        "points": ordered,
+                    })
+                    continue
+                # 轮廓取不出来时退回外接矩形，宁可少个形状也别丢结果
+                rect = unletterbox_boxes(
+                    np.asarray([det["box"]], dtype=np.float32), geometry,
+                    src_w, src_h)
+                if not rect[1][0]:
+                    continue
+                x1, y1, x2, y2 = (float(v) for v in rect[0][0])
+                out.append({
+                    "x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1,
+                    "label": label, "score": score, "class_id": cid,
+                    "shape_type": "rectangle",
+                })
+            elif task == TASK_OBB:
+                # 不钳制顶点：逐点钳制会把矩形剪成四边形，四角不再垂直；
+                # 旋转框略微超出图边是正常情况，画布照常绘制
+                mapped = unletterbox_points(det["corners"], geometry, src_w,
+                                            src_h, clip=False)
+                # 起点对齐手绘旋转框：画布把标签画在 points[0]、手柄挂在该边
+                corners = order_rotation_points(mapped.tolist())
+                bbox = points_bbox(corners)
+                if bbox is None or bbox[2] <= 0 or bbox[3] <= 0:
+                    continue
+                out.append({
+                    "x": bbox[0], "y": bbox[1],
+                    "width": bbox[2], "height": bbox[3],
+                    "label": label, "score": score, "class_id": cid,
+                    "shape_type": "rotation",
+                    "points": corners,
+                })
+            elif task == TASK_POSE:
+                rect = unletterbox_boxes(
+                    np.asarray([det["box"]], dtype=np.float32), geometry,
+                    src_w, src_h)
+                if not rect[1][0]:
+                    continue
+                x1, y1, x2, y2 = (float(v) for v in rect[0][0])
+                pose_groups += 1
+                group = pose_groups
+                out.append({
+                    "x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1,
+                    "label": label, "score": score, "class_id": cid,
+                    "shape_type": "rectangle", "pose_group": group,
+                    "pose_class": label, "flags": {"pose_class": label},
+                })
+                names = self.keypoint_names()
+                for index, (kx, ky, kc) in enumerate(det["keypoints"]):
+                    if kc is None:
+                        continue
+                    mapped = unletterbox_points([[kx, ky]], geometry,
+                                                src_w, src_h)[0]
+                    name = names[index] if index < len(names) else f"kpt_{index}"
+                    out.append({
+                        "x": float(mapped[0]), "y": float(mapped[1]),
+                        "width": 0.0, "height": 0.0,
+                        "label": name, "score": float(kc), "class_id": cid,
+                        "shape_type": "point",
+                        "points": [[float(mapped[0]), float(mapped[1])]],
+                        "pose_group": group, "pose_class": label,
+                        "flags": {"pose_class": label},
+                    })
+        return out

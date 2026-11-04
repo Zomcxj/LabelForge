@@ -79,8 +79,11 @@ class _Detector:
     conf_threshold = 0.25
     iou_threshold = 0.45
     class_names = ["person"]
+    task = "auto"
     def resolve_format(self):
         return "v8"
+    def resolve_task(self):
+        return "det"
     def is_dynamic_input(self):
         return False
     active_providers = ["CPUExecutionProvider"]

@@ -116,14 +116,16 @@ def rotation_angle_degrees(points):
     return angle
 
 
-def box_display_label(box, show_score=False):
+def box_display_label(box, show_score=False, with_angle=True):
     """标签显示文本：类别[分组] 角度，选带置信度。
 
     置信度跟着类别名一起显示，由调用方按「显示置信度」开关传入 show_score。
+    `with_angle=False` 用于画布：角度已经画在矩形中心，左上角只留类别与置信度。
     """
     label = box.get("label", "") if isinstance(box, dict) else ""
     text = format_label_display(label, box.get("group_id") if isinstance(box, dict) else None)
-    if isinstance(box, dict) and box.get("shape_type") == "rotation" and len(box.get("points") or []) == 4:
+    if (with_angle and isinstance(box, dict)
+            and box.get("shape_type") == "rotation" and len(box.get("points") or []) == 4):
         angle = rotation_angle_degrees(box['points'])
         if angle >= 359.5:
             angle = 0.0
@@ -269,6 +271,52 @@ def rect_to_rotation_points(x, y, width, height):
     ]
 
 
+def start_at_top_left(points):
+    """把顶点序列循环移位，让「最靠左上」的那个点当起点。
+
+    画布把类别名画在 `points[0]`，所以起点不同就会让同一个形状的标签跑到
+    另一个角上：手绘总是从落笔处（视觉左上）开始，推理结果却是模型给的顺序。
+
+    取最靠上的那个角；**同一行（y 差在 1e-6 内）时取最靠左的**。容差是必需的：
+    旋转后的两个上角 y 只差 1e-16 量级，直接比浮点会随机挑中右边那个，
+    同一个框每次旋转后标签就左右跳。
+
+    只移位、不排序：排序会打乱相邻关系，多边形会自交。
+    """
+    pts = [[float(p[0]), float(p[1])] for p in points or []]
+    if len(pts) < 2:
+        return pts
+    min_y = min(point[1] for point in pts)
+    candidates = [index for index, point in enumerate(pts)
+                  if point[1] <= min_y + 1e-6]
+    start = min(candidates, key=lambda index: pts[index][0])
+    return pts[start:] + pts[:start]
+
+
+def order_rotation_points(points):
+    """把 4 个角点整理成「左上起点 + 顺时针」，与手绘旋转框同口径。
+
+    画布把类别名画在 `points[0]`、把旋转手柄画在矩形中心，而旋转拖拽按
+    p0→p1 的边算角度增量，所以：
+
+    - 起点必须是视觉最靠左上的那个角，否则标签跑在另一头；
+    - 绕向必须是**顺时针**（屏幕坐标），与手绘旋转框一致，否则同一个框
+      手绘和推理拖起来方向相反。
+
+    手绘旋转框是 `[[x, y], [x+w, y], [x+w, y+h], [x, y+h]]`，正好是左上起点 +
+    顺时针，本函数以它为准。绕向反了先反转，再循环移位到起点，形状不变。
+    """
+    pts = [[float(p[0]), float(p[1])] for p in points or []]
+    if len(pts) != 4:
+        return pts
+    # 鞋带公式：屏幕坐标（y 向下）下正值即顺时针，与手绘矩形的口径一致
+    twice_area = sum(pts[i][0] * pts[(i + 1) % 4][1] - pts[(i + 1) % 4][0] * pts[i][1]
+                     for i in range(4))
+    if twice_area < 0:
+        pts.reverse()
+    return start_at_top_left(pts)
+
+
 def rotation_center(points):
     """Center of a 4-point rotation shape (diagonal midpoint)."""
     if not points or len(points) < 4:
@@ -326,22 +374,6 @@ def move_rotation_vertex(points, index, new_pos):
     out[(i + 3) % 4] = [nx + b * vx, ny + b * vy]
     return out
 
-
-def rotation_handle_point(points, distance):
-    """Point offset from the midpoint of edge p0-p1 along its outward normal."""
-    if len(points) != 4:
-        return None
-    p0, p1 = points[0], points[1]
-    dx = p1[0] - p0[0]
-    dy = p1[1] - p0[1]
-    edge_len = math.hypot(dx, dy)
-    if edge_len < 1e-6:
-        return None
-    mid_x = (p0[0] + p1[0]) / 2
-    mid_y = (p0[1] + p1[1]) / 2
-    normal_x = dy / edge_len
-    normal_y = -dx / edge_len
-    return mid_x + normal_x * distance, mid_y + normal_y * distance
 
 
 def yolo_obb_line(box, class_id, image_width, image_height):

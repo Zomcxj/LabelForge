@@ -707,12 +707,12 @@ class CanvasDrawingMixin:
         background_rect = self.get_background_rect()
         if background_rect is None:
             return False
-        from ..engine.shape_io import rotation_handle_point, rotation_center
-        handle = rotation_handle_point(box["points"], 20 / max(self.background_scale, 1e-6))
-        if handle is None:
+        from ..engine.shape_io import rotation_center
+        center = rotation_center(box["points"])
+        if center is None:
             return False
-        hx = handle[0] * self.background_scale + background_rect.left()
-        hy = handle[1] * self.background_scale + background_rect.top()
+        hx = center[0] * self.background_scale + background_rect.left()
+        hy = center[1] * self.background_scale + background_rect.top()
         if (mouse_pos.x() - hx) ** 2 + (mouse_pos.y() - hy) ** 2 > 12 * 12:
             return False
         self.selected_box = box_index
@@ -753,8 +753,11 @@ class CanvasDrawingMixin:
         theta = angle - self.rotation_prev_angle
         if abs(theta) < 1e-9:
             return
-        from ..engine.shape_io import rotate_points, rotation_center, rotation_points_bbox
-        box["points"] = rotate_points(box["points"], rotation_center(box["points"]), theta)
+        from ..engine.shape_io import (order_rotation_points, rotate_points,
+                                       rotation_center, rotation_points_bbox)
+        # 旋转后把起点归回最靠左上：手绘与推理统一按这个角放类别名
+        box["points"] = order_rotation_points(
+            rotate_points(box["points"], rotation_center(box["points"]), theta))
         box["x"], box["y"], box["width"], box["height"] = rotation_points_bbox(box["points"])
         self.rotation_prev_angle = angle
         self._sync_detection_box_to_dict(box_index)

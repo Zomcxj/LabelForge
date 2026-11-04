@@ -21,6 +21,7 @@ from typing import List, Optional, Tuple
 from .augmenter.crop import (MAX_WINDOW, ceil_size_for_count,
                               normalized_window, window_starts)
 from .onnx_inference import DEFAULT_IOU, nms_per_class
+from .onnx_tasks import nms_rotated
 
 MODE_FULL = "full"
 MODE_WINDOW = "window"
@@ -355,18 +356,41 @@ def merge_scope_results(chunks, iou_threshold=DEFAULT_IOU, image_size=None):
             item = dict(box)
             item["x"], item["y"] = x, y
             item["width"], item["height"] = width, height
+            if box.get("points"):
+                # 多边形 / 旋转框 / 关键点的顶点也要跟着平移：只改 bbox 会让
+                # 形状留在窗口坐标里，跨窗合并后整片位移
+                shifted = [[float(p[0]) + dx, float(p[1]) + dy]
+                           for p in box["points"]]
+                # 旋转框不逐点钳制：那样会把矩形剪成四边形，四角不再垂直
+                if image_size is not None and box.get("shape_type") != "rotation":
+                    for point in shifted:
+                        point[0] = min(max(0.0, point[0]), iw)
+                        point[1] = min(max(0.0, point[1]), ih)
+                item["points"] = shifted
             merged.append(item)
 
     if not merged:
         return []
 
     import numpy as np
-    boxes = np.array([[b["x"], b["y"], b["x"] + b["width"], b["y"] + b["height"]]
-                      for b in merged], dtype=np.float64)
-    scores = np.array([float(b.get("score", 0.0)) for b in merged], dtype=np.float64)
-    class_ids = np.array([int(b.get("class_id", -1)) for b in merged], dtype=np.int64)
-
-    kept = nms_per_class(boxes, scores, class_ids, iou_threshold)
-    out = [merged[i] for i in kept]
+    # 旋转框按真实多边形 IoU 去重；其余形状仍是轴对齐口径
+    rotations = [b for b in merged
+                 if b.get("shape_type") == "rotation"
+                 and len(b.get("points") or []) >= 4]
+    rotation_ids = {id(b) for b in rotations}
+    others = [b for b in merged if id(b) not in rotation_ids]
+    out = []
+    if others:
+        boxes = np.array([[b["x"], b["y"], b["x"] + b["width"],
+                           b["y"] + b["height"]] for b in others],
+                         dtype=np.float64)
+        scores = np.array([float(b.get("score", 0.0)) for b in others],
+                          dtype=np.float64)
+        class_ids = np.array([int(b.get("class_id", -1)) for b in others],
+                             dtype=np.int64)
+        kept = nms_per_class(boxes, scores, class_ids, iou_threshold)
+        out.extend(others[i] for i in kept)
+    if rotations:
+        out.extend(rotations[i] for i in nms_rotated(rotations, iou_threshold))
     out.sort(key=lambda b: float(b.get("score", 0.0)), reverse=True)
     return out

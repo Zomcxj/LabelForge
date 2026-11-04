@@ -1,11 +1,14 @@
 """OBB (rotation) geometry, drawing and export (no Qt window)."""
+import inspect
 import math
 
+import pytest
+
 from labelforge.engine.shape_io import (
+    order_rotation_points,
     rect_to_rotation_points,
     rotate_points,
     rotation_center,
-    rotation_handle_point,
     rotation_points_bbox,
     move_rotation_vertex,
     yolo_obb_line,
@@ -36,11 +39,17 @@ def test_rotate_points_90_degrees_around_center():
         assert abs(got[1] - exp[1]) < 1e-6
 
 
-def test_rotation_handle_point_sits_outside_edge():
-    pts = [[0, 0], [10, 0], [10, 10], [0, 10]]
-    hx, hy = rotation_handle_point(pts, 20)
-    assert hx == 5
-    assert hy == -20
+def test_rotation_handle_sits_at_the_box_center():
+    """摇杆画在矩形中心，与拖拽时的旋转中心重合。
+
+    原先挂在 p0-p1 边中点的外法线上，贴着框跑；挪到中心后「捏住就往哪边转」
+    的直觉才对，也不受四个角点起点、绕向的影响。
+    """
+    from labelforge.canvas import canvas_renderer
+
+    source = inspect.getsource(canvas_renderer.CanvasRendererMixin._draw_rotation_handle)
+    assert "rotation_center" in source, source
+    assert "rotation_handle_point" not in source, source
 
 
 def test_rotation_points_bbox_matches_axis_aligned_rect():
@@ -155,16 +164,21 @@ def test_rotate_selected_box_rotates_around_center():
     canvas = Canvas()
     canvas._editor.detection_boxes = [{
         "label": "car", "shape_type": "rotation",
-        "x": 0, "y": 0, "width": 10, "height": 10,
-        "points": [[0, 0], [10, 0], [10, 10], [0, 10]],
+        "x": 0, "y": 0, "width": 10, "height": 20,
+        "points": rect_to_rotation_points(0, 0, 10, 20),
     }]
     canvas.selected_box = 0
-    canvas.rotation_center = (5, 5)
+    canvas.rotation_center = (5, 10)
     canvas.rotation_prev_angle = 0.0
-    canvas.mouse_pos = Point(5, 15)  # 从右侧转到正下方 => 90°
+    canvas.mouse_pos = Point(5, 30)  # 从右侧转到正下方 => 90°
     canvas._rotate_selected_box()
     box = canvas._editor.detection_boxes[0]
-    assert box["points"][0][0] == 10 and abs(box["points"][0][1]) < 1e-6
+    # 转 90° 后宽高互换
+    assert abs(box["width"] - 20) < 1e-6
+    assert abs(box["height"] - 10) < 1e-6
+    # 起点归回最靠左上的角（与推理框同一口径，类别名才画在同一个角）
+    assert box["points"][0] == pytest.approx([-5.0, 5.0], abs=1e-6)
+    assert order_rotation_points(box["points"]) == box["points"], "旋转后应已归一化"
 
 
 def test_rotation_box_has_four_corner_handles():
@@ -280,3 +294,43 @@ def test_keyboard_rotate_ignores_non_obb():
     editor.canvas = CanvasStub()
     editor.rotate_selected_box(1)
     assert "points" not in editor.detection_boxes[0]
+
+
+def test_keyboard_rotate_keeps_start_at_top_left():
+    """键盘旋转后起点也要归回最靠左上，与手绘/推理同一口径。"""
+    from labelforge.core.config import OBB_CONFIG
+    from labelforge.engine.event_handler import EventHandlerMixin
+
+    class Editor(EventHandlerMixin):
+        def __init__(self):
+            self.detection_boxes = [{
+                "label": "car", "shape_type": "rotation",
+                "x": 0, "y": 0, "width": 10, "height": 20,
+                "points": rect_to_rotation_points(0, 0, 10, 20),
+            }]
+            self.detection_boxes_dict = {0: self.detection_boxes}
+            self.current_background_index = 0
+
+        def save_undo_state(self):
+            pass
+
+        def update_label_list(self):
+            pass
+
+    class CanvasStub:
+        selected_box = 0
+
+        def update(self):
+            pass
+
+    original = OBB_CONFIG.get('rotate_step', 1)
+    OBB_CONFIG['rotate_step'] = 90
+    try:
+        editor = Editor()
+        editor.canvas = CanvasStub()
+        editor.rotate_selected_box(1)
+    finally:
+        OBB_CONFIG['rotate_step'] = original
+
+    points = editor.detection_boxes[0]["points"]
+    assert order_rotation_points(points) == points, f"起点未归一化：{points}"

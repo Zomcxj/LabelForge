@@ -20,8 +20,24 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
+# 退出前先关掉所有顶层窗口。留着窗口直接 sys.exit 会在解释器 finalize 阶段
+# 崩（returncode 0xC0000409），而断言早已打印完毕——表现为「功能全过、退出码
+# 非 0」的假红（实测 25 次崩 3 次；关窗口后 25 次崩 0 次）。
+# 关全部顶层窗口而不是只关脚本里的变量：同一脚本可能开第二个编辑器窗口，
+# 漏掉任一个都会留活对象给 Qt 静态析构。
+# 仍走 sys.exit（正常 finalize）而不是 os._exit：后者会经 ExitProcess 卸载
+# DLL 触发 Qt 静态析构。
 _GUARD = """
 import sys
+from PySide6.QtWidgets import QApplication
+for _widget in list(QApplication.topLevelWidgets()):
+    try:
+        _widget.close()
+    except Exception:
+        pass
+_app = QApplication.instance()
+if _app is not None:
+    _app.processEvents()
 sys.stdout.flush()
 sys.exit(0)
 """

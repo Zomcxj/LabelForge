@@ -2267,3 +2267,64 @@ def test_result_ready_cache_sync_honours_class_filter(monkeypatch):
 
     labels = sorted(b["label"] for b in editor.detection_boxes_dict[1])
     assert labels == ["新"], f"缓存没按类别筛选：{labels}"
+
+
+# ---------- 推理任务选择 ----------
+
+def test_model_row_has_task_combo_defaulting_to_auto():
+    from labelforge.ui.model_row import ModelRow
+    src = inspect.getsource(ModelRow._build_ui)
+    assert "self.task_combo" in src, src
+    assert "TASK_ITEMS" in inspect.getsource(ModelRow)
+
+
+def test_task_combo_values_match_engine_tasks():
+    from labelforge.engine.onnx_tasks import SUPPORTED_TASKS
+    from labelforge.ui.model_row import ModelRow
+
+    values = [value for value, _label in ModelRow.TASK_ITEMS]
+    assert values[0] == "auto"
+    assert set(values[1:]) == set(SUPPORTED_TASKS)
+
+
+def test_set_model_shows_resolved_task_after_name():
+    out = _run_real_qt("""
+from PySide6.QtWidgets import QApplication
+app = QApplication([])
+from labelforge.ui.model_row import ModelRow
+
+row = ModelRow()
+row.set_model("yolo11s-seg.onnx", 0.25, 0.45, (640, 640), resolved_task="seg")
+print("SEG:", row.name_label.text())
+row.set_resolved_task("obb")
+print("OBB:", row.name_label.text())
+print("COMBO:", row.current_task())
+""")
+    seg_line = next(l for l in out.splitlines() if l.startswith("SEG:"))
+    obb_line = next(l for l in out.splitlines() if l.startswith("OBB:"))
+    assert "yolo11s-seg.onnx" in seg_line and "分割" in seg_line, out
+    assert "旋转框" in obb_line, out
+    assert "COMBO: auto" in out, out
+
+
+def test_task_change_reaches_detector_without_reload():
+    """改任务只换后处理：不重新加载模型，也不重新发 ModelLoadWorker。"""
+    src = inspect.getsource(InferenceMixin._on_model_task_changed)
+    assert "detector.set_task" in src, src
+    assert "ModelLoadWorker" not in src, src
+    wiring = inspect.getsource(InferenceMixin._ensure_model_row)
+    assert "row.task_changed.connect(self._on_model_task_changed)" in wiring, wiring
+
+
+def test_saved_task_is_read_back_and_defaults_to_auto():
+    src = inspect.getsource(InferenceMixin._saved_inference_settings)
+    assert '"task"' in src, src
+    assert 'or "auto"' in src, src
+    save_src = inspect.getsource(InferenceMixin._save_inference_settings)
+    assert '"task"' in save_src, save_src
+
+
+def test_non_det_model_skips_detect_format_resolution():
+    """seg / obb / pose 没有输出格式可解析，不能去碰 resolve_format。"""
+    src = inspect.getsource(InferenceMixin._on_model_loaded)
+    assert 'resolve_task() == "det"' in src, src
