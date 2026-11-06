@@ -10,9 +10,106 @@ from ..core.utils import extract_label_name
 from ..ui import dialog_helpers
 from ..ui.i18n import t as tr
 
+# 右键菜单里「快速切换标签」两段的条数上限
+MAX_RECENT_LABELS = 3
+MAX_FREQUENT_LABELS = 5
+
 
 class CanvasMenuMixin:
     """右键菜单逻辑"""
+
+    def _remember_recent_label(self, label, kind='box'):
+        """记录最近选定的标签，同一数据集内去重并保留最近 3 条。
+
+        kind='box' 记检测框标签，kind='paste' 记贴图标签，两份互不影响。
+        """
+        if not isinstance(label, str) or not label.strip():
+            return
+        label = label.strip()
+        attr = '_recent_paste_labels' if kind == 'paste' else '_recent_labels'
+        recent = [item for item in (getattr(self._editor, attr, None) or [])
+                  if item != label]
+        recent.insert(0, label)
+        setattr(self._editor, attr, recent[:MAX_RECENT_LABELS])
+
+    def _quick_switch_labels(self, current_label):
+        """返回检测框快速切换用的标签：最近选定的在前，其后是数据集类别最多的。
+
+        两段之间与段内都不重复，也不含当前标签。
+        """
+        recent = [item for item in (getattr(self._editor, '_recent_labels', None) or [])
+                  if isinstance(item, str) and item.strip() and item != current_label]
+        recent = recent[:MAX_RECENT_LABELS]
+
+        seen = set(recent)
+        if current_label:
+            seen.add(current_label)
+        frequent = []
+        for item in (getattr(self._editor, '_cached_bg_label_stats', None) or []):
+            label = item.get('label') if isinstance(item, dict) else None
+            if not isinstance(label, str) or not label.strip():
+                continue
+            label = label.strip()
+            if label in seen:
+                continue
+            seen.add(label)
+            frequent.append(label)
+            if len(frequent) >= MAX_FREQUENT_LABELS:
+                break
+        return recent, frequent
+
+    def _quick_paste_labels(self, current_label):
+        """返回贴图快速切换用的标签：最近选定的在前，其后按当前会话贴图数排序。
+
+        贴图标签与检测框标签是两套数据，统计源也不同：先用
+        `_get_session_paste_stats()`（会话内贴图项计数），剩余名额再用
+        贴图标签列表补齐 —— 后者是用户自己维护的一小组标签，通常只有几个，
+        但仍按上限截断，避免标签多时菜单变长。
+        """
+        recent = [item for item in
+                  (getattr(self._editor, '_recent_paste_labels', None) or [])
+                  if isinstance(item, str) and item.strip() and item != current_label]
+        recent = recent[:MAX_RECENT_LABELS]
+
+        stats = {}
+        getter = getattr(self._editor, '_get_session_paste_stats', None)
+        if callable(getter):
+            try:
+                stats = getter() or {}
+            except Exception:
+                stats = {}
+
+        seen = set(recent)
+        if current_label:
+            seen.add(current_label)
+        frequent = []
+
+        def _take(label):
+            if not isinstance(label, str) or not label.strip():
+                return
+            label = label.strip()
+            if label in seen:
+                return
+            seen.add(label)
+            frequent.append(label)
+
+        for label, _count in sorted(stats.items(), key=lambda kv: (-kv[1], kv[0])):
+            if len(frequent) >= MAX_FREQUENT_LABELS:
+                break
+            _take(label)
+
+        paste_list = getattr(self._editor, 'paste_label_list', None)
+        if paste_list is not None:
+            try:
+                count = paste_list.count()
+            except Exception:
+                count = 0
+            for i in range(count):
+                if len(frequent) >= MAX_FREQUENT_LABELS:
+                    break
+                item = paste_list.item(i)
+                _take(extract_label_name(item.text()) if item is not None else '')
+        return recent, frequent
 
     def _active_regions(self):
         """**当前模式**该操作/显示的那份区域列表。
@@ -532,14 +629,19 @@ class CanvasMenuMixin:
 
         menu.addSeparator()
 
-        for label in self._collect_dataset_labels():
-            if label == current_label:
-                continue
-            action = QAction(label, self)
-            action.triggered.connect(
-                lambda checked, l=label, idx=box_index: self._change_box_label(idx, l)
-            )
-            menu.addAction(action)
+        # 快速切换区：只列「最近选定」与「类别最多」的短列表，合并为一个标签块。
+        # 全量标签走「修改标签…」的滚动对话框，菜单不会随类别数增长到超出屏幕。
+        recent, frequent = self._quick_switch_labels(current_label)
+        quick_labels = recent + frequent
+        if quick_labels:
+            for label in quick_labels:
+                action = QAction(label, self)
+                action.triggered.connect(
+                    lambda checked, l=label, idx=box_index: self._change_box_label(idx, l)
+                )
+                menu.addAction(action)
+        else:
+            menu.removeAction(menu.actions()[-1])      # 无快速项时不留分隔线
 
         menu.exec_(QPoint(self.mapToGlobal(mouse_pos)))
 
@@ -707,6 +809,7 @@ class CanvasMenuMixin:
                 lm._save_detection_json_for_index(self._editor.current_background_index)
         elif hasattr(self._editor, 'get_label_color'):
             self._editor.get_label_color(new_label)
+        self._remember_recent_label(new_label)
         self._editor.update_label_list()
         self.update()
 
@@ -889,18 +992,21 @@ class CanvasMenuMixin:
 
         menu.addSeparator()
 
-        label_items = []
-        for i in range(self._editor.paste_label_list.count()):
-            label = self._editor.paste_label_list.item(i).text()
-            pure_label = extract_label_name(label)
-            label_items.append(pure_label)
-
-        for label in label_items:
-            action = QAction(label, self)
-            action.triggered.connect(
-                lambda checked, l=label, idx=item_index: self.change_item_label(idx, l)
-            )
-            menu.addAction(action)
+        # 与检测框一致：只列常用贴图标签一块，不随标签数增长；其余经「增加标签」新建。
+        current_label = None
+        if 0 <= item_index < len(self._editor.canvas_items):
+            current_label = self._editor.canvas_items[item_index][2]
+        recent, frequent = self._quick_paste_labels(current_label)
+        quick_labels = recent + frequent
+        if quick_labels:
+            for label in quick_labels:
+                action = QAction(label, self)
+                action.triggered.connect(
+                    lambda checked, l=label, idx=item_index: self.change_item_label(idx, l)
+                )
+                menu.addAction(action)
+        else:
+            menu.removeAction(menu.actions()[-1])      # 无快速项时不留分隔线
 
         menu.addSeparator()
 
@@ -918,6 +1024,7 @@ class CanvasMenuMixin:
         if 0 <= item_index < len(self._editor.canvas_items):
             pixmap, rect, _ = self._editor.canvas_items[item_index]
             self._editor.canvas_items[item_index] = (pixmap, rect, new_label)
+            self._remember_recent_label(new_label, kind='paste')
             self.update()
 
     def add_new_label(self, item_index):
@@ -929,6 +1036,7 @@ class CanvasMenuMixin:
         if ok and new_label.strip():
             new_label = new_label.strip()
             self._editor.paste_label_list.addItem(new_label)
+            self._remember_recent_label(new_label, kind='paste')
 
             if 0 <= item_index < len(self._editor.canvas_items):
                 pixmap, rect, _ = self._editor.canvas_items[item_index]

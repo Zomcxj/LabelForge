@@ -292,6 +292,23 @@ def _normalize_bg_label_stats(value):
     return result
 
 
+def _normalize_recent_labels(value):
+    """Normalize recently used labels for memory records (max 3, deduped)."""
+    if not isinstance(value, list):
+        return []
+    result = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        label = item.strip()
+        if not label or label in result:
+            continue
+        result.append(label)
+        if len(result) >= 3:
+            break
+    return result
+
+
 def _normalize_memory_record(record):
     try:
         background_index = max(0, int(record.get('background_index', 0) or 0))
@@ -309,6 +326,7 @@ def _normalize_memory_record(record):
         'edit_mode': edit_mode,
         'updated_at': str(record.get('updated_at', '') or ''),
         'bg_label_stats': _normalize_bg_label_stats(record.get('bg_label_stats', [])),
+        'recent_labels': _normalize_recent_labels(record.get('recent_labels', [])),
     }
 
 

@@ -87,6 +87,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self._label_color_map_palette = tuple(self.label_colors)
         self._max_labels = settings.get('max_labels', 3)
         self.label_cache_slots = settings.get('label_cache_slots', [])
+        self._recent_labels = []
         self.active_label_cache_slot = 0
         self._label_cache_copy_counter = max(
             [int(slot.get('copy_order', 0) or 0) for slot in self.label_cache_slots] or [0]

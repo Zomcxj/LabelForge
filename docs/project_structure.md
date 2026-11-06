@@ -29,7 +29,7 @@ LabelForge/
 │   │   ├── canvas.py
 │   │   ├── canvas_drawing.py
 │   │   ├── canvas_interaction.py  # 含区域就地绘制会话（不切贴图模式、不进撤销）
-│   │   ├── canvas_menu.py         # 右键悬浮菜单；统一经 _rounded_menu() 建带圆角面板
+│   │   ├── canvas_menu.py         # 右键悬浮菜单；统一经 _rounded_menu() 建带圆角面板；检测框与贴图菜单只列常用标签
 │   │   └── canvas_renderer.py     # 渲染；区域轮廓仅在范围小窗开着时绘制
 │   ├── core/                  # 配置、工具与异常处理
 │   │   ├── __init__.py
@@ -107,7 +107,7 @@ LabelForge/
 │   │   │   ├── inference.py
 │   │   │   ├── label_cache_slot.py
 │   │   │   ├── lists.py
-│   │   │   ├── memory_record.py
+│   │   │   ├── memory_record.py   # 记忆记录；含 recent_labels（按数据集分域的最近检测框标签）
 │   │   │   ├── options_popup.py
 │   │   │   ├── panels.py
 │   │   │   ├── processing_panel_builder.py
@@ -134,6 +134,7 @@ LabelForge/
 │   ├── conftest.py
 │   ├── test_canvas_interaction_regressions.py
 │   ├── test_canvas_menu_regressions.py
+│   ├── test_box_menu_quick_labels.py # 检测框右键常用标签折叠
 │   ├── test_canvas_renderer_regressions.py
 │   ├── test_config.py
 │   ├── test_config_manager.py

@@ -231,3 +231,20 @@ def test_old_package_name_does_not_import():
 
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("pastelabel")
+
+
+def test_documentation_describes_the_quick_label_block_in_box_menu():
+    """检测框右键只列常用标签；文档需与实际行为一致，不得再写「平铺全部类别」。"""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs" / "user_guide.md").read_text(encoding="utf-8")
+    structure = (ROOT / "docs" / "project_structure.md").read_text(encoding="utf-8")
+
+    assert "最多 8 个" in readme
+    assert "修改标签…" in readme
+    assert "常用标签" in guide
+    assert "recent_labels" in structure
+
+    # 旧的「菜单里平铺标签列表」说法必须消失（检测框与贴图都已改为常用标签块）
+    assert "检测框标签列表（快速切换标签）" not in guide
+    assert "贴图标签列表（快速切换标签）" not in guide
+    assert "常用贴图标签" in guide

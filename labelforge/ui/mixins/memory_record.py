@@ -93,6 +93,7 @@ class MemoryRecordMixin:
             'edit_mode': getattr(self, 'edit_mode', 'paste'),
             'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'bg_label_stats': bg_stats,
+            'recent_labels': list(getattr(self, '_recent_labels', None) or []),
         }
         for existing in config_manager.load_memory_records():
             if all(existing.get(k) == record[k] for k in ('background_path', 'paste_path', 'label_path')):
@@ -119,6 +120,10 @@ class MemoryRecordMixin:
         paste_path = record.get('paste_path') or ''
         label_path = record.get('label_path') or ''
         saved_index = int(record.get('background_index', 0) or 0)
+        self._recent_labels = [
+            item for item in (record.get('recent_labels') or [])
+            if isinstance(item, str) and item.strip()
+        ][:3]
 
         if bg_path:
             if os.path.isdir(bg_path):
@@ -231,6 +236,7 @@ class MemoryRecordMixin:
         self._scanned_background_labels = set()
         self._cached_bg_label_stats = []
         self._cached_bg_label_stats_path = ""
+        self._recent_labels = []
         self._background_label_scan_pending = False
         self._background_label_scan_completed = False
         self._background_label_scan_in_progress = False

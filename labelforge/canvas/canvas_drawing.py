@@ -275,6 +275,9 @@ class CanvasDrawingMixin:
             group_id = None
 
         if selected_label:
+            # 记录最近选定标签；精简画布（仅绘制混入）没有该方法
+            if hasattr(self, '_remember_recent_label'):
+                self._remember_recent_label(selected_label)
             if getattr(self, 'current_draw_mode', None) == 'rotation':
                 from ..engine.shape_io import rect_to_rotation_points
                 points = rect_to_rotation_points(x, y, width, height)
@@ -436,6 +439,8 @@ class CanvasDrawingMixin:
         else:
             label, group_id = result, None
         if label:
+            if hasattr(self, '_remember_recent_label'):
+                self._remember_recent_label(label)
             self._create_point_at(point, label, group_id)
         self.update_status_label()
         self.update()
@@ -483,6 +488,8 @@ class CanvasDrawingMixin:
             selected_label, group_id = result
         else:
             selected_label, group_id = result, None
+        if selected_label and hasattr(self, '_remember_recent_label'):
+            self._remember_recent_label(selected_label)
         self._finish_polygon(label=selected_label, pop_duplicate=False,
                              group_id=group_id)
 
