@@ -485,6 +485,7 @@ _strings = {
         "添加区域": "添加区域",
         "添加区域（矩形）": "添加区域（矩形）",
         "添加区域（多边形）": "添加区域（多边形）",
+        "添加区域（多边形）：左键加点，右键完成": "添加区域（多边形）：左键加点，右键完成",
         "删除区域": "删除区域",
         "删除顶点": "删除顶点",
         "清空区域": "清空区域",
@@ -1215,6 +1216,8 @@ _strings = {
         "添加区域": "Add Region",
         "添加区域（矩形）": "Add Region (Rectangle)",
         "添加区域（多边形）": "Add Region (Polygon)",
+        "添加区域（多边形）：左键加点，右键完成":
+            "Add Region (Polygon): left-click to add points, right-click to finish",
         "删除区域": "Delete Region",
         "清空区域": "Clear Regions",
         "固定区域": "Fix Regions",

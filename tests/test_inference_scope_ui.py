@@ -6,6 +6,7 @@
 import ast
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -5598,10 +5599,12 @@ print('没有可勾选项:', not any(
                                          m.actions())[1])(QMenu())))
 """)
     lines = _lines(out)
-    assert lines[0] == "未固定缩进: [0, 0, 0]", (
-        f"未固定时各项没有齐平：{lines[0]}")
-    assert lines[1] == "已固定缩进: [0, 0, 0]", (
-        f"已固定时各项没有齐平：{lines[1]}")
+    # 断言「每一项的额外缩进都是 0」，不写死条数：菜单项增减不该让对齐守卫失效
+    for index, label in ((0, "未固定"), (1, "已固定")):
+        values = [int(x) for x in re.findall(
+            r"-?\d+", lines[index].split(":", 1)[1])]
+        assert values and set(values) == {0}, (
+            f"{label}时各项没有齐平：{lines[index]}")
     assert lines[2].endswith("True"), lines[2]
 
 

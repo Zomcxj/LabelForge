@@ -427,15 +427,20 @@ class CanvasMenuMixin:
         menu.exec_(QPoint(self.mapToGlobal(mouse_pos)))
 
     def _add_region_actions(self, menu, fixed):
-        """追加 添加区域（矩形）、固定、清空 菜单项。
+        """追加 添加区域（矩形 / 多边形）、固定、清空 菜单项。
 
-        **只有矩形**：推理范围只做矩形，不提供多边形入口，
-        免得留一个画得出来、面板里却看不全的路径。
+        两种形状都提供入口：子系统的命中测试、拖动、缩放、轮廓绘制、贴图采样
+        与区域推理都已按矩形/多边形分别实现，缺的只是这两个入口。
         """
         add_rect_action = QAction(tr("添加区域（矩形）"), self)
         add_rect_action.setEnabled(not fixed)
         add_rect_action.triggered.connect(self._start_add_region)
         menu.addAction(add_rect_action)
+
+        add_poly_action = QAction(tr("添加区域（多边形）"), self)
+        add_poly_action.setEnabled(not fixed)
+        add_poly_action.triggered.connect(self._start_add_region_polygon)
+        menu.addAction(add_poly_action)
 
         # 「固定区域」**不用 `setCheckable`**：Qt 会给可勾选项的文字额外缩进
         # 一个 `PM_MenuButtonIndicator` 的宽度（本主题下 12px），于是它比同菜单
@@ -470,6 +475,24 @@ class CanvasMenuMixin:
         status = getattr(self._editor, 'status_label', None)
         if status is not None:
             status.setText(tr("添加区域（矩形）"))
+        self.update()
+
+    def _start_add_region_polygon(self):
+        """多边形区域：左键逐点加点，右键 / 双击 / Enter 完成，Backspace 退一点。"""
+        if self._active_region_fixed():
+            return
+        self.is_drawing_region = False
+        self.is_drawing_region_polygon = True
+        # 与矩形同样要打「被 arm 过」的标记，否则左键会被直接判为残留态
+        self._region_draw_armed_flag = True
+        self.temp_region_points = []
+        self.selected_region = None
+        self.draw_start_pos = None
+        self.temp_draw_box = None
+        self.setCursor(Qt.CrossCursor)
+        status = getattr(self._editor, 'status_label', None)
+        if status is not None:
+            status.setText(tr("添加区域（多边形）：左键加点，右键完成"))
         self.update()
 
     def _toggle_fix_regions(self):
