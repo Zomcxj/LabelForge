@@ -36,3 +36,14 @@ LGPL-3.0 §4(d)(0) 要求用户能够用改造过的 Qt 与本程序重新组合
 | PyInstaller（启动器随产物分发） | GPL-2.0-or-later，附带允许打包任意许可软件的例外 | <https://pyinstaller.org/> |
 
 以上组件的许可证正文可在其主页或发行包内取得，本仓库不重复收录。
+
+## 随产物分发的图标与字体
+
+下列资源以源码内嵌或数据文件的形式进入发行包，不属于本仓库自有代码，按各自许可证使用。
+
+| 资源 | 许可证 | 在仓库中的位置 | 说明 |
+|---|---|---|---|
+| Feather Icons | MIT（Copyright (c) 2013-2023 Cole Bemis） | `labelforge/ui/icons.py` | 界面图标的 SVG 路径取自该图标集，仅把描边色改由 `currentColor` 占位以便随主题着色 |
+| JetBrains Mono | SIL Open Font License 1.1 | `ico_image/fonts/`（Regular / Medium / Bold 三档） | 仅用于界面等宽文本显示，随 `ico_image` 目录一并打入发行包 |
+
+Feather Icons 的 MIT 许可要求保留上述版权声明与许可声明；JetBrains Mono 的 OFL 允许随软件分发与嵌入，但不得单独售卖字体本身，亦不得使用其保留字体名发布修改版。完整许可正文见各自主页。

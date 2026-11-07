@@ -30,7 +30,8 @@ LabelForge/
 │   │   ├── canvas_drawing.py
 │   │   ├── canvas_interaction.py  # 含区域就地绘制会话（不切贴图模式、不进撤销）
 │   │   ├── canvas_menu.py         # 右键悬浮菜单；统一经 _rounded_menu() 建带圆角面板；检测框与贴图菜单只列常用标签
-│   │   └── canvas_renderer.py     # 渲染；区域轮廓仅在范围小窗开着时绘制
+│   │   ├── canvas_renderer.py     # 渲染；区域轮廓仅在范围小窗开着时绘制
+│   │   └── hit_test.py            # 命中测试：框/顶点/贴图/区域的点选与手柄判定
 │   ├── core/                  # 配置、工具与异常处理
 │   │   ├── __init__.py
 │   │   ├── config.py
@@ -43,11 +44,14 @@ LabelForge/
 │   │   ├── __init__.py
 │   │   ├── base_exporter.py
 │   │   ├── dataset_converter.py # 数据集格式转换（LabelMe/YOLO/COCO/VOC + 任务类型）
+│   │   ├── dataset_grouper.py  # 数据集标签分组：按类别特征的层次聚类（自研实现，纯逻辑）
 │   │   ├── dataset_health.py   # 数据集健康统计（分布数据与建议，纯逻辑）
 │   │   ├── event_handler.py
 │   │   ├── inference_image.py # QImage ↔ 模型输入（取图/letterbox 绘制）
 │   │   ├── inference_task.py  # 推理配置校验、结果合并与 sidecar 写回（纯逻辑）
 │   │   ├── onnx_inference.py  # ONNX 检测推理核心（v5/v8 解码、NMS、letterbox，无 Qt 依赖）
+│   │   ├── onnx_tasks.py      # seg/obb/pose 后处理：布局识别、解码与几何转换（纯计算，无 Qt）
+│   │   ├── parallel_scan.py   # 按图并行跑读盘工作的骨架：线程池、按完成顺序消费、可中断
 │   │   ├── image_loader/
 │   │   │   ├── __init__.py
 │   │   │   ├── mixin.py
@@ -102,7 +106,7 @@ LabelForge/
 │   │   │   ├── __init__.py
 │   │   │   ├── background_list.py
 │   │   │   ├── cache_menu.py
-│   │   │   ├── dataset_classifier.py
+│   │   │   ├── dataset_grouper.py
 │   │   │   ├── dataset_tools.py
 │   │   │   ├── inference.py
 │   │   │   ├── label_cache_slot.py
@@ -122,7 +126,7 @@ LabelForge/
 │   │       ├── health_charts.py # 数据集健康图表（QPainter 条形图 / 直方图）
 │   │       └── window_params.py # 滑窗参数控件（宽/高/重叠/最低可见比例 + 窗口数预估），被范围面板内嵌、也被滑窗弹窗复用
 │   └── widgets/               # 可复用 Qt 控件
-│       ├── canvas_adjustment.py
+│       ├── canvas_display_panel.py # 画布左下「画布显示」浮层：标签透明度 / 画面亮度 / 对比度
 │       ├── drag_out_list.py
 │       ├── hover_menu.py
 │       ├── hover_popup.py
@@ -138,7 +142,7 @@ LabelForge/
 │   ├── test_canvas_renderer_regressions.py
 │   ├── test_config.py
 │   ├── test_config_manager.py
-│   ├── test_dataset_classifier.py
+│   ├── test_dataset_grouper.py
 │   ├── test_dialogs_regressions.py
 │   ├── test_documentation_regressions.py
 │   ├── test_i18n_regressions.py
