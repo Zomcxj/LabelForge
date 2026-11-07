@@ -28,7 +28,6 @@ BACKGROUND_SCALE_CONFIG = {
     'default_scale': 1.0,  # 默认缩放比例
     'min_scale': 0.5,  # 最小缩放比例
     'max_scale': 3.0,  # 最大缩放比例
-    'scale_factor': 1.1,  # 滚轮缩放因子
 }
 
 # 检测框配置
@@ -39,9 +38,6 @@ DETECTION_BOX_CONFIG = {
     'max_polygon_points': 32,  # 多边形最大顶点数
     'label_font_size': 9,  # 标签名字号
     'label_position': 'outside',  # 标签名位置：outside=框外侧，inside=框内侧
-    'border_color_selected': (0, 255, 128),  # 选中边框颜色 (RGB)
-    'border_color_normal': (0, 255, 128),  # 普通边框颜色 (RGB)
-    'fill_color_selected': (0, 255, 128, 50),  # 选中填充颜色 (RGBA)
 }
 
 # 语义区域配置（仅运行时存在，不持久化）
@@ -52,7 +48,6 @@ REGION_BORDER_EXTRA = 1
 REGION_CONFIG = {
     'min_size': 10,            # 区域最小边长（图像像素）
     'border_color': '#00D4FF',  # 区域边框颜色（青色）
-    'border_width': 2,         # 参考值；实际绘制走「检测框 + REGION_BORDER_EXTRA」
     'dash_pattern': (6, 4),    # 虚线样式
     'handle_size': 9,          # 参考值；实际绘制走「检测框 + REGION_HANDLE_EXTRA」
     'fill_alpha': 30,          # 选中时填充透明度
@@ -63,8 +58,6 @@ REGION_CONFIG = {
 # 贴图配置
 PASTE_ITEM_CONFIG = {
     'border_color': (135, 206, 250),  # 天蓝色边框 (RGB)
-    'border_width_selected': 3,  # 选中时边框宽度
-    'border_width_normal': 1,  # 正常时边框宽度
     'handle_size': 8,  # 缩放手柄大小
     'min_size': 15,  # 最小尺寸
     'base_scale_factor': 0.5,  # 基础缩放因子
@@ -74,9 +67,6 @@ PASTE_ITEM_CONFIG = {
 WINDOW_CONFIG = {
     'default_width': 1600,  # 默认窗口宽度
     'default_height': 1000,  # 默认窗口高度
-    'canvas_min_width': 800,  # 画布最小宽度
-    'canvas_min_height': 600,  # 画布最小高度
-    'control_panel_width': 300,  # 控制面板宽度
 }
 
 # Labelme JSON 版本
@@ -94,27 +84,14 @@ RANDOM_POSITION_CONFIG = {
     'margin_top': 200,       # 顶部边距
     'margin_right': 100,     # 右侧安全边距
     'max_retries': 1000,     # 最大重试次数
-    'overlap_iou_detection': 0.02,  # 与检测框的 IoU 阈值
     'overlap_iou_pasted': 0.1,      # 与已贴图的 IoU 阈值
-    'min_edge_size': 35,     # 手动添加贴图最小边
-}
-
-# 自动保存配置
-AUTO_SAVE_CONFIG = {
-    'enabled': False,  # 默认不启用自动保存
 }
 
 # 窗口放大器配置
 MAGNIFIER_CONFIG = {
-    'enabled': False,
     'size': 160,
     'zoom': 2.0,
     'position': 'side',  # 显示位置: side(侧边) / center(鼠标中心)
-}
-
-# 主题配置
-THEME_CONFIG = {
-    'default_mode': 'light',  # 默认主题: 'light' 或 'dark'
 }
 
 # 状态栏配置
@@ -122,7 +99,6 @@ STATUSBAR_CONFIG = {
     'max_labels': 3,  # 状态栏最多显示的类别数
 }
 GRID_CONFIG = {
-    'enabled': False,           # 默认关闭
     'spacing': 50,              # 网格间距（像素）
     'color_light': '#E0E0E0',   # 浅色模式网格线颜色
     'color_dark': '#3E3E3E',    # 深色模式网格线颜色
@@ -181,11 +157,6 @@ LABEL_CACHE_SLOTS = [
 # 撤销/重做配置
 UNDO_CONFIG = {
     'max_history': 50,  # 最大历史记录数
-}
-
-# 检测框锁定配置
-LOCK_CONFIG = {
-    'enabled': False,  # 默认不锁定
 }
 
 # 方向键步进移动配置

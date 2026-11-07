@@ -251,9 +251,9 @@ class ListsMixin:
         paste_params_layout.addWidget(self.size_lbl)
         self.min_size_spin = QSpinBox()
         self.min_size_spin.setObjectName("paramSpin")
-        self.min_size_spin.setMinimum(15)
-        self.min_size_spin.setMaximum(100)
-        self.min_size_spin.setValue(30)
+        self.min_size_spin.setMinimum(PASTE_PARAMS['min_size_range'][0])
+        self.min_size_spin.setMaximum(PASTE_PARAMS['min_size_range'][1])
+        self.min_size_spin.setValue(PASTE_PARAMS['default_min_size'])
         self.min_size_spin.setMinimumWidth(55)
         paste_params_layout.addWidget(self.min_size_spin)
 
@@ -261,9 +261,9 @@ class ListsMixin:
 
         self.max_size_spin = QSpinBox()
         self.max_size_spin.setObjectName("paramSpin")
-        self.max_size_spin.setMinimum(30)
-        self.max_size_spin.setMaximum(200)
-        self.max_size_spin.setValue(60)
+        self.max_size_spin.setMinimum(PASTE_PARAMS['max_size_range'][0])
+        self.max_size_spin.setMaximum(PASTE_PARAMS['max_size_range'][1])
+        self.max_size_spin.setValue(PASTE_PARAMS['default_max_size'])
         self.max_size_spin.setMinimumWidth(55)
         paste_params_layout.addWidget(self.max_size_spin)
 
