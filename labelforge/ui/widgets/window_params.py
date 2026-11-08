@@ -37,10 +37,8 @@ DEFAULT_WINDOW = 640
 DEFAULT_OVERLAP = 200
 MIN_WINDOW = 8                  # 与 crop_dialog 的窗口下限一致
 MANY_WINDOWS = 1000             # 超过就提醒一句：每张图要跑这么多窗
-# 最低可见比例：数据增强侧也有同名概念，但**推理侧不跟它同步**，
-# 所以这里的默认值只服务推理侧自己的输入框。
-MIN_VISIBLE = 0.5
-DEFAULT_MIN_VISIBLE = 0.8
+# 跨窗去重：小框被另一个同类框覆盖的比例达到该值就删掉小的
+DEFAULT_DEDUP_CONTAIN = 0.85
 
 
 class WindowParamsWidget(QWidget):
@@ -63,8 +61,8 @@ class WindowParamsWidget(QWidget):
                                     (self._ov_x, "overlap_x", legacy_overlap),
                                     (self._ov_y, "overlap_y", legacy_overlap)):
             spin.setValue(_as_int(spec.get(key), fallback))
-        self.min_visible_spin.setValue(
-            _as_visible_percent(spec.get("min_visible")))
+        self.dedup_spin.setValue(
+            _as_dedup_percent(spec.get("dedup_contain")))
         self._editable = True
         self._linking = False
         self._refresh_estimate()
@@ -105,21 +103,20 @@ class WindowParamsWidget(QWidget):
 
         # 行列不再让用户配置：由宽高和重叠推出来，底部预估里已写明「行 × 列 = 窗口数」
 
-        # 最低可见比例：跨窗合并前丢掉「只露一角」的框。百分比显示，存的是小数。
-        # 与数据增强侧模板里的 `min_visible` 是**同一个字段**，方便两边对照。
-        vis_row = QHBoxLayout()
-        self.min_visible_label = QLabel(tr("最低可见比例"))
-        vis_row.addWidget(self.min_visible_label)
-        self.min_visible_spin = QSpinBox()
-        self.min_visible_spin.setRange(int(MIN_VISIBLE * 100), 100)
-        self.min_visible_spin.setSuffix("%")
-        self.min_visible_spin.setFixedWidth(64)   # 百分比最多 3 位 + 后缀
-        self.min_visible_spin.setValue(int(round(DEFAULT_MIN_VISIBLE * 100)))
-        self.min_visible_spin.setToolTip(
-            tr("跨窗去重前丢弃可见比例低于此值的框；只影响滑窗模式"))
-        vis_row.addWidget(self.min_visible_spin)
-        vis_row.addStretch()
-        params.addLayout(vis_row)
+        # 去重比例：小框几乎整个落进另一个同类框时删掉小的。0 表示关闭。
+        dedup_row = QHBoxLayout()
+        self.dedup_label = QLabel(tr("去重比例"))
+        dedup_row.addWidget(self.dedup_label)
+        self.dedup_spin = QSpinBox()
+        self.dedup_spin.setRange(0, 100)
+        self.dedup_spin.setSuffix("%")
+        self.dedup_spin.setFixedWidth(64)
+        self.dedup_spin.setValue(int(round(DEFAULT_DEDUP_CONTAIN * 100)))
+        self.dedup_spin.setToolTip(
+            tr("小框被另一个框覆盖的比例达到此值就删掉小的（不分类别）；0 表示关闭"))
+        dedup_row.addWidget(self.dedup_spin)
+        dedup_row.addStretch()
+        params.addLayout(dedup_row)
 
         self._hint = QLabel(tr("窗口尺寸与模型输入尺寸独立：窗口是原图上的裁剪范围"))
         self._hint.setWordWrap(True)
@@ -141,7 +138,7 @@ class WindowParamsWidget(QWidget):
 
         for spin in (self._w, self._h, self._ov_x, self._ov_y):
             spin.valueChanged.connect(self._on_axis_changed)
-        self.min_visible_spin.valueChanged.connect(self._refresh_estimate)
+        self.dedup_spin.valueChanged.connect(self._refresh_estimate)
 
     def _apply_style(self):
         theme = ThemeManager.get_theme()
@@ -166,7 +163,7 @@ class WindowParamsWidget(QWidget):
                 "overlap": self._ov_x.value(),
                 "overlap_x": self._ov_x.value(),
                 "overlap_y": self._ov_y.value(),
-                "min_visible": self.min_visible_spin.value() / 100.0}
+                "dedup_contain": self.dedup_spin.value() / 100.0}
 
     @property
     def _ov(self):
@@ -186,10 +183,8 @@ class WindowParamsWidget(QWidget):
                           (self._ov_y, "overlap_y")):
             if key in spec:
                 spin.setValue(_as_int(spec.get(key), spin.value()))
-        if "min_visible" in spec:
-            # 存的是小数（0.5~1.0），界面按百分比；坏值退回默认而不是崩
-            pct = _as_visible_percent(spec.get("min_visible"))
-            self.min_visible_spin.setValue(pct)
+        if "dedup_contain" in spec:
+            self.dedup_spin.setValue(_as_dedup_percent(spec.get("dedup_contain")))
         self._refresh_estimate()
 
     def _on_axis_changed(self, _value=None):
@@ -222,8 +217,7 @@ class WindowParamsWidget(QWidget):
                    for spin in self._editable_widgets())
 
     def _editable_widgets(self):
-        return [self._w, self._h, self._ov_x, self._ov_y,
-                self.min_visible_spin]
+        return [self._w, self._h, self._ov_x, self._ov_y, self.dedup_spin]
 
     def window_count(self):
         """按参考图算出的实际窗口数；没有参考图或参数非法时返回 None。"""
@@ -251,9 +245,9 @@ class WindowParamsWidget(QWidget):
     def retranslate(self):
         self.size_label.setText(tr("裁剪尺寸（像素）"))
         self.overlap_label.setText(tr("重叠（像素）"))
-        self.min_visible_label.setText(tr("最低可见比例"))
-        self.min_visible_spin.setToolTip(
-            tr("跨窗去重前丢弃可见比例低于此值的框；只影响滑窗模式"))
+        self.dedup_label.setText(tr("去重比例"))
+        self.dedup_spin.setToolTip(
+            tr("小框被另一个框覆盖的比例达到此值就删掉小的（不分类别）；0 表示关闭"))
         self._hint.setText(tr("窗口尺寸与模型输入尺寸独立：窗口是原图上的裁剪范围"))
         self._refresh_estimate()
 
@@ -289,20 +283,15 @@ def _as_int(value, fallback):
         return int(fallback)
 
 
-def _as_visible_percent(value):
-    """最低可见比例（存的是 0.5~1.0 的小数）→ 界面用的百分比整数。
-
-    坏值、越界值都退回默认值，避免整个控件异常：这个值来自配置或模板，
-    可能是旧版本写的、也可能被人手改坏。
-    """
+def _as_dedup_percent(value):
+    """去重比例（0~1 小数）→ 界面百分比；坏值退回默认。0 表示关闭。"""
     if value is None:
-        return int(round(DEFAULT_MIN_VISIBLE * 100))
+        return int(round(DEFAULT_DEDUP_CONTAIN * 100))
     try:
         ratio = float(value)
     except (TypeError, ValueError):
-        return int(round(DEFAULT_MIN_VISIBLE * 100))
+        return int(round(DEFAULT_DEDUP_CONTAIN * 100))
     if ratio != ratio:          # NaN
-        return int(round(DEFAULT_MIN_VISIBLE * 100))
-    pct = int(round(ratio * 100))
-    low, high = int(MIN_VISIBLE * 100), 100
-    return max(low, min(high, pct))
+        return int(round(DEFAULT_DEDUP_CONTAIN * 100))
+    return max(0, min(100, int(round(ratio * 100))))
+

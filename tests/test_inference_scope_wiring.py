@@ -170,15 +170,32 @@ def test_window_scope_crops_the_actual_window_region():
     assert scores == [0.0, 200.0], scores
 
 
-def test_window_scope_keeps_different_classes():
-    """不同类别的高重合框必须都保留，不能被合并吃掉。"""
+def test_window_scope_drops_duplicate_boxes_of_different_classes():
+    """同一位置被检成两个类别：合并后只留分数高的那个。"""
     class _TwoClassDetector(_FakeDetector):
         def detect(self, rgb, resize_fn):
             w, h = int(rgb.shape[1]), int(rgb.shape[0])
-            base = {"x": w / 2.0 - 5, "y": h / 2.0 - 5, "width": 10, "height": 10,
-                    "score": 0.9}
-            return [dict(base, label="person", class_id=0),
-                    dict(base, label="car", class_id=1)]
+            base = {"x": w / 2.0 - 5, "y": h / 2.0 - 5, "width": 10, "height": 10}
+            return [dict(base, label="person", class_id=0, score=0.9),
+                    dict(base, label="car", class_id=1, score=0.6)]
+
+    boxes = detect_in_scope(np.zeros((100, 100, 3), dtype=np.uint8),
+                            _TwoClassDetector(), None,
+                            {"mode": "window",
+                             "windows": {"w": 100, "h": 100, "overlap": 0}})
+
+    assert [b["label"] for b in boxes] == ["person"], boxes
+
+
+def test_window_scope_keeps_different_classes_at_different_places():
+    """不同类别、位置不同：都保留，不能把画面里的多个目标合并掉。"""
+    class _TwoClassDetector(_FakeDetector):
+        def detect(self, rgb, resize_fn):
+            h, w = int(rgb.shape[0]), int(rgb.shape[1])
+            return [{"x": 5.0, "y": 5.0, "width": 10, "height": 10,
+                     "label": "person", "score": 0.9, "class_id": 0},
+                    {"x": w - 20.0, "y": h - 20.0, "width": 10, "height": 10,
+                     "label": "car", "score": 0.6, "class_id": 1}]
 
     boxes = detect_in_scope(np.zeros((100, 100, 3), dtype=np.uint8),
                             _TwoClassDetector(), None,
@@ -529,8 +546,7 @@ def test_normalize_settings_keeps_window_spec():
                                    "window_spec": {"w": 640, "h": 512,
                                                    "overlap": 100}})
     spec = settings["window_spec"]
-    # 三个尺寸键要原样留下来；`min_visible` 是后来加的合法窗口参数，
-    # 所以这里按「这三个键在」断言，不钉死整份字典。
+    # 三个尺寸键要原样留下来；这里按「这三个键在」断言，不钉死整份字典。
     assert (spec["w"], spec["h"], spec["overlap"]) == (640, 512, 100)
 
 
@@ -552,11 +568,13 @@ def test_normalize_window_spec_accepts_zero_overlap():
 def test_normalize_window_spec_ignores_extra_keys():
     """未知字段不进结果（避免旧配置里的杂项一直留着）。
 
-    `fill` 是数据增强侧的键，推理窗口不吃它；`min_visible` 则是**已知**的
-    窗口参数，会被保留——用后者当反例才说明这是白名单而不是「什么都留」。
+    `fill` 是数据增强侧的键，推理窗口不吃它；`min_visible` 是已废弃的旧
+    字段，同样不该留下。
     """
-    out = _normalize_window_spec({"w": 640, "h": 640, "overlap": 10, "fill": True})
+    out = _normalize_window_spec({"w": 640, "h": 640, "overlap": 10,
+                                  "fill": True, "min_visible": 0.7})
     assert "fill" not in out, out
+    assert "min_visible" not in out, out
     assert (out["w"], out["h"], out["overlap"]) == (640, 640, 10)
 
 
@@ -695,26 +713,7 @@ def test_window_merge_threshold_is_per_run_not_shared_state():
     assert (count(0.95), count(0.3)) == (2, 1)
 
 
-# ---------- min_visible：跨窗低可见框过滤 ----------
-
-class _EdgeBoxDetector:
-    """在裁剪图右边缘放一个「一半在窗外」的框，用来试可见比例过滤。
-
-    裁剪图宽 100，框宽 20、右边缘贴住裁剪图右边界 → 在**本窗**里完整可见。
-    它真正的裁剪来源是原图，所以跨窗去重时同一个目标会在相邻窗各出一个框；
-    这里只关心「本窗内的可见比例」这个判据。
-    """
-
-    def __init__(self, iou=0.45):
-        self.iou_threshold = iou
-        self.calls = []
-
-    def detect(self, rgb, resize_fn):
-        h, w = int(rgb.shape[0]), int(rgb.shape[1])
-        self.calls.append((w, h))
-        return [{"x": w - 10, "y": h / 2.0 - 5, "width": 10, "height": 10,
-                 "label": "person", "score": 0.9, "class_id": 0}]
-
+# ---------- 最低可见比例只属于裁剪，推理侧不做可见比例过滤 ----------
 
 class _HalfOutDetector:
     """返回一个**只有一半落在裁剪图内**的框（左半在窗外，坐标可负）。"""
@@ -729,50 +728,25 @@ class _HalfOutDetector:
                  "label": "person", "score": 0.9, "class_id": 0}]
 
 
-def test_window_inference_keeps_everything_at_zero_min_visible():
-    """min_visible=0 时不做可见比例过滤（只有零交集才丢）。"""
-    boxes = detect_in_scope(
-        np.zeros((100, 100, 3), dtype=np.uint8), _HalfOutDetector(), None,
-        {"mode": "window",
-         "windows": {"w": 100, "h": 100, "overlap": 0, "min_visible": 0.0}})
+def test_window_inference_does_not_filter_by_visible_ratio():
+    """推理侧已删掉最低可见比例：旧配置里带着它也不按可见比例丢框。
 
-    assert len(boxes) == 1, f"min_visible=0 不该丢掉任何有交集的框：{boxes}"
-
-
-def test_window_inference_drops_boxes_below_min_visible():
-    """min_visible 调高后，可见比例不够的框要被丢掉。"""
+    这一项是裁剪侧的判据（裁剪后框占原始大小的比例）；模型输出已被检测器
+    钳在裁剪图内，不存在「露在窗外」的框需要按比例过滤。
+    """
     boxes = detect_in_scope(
         np.zeros((100, 100, 3), dtype=np.uint8), _HalfOutDetector(), None,
         {"mode": "window",
          "windows": {"w": 100, "h": 100, "overlap": 0, "min_visible": 0.9}})
 
-    assert boxes == [], f"可见比例只有约一半，min_visible=0.9 时该被丢掉：{boxes}"
+    assert len(boxes) == 1, f"推理侧不该再按可见比例丢框：{boxes}"
 
 
-def test_min_visible_of_one_drops_partially_visible_boxes():
-    """100% 时只保留完全落在窗内的框。"""
+def test_window_inference_keeps_edge_boxes_of_an_old_config():
+    """同一个框：旧版本 min_visible=1.0 会丢，现在保留。"""
     boxes = detect_in_scope(
         np.zeros((100, 100, 3), dtype=np.uint8), _HalfOutDetector(), None,
         {"mode": "window",
          "windows": {"w": 100, "h": 100, "overlap": 0, "min_visible": 1.0}})
 
-    assert boxes == [], f"只露一半的框在 100% 下必须丢掉：{boxes}"
-
-
-def test_min_visible_of_one_keeps_a_fully_visible_box():
-    """100% 时完全落在窗内的框要保留——不能把整批结果清空。"""
-    boxes = detect_in_scope(
-        np.zeros((100, 100, 3), dtype=np.uint8), _EdgeBoxDetector(), None,
-        {"mode": "window",
-         "windows": {"w": 100, "h": 100, "overlap": 0, "min_visible": 1.0}})
-
-    assert len(boxes) == 1, f"完全在窗内的框被误丢：{boxes}"
-
-
-def test_min_visible_filter_does_not_apply_to_full_image_mode():
-    """全图模式没有窗口，min_visible 不该参与（否则会误丢边缘框）。"""
-    boxes = detect_in_scope(
-        np.zeros((100, 100, 3), dtype=np.uint8), _HalfOutDetector(), None,
-        {"mode": "full"})
-
-    assert len(boxes) == 1, f"全图模式不该做跨窗可见比例过滤：{boxes}"
+    assert len(boxes) == 1, boxes

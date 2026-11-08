@@ -396,15 +396,25 @@ def test_merge_drops_same_class_duplicates_across_windows():
     assert len(merged) == 1
 
 
-def test_merge_keeps_different_classes_even_when_overlapping():
-    """不同类的高重合框必须保留（类别参与去重）。"""
+def test_merge_drops_duplicate_boxes_of_different_classes():
+    """不同类别的高重合框只留一个：同一目标被检成两个类别是常见情况。"""
+    merged = merge_scope_results([
+        (0, 0, [_box(100, 100, 50, 50, label="cat", class_id=0, score=0.9)]),
+        (0, 0, [_box(100, 100, 50, 50, label="dog", class_id=1, score=0.6)]),
+    ])
+
+    assert len(merged) == 1, merged
+    assert merged[0]["label"] == "cat", "留分数高的那个"
+
+
+def test_merge_keeps_different_classes_that_barely_overlap():
+    """不同类别、只是挨着不算重复。"""
     merged = merge_scope_results([
         (0, 0, [_box(100, 100, 50, 50, label="cat", class_id=0)]),
-        (0, 0, [_box(100, 100, 50, 50, label="dog", class_id=1)]),
+        (0, 0, [_box(130, 100, 50, 50, label="dog", class_id=1)]),
     ])
 
     assert len(merged) == 2
-    assert {b["label"] for b in merged} == {"cat", "dog"}
 
 
 def test_merge_keeps_separate_same_class_boxes():
@@ -456,64 +466,55 @@ def test_merge_respects_iou_threshold():
         (0, 0, [_box(100, 100, 50, 50)]),
         (0, 0, [_box(105, 100, 50, 50)]),
     ]
-    assert len(merge_scope_results(boxes, iou_threshold=0.99)) == 2
-    assert len(merge_scope_results(boxes, iou_threshold=0.45)) == 1
+    # 只测 NMS：把包含去重关掉
+    assert len(merge_scope_results(boxes, iou_threshold=0.99,
+                                   containment=0.0)) == 2
+    assert len(merge_scope_results(boxes, iou_threshold=0.45,
+                                   containment=0.0)) == 1
 
 
-# ---------- min_visible 随窗口参数传递 ----------
+# ---------- 旧配置里的 min_visible（裁剪侧判据，推理侧已不用）----------
 
-def test_iter_windows_accepts_min_visible_in_the_spec():
-    """③ 加了 min_visible 的 window_spec 不能被当成未知字段拒掉。
+def test_iter_windows_still_accepts_a_legacy_min_visible():
+    """老配置的 window_spec 带着 `min_visible`，读进来不能被当成未知字段拒掉。
 
-    `_WINDOW_KEYS` 是白名单，漏加会让界面「点确定」后直接报错，
-    所以这条测试同时钉住白名单与真正枚举两条路。
+    它属于裁剪侧的最低可见比例；推理侧已删除这一项，但白名单要放行，
+    否则旧配置在升级后第一次推理就直接报错。
     """
     windows = iter_windows(1000, 1000, {"w": 640, "h": 640, "overlap": 200,
                                         "min_visible": 0.7})
     assert windows
 
 
+def test_normalize_scope_drops_the_legacy_min_visible():
+    """归一化时把 `min_visible` 丢掉：下游拿不到一个推理侧不存在的参数。"""
+    scope = normalize_scope({"mode": "window",
+                             "windows": {"w": 640, "h": 640, "overlap": 200,
+                                         "min_visible": 0.7,
+                                         "dedup_contain": 0.85}},
+                            (1000, 1000))
+    assert "min_visible" not in scope["windows"], scope["windows"]
+    assert scope["windows"]["dedup_contain"] == 0.85
+
+
 def test_iter_windows_still_rejects_a_genuinely_unknown_key():
-    """白名单不能因为要放行 min_visible 就整块放开。"""
+    """白名单不能因为要放行旧字段就整块放开。"""
     with pytest.raises(ScopeError):
         iter_windows(1000, 1000, {"w": 640, "h": 640, "overlap": 200,
                                   "bogus": 1})
 
 
-def test_normalize_window_spec_keeps_min_visible():
+def test_normalize_window_spec_drops_the_legacy_min_visible():
+    """旧配置带 `min_visible`：其余键照常保留，这一项丢掉。"""
     from labelforge.engine.inference_task import _normalize_window_spec
-    assert _normalize_window_spec(
-        {"w": 640, "h": 640, "overlap": 200, "min_visible": 0.8}
-    )["min_visible"] == 0.8
-
-
-def test_normalize_window_spec_clamps_out_of_range_min_visible():
-    """越界钳到合法区间，而不是整份丢弃。
-
-    与模板侧（越界即丢）策略不同：模板是用户手填的一条记录，丢了没损失；
-    这里是「上次用过的参数」，丢了会让上次的设置莫名其妙消失。
-    """
-    from labelforge.engine.inference_task import _normalize_window_spec
-    assert _normalize_window_spec(
-        {"w": 640, "h": 640, "overlap": 200, "min_visible": 5}
-    )["min_visible"] == 1.0
-    assert _normalize_window_spec(
-        {"w": 640, "h": 640, "overlap": 200, "min_visible": 0}
-    )["min_visible"] == 0.5
-
-
-def test_normalize_window_spec_defaults_missing_min_visible():
-    """旧版本存的 spec 没有这个键 → 补默认值，不能让整份 spec 失效。"""
-    from labelforge.core.config_manager import DEFAULT_CROP_MIN_VISIBLE
-    from labelforge.engine.inference_task import _normalize_window_spec
-    spec = _normalize_window_spec({"w": 640, "h": 640, "overlap": 200})
-    assert spec.get("min_visible") == DEFAULT_CROP_MIN_VISIBLE
-    # 其余三个键仍要在，别把整份丢弃了
+    spec = _normalize_window_spec(
+        {"w": 640, "h": 640, "overlap": 200, "min_visible": 0.8})
+    assert "min_visible" not in spec, spec
     assert (spec["w"], spec["h"], spec["overlap"]) == (640, 640, 200)
 
 
-def test_normalize_window_spec_still_drops_a_broken_size():
-    """min_visible 的宽容不能顺带让坏尺寸蒙混过关。"""
+def test_normalize_window_spec_keeps_a_broken_size_out():
+    """多余的键不能顺带让坏尺寸蒙混过关。"""
     from labelforge.engine.inference_task import _normalize_window_spec
     assert _normalize_window_spec(
         {"w": 0, "h": 640, "overlap": 200, "min_visible": 0.7}) == {}
@@ -628,3 +629,145 @@ def test_merge_scope_results_clamps_points_into_image():
     merged = merge_scope_results(chunks, 0.5, image_size=(100, 100))
     assert merged[0]["points"] == [[90.0, 90.0]]
     assert merged[0]["x"] + merged[0]["width"] <= 100.0
+
+
+# ---------- 跨窗被切开的目标 ----------
+
+def _merge(chunks):
+    from labelforge.engine.inference_scope import merge_scope_results
+    return merge_scope_results(chunks, iou_threshold=0.45)
+
+
+def test_split_object_from_two_windows_is_merged():
+    """同一目标被窗口边界切上下两段：横向几乎重合、竖向相接，合并成一个。"""
+    # 框是裁剪图坐标：窗口 (0,401) 里的 y=232 对应原图 y=633
+    upper = {"label": "truck", "score": 0.36, "class_id": 7,
+             "x": 860, "y": 511, "width": 227, "height": 155}
+    lower = {"label": "truck", "score": 0.36, "class_id": 7,
+             "x": 863, "y": 232, "width": 242, "height": 217}
+
+    merged = _merge([(0, 0, [upper]), (0, 401, [lower])])
+
+    assert len(merged) == 1, merged
+    box = merged[0]
+    assert (box["x"], box["y"]) == (860, 511)
+    assert (box["width"], box["height"]) == (245, 339)
+    assert "_chunk" not in box, "内部窗口号不能漏到结果里"
+
+
+def test_queued_objects_are_not_merged():
+    """竖排的两辆同款车横向错开，不能并成一个。"""
+    front = {"label": "car", "score": 0.8, "class_id": 2,
+             "x": 100, "y": 100, "width": 120, "height": 90}
+    behind = {"label": "car", "score": 0.7, "class_id": 2,
+              "x": 160, "y": 195, "width": 120, "height": 90}
+
+    merged = _merge([(0, 0, [front]), (0, 401, [behind])])
+    assert len(merged) == 2
+
+
+def test_boxes_from_the_same_window_are_not_merged():
+    """同一窗口内的两块不拼：那是模型自己的输出，交给 NMS 处理。"""
+    upper = {"label": "truck", "score": 0.6, "class_id": 7,
+             "x": 100, "y": 100, "width": 200, "height": 150}
+    lower = {"label": "truck", "score": 0.5, "class_id": 7,
+             "x": 102, "y": 240, "width": 200, "height": 150}
+
+    merged = _merge([(0, 0, [upper, lower])])
+    assert len(merged) == 2
+
+
+def test_split_merge_is_capped_by_union_growth():
+    """两段拼起来高度暴涨（超过 2.2 倍）说明不是同一个目标。"""
+    upper = {"label": "truck", "score": 0.6, "class_id": 7,
+             "x": 100, "y": 100, "width": 200, "height": 100}
+    lower = {"label": "truck", "score": 0.5, "class_id": 7,
+             "x": 100, "y": 190, "width": 200, "height": 300}
+
+    merged = _merge([(0, 0, [upper]), (0, 401, [lower])])
+    assert len(merged) == 2
+
+
+def test_scope_inference_passes_conf_threshold():
+    """范围推理要把低分阈值传给每个窗口，否则跟踪拿不到低分框。"""
+    from labelforge.engine.inference_task import detect_in_scope
+    from labelforge.engine.inference_scope import normalize_scope
+
+    class _Detector:
+        def __init__(self):
+            self.conf_args = []
+            self.iou_threshold = 0.45
+
+        def detect(self, rgb, resize_fn, conf_threshold=None,
+                   iou_threshold=None):
+            self.conf_args.append(conf_threshold)
+            return []
+
+    image = np.zeros((120, 200, 3), dtype=np.uint8)
+    scope = normalize_scope({"mode": "window", "windows": {
+        "w": 120, "h": 120, "overlap_x": 20, "overlap_y": 20}},
+        (200, 120))
+    detector = _Detector()
+    detect_in_scope(image, detector, lambda *a: None, scope,
+                    conf_threshold=0.3)
+
+    assert detector.conf_args, "没有跑到任何窗口"
+    assert set(detector.conf_args) == {0.3}
+
+
+# ---------- 小框占并集 85% 就去重 ----------
+
+def test_contained_small_box_is_dropped():
+    """同类别小框被大框包住且尺寸相当（占比 ≥85%）→ 删小的。"""
+    big = {"label": "car", "score": 0.8, "class_id": 2,
+           "x": 100, "y": 100, "width": 100, "height": 100}
+    small = {"label": "car", "score": 0.6, "class_id": 2,
+             "x": 104, "y": 104, "width": 90, "height": 90}
+
+    merged = merge_scope_results([(0, 0, [big, small])], containment=0.85)
+    assert len(merged) == 1
+    assert merged[0]["width"] == 100, "留下的是大框"
+
+
+def test_threshold_is_configurable_and_can_be_disabled():
+    # 小框有 85% 落在大框里（没有完全被包住）
+    big = {"label": "car", "score": 0.8, "class_id": 2,
+           "x": 100, "y": 100, "width": 100, "height": 100}
+    small = {"label": "car", "score": 0.6, "class_id": 2,
+             "x": 115, "y": 100, "width": 100, "height": 100}
+
+    chunks = [(0, 0, [big, small])]
+    # NMS 调高，单独看包含去重是否生效
+    assert len(merge_scope_results(chunks, iou_threshold=0.99,
+                                   containment=0.95)) == 2
+    assert len(merge_scope_results(chunks, iou_threshold=0.99,
+                                   containment=0.0)) == 2
+    assert len(merge_scope_results(chunks, iou_threshold=0.99,
+                                   containment=0.85)) == 1
+
+
+def test_small_object_inside_a_big_one_is_kept():
+    """人站在卡车上：小框只占很小一角，覆盖比例远不到阈值，不能被删。"""
+    truck = {"label": "truck", "score": 0.8, "class_id": 7,
+             "x": 100, "y": 100, "width": 300, "height": 300}
+    person = {"label": "person", "score": 0.6, "class_id": 0,
+              "x": 200, "y": 200, "width": 60, "height": 60}
+
+    merged = merge_scope_results([(0, 0, [truck, person])],
+                                 iou_threshold=0.99, containment=0.85)
+    assert len(merged) == 2, "覆盖比例只有 10%，不该删"
+
+
+def test_containment_also_drops_across_labels():
+    """类别不同也去重：同一处目标被检成 truck 与 car 时只留一个。
+
+    两个窗口对同一辆车给出不同类别是常见情况，按类别分别去重会把两条都留下。
+    """
+    truck = {"label": "truck", "score": 0.8, "class_id": 7,
+             "x": 100, "y": 100, "width": 200, "height": 200}
+    car = {"label": "car", "score": 0.6, "class_id": 2,
+           "x": 104, "y": 104, "width": 190, "height": 190}
+
+    merged = merge_scope_results([(0, 0, [truck, car])], containment=0.85)
+    assert len(merged) == 1, merged
+    assert merged[0]["label"] == "truck", "留分数高的那个"

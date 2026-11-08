@@ -7,11 +7,10 @@
 复用 `augmenter/crop.py` 的窗口数学（`normalized_window` / `window_starts`），
 不另写一套。
 
-`crop_boxes()` 本身仍然**不复用**——那是为数据集增强的**已有标注**写的，
-会把框按 `min_visible` 截断到窗口内（改坐标、改尺寸），套到 detector 的预测
-上会把边缘目标削掉半个。但两边**共用同一条可见比例判据**
-（`augmenter/crop.py` 的 `visible_ratio` / `keep_by_min_visible`）：推理侧
-只在跨窗合并**之前**用它丢掉「只露一角」的框，不截断、不改坐标。
+`crop_boxes()` 本身**不复用**——那是为数据集增强的**已有标注**写的，会把框
+按最低可见比例截断到窗口内（改坐标、改尺寸）。推理侧没有「最低可见比例」这个
+概念：模型输出已被检测器钳在裁剪图内，不存在「露在窗外」的框需要按比例过滤。
+跨窗重复只由 NMS、去重比例与上下两段拼合处理。
 """
 import copy
 import math
@@ -30,7 +29,10 @@ MODES = (MODE_FULL, MODE_WINDOW, MODE_ROI)
 
 _SCOPE_KEYS = {"mode", "windows", "regions", "reference_size"}
 _WINDOW_KEYS = {"w", "h", "overlap", "overlap_x", "overlap_y",
-                "rows", "cols", "min_visible"}
+                "rows", "cols", "dedup_contain"}
+# 旧版本把 `min_visible`（裁剪侧的最低可见比例）写进过窗口参数。推理侧已不用，
+# 但读旧配置时仍要放行，归一化时丢掉。
+_LEGACY_WINDOW_KEYS = {"min_visible"}
 _EDGE_EPS = 1e-6            # 顶点/边命中容差（原图像素坐标）
 # 窗口数上限。重叠逼近窗口尺寸时步长退化为 1，窗口数变成图面积量级：
 # 20000² 配 640 窗口会排出 3.7 亿个窗口，列表没建完就把内存吃光。
@@ -90,7 +92,7 @@ def iter_windows_with_index(iw, ih, spec):
 
     if not isinstance(spec, dict):
         raise ScopeError("窗口参数必须是字典")
-    unknown = set(spec) - _WINDOW_KEYS - {"fill"}
+    unknown = set(spec) - _WINDOW_KEYS - _LEGACY_WINDOW_KEYS - {"fill"}
     if unknown:
         raise ScopeError(f"窗口参数含未知字段：{sorted(unknown)}")
     if ("rows" not in spec and "cols" not in spec
@@ -277,7 +279,10 @@ def normalize_scope(scope, image_size):
             raise ScopeError("滑窗范围必须提供窗口参数")
         # 立刻用真实图尺寸校验一次，非法参数在启动时就报错
         iter_windows(image_size[0], image_size[1], windows)
-        out["windows"] = dict(windows)
+        spec = dict(windows)
+        for legacy in _LEGACY_WINDOW_KEYS:
+            spec.pop(legacy, None)
+        out["windows"] = spec
     if mode == MODE_ROI:
         regions = scope.get("regions")
         if not isinstance(regions, (list, tuple)) or not regions:
@@ -316,7 +321,164 @@ def check_reference_size(scope, image_size):
             "区域坐标无法对应")
 
 
-def merge_scope_results(chunks, iou_threshold=DEFAULT_IOU, image_size=None):
+# 跨窗拼合同一目标时的判定阈值：横向几乎重合、竖向首尾相接、合并后不暴涨
+PARTIAL_X_OVERLAP = 0.8
+PARTIAL_SIZE_RATIO = 1.67
+PARTIAL_GAP_RATIO = 0.35
+PARTIAL_UNION_GROWTH = 2.2
+
+# 小框被另一个框覆盖的比例达到这个值，就认定是重复检出
+DEFAULT_CONTAINMENT = 0.85
+# 跨类别去重的尺寸门槛：小框面积不到大框的这个比例时，视为「大目标里套着
+# 一个小目标」（人站在卡车上、司机在车里），不是重复检出。
+CROSS_LABEL_AREA_RATIO = 0.25
+
+
+def _rect_area(x1, y1, x2, y2):
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+def _containment_ratio(first, second):
+    """小框被另一个框覆盖的比例（交叠 / 小框面积）；同形状才算。
+
+    **同类别、跨类别都比**：同一处目标被两个窗口分别检成 car 与 truck 时也
+    只能留一个，否则合并结果里会叠着两个标签不同的框。跨类别另加一道尺寸
+    门槛（`CROSS_LABEL_AREA_RATIO`），避免删掉大框里的真实小目标。
+
+    按「小框占并集」写会与 NMS 重复：并集占比 85% 等价于 IoU ≥ 0.70，
+    默认 IoU 0.45 的 NMS 早就把它们删了。这里用「被覆盖比例」，
+    才能抓住「小框几乎整个落在另一个框里、但两者面积差得多」的重复。
+    """
+    shape_a = first.get("shape_type") or "rectangle"
+    shape_b = second.get("shape_type") or "rectangle"
+    if shape_a != shape_b:
+        return 0.0
+    # 旋转框/多边形按外接框算包含关系会误删，交给各自的 NMS
+    if shape_a != "rectangle":
+        return 0.0
+    ax1, ay1, ax2, ay2 = _as_rect(first)
+    bx1, by1, bx2, by2 = _as_rect(second)
+    area_a = _rect_area(ax1, ay1, ax2, ay2)
+    area_b = _rect_area(bx1, by1, bx2, by2)
+    if area_a <= 0 or area_b <= 0:
+        return 0.0
+    if first.get("label") != second.get("label"):
+        # 跨类别只处理「尺寸相当」的两框：面积差得多说明小框是框里的真实小目标
+        if min(area_a, area_b) / max(area_a, area_b) < CROSS_LABEL_AREA_RATIO:
+            return 0.0
+    inter = _rect_area(max(ax1, bx1), max(ay1, by1), min(ax2, bx2), min(ay2, by2))
+    return inter / min(area_a, area_b)
+
+
+def _drop_contained(boxes, threshold):
+    """小框被另一个框覆盖的比例 ≥ 阈值时删掉小的（不分类别）。
+
+    面积不同留大的那个；面积相同留分数高的那个——所以先按分数降序，让每个
+    重复对里的高分框排在前面。大框里套一个真实小目标（人站在卡车上）覆盖
+    比例只有一成，不会被删。`threshold <= 0` 表示关闭这层去重。
+    """
+    if threshold <= 0:
+        return boxes
+    alive = sorted(boxes, key=lambda b: float(b.get("score") or 0.0),
+                   reverse=True)
+    index = 0
+    while index < len(alive):
+        other = index + 1
+        removed = False
+        while other < len(alive):
+            if _containment_ratio(alive[index], alive[other]) >= threshold:
+                first_area = _rect_area(*_as_rect(alive[index]))
+                other_area = _rect_area(*_as_rect(alive[other]))
+                if first_area < other_area:
+                    alive.pop(index)
+                    removed = True
+                    break
+                alive.pop(other)
+                continue
+            other += 1
+        if not removed:
+            index += 1
+    return alive
+
+
+def _as_rect(box):
+    x = float(box.get("x", 0.0))
+    y = float(box.get("y", 0.0))
+    return x, y, x + float(box.get("width", 0.0)), y + float(box.get("height", 0.0))
+
+
+def _is_split_pair(first, second):
+    """两个框是不是同一目标被窗口边界切成的上下两段。
+
+    条件：同类别、来自不同窗口、横向范围几乎重合、竖向首尾相接、
+    合并后高度不超过较高者的 2.2 倍。竖排的两辆同款车横向范围通常错开，
+    不会被并成一个。
+    """
+    if first.get("label") != second.get("label"):
+        return False
+    for box in (first, second):
+        if box.get("shape_type") not in (None, "rectangle", ""):
+            return False
+    if first.get("_chunk") == second.get("_chunk"):
+        return False
+
+    ax1, ay1, ax2, ay2 = _as_rect(first)
+    bx1, by1, bx2, by2 = _as_rect(second)
+    a_w, a_h = ax2 - ax1, ay2 - ay1
+    b_w, b_h = bx2 - bx1, by2 - by1
+    if min(a_w, a_h, b_w, b_h) <= 0:
+        return False
+
+    overlap_x = min(ax2, bx2) - max(ax1, bx1)
+    if overlap_x / min(a_w, b_w) < PARTIAL_X_OVERLAP:
+        return False
+
+    ratio = a_w / b_w
+    if not (1.0 / PARTIAL_SIZE_RATIO <= ratio <= PARTIAL_SIZE_RATIO):
+        return False
+
+    # 必须是「上下两段」：竖直方向基本错开。横向并排的重复框交给 NMS，
+    # 不能在这里拼成一个大框
+    overlap_y = min(ay2, by2) - max(ay1, by1)
+    if overlap_y / min(a_h, b_h) > 0.5:
+        return False
+
+    gap = max(ay1, by1) - min(ay2, by2)
+    if gap > PARTIAL_GAP_RATIO * max(a_h, b_h):
+        return False
+
+    union_h = max(ay2, by2) - min(ay1, by1)
+    return union_h <= PARTIAL_UNION_GROWTH * max(a_h, b_h)
+
+
+def _merge_split_pairs(boxes):
+    """把被切开的两段并成整框；分数取较高者，其余字段沿用高分那份。"""
+    ordered = sorted(boxes, key=lambda b: float(b.get("score", 0.0)),
+                     reverse=True)
+    alive = [True] * len(ordered)
+    for index, first in enumerate(ordered):
+        if not alive[index]:
+            continue
+        for other in range(index + 1, len(ordered)):
+            if not alive[other]:
+                continue
+            if not _is_split_pair(first, ordered[other]):
+                continue
+            ax1, ay1, ax2, ay2 = _as_rect(first)
+            bx1, by1, bx2, by2 = _as_rect(ordered[other])
+            merged = dict(first)
+            merged["x"] = min(ax1, bx1)
+            merged["y"] = min(ay1, by1)
+            merged["width"] = max(ax2, bx2) - merged["x"]
+            merged["height"] = max(ay2, by2) - merged["y"]
+            ordered[index] = merged
+            first = merged
+            alive[other] = False
+    return [box for box, keep in zip(ordered, alive) if keep]
+
+
+def merge_scope_results(chunks, iou_threshold=DEFAULT_IOU, image_size=None,
+                        containment=DEFAULT_CONTAINMENT):
     """把各窗口/各 ROI 的结果合并到原图坐标，按类别 NMS 去重。
 
     chunks: [(offset_x, offset_y, [box, ...]), ...]，box 是 `detect()` 返回的
@@ -324,7 +486,7 @@ def merge_scope_results(chunks, iou_threshold=DEFAULT_IOU, image_size=None):
     每个框只加一次，再加 ROI 偏移一次（调用方把两者相加后传入）。
     """
     merged = []
-    for chunk in chunks or []:
+    for chunk_index, chunk in enumerate(chunks or []):
         if not chunk or len(chunk) != 3:
             continue
         offset_x, offset_y, boxes = chunk
@@ -354,6 +516,8 @@ def merge_scope_results(chunks, iou_threshold=DEFAULT_IOU, image_size=None):
                     continue
                 x, y, width, height = x1, y1, x2 - x1, y2 - y1
             item = dict(box)
+            # 记住来自哪个窗口：只有跨窗的两段才允许拼合
+            item["_chunk"] = chunk_index
             item["x"], item["y"] = x, y
             item["width"], item["height"] = width, height
             if box.get("points"):
@@ -392,5 +556,9 @@ def merge_scope_results(chunks, iou_threshold=DEFAULT_IOU, image_size=None):
         out.extend(others[i] for i in kept)
     if rotations:
         out.extend(rotations[i] for i in nms_rotated(rotations, iou_threshold))
+    out = _drop_contained(out, containment)
+    out = _merge_split_pairs(out)
     out.sort(key=lambda b: float(b.get("score", 0.0)), reverse=True)
+    for box in out:
+        box.pop("_chunk", None)
     return out

@@ -1081,7 +1081,7 @@ class InferenceMixin:
     def _window_spec_for_run(self):
         """跑任务时该用的窗口参数：**面板当下的输入**优先。
 
-        面板里的宽/高/重叠/最低可见比例是用户按这一眼要用的值，跑之前最后一刻
+        面板里的宽/高/重叠/去重比例是用户按这一眼要用的值，跑之前最后一刻
         改的那些必须生效。原先这里读 `_effective_window_spec()`（本次会话设过的
         /配置里存的/默认值），跟面板当下的输入是两回事——于是「改了参数，
         跑起来还是老样子」，界面显示新值、实际用旧值。
@@ -1115,9 +1115,9 @@ class InferenceMixin:
         saved = self._saved_window_spec()
         if saved:
             return saved
-        from ..widgets.window_params import DEFAULT_MIN_VISIBLE
+        from ..widgets.window_params import DEFAULT_DEDUP_CONTAIN
         return {"w": DEFAULT_WINDOW, "h": DEFAULT_WINDOW,
                 "overlap": DEFAULT_OVERLAP,
                 "overlap_x": DEFAULT_OVERLAP,
                 "overlap_y": DEFAULT_OVERLAP,
-                "min_visible": DEFAULT_MIN_VISIBLE}
+                "dedup_contain": DEFAULT_DEDUP_CONTAIN}

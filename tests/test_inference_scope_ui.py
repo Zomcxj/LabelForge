@@ -74,7 +74,7 @@ def _lines(out):
 def _spec_dict(line):
     """把 `print(wp.spec())` 的输出解析回字典。
 
-    窗口 spec 随着功能增加会多出键（比如 `min_visible`），所以断言「三个
+    窗口 spec 随着功能增加会多出键（比如 `dedup_contain`），所以断言「三个
     尺寸键对不对」时不该钉死整份字典的字符串，那样每加一个合法参数都要来
     改一批测试。
     """
@@ -675,7 +675,9 @@ old_btn = [b for b in p.findChildren(QPushButton) if "滑窗参数" in b.text()]
 print(len(old_btn))
 """)
     lines = _lines(out)
-    assert lines[0] == "5", f"窗口参数现在有五个输入框（宽/高/横向重叠/纵向重叠/最低可见）：{lines[0]}"
+    assert lines[0] == "5", (
+        "窗口参数现在有五个输入框"
+        f"（宽/高/横向重叠/纵向重叠/去重比例）：{lines[0]}")
     assert _spec_size(lines[1]) == (640, 640, 200), lines[1]
     assert lines[2] == "True", lines[2]
     assert lines[3] == "0", lines[3]
@@ -1695,14 +1697,14 @@ saved = config_manager.load_all()['inference_settings']
 print('mode' in saved, 'window_spec' in saved)
 """)
     lines = _lines(out)
-    # 窗口参数现在还会带上 `min_visible`（跨窗去重的最低可见比例），所以
-    # 这里按「三个尺寸键要原样存取回来」断言，而不是钉死整份字典——否则
-    # 每加一个合法的窗口参数都要来改这条测试。
+    # 按「三个尺寸键要原样存取回来」断言，而不是钉死整份字典——否则每加
+    # 一个合法的窗口参数都要来改这条测试。
     saved_spec = lines[0]
     assert "'w': 512" in saved_spec, saved_spec
     assert "'h': 512" in saved_spec, saved_spec
     assert "'overlap': 64" in saved_spec, saved_spec
-    assert "'min_visible'" in saved_spec, saved_spec
+    assert "'min_visible'" not in saved_spec, (
+        f"推理侧已没有最低可见比例，不该再写回配置：{saved_spec}")
     assert lines[1] == "False True", lines[1]
 
 
@@ -1925,56 +1927,59 @@ print(before == after, len(before) > 0)
     assert lines[0] == "True True", lines[0]
 
 
-def test_real_window_params_defaults_are_640_visible_80_no_fill():
-    """默认值：640×640、最低可见比例 80%；**填充不开**。
+def test_real_window_params_defaults_are_640_dedup_85_no_fill():
+    """默认值：640×640、去重比例 85%；**填充不开**。
 
-    用户明确「不开 fill」，也明确可见比例默认 80%。这三个数一起钉：只钉一个
-    的话，另两个改回旧值照样绿。
+    推理侧已无「最低可见比例」（那是裁剪侧的判据）。这几个数一起钉：只钉
+    一个的话，另两个改回旧值照样绿。
     """
     out = _run_real_qt("""
 from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import (
-    WindowParamsWidget, DEFAULT_WINDOW, DEFAULT_OVERLAP, DEFAULT_MIN_VISIBLE)
+    WindowParamsWidget, DEFAULT_WINDOW, DEFAULT_OVERLAP, DEFAULT_DEDUP_CONTAIN)
 
 app = QApplication([])
 w = WindowParamsWidget()
 s = w.spec()
-print(DEFAULT_WINDOW, DEFAULT_OVERLAP, DEFAULT_MIN_VISIBLE)
-print(s['w'], s['h'], s['overlap'], s['min_visible'])
-print(w.min_visible_spin.value())
+print(DEFAULT_WINDOW, DEFAULT_OVERLAP, DEFAULT_DEDUP_CONTAIN)
+print(s['w'], s['h'], s['overlap'], s['dedup_contain'])
+print(w.dedup_spin.value())
+print('min_visible' in s, hasattr(w, 'min_visible_spin'))
 """)
     lines = _lines(out)
-    assert lines[0] == "640 200 0.8", f"常量不对：{lines[0]}"
-    assert lines[1] == "640 640 200 0.8", f"默认值不对：{lines[1]}"
-    assert lines[2] == "80", f"输入框没按 80% 显示：{lines[2]}"
+    assert lines[0] == "640 200 0.85", f"常量不对：{lines[0]}"
+    assert lines[1] == "640 640 200 0.85", f"默认值不对：{lines[1]}"
+    assert lines[2] == "85", f"输入框没按 85% 显示：{lines[2]}"
+    assert lines[3] == "False False", (
+        f"推理侧不该再有最低可见比例：{lines[3]}")
 
 
-def test_real_window_params_reads_a_stale_min_visible_from_old_config():
-    """旧配置里存着 0.7 时按 0.7 显示：只改**默认值**，不篡改用户已存的值。
+def test_real_window_params_ignores_a_stale_min_visible_from_old_config():
+    """旧配置里的 `min_visible` 读进来就丢掉，不能让控件崩。
 
-    用户的旧配置是他自己的选择，换默认值不该把已有配置一起改掉；而坏值
-    （字符串/越界）仍要退回新默认 0.8。
+    推理侧已无这一项；老配置带着它，读到时要静默忽略，其余参数照常恢复。
     """
     out = _run_real_qt("""
 from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import WindowParamsWidget
 
 app = QApplication([])
-w = WindowParamsWidget(spec={'min_visible': 0.7})
-print(w.min_visible_spin.value())
-print(w.spec()['min_visible'])
+w = WindowParamsWidget(spec={'w': 512, 'h': 320, 'overlap': 64,
+                             'min_visible': 0.7})
+print(w.spec()['w'], w.spec()['h'])
+print('min_visible' in w.spec())
 
 bad = WindowParamsWidget(spec={'min_visible': 'oops'})
-print(bad.min_visible_spin.value())
+print(bad.spec()['dedup_contain'])
 
-out_of_range = WindowParamsWidget(spec={'min_visible': 0.2})
-print(out_of_range.min_visible_spin.value())
+out_of_range = WindowParamsWidget(spec={'dedup_contain': 5})
+print(out_of_range.dedup_spin.value())
 """)
     lines = _lines(out)
-    assert lines[0] == "70", f"旧配置的 0.7 被改了：{lines[0]}"
-    assert lines[1] == "0.7", lines[1]
-    assert lines[2] == "80", f"坏值没退回新默认 0.8：{lines[2]}"
-    assert lines[3] == "50", f"越界值应被输入框夹到下限 50：{lines[3]}"
+    assert lines[0] == "512 320", f"其余参数没恢复：{lines[0]}"
+    assert lines[1] == "False", f"min_visible 没被丢掉：{lines[1]}"
+    assert lines[2] == "0.85", f"坏值没退回默认：{lines[2]}"
+    assert lines[3] == "100", f"越界值应夹到 100：{lines[3]}"
 
 
 def test_real_window_params_never_reads_the_shared_templates():
@@ -1993,10 +1998,10 @@ config_manager.add_crop_template({'w': 320, 'h': 320, 'overlap': 100,
                                   'min_visible': 0.5})
 w = WindowParamsWidget()
 s = w.spec()
-print(s['w'], s['h'], s['overlap'], s['min_visible'])
+print(s['w'], s['h'], s['overlap'], s['dedup_contain'])
 """)
     lines = _lines(out)
-    assert lines[0] == "640 640 200 0.8", (
+    assert lines[0] == "640 640 200 0.85", (
         f"推理默认被数据增强模板带跑了：{lines[0]}")
 
 
@@ -2908,51 +2913,49 @@ print(row.batch_to_spin.maximum(), row.batch_to_spin.value())
     assert lines[1] == "30 30", f"上限与默认值没跟着新数据集：{lines[1]}"
 
 
-# ---------- min_visible：窗口参数里的最低可见比例 ----------
+# ---------- 去重比例：窗口参数里的跨窗去重 ----------
 
-def test_real_window_params_carry_min_visible():
-    """窗口参数要带上「最低可见比例」，默认 0.8、按百分比显示。"""
+def test_real_window_params_carry_dedup_ratio():
+    """窗口参数要带上「去重比例」，默认 0.85、按百分比显示。"""
     out = _run_real_qt("""
 from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import WindowParamsWidget
 app = QApplication([])
 w = WindowParamsWidget(reference_size=(1000, 1000),
                        spec={"w": 640, "h": 640, "overlap": 200})
-print(w.spec()["min_visible"])
-w.set_spec({"w": 640, "h": 640, "overlap": 200, "min_visible": 0.9})
-print(w.spec()["min_visible"])
-print(w.min_visible_spin.value())
+print(w.spec()["dedup_contain"])
+w.set_spec({"w": 640, "h": 640, "overlap": 200, "dedup_contain": 0.9})
+print(w.spec()["dedup_contain"])
+print(w.dedup_spin.value())
+w.dedup_spin.setValue(0)
+print(w.spec()["dedup_contain"])
 """)
     lines = _lines(out)
-    assert lines[0] == "0.8", f"缺省不是 0.8：{lines[0]}"
+    assert lines[0] == "0.85", f"缺省不是 0.85：{lines[0]}"
     assert lines[1] == "0.9", f"没读回 spec：{lines[1]}"
     assert lines[2] == "90", f"百分比没同步：{lines[2]}"
+    assert lines[3] == "0.0", f"0 要能表示关闭：{lines[3]}"
 
 
-def test_real_min_visible_is_locked_when_window_mode_is_not_selected():
-    """未选中滑窗时「最低可见比例」也要禁用（与其他窗口参数一致）。"""
+def test_real_dedup_ratio_is_locked_when_window_mode_is_not_selected():
+    """未选中滑窗时「去重比例」也要禁用（与其他窗口参数一致）。"""
     out = _run_real_qt("""
 from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import WindowParamsWidget
 app = QApplication([])
 w = WindowParamsWidget(reference_size=(1000, 1000))
 w.set_editable(False)
-print(w.min_visible_spin.isEnabled())
+print(w.dedup_spin.isEnabled())
 w.set_editable(True)
-print(w.min_visible_spin.isEnabled())
+print(w.dedup_spin.isEnabled())
 """)
     lines = _lines(out)
     assert lines[0] == "False", f"未选中滑窗时没禁用：{lines}"
     assert lines[1] == "True", f"选中滑窗后没启用：{lines}"
 
 
-def test_real_min_visible_is_never_overwritten_by_the_augment_templates():
-    """数据增强的模板**不再**影响推理侧的最低可见比例（两边已脱钩）。
-
-    早先这里叫 `test_real_min_visible_comes_from_the_template`，断言点模板会
-    把 `min_visible` 一起带过来。用户要求「不与数据增强同步模板」，所以这条
-    反转：共用模板里有一条 0.85 的，推理侧的默认仍必须是 0.8。
-    """
+def test_real_dedup_ratio_is_never_overwritten_by_the_augment_templates():
+    """数据增强的模板**不**影响推理侧的去重比例（两边已脱钩）。"""
     out = _run_real_qt("""
 from PySide6.QtWidgets import QApplication
 from labelforge.ui.widgets.window_params import WindowParamsWidget
@@ -2963,18 +2966,18 @@ config_manager.add_crop_template({'w': 512, 'h': 512, 'overlap': 64,
                                   'min_visible': 0.85})
 w = WindowParamsWidget(reference_size=(1000, 1000),
                        spec={"w": 640, "h": 640, "overlap": 200})
-print(w.min_visible_spin.value())
-print(w.spec()["min_visible"])
+print(w.dedup_spin.value())
+print(w.spec()["dedup_contain"])
 print(hasattr(w, '_apply_template'))
 """)
     lines = _lines(out)
-    assert lines[0] == "80", f"可见比例被数据增强模板带跑了：{lines}"
-    assert lines[1] == "0.8", lines[1]
+    assert lines[0] == "85", f"去重比例被数据增强模板带跑了：{lines}"
+    assert lines[1] == "0.85", lines[1]
     assert lines[2] == "False", (
         f"`_apply_template` 还在，模板同步容易再溜回来：{lines[2]}")
 
 
-def test_real_min_visible_accepts_a_value_written_by_an_older_version():
+def test_real_dedup_ratio_accepts_a_value_written_by_an_older_version():
     """旧配置没这个键时退回默认，不能让整个控件崩掉。"""
     out = _run_real_qt("""
 from PySide6.QtWidgets import QApplication
@@ -2982,13 +2985,13 @@ from labelforge.ui.widgets.window_params import WindowParamsWidget
 app = QApplication([])
 w = WindowParamsWidget(reference_size=(1000, 1000),
                        spec={"w": 640, "h": 640, "overlap": 200})
-print(w.min_visible_spin.value())
-w.set_spec({"w": 640, "h": 640, "overlap": 200, "min_visible": "坏的"})
-print(w.spec()["min_visible"])
+print(w.dedup_spin.value())
+w.set_spec({"w": 640, "h": 640, "overlap": 200, "dedup_contain": "坏的"})
+print(w.spec()["dedup_contain"])
 """)
     lines = _lines(out)
-    assert lines[0] == "80", f"旧配置应退回 80%%：{lines[0]}"
-    assert lines[1] == "0.8", f"坏值应退回默认而不是崩：{lines[1]}"
+    assert lines[0] == "85", f"旧配置应退回 85%%：{lines[0]}"
+    assert lines[1] == "0.85", f"坏值应退回默认而不是崩：{lines[1]}"
 
 
 # ---------- ② 三段分区：各自显示自己的内容 ----------
@@ -3860,9 +3863,9 @@ def test_real_panel_window_edits_reach_the_run_scope():
     用户报过「面板里改了参数，跑起来还是老样子」这类问题的根因就在这：`_scope_for_run`
     读的是「本次会话设过的 / 配置里存的 / 默认值」（`_effective_window_spec`），
     而面板里**当下**的输入是记在 `_scope_window_spec`——两者没关系，于是用户在
-    面板里改了宽/高/重叠/最低可见比例，任务仍然用旧值，界面上却显示新值。
+    面板里改了宽/高/重叠/去重比例，任务仍然用旧值，界面上却显示新值。
 
-    这条把面板 → 范围快照这条链接上（含 `min_visible`，它是新加的一项）。
+    这条把面板 → 范围快照这条链接上（含 `dedup_contain`）。
     """
     out = _run_real_qt("""
 from PySide6.QtWidgets import QApplication
@@ -3886,31 +3889,30 @@ wp = w._scope_panel.window_params
 wp._w.setValue(1234)
 wp._h.setValue(567)
 wp._ov.setValue(88)
-wp.min_visible_spin.setValue(85)
+wp.dedup_spin.setValue(60)
 app.processEvents()
 
 spec = w._scope_for_run()['windows']
 print(spec['w'], spec['h'], spec['overlap'])
-print(spec.get('min_visible'))
+print(spec.get('dedup_contain'), 'min_visible' in spec)
 """)
     lines = _lines(out)
     assert lines[0] == "1234 567 88", (
         f"面板里改的窗口尺寸没进到任务范围里（跑起来还是旧值）：{lines[0]}")
-    assert lines[1] == "0.85", (
-        f"面板里改的最低可见比例没进到任务范围里：{lines[1]}")
+    assert lines[1] == "0.6 False", (
+        f"面板里改的去重比例没进到任务范围里：{lines[1]}")
 
 
-def test_real_default_window_spec_carries_min_visible():
-    """没有任何已存参数时，兜底的默认窗口表也必须带 `min_visible`。
+def test_real_default_window_spec_carries_dedup_ratio():
+    """没有任何已存参数时，兜底的默认窗口表也要带去重比例。
 
-    默认表少了这一项，`_normalize_window_spec` 只好补默认值——今天恰好也是
-    0.7 所以看不出问题，但一旦两处默认值分家，用户会莫名其妙拿到另一个值。
-    这里钉住「默认表与界面默认一致」。
+    默认表少了这一项，跨窗去重会退回引擎默认值——两处默认值一旦分家，
+    用户会莫名其妙拿到另一个比例。
     """
     out = _run_real_qt("""
 from PySide6.QtWidgets import QApplication
 from labelforge.ui.main_window import ImageEditor
-from labelforge.ui.widgets.window_params import DEFAULT_MIN_VISIBLE
+from labelforge.ui.widgets.window_params import DEFAULT_DEDUP_CONTAIN
 
 app = QApplication([])
 w = ImageEditor()
@@ -3922,14 +3924,14 @@ w._saved_window_spec = lambda: None
 app.processEvents()
 
 spec = w._effective_window_spec()
+print(spec.get('dedup_contain'))
+print(DEFAULT_DEDUP_CONTAIN)
 print('min_visible' in spec)
-print(spec.get('min_visible'))
-print(DEFAULT_MIN_VISIBLE)
 """)
     lines = _lines(out)
-    assert lines[0] == "True", "默认窗口表没带 min_visible"
-    assert lines[1] == lines[2], (
-        f"默认表里的 min_visible（{lines[1]}）与界面默认（{lines[2]}）不一致")
+    assert lines[0] == lines[1], (
+        f"默认表里的去重比例（{lines[0]}）与界面默认（{lines[1]}）不一致")
+    assert lines[2] == "False", f"默认表不该再有 min_visible：{lines[2]}"
 
 
 # ---------- ③ 面板改动即时生效（无确定/取消）----------
@@ -4038,18 +4040,18 @@ wp = w._scope_panel.window_params
 wp._w.setValue(1234)
 wp._h.setValue(567)
 wp._ov.setValue(88)
-wp.min_visible_spin.setValue(85)
+wp.dedup_spin.setValue(50)
 app.processEvents()
 
 spec = w._scope_for_run()['windows']
 print(spec['w'], spec['h'], spec['overlap'])
-print(spec['min_visible'])
+print(spec['dedup_contain'])
 # 宿主侧的窗口参数也要跟着更新（关掉面板后仍要用这份）
 print(w._window_spec['w'], w._window_spec['overlap'])
 """)
     lines = _lines(out)
     assert lines[0] == "1234 567 88", f"改的参数没即时生效：{lines[0]}"
-    assert lines[1] == "0.85", f"min_visible 没即时生效：{lines[1]}"
+    assert lines[1] == "0.5", f"去重比例没即时生效：{lines[1]}"
     assert lines[2] == "1234 88", (
         f"宿主的窗口参数没随面板更新（关面板后会退回旧值）：{lines[2]}")
 
@@ -5746,3 +5748,49 @@ print('cursors', region_cursor.value, box_cursor.value,
         f"实际 {region_cursor}")
     assert box_cursor == region_cursor, (
         f"区域({region_cursor}) 与检测框({box_cursor}) 的光标必须一致")
+
+
+def test_real_scope_panel_carries_dedup_ratio():
+    """去重比例在**推理范围面板**里，随窗口参数一起交给引擎。
+
+    它属于跨窗合并，不属于裁剪：裁剪对话框不该有这一项。
+    """
+    out = _run_real_qt("""
+from PySide6.QtWidgets import QApplication
+from labelforge.ui.scope_panel import ScopePanel
+from labelforge.engine.inference_scope import MODE_WINDOW, normalize_scope
+
+app = QApplication([])
+p = ScopePanel(windows={'w': 640, 'h': 640, 'overlap': 200},
+               reference_size=(3840, 2160))
+p.set_mode(MODE_WINDOW)
+print(p.window_params.dedup_spin.value())
+p.window_params.dedup_spin.setValue(60)
+spec = p.window_spec()
+print(spec['dedup_contain'])
+# 面板产出的窗口参数必须能通过范围校验（键在白名单里）
+scope = normalize_scope({'mode': MODE_WINDOW, 'windows': spec}, (3840, 2160))
+print(scope['windows']['dedup_contain'])
+""")
+    lines = _lines(out)
+    assert lines[0] == "85", f"默认值应为 85%：{lines[0]}"
+    assert float(lines[1]) == 0.6, lines[1]
+    assert float(lines[2]) == 0.6, lines[2]
+
+
+def test_real_crop_dialog_has_no_dedup_ratio():
+    """裁剪对话框（只切图，不推理）里不应出现去重比例。"""
+    out = _run_real_qt("""
+from PySide6.QtWidgets import QApplication, QLabel
+from labelforge.ui.crop_dialog import CropConfigDialog
+
+app = QApplication([])
+d = CropConfigDialog(['a.png'], {0: []},
+                     {"w": 640, "h": 640, "overlap": 200})
+texts = [w.text() for w in d.findChildren(QLabel)]
+print(sum(1 for t in texts if '去重' in t))
+print(hasattr(d, '_dedup'))
+""")
+    lines = _lines(out)
+    assert lines[0] == "0", f"裁剪对话框不该有去重标签：{lines[0]}"
+    assert lines[1] == "False", lines[1]

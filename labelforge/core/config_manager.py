@@ -394,10 +394,10 @@ DEFAULT_CROP_MIN_VISIBLE = 0.7
 def _normalize_crop_template(spec):
     """裁剪模板：{w, h, overlap, min_visible, square, fill, fill_rgb}，非法条目返回 None。
 
-    `min_visible` 是**数据增强侧**的概念（跨窗标注的最低可见比例）。推理侧
-    只关心 w/h/重叠，调用方不传该字段时按 `DEFAULT_CROP_MIN_VISIBLE` 补齐，
-    而不是让整条模板因为缺字段被丢掉（那会让推理侧点确定后「什么都没记住」，
-    且失败是静默的）。
+    `min_visible` 是**数据增强侧**的概念（跨窗标注的最低可见比例），推理侧
+    不使用。调用方不传该字段时按 `DEFAULT_CROP_MIN_VISIBLE` 补齐，而不是让
+    整条模板因为缺字段被丢掉（那会让用户点确定后「什么都没记住」，且失败是
+    静默的）。
     """
     if not isinstance(spec, dict):
         return None

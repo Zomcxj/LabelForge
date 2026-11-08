@@ -32,16 +32,13 @@ class ImageResult(NamedTuple):
 
 
 def _normalize_window_spec(raw):
-    """窗口参数：w/h/overlap 三个整数 + min_visible，坏尺寸整份丢弃。
+    """窗口参数：w/h/overlap 三个整数，坏尺寸整份丢弃。
 
     保存的是「上次用过的参数」，不校验图尺寸——图尺寸随数据集变，
     校验留给 `normalize_scope()` 在真正跑任务时做。
 
-    `min_visible`（跨窗去重的最低可见比例）与模板侧的策略**故意不同**：
-    模板侧越界即丢（手填的一条记录，丢了没损失），这里则钳到合法
-    区间。理由是这份 spec 存的是「上次用过的参数」——因为它越界就整份
-    丢弃，会让用户上次设的窗口尺寸莫名其妙消失，且失败是静默的。
-    缺字段时补 `DEFAULT_CROP_MIN_VISIBLE`，好让旧版本存的 spec 仍能加载。
+    旧版本在这里存过 `min_visible`（裁剪侧的最低可见比例）；推理侧已不再
+    使用，读到时直接丢掉，不写回。
     """
     if not isinstance(raw, dict) or not raw:
         return {}
@@ -56,22 +53,7 @@ def _normalize_window_spec(raw):
         if value < 0 or (key != "overlap" and value <= 0):
             return {}
         out[key] = value
-    out["min_visible"] = _clamp_min_visible(raw.get("min_visible"))
     return out
-
-
-def _clamp_min_visible(raw):
-    """把 min_visible 钳到 [0.5, 1.0]；缺值/坏值退回默认。"""
-    from ..core.config_manager import DEFAULT_CROP_MIN_VISIBLE
-    if raw is None:
-        return DEFAULT_CROP_MIN_VISIBLE
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        return DEFAULT_CROP_MIN_VISIBLE
-    if value != value:  # NaN
-        return DEFAULT_CROP_MIN_VISIBLE
-    return round(min(1.0, max(0.5, value)), 4)
 
 
 def normalize_settings(settings):
@@ -333,19 +315,29 @@ def mark_auto_boxes(boxes):
     return out
 
 
-def detect_in_scope(rgb, detector, resize_fn, scope):
+def detect_in_scope(rgb, detector, resize_fn, scope, conf_threshold=None):
     """按范围跑一张图：全图 / 滑窗 / ROI / ROI+滑窗，返回原图坐标的框。
 
     每个窗口都是「裁剪副本 → detect → 加偏移」，detect 自己完成 letterbox
     逆变换并钳到裁剪图，所以偏移在它返回之后加，且只加一次。
 
     ROI 的多边形掩膜只在裁剪副本上生成，不改写原图。
+
+    `conf_threshold` 传下去给每个窗口的 `detect`：跟踪开启时要拿低分框，
+    否则滑窗模式只剩高分框、两阶段关联退化成单阶段。
     """
     from .inference_scope import (
         MODE_ROI, MODE_WINDOW,
         iter_regions, iter_windows, merge_scope_results, region_bbox,
         region_contains_box_center,
     )
+
+    def _detect(target):
+        """低分阈值只在本任务需要时才往下传，避免不支持的检测器收到多余入参。"""
+        if conf_threshold is None:
+            return detector.detect(target, resize_fn)
+        return detector.detect(target, resize_fn,
+                               conf_threshold=conf_threshold)
 
     height, width = int(rgb.shape[0]), int(rgb.shape[1])
     mode = scope.get("mode")
@@ -359,41 +351,34 @@ def detect_in_scope(rgb, detector, resize_fn, scope):
         for region in regions:
             x1, y1, x2, y2 = region.bbox
             crop, ox, oy = _masked_crop(rgb, region, x1, y1, x2, y2)
-            boxes = detector.detect(crop, resize_fn)
+            boxes = _detect(crop)
             chunks.append((ox, oy, boxes))
         merged = merge_scope_results(chunks, _scope_iou(detector),
-                                    image_size=(width, height))
+                                    image_size=(width, height),
+                                    containment=_containment(scope))
         return [b for b in merged
                 if any(region_contains_box_center(r, b) for r in regions)]
 
     if mode == MODE_WINDOW:
-        from .augmenter.crop import keep_by_min_visible
-        win = scope.get("windows") or {}
-        min_visible = float(win.get("min_visible", 0.0) or 0.0)
         chunks = []
         for wx, wy, ww, wh in windows:
             crop = rgb[wy:wy + wh, wx:wx + ww]
-            boxes = detector.detect(crop, resize_fn)
-            # 跨窗去重前先丢掉「只露一角」的框：模型在裁剪图里检出的框可能
-            # 大半来自窗口之外的部分（裁剪图边界上的目标），这种框在相邻窗
-            # 会各出一份，合并时既容易重复又容易留下半个目标。
-            #
-            # 可见比例要在**原图坐标**下算：detector 返回的是裁剪图坐标，
-            # 所以先加回窗口偏移，再用窗口矩形量。
-            if min_visible > 0.0:
-                kept = []
-                for b in boxes:
-                    orig = dict(b)
-                    orig["x"] = float(b.get("x", 0.0)) + wx
-                    orig["y"] = float(b.get("y", 0.0)) + wy
-                    if keep_by_min_visible(orig, (wx, wy, ww, wh), min_visible):
-                        kept.append(b)
-                boxes = kept
-            chunks.append((wx, wy, boxes))
+            chunks.append((wx, wy, _detect(crop)))
         return merge_scope_results(chunks, _scope_iou(detector),
-                                   image_size=(width, height))
+                                   image_size=(width, height),
+                                   containment=_containment(scope))
 
-    return detector.detect(rgb, resize_fn)
+    return _detect(rgb)
+
+
+def _containment(scope):
+    """滑窗设置里的「去重比例」，0 表示关闭。"""
+    from .inference_scope import DEFAULT_CONTAINMENT
+    win = (scope or {}).get("windows") or {}
+    try:
+        return float(win.get("dedup_contain", DEFAULT_CONTAINMENT))
+    except (TypeError, ValueError):
+        return DEFAULT_CONTAINMENT
 
 
 def _scope_iou(detector):
