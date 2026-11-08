@@ -299,6 +299,8 @@ a = Analysis(
         'labelforge.engine.onnx_tasks',
         'labelforge.ui.video_dialog', 'labelforge.ui.mixins.video',
         'labelforge.engine.video_io', 'labelforge.engine.video_render',
+        # 逐帧跟踪与数据集落盘：由视频流程按需导入，显式列出以免打包时漏收
+        'labelforge.engine.video_tracking', 'labelforge.engine.video_dataset',
         'numpy',
         # onnxruntime 在函数内导入，显式声明避免打包时漏收原生库
         'onnxruntime',
