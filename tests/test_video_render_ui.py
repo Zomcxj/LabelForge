@@ -604,7 +604,8 @@ def _render_result(**overrides):
 
     base = dict(cancelled=False, frame_count=40, source_frame_count=40,
                 duration=4.0, output_fps=10.0, output_path="out.mp4",
-                frames_written=40, detected_total=12, partial_path="")
+                frames_written=40, detected_total=12, partial_path="",
+                track_count=0, dropped_tracks=0, labelled_frames=0)
     base.update(overrides)
     return SimpleNamespace(**base)
 
@@ -886,3 +887,122 @@ print("RESULT", repr((d.compose_start_spin.value(), d.compose_end_spin.value(),
     start, end, rng = result
     assert start <= end, f"起始({start}) 不该大于结束({end})"
     assert rng == (start, end)
+
+
+# ---------- 第 13 轮：跨帧跟踪与逐帧标注导出的接线 ----------
+
+def test_render_worker_passes_tracking_and_dataset_to_engine(monkeypatch):
+    """跟踪会话与数据集写出器必须原样交给引擎，否则参数在 worker 处丢失。"""
+    from labelforge.engine import video_io
+    from labelforge.ui.inference_workers import VideoRenderWorker
+
+    seen = {}
+
+    def fake_render_video(video_path, detector, **kwargs):
+        seen.update(kwargs)
+        return "RESULT-SENTINEL"
+
+    monkeypatch.setattr(video_io, "render_video", fake_render_video)
+
+    tracking, dataset, snapshot = object(), object(), {"tracking": True}
+    worker = VideoRenderWorker("in.mp4", "DET", output_path="out.mp4",
+                               tracking=tracking, dataset=dataset,
+                               min_hits=3, class_names=["person"],
+                               snapshot=snapshot)
+    done = _NoopSignal()
+    worker.progress = _NoopSignal()
+    worker.finished_ok = done
+    worker.failed = _NoopSignal()
+    worker.run()
+
+    assert seen["tracking"] is tracking
+    assert seen["dataset"] is dataset
+    assert seen["min_hits"] == 3
+    assert seen["class_names"] == ["person"]
+    assert seen["snapshot"] is snapshot
+
+
+def test_start_render_worker_builds_tracking_and_dataset(fake_worker, tmp_path):
+    from labelforge.engine.video_dataset import FrameDatasetWriter
+    from labelforge.engine.video_tracking import TrackingSession
+    from labelforge.ui.mixins.video import VideoMixin
+
+    host = _RenderHost(detector=_Detector())
+    output = str(tmp_path / "out.mp4")
+    settings = _settings(
+        output_path=output,
+        tracking={"enabled": True, "iou": 0.4, "min_hits": 3,
+                  "max_misses": 5, "smooth": "ema"},
+        export_dataset=True, class_names=["person", "car"])
+
+    assert VideoMixin._start_video_render(host, settings) is True
+
+    kwargs = fake_worker[0]["kwargs"]
+    assert isinstance(kwargs["tracking"], TrackingSession)
+    assert kwargs["tracking"].tracker.iou_threshold == 0.4
+    assert kwargs["tracking"].smooth_method == "ema"
+    assert kwargs["tracking"].tracker.max_misses == 5
+    assert isinstance(kwargs["dataset"], FrameDatasetWriter)
+    assert kwargs["dataset"].root == str(tmp_path / "out_dataset")
+    assert kwargs["min_hits"] == 3
+    assert kwargs["snapshot"]["tracking"] is True
+    assert kwargs["snapshot"]["iou_threshold"] == 0.4
+    assert kwargs["snapshot"]["max_misses"] == 5
+    assert kwargs["render"].show_track_id is True, "开启跟踪要显示轨迹编号"
+
+
+def test_start_render_worker_without_tracking_passes_none(fake_worker):
+    from labelforge.ui.mixins.video import VideoMixin
+
+    host = _RenderHost(detector=_Detector())
+    settings = _settings(tracking={"enabled": False, "iou": 0.3,
+                                   "min_hits": 2, "smooth": "median"},
+                         export_dataset=False)
+
+    VideoMixin._start_video_render(host, settings)
+
+    kwargs = fake_worker[0]["kwargs"]
+    assert kwargs["tracking"] is None
+    assert kwargs["dataset"] is None
+    assert kwargs["render"].show_track_id is False
+    assert kwargs["snapshot"]["tracking"] is False
+
+
+def test_real_qt_tracking_controls_defaults_and_grey_out():
+    """跟踪开关默认开；关掉后阈值与平滑置灰并说明原因；settings 带上参数。"""
+    result = _run_prelude('''
+d = VideoDialog()
+d.set_detector_info(["person"], "m.onnx")
+d.set_video(SRC)
+
+defaults = (d.track_check.isChecked(), d.export_dataset_check.isChecked(),
+            round(d.track_iou_spin.value(), 2), d.min_hits_spin.value(),
+            d.smooth_combo.currentData())
+
+d.track_check.setChecked(False)
+off = (d.track_iou_spin.isEnabled(), d.min_hits_spin.isEnabled(),
+       d.smooth_combo.isEnabled(), d.smooth_combo.toolTip())
+
+d.track_check.setChecked(True)
+on = (d.track_iou_spin.isEnabled(), d.smooth_combo.isEnabled(),
+      d.smooth_combo.toolTip())
+
+settings = render_settings(d)
+print("RESULT", repr((defaults, off, on, settings["tracking"],
+                      settings["export_dataset"], settings["class_names"],
+                      d.dataset_hint.text())))
+''')
+
+    defaults, off, on, tracking, export, classes, hint = result
+    assert defaults == (True, True, 0.30, 2, "median")
+    assert off[:3] == (False, False, False)
+    assert off[3] == "平滑需要跨帧跟踪"
+    assert on == (True, True, "")
+    assert tracking["enabled"] is True
+    assert tracking["iou"] == 0.3
+    assert tracking["min_hits"] == 2
+    assert tracking["max_misses"] == 3
+    assert tracking["smooth"] == "median"
+    assert export is True
+    assert classes == ["person"]
+    assert "MB" in hint, hint

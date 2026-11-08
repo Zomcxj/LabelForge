@@ -4,6 +4,8 @@
 任务由这里起后台线程。**弹窗在任务期间保持打开**并显示底部进度条，参数锁住；
 跑完（成功、失败或取消）由这里 `accept()` 关掉，结果再报给用户。
 """
+import os
+
 from ..i18n import t as tr
 
 
@@ -272,6 +274,13 @@ class VideoMixin:
 
     # ---------- 推理成片（④A） ----------
 
+    @staticmethod
+    def _dataset_root_for(output_path):
+        """数据集与成片同级：<成片目录>/<成片主名>_dataset/。"""
+        parent = os.path.dirname(os.path.abspath(output_path))
+        stem = os.path.splitext(os.path.basename(output_path))[0]
+        return os.path.join(parent, f"{stem}_dataset")
+
     def _start_video_render(self, settings):
         """起后台逐帧推理编码线程；返回是否真的起了。
 
@@ -294,11 +303,53 @@ class VideoMixin:
             return False
 
         render = self._compose_render_spec(settings.get("render"))
+
+        tracking_options = settings.get("tracking") or {}
+        tracking = None
+        if tracking_options.get("enabled"):
+            from ...engine.video_tracking import TrackingSession
+            tracking = TrackingSession(
+                iou_threshold=float(tracking_options.get("iou", 0.3)),
+                max_misses=int(tracking_options.get("max_misses", 3)),
+                smooth_method=tracking_options.get("smooth") or "median",
+                det_high=float(getattr(detector, "conf_threshold", 0.5)))
+            if render is not None:
+                render.show_track_id = True
+
+        dataset = None
+        if settings.get("export_dataset"):
+            from ...engine.video_dataset import FrameDatasetWriter
+            dataset = FrameDatasetWriter(
+                root=self._dataset_root_for(settings["output_path"]),
+                video_name=os.path.basename(settings["video_path"]))
+
+        snapshot = {
+            "scope": "full" if scope is None else "limited",
+            "classes": list(settings.get("class_names") or []),
+            "tracking": tracking is not None,
+            "smooth": (tracking_options.get("smooth")
+                       if tracking is not None else None),
+            "iou_threshold": (float(tracking_options.get("iou", 0.3))
+                              if tracking is not None else None),
+            "min_hits": (int(tracking_options.get("min_hits", 2))
+                         if tracking is not None else None),
+            "max_misses": (int(tracking_options.get("max_misses", 3))
+                           if tracking is not None else None),
+            "det_low": tracking.det_low if tracking is not None else None,
+            "det_high": tracking.det_high if tracking is not None else None,
+            "dataset": dataset is not None,
+        }
+
         worker = VideoRenderWorker(
             settings["video_path"], detector,
             output_path=settings["output_path"],
             scope=scope, render=render,
-            class_filter=self._filter_for_run(), parent=self)
+            class_filter=self._filter_for_run(), parent=self,
+            tracking=tracking, dataset=dataset,
+            min_hits=int(tracking_options.get("min_hits", 2)),
+            class_names=settings.get("class_names"),
+            snapshot=snapshot,
+        )
         self._render_worker = worker
         self._render_settings = dict(settings)
         self._busy = True
@@ -338,9 +389,14 @@ class VideoMixin:
         self._close_video_dialog(tr("推理成片完成"))
         self.status_label.setText(text)
         # 框已经画进像素了，明确说清不能再改，免得用户回头找标注
-        self._video_info(
-            f"{tr('输出文件')}: {result.output_path}\n"
-            f"{tr('框已烧进画面，不能再改')}")
+        message = (f"{tr('输出文件')}: {result.output_path}\n"
+                   f"{tr('框已烧进画面，不能再改')}")
+        if result.track_count or result.dropped_tracks:
+            message += (f"\n{tr('轨迹')}: {result.track_count}  "
+                        f"{tr('丢弃短轨迹')}: {result.dropped_tracks}")
+        if result.labelled_frames:
+            message += f"\n{tr('已落盘标注帧')}: {result.labelled_frames}"
+        self._video_info(message)
 
     def _on_render_failed(self, message):
         self._busy = False

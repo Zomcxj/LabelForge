@@ -941,6 +941,10 @@ class RenderVideoResult:
     frames_written: int = 0
     detected_total: int = 0
     partial_path: str = ""
+    track_count: int = 0
+    dropped_tracks: int = 0
+    labelled_frames: int = 0
+    low_score_kept: int = 0
 
 
 class _VerifyCancelled(Exception):
@@ -1004,7 +1008,9 @@ def _verify_rendered_output(tmp_path, info, cancel=None):
     return count, fps
 
 def _cancelled_render_result(tmp_path, output_path, info, frames_written,
-                             detected_total):
+                             detected_total, track_count=0,
+                             dropped_tracks=0, labelled_frames=0,
+                             low_score_kept=0):
     """取消收尾：能播的半成品留在 `.partial.mp4`，正式输出名绝不占用。
 
     ④A 是全app最慢的一条路（18 秒视频要推理 541 次），用户中途取消时已经
@@ -1020,12 +1026,16 @@ def _cancelled_render_result(tmp_path, output_path, info, frames_written,
         output_path=output_path, frame_count=frames_written,
         source_frame_count=info.frame_count, duration=info.duration,
         output_fps=info.fps, cancelled=True, frames_written=frames_written,
-        detected_total=detected_total, partial_path=partial)
+        detected_total=detected_total, partial_path=partial,
+        track_count=track_count, dropped_tracks=dropped_tracks,
+        labelled_frames=labelled_frames, low_score_kept=low_score_kept)
 
 
 def render_video(video_path, detector, output_path=None, resize_fn=None,
                  scope=None, render=None, class_filter=None,
-                 cancel=None, progress=None, on_frame=None):
+                 cancel=None, progress=None, on_frame=None,
+                 tracking=None, dataset=None, min_hits=2,
+                 class_names=None, snapshot=None):
     """④A：原视频逐帧推理，把框画在每一帧上，再编码成新视频。
 
     与 ④B（`compose_video`）的区别：画面来自原视频的**全部**帧而不是抽帧
@@ -1035,6 +1045,12 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
     `scope` 是 ③ 的范围配置（None = 全图），复用 `detect_in_scope()`。
     `render` 是 `video_render.RenderSpec`（None = 只推理不绘制）；
     类别色必须由调用方在主线程预先取好放进 spec，后台不能读 editor 取色。
+
+    `tracking` 是 `video_tracking.TrackingSession`（None = 不跟踪）：逐帧
+    喂框拿带 `track_id` 的框，收尾按 `min_hits` 丢短轨迹；
+    `dataset` 是 `video_dataset.FrameDatasetWriter`（None = 不落盘）：每帧
+    写一张干净画面，收尾写逐帧标注与清单。`min_hits` 是短轨迹阈值，只在
+    跟踪开启时生效。`class_names`/`snapshot` 原样写进清单。
 
     编码走同目录 `.partial.mp4` 临时文件，逐帧回读核对帧数/尺寸/帧率通过
     才 `os.replace` 到正式名——失败不留看似成功的输出，也不动旧成品。
@@ -1075,6 +1091,40 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
     detected_total = 0
     cancelled = False
     failed = False
+    track_count = 0
+    dropped_tracks = 0
+    labelled_frames = 0
+    low_score_kept = 0
+    records = []          # 未开跟踪时给落盘用的逐帧框
+
+    def _finalise_run():
+        """跟踪统计与逐帧标注落盘。
+
+        正常结束、取消、失败三条路径都走这里，保证已写图片与标注文件成对。
+        """
+        nonlocal track_count, dropped_tracks, labelled_frames, low_score_kept
+        if tracking is not None:
+            kept_ids, dropped = tracking.finalize(min_hits=min_hits)
+            track_count = len(kept_ids)
+            dropped_tracks = dropped
+            low_score_kept = int(getattr(tracking, "rescued", 0))
+        if dataset is None:
+            return
+        if tracking is not None:
+            frames = tracking.finalize_frames(min_hits=min_hits)
+        else:
+            frames = records
+        try:
+            dataset.finalize(frames, class_names=class_names,
+                             snapshot=snapshot,
+                             completed=not cancelled and not failed)
+        except Exception as exc:      # noqa: BLE001 - 失败路径要保留原始异常
+            from ..core.exception_hook import _write_log
+            _write_log(f"逐帧标注落盘失败: {exc}")
+            if not failed:
+                raise
+        else:
+            labelled_frames = len(frames)
 
     try:
         capture = cv2.VideoCapture(info.path)
@@ -1097,15 +1147,34 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
                     f"探测为 {info.frame_count} 帧")
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # 跟踪需要低分框来续接轨迹：按低分阈值取框，再由跟踪器分档。
+            # 滑窗/ROI 也要传下去，否则范围推理只剩高分框，两阶段退化成单阶段。
+            low_conf = None
+            if tracking is not None and hasattr(detector, "conf_threshold"):
+                low_conf = tracking.det_low
             if active_scope is not None:
                 from .inference_task import detect_in_scope
-                boxes = detect_in_scope(rgb, detector, resize_fn, active_scope)
+                boxes = detect_in_scope(rgb, detector, resize_fn, active_scope,
+                                        conf_threshold=low_conf)
+            elif low_conf is not None:
+                boxes = detector.detect(rgb, resize_fn,
+                                        conf_threshold=low_conf)
             else:
                 boxes = detector.detect(rgb, resize_fn)
             if class_filter is not None:
                 allowed = {str(c) for c in class_filter}
                 boxes = [b for b in boxes if b.get("label") in allowed]
             detected_total += len(boxes)
+
+            frame_index = frames_written
+            if tracking is not None:
+                boxes = tracking.step(boxes, frame_index)
+
+            # 落盘用干净帧：绘制会改写 rgb
+            if dataset is not None:
+                dataset.write_image(frame_index, rgb)
+                if tracking is None:
+                    records.append((frame_index, boxes))
 
             if render is not None and boxes:
                 from .video_render import draw_boxes
@@ -1127,12 +1196,15 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
             capture.release()
         if writer is not None:
             writer.release()
+        _finalise_run()
         if failed:
             _remove_quietly(tmp_path)
 
     if cancelled:
         return _cancelled_render_result(
-            tmp_path, output_path, info, frames_written, detected_total)
+            tmp_path, output_path, info, frames_written, detected_total,
+            track_count=track_count, dropped_tracks=dropped_tracks,
+            labelled_frames=labelled_frames, low_score_kept=low_score_kept)
 
     # 回读验收也要能取消：长视频的逐帧回读本身就要花时间，用户按了取消就该停
     try:
@@ -1140,7 +1212,9 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
                                                             cancel=cancel)
     except _VerifyCancelled:
         return _cancelled_render_result(
-            tmp_path, output_path, info, frames_written, detected_total)
+            tmp_path, output_path, info, frames_written, detected_total,
+            track_count=track_count, dropped_tracks=dropped_tracks,
+            labelled_frames=labelled_frames, low_score_kept=low_score_kept)
     if actual_frames != info.frame_count:
         _remove_quietly(tmp_path)
         raise VideoError(
@@ -1160,7 +1234,9 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
         output_path=output_path, frame_count=info.frame_count,
         source_frame_count=info.frame_count, duration=info.duration,
         output_fps=info.fps, frames_written=frames_written,
-        detected_total=detected_total)
+        detected_total=detected_total, track_count=track_count,
+        dropped_tracks=dropped_tracks, labelled_frames=labelled_frames,
+        low_score_kept=low_score_kept)
 
 
 def _remove_quietly(path):

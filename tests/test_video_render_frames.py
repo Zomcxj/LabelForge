@@ -827,3 +827,250 @@ def test_render_video_cancel_during_readback_stops_and_keeps_partial(tmp_path):
     assert result.frames_written == 30
     partial = result.partial_path
     assert partial and os.path.exists(partial), "半成品要留着"
+
+
+# ---------- 跟踪与落盘接线 ----------
+
+class _RecordingDataset:
+    """数据集写出器替身：记录每帧图片尺寸与收尾时的框。"""
+
+    def __init__(self):
+        self.images = []
+        self.frames = None
+        self.completed = None
+        self.class_names = None
+
+    def write_image(self, index, rgb):
+        self.images.append((index, int(rgb.shape[1]), int(rgb.shape[0])))
+        return f"frame-{index}"
+
+    def finalize(self, frames, class_names, snapshot, completed):
+        self.frames = frames
+        self.class_names = class_names
+        self.completed = completed
+        return {}
+
+
+def test_render_video_assigns_stable_track_ids(tmp_path):
+    """开启跟踪时，同一路目标逐帧保持同一个 track_id。"""
+    from labelforge.engine.video_io import render_video
+    from labelforge.engine.video_tracking import TrackingSession
+
+    video = _make_video(tmp_path / "src.mp4", count=5)
+    dataset = _RecordingDataset()
+    tracking = TrackingSession(iou_threshold=0.3, max_misses=2)
+
+    result = render_video(video, _FakeDetector(), output_path=str(tmp_path / "out.mp4"),
+                          resize_fn=_noop_resize, tracking=tracking,
+                          dataset=dataset, class_names=["person"],
+                          snapshot={"tracking": True})
+
+    ids = {box["track_id"] for _, boxes in dataset.frames for box in boxes}
+    assert ids == {1}
+    assert len(dataset.images) == result.frames_written == 5
+    assert dataset.completed is True
+    assert result.track_count == 1
+    assert result.dropped_tracks == 0
+    assert result.labelled_frames == 5
+
+
+def test_render_video_writes_boxes_without_tracking(tmp_path):
+    """关闭跟踪时，落盘的帧仍然带着推理框（不能写成空标注）。"""
+    from labelforge.engine.video_io import render_video
+
+    video = _make_video(tmp_path / "src.mp4", count=3)
+    dataset = _RecordingDataset()
+
+    render_video(video, _FakeDetector(), output_path=str(tmp_path / "out.mp4"),
+                 resize_fn=_noop_resize, dataset=dataset)
+
+    assert len(dataset.frames) == 3
+    assert all(boxes for _, boxes in dataset.frames)
+    assert all("track_id" not in box for _, boxes in dataset.frames
+               for box in boxes)
+
+
+def test_render_video_drops_single_hit_tracks(tmp_path):
+    """只命中 1 帧的轨迹按阈值丢弃，标注里不出现。"""
+    from labelforge.engine.video_io import render_video
+    from labelforge.engine.video_tracking import TrackingSession
+
+    boxes = [{"label": "person", "x": 10.0, "y": 10.0, "width": 20.0,
+              "height": 20.0, "score": 0.9, "class_id": 0}]
+    other = [{"label": "person", "x": 300.0, "y": 300.0, "width": 10.0,
+              "height": 10.0, "score": 0.5, "class_id": 0}]
+
+    class _AlternatingDetector(_FakeDetector):
+        """偶数帧给 A 框、奇数帧给 B 框：两条轨迹各只命中 1 帧。"""
+
+        def detect(self, rgb, resize_fn, conf_threshold=None, iou_threshold=None):
+            index = len(self.calls)
+            self.calls.append((int(rgb.shape[1]), int(rgb.shape[0])))
+            return [dict(b) for b in (boxes if index % 2 == 0 else other)]
+
+    video = _make_video(tmp_path / "src.mp4", count=2)
+    dataset = _RecordingDataset()
+    tracking = TrackingSession(iou_threshold=0.3, max_misses=1)
+
+    result = render_video(video, _AlternatingDetector(),
+                          output_path=str(tmp_path / "out.mp4"),
+                          resize_fn=_noop_resize, tracking=tracking,
+                          dataset=dataset, min_hits=2)
+
+    assert result.dropped_tracks == 2
+    assert result.track_count == 0
+    assert all(boxes == [] for _, boxes in dataset.frames)
+
+
+def test_cancelled_render_still_finalises_the_dataset(tmp_path):
+    """取消时已写图片必须有对应标注，清单标 completed=False。"""
+    from labelforge.engine.video_io import render_video
+    from labelforge.engine.video_tracking import TrackingSession
+
+    video = _make_video(tmp_path / "src.mp4", count=6)
+    dataset = _RecordingDataset()
+    state = {"frames": 0}
+
+    def _cancel():
+        state["frames"] += 1
+        return state["frames"] > 3
+
+    result = render_video(video, _FakeDetector(),
+                          output_path=str(tmp_path / "out.mp4"),
+                          resize_fn=_noop_resize,
+                          tracking=TrackingSession(), dataset=dataset,
+                          cancel=_cancel)
+
+    assert result.cancelled is True
+    assert dataset.completed is False
+    assert len(dataset.frames) == result.frames_written == len(dataset.images)
+
+
+# ---------- 真写出器端到端 ----------
+
+def test_real_dataset_writer_receives_render_output(tmp_path):
+    """真写出器 + 真引擎：图片、标注、清单三者齐全且尺寸正确。"""
+    import json
+
+    from labelforge.engine.video_dataset import FrameDatasetWriter
+    from labelforge.engine.video_io import render_video
+    from labelforge.engine.video_tracking import TrackingSession
+
+    video = _make_video(tmp_path / "src.mp4", count=4)
+    writer = FrameDatasetWriter(str(tmp_path / "ds"), "src")
+
+    result = render_video(video, _FakeDetector(),
+                          output_path=str(tmp_path / "out.mp4"),
+                          resize_fn=_noop_resize,
+                          tracking=TrackingSession(), dataset=writer,
+                          class_names=["person"], snapshot={"tracking": True})
+
+    root = tmp_path / "ds"
+    # 图片与标注同目录：同一批 stem，扩展名不同
+    image_dir = root / "images"
+    stems = sorted(os.path.splitext(name)[0] for name in os.listdir(image_dir)
+                   if name.startswith("src_")
+                   and name.endswith((".jpg", ".json")))
+    expected = [f"src_{index:06d}" for index in range(1, 5)]
+    assert sorted(set(stems)) == expected
+    assert stems.count(expected[0]) == 2, "同一帧应有一张图和一个 json"
+    assert result.labelled_frames == 4
+
+    data = json.loads((root / "images" / "src_000001.json")
+                      .read_text(encoding="utf-8"))
+    assert data["imageWidth"] == FRAME_W
+    assert data["imageHeight"] == FRAME_H
+    assert data["shapes"][0]["flags"]["track_id"] == 1
+
+    manifest = json.loads((root / "video_inference_manifest.json")
+                          .read_text(encoding="utf-8"))
+    assert manifest["completed"] is True
+    assert manifest["frame_count"] == 4
+    assert manifest["image_count"] == 4
+
+
+def test_real_dataset_writer_keeps_pairs_when_cancelled(tmp_path):
+    """取消时已写图片与标注一一对应，清单标 completed=False。"""
+    import json
+
+    from labelforge.engine.video_dataset import FrameDatasetWriter
+    from labelforge.engine.video_io import render_video
+    from labelforge.engine.video_tracking import TrackingSession
+
+    video = _make_video(tmp_path / "src.mp4", count=6)
+    writer = FrameDatasetWriter(str(tmp_path / "ds"), "src")
+    seen = {"frames": 0}
+
+    def _cancel():
+        seen["frames"] += 1
+        return seen["frames"] > 3
+
+    result = render_video(video, _FakeDetector(),
+                          output_path=str(tmp_path / "out.mp4"),
+                          resize_fn=_noop_resize,
+                          tracking=TrackingSession(), dataset=writer,
+                          cancel=_cancel)
+
+    root = tmp_path / "ds"
+    image_dir = root / "images"
+    images = [n for n in os.listdir(image_dir)
+              if n.startswith("src_") and n.endswith(".jpg")]
+    labels = [n for n in os.listdir(image_dir)
+              if n.startswith("src_") and n.endswith(".json")]
+    assert result.cancelled is True
+    assert len(images) == len(labels) == result.frames_written
+    manifest = json.loads((root / "video_inference_manifest.json")
+                          .read_text(encoding="utf-8"))
+    assert manifest["completed"] is False
+    assert manifest["frame_count"] == result.frames_written
+
+
+def test_render_video_asks_for_low_score_boxes_when_tracking(tmp_path):
+    """开启跟踪时要按低分阈值取框，否则没有可用于续接轨迹的候选。"""
+    from labelforge.engine.video_io import render_video
+    from labelforge.engine.video_tracking import TrackingSession
+
+    class _RecordingDetector(_FakeDetector):
+        def __init__(self):
+            super().__init__()
+            self.conf_threshold = 0.25
+            self.conf_args = []
+
+        def detect(self, rgb, resize_fn, conf_threshold=None,
+                   iou_threshold=None):
+            self.conf_args.append(conf_threshold)
+            return super().detect(rgb, resize_fn)
+
+    video = _make_video(tmp_path / "src.mp4", count=2)
+    detector = _RecordingDetector()
+    render_video(video, detector, output_path=str(tmp_path / "out.mp4"),
+                 resize_fn=_noop_resize,
+                 tracking=TrackingSession(det_high=0.6))
+
+    # 低分阈值 0.3：比用户 conf 低才拿得到低分框
+    assert detector.conf_args == [0.3, 0.3], detector.conf_args
+
+
+def test_low_score_threshold_never_exceeds_the_user_conf(tmp_path):
+    """用户把 conf 调到 0.3 以下时，低分阈值跟着降到 conf，不会反而更严。"""
+    from labelforge.engine.video_io import render_video
+    from labelforge.engine.video_tracking import TrackingSession
+
+    class _RecordingDetector(_FakeDetector):
+        def __init__(self):
+            super().__init__()
+            self.conf_threshold = 0.2
+            self.conf_args = []
+
+        def detect(self, rgb, resize_fn, conf_threshold=None,
+                   iou_threshold=None):
+            self.conf_args.append(conf_threshold)
+            return super().detect(rgb, resize_fn)
+
+    video = _make_video(tmp_path / "src.mp4", count=1)
+    detector = _RecordingDetector()
+    render_video(video, detector, output_path=str(tmp_path / "out.mp4"),
+                 resize_fn=_noop_resize,
+                 tracking=TrackingSession(det_high=0.2))
+
+    assert detector.conf_args == [0.2], detector.conf_args

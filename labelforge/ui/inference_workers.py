@@ -243,13 +243,16 @@ class VideoRenderWorker(QThread):
     源视频的**每一帧**都跑一次推理并绘制，所以比 ④B 慢得多：进度按帧上报、
     必须能取消。`render`/`scope`/`class_filter` 都由主线程定稿后传入——
     `get_label_color()` 会写缓存与配置，后台线程不能调用它。
+    `tracking`/`dataset` 同样由主线程构造（写盘目录、会话状态都在主线程定稿）。
     """
     progress = Signal(int, int)
     finished_ok = Signal(object)
     failed = Signal(str)
 
     def __init__(self, video_path, detector, output_path=None, resize_fn=None,
-                 scope=None, render=None, class_filter=None, parent=None):
+                 scope=None, render=None, class_filter=None, parent=None,
+                 tracking=None, dataset=None, min_hits=2,
+                 class_names=None, snapshot=None):
         super().__init__(parent)
         self._video_path = video_path
         self._detector = detector
@@ -258,6 +261,11 @@ class VideoRenderWorker(QThread):
         self._scope = scope
         self._render = render
         self._class_filter = class_filter
+        self._tracking = tracking
+        self._dataset = dataset
+        self._min_hits = min_hits
+        self._class_names = class_names
+        self._snapshot = snapshot
         self._cancelled = False
 
     def run(self):
@@ -271,6 +279,11 @@ class VideoRenderWorker(QThread):
                 scope=self._scope,
                 render=self._render,
                 class_filter=self._class_filter,
+                tracking=self._tracking,
+                dataset=self._dataset,
+                min_hits=self._min_hits,
+                class_names=self._class_names,
+                snapshot=self._snapshot,
                 cancel=lambda: self._cancelled,
                 progress=self.progress.emit,
             )

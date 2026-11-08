@@ -15,7 +15,8 @@ import os
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
+    QAbstractItemView, QAbstractSpinBox, QCheckBox, QComboBox, QDialog,
+    QDoubleSpinBox,
     QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QProgressBar, QPushButton, QSpinBox, QTabWidget,
     QVBoxLayout, QWidget,
@@ -461,6 +462,70 @@ class VideoDialog(QDialog):
 
         layout.addWidget(self._build_overlay_group("render"))
 
+        track_row = QHBoxLayout()
+        track_row.setSpacing(6)
+        self.track_check = QCheckBox(tr("跨帧跟踪"))
+        self.track_check.setChecked(True)
+        self.track_check.setToolTip(
+            tr("给每个目标分配稳定的轨迹编号，并抑制框的抖动"))
+        self.track_check.toggled.connect(self._apply_tracking_enabled)
+        track_row.addWidget(self.track_check)
+
+        track_row.addWidget(QLabel(tr("匹配 IoU")))
+        self.track_iou_spin = QDoubleSpinBox()
+        self.track_iou_spin.setRange(0.05, 0.95)
+        self.track_iou_spin.setSingleStep(0.05)
+        self.track_iou_spin.setDecimals(2)
+        self.track_iou_spin.setValue(0.30)
+        # 定宽 70：带步进按钮时编辑区只剩 50 px，正好放下「0.30」；
+        # 去掉步进按钮后余量更足，也不受缩放影响
+        self.track_iou_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self.track_iou_spin.setFixedWidth(70)
+        track_row.addWidget(self.track_iou_spin)
+
+        track_row.addWidget(QLabel(tr("短轨迹阈值")))
+        self.min_hits_spin = QSpinBox()
+        self.min_hits_spin.setRange(1, 30)
+        self.min_hits_spin.setValue(2)
+        # 定宽 40：40 px 装不下「数字 + 步进按钮」，同样去掉按钮
+        self.min_hits_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self.min_hits_spin.setFixedWidth(40)
+        self.min_hits_spin.setToolTip(tr("命中帧数少于该值的轨迹被丢弃"))
+        track_row.addWidget(self.min_hits_spin)
+
+        track_row.addWidget(QLabel(tr("最大丢失")))
+        self.max_misses_spin = QSpinBox()
+        self.max_misses_spin.setRange(1, 120)
+        self.max_misses_spin.setValue(3)
+        self.max_misses_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self.max_misses_spin.setFixedWidth(40)
+        self.max_misses_spin.setToolTip(
+            tr("连续多少帧没匹配上就结束这条轨迹"))
+        track_row.addWidget(self.max_misses_spin)
+
+        track_row.addWidget(QLabel(tr("平滑")))
+        self.smooth_combo = QComboBox()
+        self.smooth_combo.addItem(tr("滑动中位数"), "median")
+        self.smooth_combo.addItem(tr("指数滑动平均"), "ema")
+        self.smooth_combo.addItem(tr("不平滑"), "none")
+        track_row.addWidget(self.smooth_combo)
+        track_row.addStretch()
+        layout.addLayout(track_row)
+
+        dataset_row = QHBoxLayout()
+        dataset_row.setSpacing(6)
+        self.export_dataset_check = QCheckBox(tr("导出逐帧标注"))
+        self.export_dataset_check.setChecked(True)
+        self.export_dataset_check.setToolTip(
+            tr("每帧存一张图和一个 JSON，可直接作为训练集"))
+        self.export_dataset_check.toggled.connect(self._update_dataset_hint)
+        dataset_row.addWidget(self.export_dataset_check)
+        self.dataset_hint = QLabel("")
+        self.dataset_hint.setObjectName("videoHint")
+        dataset_row.addWidget(self.dataset_hint)
+        dataset_row.addStretch()
+        layout.addLayout(dataset_row)
+
         note = QLabel(tr("逐帧推理：每一帧都推理并画框，速度比抽帧慢；"
                          "框会烧进画面，之后不能再改。"))
         note.setObjectName("videoHint")
@@ -488,6 +553,31 @@ class VideoDialog(QDialog):
         layout.addLayout(buttons)
 
         return self.render_tab
+
+    def _apply_tracking_enabled(self, enabled):
+        """关闭跟踪时匹配阈值、短轨迹阈值与平滑都没有作用对象，一并置灰。"""
+        ready = bool(enabled) and not self._running
+        for widget in (self.track_iou_spin, self.min_hits_spin,
+                       self.max_misses_spin, self.smooth_combo):
+            widget.setEnabled(ready)
+        self.smooth_combo.setToolTip(
+            "" if enabled else tr("平滑需要跨帧跟踪"))
+
+    def _update_dataset_hint(self, _checked=False):
+        """在「导出逐帧标注」旁显示预计占用。"""
+        if not self.export_dataset_check.isChecked():
+            self.dataset_hint.setText("")
+            return
+        info = getattr(self, "_info", None)
+        if info is None:
+            self.dataset_hint.setText(tr("未选择视频"))
+            return
+        frames = max(1, int(getattr(info, "frame_count", 0) or 0))
+        pixels = int(getattr(info, "width", 0)) * int(getattr(info, "height", 0))
+        # jpg 约按原始像素的 10% 估、每帧 JSON 约 400 字节
+        image_bytes = pixels * 3 * 0.10
+        total_mb = frames * (image_bytes + 400) / (1024 * 1024)
+        self.dataset_hint.setText(f"{tr('预计占用')} {total_mb:.0f} MB")
 
     def _build_overlay_group(self, attr):
         """「叠加标签框」一组控件：主开关 + 类别多选 + 类别名/置信度开关。
@@ -613,6 +703,16 @@ class VideoDialog(QDialog):
             render = self._render_overlay.options()
             if render is not None:
                 settings["render"] = render
+            settings["tracking"] = {
+                "enabled": self.track_check.isChecked(),
+                "iou": self.track_iou_spin.value(),
+                "min_hits": self.min_hits_spin.value(),
+                "max_misses": self.max_misses_spin.value(),
+                "smooth": self.smooth_combo.currentData(),
+            }
+            settings["export_dataset"] = self.export_dataset_check.isChecked()
+            settings["class_names"] = list(
+                getattr(self, "_render_class_names", []) or [])
             return settings
 
         if self.action == ACTION_COMPOSE:
@@ -995,6 +1095,12 @@ class VideoDialog(QDialog):
         overlay = ready and group.overlay_check.isChecked()
         for widget in group.widgets():
             widget.setEnabled(overlay)
+
+        # 任务在跑时锁住新增开关；跟踪关闭时联动置灰由 _apply_tracking_enabled 处理
+        for widget in (self.track_check, self.export_dataset_check):
+            widget.setEnabled(not self._running)
+        self._apply_tracking_enabled(self.track_check.isChecked())
+        self._update_dataset_hint()
 
     def _render_output_for(self, video_path):
         """推理成片的输出：视频同级 `<主名>_render.mp4`，重名加序号。"""

@@ -44,6 +44,7 @@ class RenderSpec:
     label_colors: dict = field(default_factory=dict)
     pen_width: int = 0          # 0 = 按画面高度自动
     font_pixels: int = 0        # 0 = 按画面高度自动
+    show_track_id: bool = False
 
 
 def filter_boxes(boxes, labels):
@@ -72,11 +73,18 @@ def color_for_label(label_colors, label):
 
 
 def label_text(box, spec):
-    """框上文字；不开「类别名」时返回空串（一个字都不画）。"""
+    """框上文字；不开「类别名」时返回空串（一个字都不画）。
+
+    `show_track_id` 打开且框带 `track_id` 时，在末尾追加 `#ID`。
+    """
     if not spec.show_labels:
         return ""
     from .shape_io import box_display_label
-    return box_display_label(box, show_score=bool(spec.show_scores))
+    text = box_display_label(box, show_score=bool(spec.show_scores))
+    track_id = box.get("track_id")
+    if getattr(spec, "show_track_id", False) and track_id is not None:
+        text = f"{text} #{track_id}" if text else f"#{track_id}"
+    return text
 
 
 def _auto_pen_width(height):

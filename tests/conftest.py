@@ -521,6 +521,8 @@ qtwidgets.QLabel = _MockQLabel
 qtwidgets.QPushButton = _MockQPushButton
 qtwidgets.QCheckBox = _MockQCheckBox
 qtwidgets.QRadioButton = _MockQRadioButton
+# 数值框的步进按钮模式：真实 Qt 是枚举，替身只要有个可赋值的常量
+qtwidgets.QAbstractSpinBox = type('QAbstractSpinBox', (), {'NoButtons': 0})
 qtwidgets.QSpinBox = _MockQSpinBox
 qtwidgets.QDoubleSpinBox = type('QDoubleSpinBox', (_MockQWidget,), {
     'minimum': lambda self: 0.0,

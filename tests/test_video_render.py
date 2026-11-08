@@ -559,3 +559,30 @@ def test_label_font_pixels_follows_the_setting():
         assert resolve_font_pixels(RenderSpec(font_pixels=0), 1080) == label_font_pixels(1080)
     finally:
         DETECTION_BOX_CONFIG['label_font_size'] = original
+
+
+# ---------- 跟踪 ID ----------
+
+def test_label_text_appends_track_id_when_enabled():
+    from labelforge.engine.video_render import RenderSpec, label_text
+
+    box = {"label": "car", "score": 0.9, "track_id": 7,
+           "x": 0, "y": 0, "width": 10, "height": 10}
+    spec = RenderSpec(show_labels=True, show_track_id=True)
+    assert label_text(box, spec).endswith("#7")
+
+
+def test_label_text_omits_track_id_when_disabled():
+    from labelforge.engine.video_render import RenderSpec, label_text
+
+    box = {"label": "car", "track_id": 7}
+    spec = RenderSpec(show_labels=True, show_track_id=False)
+    assert "#7" not in label_text(box, spec)
+
+
+def test_label_text_without_track_id_is_unchanged():
+    from labelforge.engine.video_render import RenderSpec, label_text
+
+    box = {"label": "car"}
+    spec = RenderSpec(show_labels=True, show_track_id=True)
+    assert "#" not in label_text(box, spec)
