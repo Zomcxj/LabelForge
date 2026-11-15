@@ -4,7 +4,7 @@ import json
 import time
 
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QListWidgetItem
+    QApplication, QFileDialog, QListWidgetItem, QMessageBox
 )
 from PySide6.QtGui import QPixmap, QIcon
 from PySide6.QtCore import Qt, QSize, QTimer
@@ -452,6 +452,8 @@ class ImageLoaderMixin:
         )
         if files:
             self._memory_paste_path = os.path.dirname(files[0])
+            # 逐张选的文件：刷新只重读这几张，不把同目录其它图拉进来
+            self._paste_list_from_folder = False
             self.small_images.clear()
             self.small_list.clear()
 
@@ -475,6 +477,8 @@ class ImageLoaderMixin:
     def load_paste_folder(self, folder_path):
         """从指定文件夹加载贴图，供文件夹按钮和记忆记录复用。"""
         self._memory_paste_path = folder_path
+        # 整个文件夹装进来的列表，刷新时按文件夹重扫（外部新增的素材才会出现）
+        self._paste_list_from_folder = True
 
         self.small_images.clear()
         self.small_list.clear()
@@ -495,6 +499,142 @@ class ImageLoaderMixin:
 
         self._update_paste_count_spin()
         self._refresh_small_list_view()
+
+    def _refresh_known_paste_paths(self):
+        """没有文件夹可扫时：只按已知路径重读，剔除失效文件。"""
+        kept = []
+        dropped = 0
+        for path, _pixmap in self.small_images:
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                dropped += 1
+                continue
+            kept.append((path, pixmap))
+        return kept, 0, dropped
+
+    def _rescan_paste_folder(self, folder):
+        """按文件夹重扫：新出现的文件补进来，删掉的文件移出去。"""
+        known = {path for path, _pixmap in self.small_images}
+        on_disk = []
+        for name in sorted(os.listdir(folder), key=natural_sort_key):
+            if os.path.splitext(name)[1].lower() in SUPPORTED_IMAGE_EXTENSIONS:
+                on_disk.append(os.path.join(folder, name))
+
+        kept = []
+        added = 0
+        for path in on_disk:
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                continue
+            kept.append((path, pixmap))
+            if path not in known:
+                added += 1
+        present = {path for path, _pixmap in kept}
+        return kept, added, len(known - present)
+
+    def refresh_paste_files(self):
+        """重新扫一遍贴图来源：换新缩略图，剔除失效文件，补上新出现的文件。
+
+        从文件夹加载的列表按文件夹重扫（抠图等外部写入的新文件会出现）；
+        逐张选出来的列表只按已知路径重读，不会把同目录的其它图拉进来。
+        """
+        folder = getattr(self, '_memory_paste_path', None)
+        if not (getattr(self, '_paste_list_from_folder', False)
+                and folder and os.path.isdir(folder)):
+            folder = None
+
+        if folder is None and not self.small_images:
+            self.status_label.setText(tr("贴图列表为空，请先加载贴图"))
+            return
+
+        if folder is None:
+            kept, added, dropped = self._refresh_known_paste_paths()
+        else:
+            kept, added, dropped = self._rescan_paste_folder(folder)
+
+        self.small_images = kept
+        self.refresh_list_items()
+        self._update_paste_count_spin()
+        self._refresh_small_list_view()
+        self.status_label.setText(self._paste_refresh_message(added, dropped))
+
+    @staticmethod
+    def _paste_refresh_message(added, dropped):
+        if added and dropped:
+            return tr("贴图列表已刷新：新增 {added}，移除 {dropped}").format(
+                added=added, dropped=dropped)
+        if added:
+            return tr("贴图列表已刷新：新增 {added}").format(added=added)
+        if dropped:
+            return tr("贴图列表已刷新，移除 {n} 个失效文件").format(n=dropped)
+        return tr("贴图列表已刷新")
+
+    def rename_paste_file(self, index):
+        """重命名列表里的素材文件（磁盘上的真实文件名）。index 是列表下标。"""
+        if not isinstance(index, int) or not (0 <= index < len(self.small_images)):
+            return
+
+        path, old_pixmap = self.small_images[index]
+        stem, ext = os.path.splitext(os.path.basename(path))
+        new_name, accepted = dialog_helpers.get_text(
+            self, tr("重命名素材"), tr("新文件名"), text=stem)
+        if not accepted:
+            return
+
+        new_stem = (new_name or "").strip()
+        if not new_stem or new_stem == stem:
+            return
+        if any(ch in new_stem for ch in '\\/:*?"<>|'):
+            dialog_helpers.warning(self, tr("重命名素材"),
+                                   tr("文件名不能包含 \\ / : * ? \" < > |"))
+            return
+
+        target = os.path.join(os.path.dirname(path), new_stem + ext)
+        if os.path.exists(target):
+            dialog_helpers.warning(self, tr("重命名素材"),
+                                   tr("同名文件已存在：{name}").format(
+                                       name=os.path.basename(target)))
+            return
+        try:
+            os.rename(path, target)
+        except OSError as exc:
+            dialog_helpers.warning(self, tr("重命名素材"),
+                                   tr("重命名失败：{err}").format(err=exc))
+            return
+
+        pixmap = QPixmap(target)
+        self.small_images[index] = (target, old_pixmap if pixmap.isNull() else pixmap)
+        self.refresh_list_items()
+        self._refresh_small_list_view()
+        self.status_label.setText(
+            tr("已重命名") + f": {os.path.basename(target)}")
+
+    def delete_paste_file(self, index):
+        """删除列表里的素材：确认后删磁盘文件，并把它移出列表。index 是列表下标。"""
+        if not isinstance(index, int) or not (0 <= index < len(self.small_images)):
+            return
+
+        path = self.small_images[index][0]
+        name = os.path.basename(path)
+        answer = dialog_helpers.question(
+            self, tr("删除素材"), tr("确定要删除该素材文件吗？") + "\n" + name)
+        if answer != QMessageBox.Yes:
+            return
+
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            dialog_helpers.warning(self, tr("删除素材"),
+                                   tr("删除失败：{err}").format(err=exc))
+            return
+
+        del self.small_images[index]
+        self.refresh_list_items()
+        self._update_paste_count_spin()
+        self._refresh_small_list_view()
+        self.status_label.setText(f"{tr('已删除素材')}: {name}")
 
     def _update_paste_count_spin(self):
         """更新贴图个数输入框"""
@@ -517,6 +657,22 @@ class ImageLoaderMixin:
             self.small_list.scrollToTop()
             self.small_list.updateGeometry()
             self.small_list.repaint()
+
+    def sync_paste_pixmap(self, path, pixmap):
+        """裁剪写回后，把贴图列表里同一文件的缩略图换成新图。
+
+        列表缓存的是加载那一刻的 QPixmap：只重画视图的话缩略图仍是旧图，
+        再从列表拖到画布上也还是裁剪前的像素。返回是否真的换过。
+        """
+        target = os.path.normcase(os.path.abspath(path))
+        changed = False
+        for index, (known, _old) in enumerate(self.small_images):
+            if os.path.normcase(os.path.abspath(known)) == target:
+                self.small_images[index] = (known, pixmap)
+                changed = True
+        if changed:
+            self._refresh_small_list_view()
+        return changed
 
     def add_list_item(self, file_name, pixmap):
         """添加列表项"""
@@ -643,6 +799,9 @@ class ImageLoaderMixin:
         from ...core import json_trace
         json_trace.trace_load_result(index, file_path, len(self.detection_boxes),
                                      from_cache)
+        refresh = getattr(self, '_refresh_export_task_label', None)
+        if callable(refresh):
+            refresh()
 
     def load_detection_boxes(self, file_path):
         """加载检测框 JSON 文件"""

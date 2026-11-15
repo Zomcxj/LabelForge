@@ -366,18 +366,22 @@ def pick_detection_output(outputs):
       3 维的一个都没有，或有多个 -> 说不清是谁，报错要求显式指定，
       绝不瞎猜（挑错会静默产出错误标注）。
     """
-    candidates = [
-        (i, tuple(int(d) for d in o.shape))
-        for i, o in enumerate(outputs)
-        if len(o.shape) == 3
-    ]
+    candidates = []
+    for i, o in enumerate(outputs):
+        if len(o.shape) != 3:
+            continue
+        try:
+            candidates.append((i, tuple(int(d) for d in o.shape)))
+        except (TypeError, ValueError):
+            # 动态轴导出的模型维度是符号名，不是检测头
+            continue
     if len(candidates) == 1:
         return candidates[0]
     shapes = [tuple(o.shape) for o in outputs]
     if not candidates:
         raise InferenceError(
             f"模型没有 3 维检测输出，实际输出形状 {shapes}；"
-            "分割 / 姿态 / OBB 导出需各自的适配")
+            "这不是 YOLO 检测模型，无法用于检测推理")
     raise InferenceError(
         f"模型有 {len(candidates)} 个 3 维输出，无法确定哪个是检测头，"
         f"实际输出形状 {shapes}")

@@ -28,12 +28,16 @@ class FakeAction:
         self.text = text
         self.triggered = FakeSignal()
         self._enabled = True
+        self.tooltip = ""
 
     def setEnabled(self, value):
         self._enabled = value
 
     def isEnabled(self):
         return self._enabled
+
+    def setToolTip(self, text):
+        self.tooltip = text
 
     def isSeparator(self):
         return False
@@ -411,6 +415,13 @@ def test_close_writes_recent_labels_into_record(monkeypatch):
 
 
 # --------------------------------------------------------------- 贴图右键菜单
+# 贴图菜单里与标签无关的旋转/裁剪项。角度为 0 时「重置旋转」置灰，
+# 替身贴图项没有源文件路径时「裁剪素材…」也置灰，两项都不出现在
+# `menu.labels()`（只列启用的项）里。
+PASTE_ROTATE_ACTIONS = ("顺时针旋转 90°", "逆时针旋转 90°")
+PASTE_MENU_ACTIONS = ("移除", "增加标签") + PASTE_ROTATE_ACTIONS
+
+
 def _paste_canvas(labels=None, items=None, stats=None, recent=None):
     editor = FakeEditor(stats=stats or [], recent=recent or [])
     editor.paste_labels = list(labels or [])
@@ -430,8 +441,10 @@ def test_paste_menu_lists_quick_labels_in_one_block():
         stats={"paste": 8, "carton": 3, "barrel": 1},
     )
     menu = canvas.open_paste_menu(0)
-    # 移除 + 分隔线 + 常用贴图标签（去掉当前 paste）+ 分隔线 + 增加标签
-    assert menu.labels() == ["移除", "carton", "barrel", "增加标签"]
+    # 移除 + 顺时针/逆时针旋转 + 分隔线 + 常用贴图标签（去掉当前 paste）
+    # + 分隔线 + 增加标签
+    assert menu.labels() == ["移除", *PASTE_ROTATE_ACTIONS,
+                             "carton", "barrel", "增加标签"]
 
 
 def test_paste_menu_puts_recent_labels_first():
@@ -442,7 +455,8 @@ def test_paste_menu_puts_recent_labels_first():
     )
     canvas._editor._recent_paste_labels = ["barrel"]
     menu = canvas.open_paste_menu(0)
-    assert menu.labels() == ["移除", "barrel", "carton", "增加标签"]
+    assert menu.labels() == ["移除", *PASTE_ROTATE_ACTIONS,
+                             "barrel", "carton", "增加标签"]
 
 
 def test_paste_menu_caps_labels_at_five():
@@ -451,7 +465,7 @@ def test_paste_menu_caps_labels_at_five():
         stats={f"P{i}": 20 - i for i in range(15)},
     )
     menu = canvas.open_paste_menu(0)
-    quick = [x for x in menu.labels() if x not in ("移除", "增加标签")]
+    quick = [x for x in menu.labels() if x not in PASTE_MENU_ACTIONS]
     assert len(quick) == 5
     assert quick == ["P0", "P1", "P2", "P3", "P4"]
 
@@ -459,7 +473,39 @@ def test_paste_menu_caps_labels_at_five():
 def test_paste_menu_without_labels_keeps_only_actions():
     canvas = _paste_canvas(items=[("pix", None, "paste")])
     menu = canvas.open_paste_menu(0)
-    assert menu.labels() == ["移除", "增加标签"]
+    assert menu.labels() == ["移除", *PASTE_ROTATE_ACTIONS, "增加标签"]
+    # 角度为 0 时「重置旋转」置灰；替身贴图项没有源文件路径，裁剪也置灰
+    assert menu.headers() == ["重置旋转", "裁剪素材…"]
+
+
+def test_paste_menu_rotate_actions_are_greyed_out_without_an_item():
+    canvas = _paste_canvas(items=[])
+    menu = canvas.open_paste_menu(0)
+    # 没有可旋转的贴图项：三项一律置灰
+    assert "顺时针旋转 90°" not in menu.labels()
+    assert "逆时针旋转 90°" not in menu.labels()
+    assert menu.headers() == ["顺时针旋转 90°", "逆时针旋转 90°", "重置旋转",
+                              "裁剪素材…"]
+
+
+def test_paste_menu_reset_rotation_enables_only_for_a_rotated_item():
+    from labelforge.engine.paste_item import PasteItem
+
+    canvas = _paste_canvas(
+        items=[PasteItem(object(), (0, 0, 10, 10), "paste", angle=90.0)])
+    menu = canvas.open_paste_menu(0)
+    assert canvas.action("重置旋转").isEnabled()
+
+
+def test_paste_menu_rotate_action_turns_the_item():
+    from labelforge.engine.paste_item import PasteItem
+
+    canvas = _paste_canvas(items=[PasteItem(object(), (0, 0, 10, 10), "paste")])
+    canvas._editor.save_undo_state = lambda: None
+    menu = canvas.open_paste_menu(0)
+    canvas.action("顺时针旋转 90°").triggered.emit(False)
+    assert canvas._editor.canvas_items[0].angle == 90.0
+    assert canvas._editor.canvas_items[0].shape_type == "rotation"
 
 
 def test_paste_labels_do_not_mix_with_box_labels():
@@ -482,6 +528,6 @@ def test_paste_menu_fills_remaining_slots_from_the_paste_label_list():
     editor._get_session_paste_stats = lambda: {}
     canvas = FakeCanvas(editor)
     menu = canvas.open_paste_menu(0)
-    quick = [x for x in menu.labels() if x not in ("移除", "增加标签")]
+    quick = [x for x in menu.labels() if x not in PASTE_MENU_ACTIONS]
     assert quick == ["carton", "barrel", "box", "bag", "tin"]   # 当前 paste 被剔除
     assert len(quick) == 5

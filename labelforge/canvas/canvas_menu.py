@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QMenu
 from PySide6.QtCore import Qt, QPoint
 
 from ..core.utils import extract_label_name
+from ..engine.paste_item import PasteItem, as_paste_item
 from ..ui import dialog_helpers
 from ..ui.i18n import t as tr
 
@@ -411,6 +412,9 @@ class CanvasMenuMixin:
         index = self._region_at(mouse_pos)
         if index is None:
             return
+        regions = self._active_regions()
+        if not (0 <= index < len(regions)):
+            return
         fixed = self._active_region_fixed()
         menu = self._rounded_menu(self)
 
@@ -422,9 +426,32 @@ class CanvasMenuMixin:
         menu.addAction(delete_action)
 
         menu.addSeparator()
+        # 传给抠图的是区域当前的字典内容，不是下标：菜单执行期间区域可能被删，
+        # 下标会指到别的区域上。
+        self._add_matte_action(menu, region=dict(regions[index]))
         self._add_region_actions(menu, fixed)
 
         menu.exec_(QPoint(self.mapToGlobal(mouse_pos)))
+
+    def _add_matte_action(self, menu, box=None, region=None):
+        """追加单个「抠图素材」项。
+
+        两种模式都保留，但标注模式只对**检测框**开放：区域在标注模式下是
+        推理范围，不当作可抠素材。没有抠图模型时置灰并说明先加载模型；
+        抠图只读区域/标注，不改标注数据，所以区域固定时同样可用。
+        """
+        if box is None and not self._is_paste_mode():
+            return None
+        action = QAction(tr("抠图素材"), self)
+        action.setEnabled(getattr(self._editor, 'matting_model', None) is not None)
+        if not action.isEnabled():
+            action.setToolTip(tr("先加载抠图模型"))
+        action.triggered.connect(
+            lambda checked=False, b=box, r=region:
+            self._editor.matte_selection_to_material(box=b, region=r)
+        )
+        menu.addAction(action)
+        return action
 
     def _add_region_actions(self, menu, fixed):
         """追加 添加区域（矩形 / 多边形）、固定、清空 菜单项。
@@ -649,6 +676,10 @@ class CanvasMenuMixin:
                 lambda checked, idx=box_index: self._rectangle_to_rotation(idx)
             )
             menu.addAction(to_obb_action)
+
+        menu.addSeparator()
+        # 传字典副本：菜单执行期间框可能被删/改，副本保证抠的是右键时那个框
+        self._add_matte_action(menu, box=dict(box))
 
         menu.addSeparator()
 
@@ -1013,12 +1044,54 @@ class CanvasMenuMixin:
         )
         menu.addAction(remove_action)
 
+        # 旋转作用在右键的这一项上：角度是贴图自己的属性，不选也能用。
+        # 解析不出贴图项时（下标越界）三项一律置灰，不弹提示。
+        target = None
+        items = getattr(self._editor, 'canvas_items', None) or []
+        if 0 <= item_index < len(items):
+            try:
+                target = as_paste_item(items[item_index])
+            except TypeError:
+                target = None
+
+        rotate_cw = QAction(f"{tr('顺时针旋转')} 90°", self)
+        rotate_cw.setEnabled(target is not None)
+        rotate_cw.triggered.connect(
+            lambda checked, idx=item_index: self._rotate_paste_item(idx, 90)
+        )
+        menu.addAction(rotate_cw)
+
+        rotate_ccw = QAction(f"{tr('逆时针旋转')} 90°", self)
+        rotate_ccw.setEnabled(target is not None)
+        rotate_ccw.triggered.connect(
+            lambda checked, idx=item_index: self._rotate_paste_item(idx, -90)
+        )
+        menu.addAction(rotate_ccw)
+
+        reset_rotation = QAction(tr("重置旋转"), self)
+        reset_rotation.setEnabled(target is not None
+                                  and abs(target.angle) > 1e-9)
+        reset_rotation.triggered.connect(
+            lambda checked, idx=item_index: self._rotate_paste_item(idx, None)
+        )
+        menu.addAction(reset_rotation)
+
+        crop_action = QAction(tr("裁剪素材…"), self)
+        crop_action.setEnabled(target is not None and bool(getattr(target, 'path', None))
+                              and abs(target.angle) < 1e-9)
+        if not crop_action.isEnabled():
+            crop_action.setToolTip(tr("只有未旋转的抠图素材可以裁剪"))
+        crop_action.triggered.connect(
+            lambda checked, idx=item_index: self._start_paste_crop(idx)
+        )
+        menu.addAction(crop_action)
+
         menu.addSeparator()
 
         # 与检测框一致：只列常用贴图标签一块，不随标签数增长；其余经「增加标签」新建。
         current_label = None
         if 0 <= item_index < len(self._editor.canvas_items):
-            current_label = self._editor.canvas_items[item_index][2]
+            current_label = as_paste_item(self._editor.canvas_items[item_index]).label
         recent, frequent = self._quick_paste_labels(current_label)
         quick_labels = recent + frequent
         if quick_labels:
@@ -1045,8 +1118,9 @@ class CanvasMenuMixin:
         if self._editor._is_delete_view:
             return
         if 0 <= item_index < len(self._editor.canvas_items):
-            pixmap, rect, _ = self._editor.canvas_items[item_index]
-            self._editor.canvas_items[item_index] = (pixmap, rect, new_label)
+            item = as_paste_item(self._editor.canvas_items[item_index])
+            item.label = new_label
+            self._editor.canvas_items[item_index] = item
             self._remember_recent_label(new_label, kind='paste')
             self.update()
 
@@ -1062,8 +1136,9 @@ class CanvasMenuMixin:
             self._remember_recent_label(new_label, kind='paste')
 
             if 0 <= item_index < len(self._editor.canvas_items):
-                pixmap, rect, _ = self._editor.canvas_items[item_index]
-                self._editor.canvas_items[item_index] = (pixmap, rect, new_label)
+                item = as_paste_item(self._editor.canvas_items[item_index])
+                item.label = new_label
+                self._editor.canvas_items[item_index] = item
                 self.update()
 
     def _remove_paste_item(self, item_index):
@@ -1073,4 +1148,42 @@ class CanvasMenuMixin:
         if 0 <= item_index < len(self._editor.canvas_items):
             self._editor.canvas_items.pop(item_index)
             self._editor.selected_item = None
+            refresh = getattr(self._editor, '_refresh_export_task_label', None)
+            if callable(refresh):
+                refresh()
             self.update()
+
+    def _rotate_paste_item(self, item_index, degrees, record_undo=True):
+        """旋转贴图项。degrees=None 表示归零。
+
+        角度是**顺时针**、单位度，归一到 [0, 360)。非 0 时该贴图按 rotation
+        写盘（OBB 任务），归零回到 rectangle。
+        """
+        if self._editor._is_delete_view:
+            return
+        items = getattr(self._editor, 'canvas_items', None) or []
+        if not (0 <= item_index < len(items)):
+            return
+        item = as_paste_item(items[item_index])
+        if record_undo:
+            self._editor.save_undo_state()
+        if degrees is None:
+            angle = 0.0
+        else:
+            angle = (item.angle + degrees) % 360.0
+        # 换一个新对象再放回列表：撤销栈里存的是列表浅拷贝，原地改角度会让
+        # 「撤销旋转」拿回同一个（已被改过的）对象，等于撤销无效。
+        items[item_index] = PasteItem(
+            pixmap=item.pixmap, rect=item.rect, label=item.label, angle=angle,
+            path=item.path,
+        )
+        status = getattr(self._editor, 'status_label', None)
+        if status is not None:
+            if angle:
+                status.setText(tr("已切换为旋转框"))
+            else:
+                status.setText(tr("已切回检测框"))
+        refresh = getattr(self._editor, '_refresh_export_task_label', None)
+        if callable(refresh):
+            refresh()
+        self.update()

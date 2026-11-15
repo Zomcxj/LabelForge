@@ -1,5 +1,7 @@
 """Label statistics behavior for the main window."""
 
+from ...engine.paste_item import as_paste_item
+
 
 def _side_by_side(g1, g2):
     """两个 dock 是否并排：同一行、水平不相交。"""
@@ -92,10 +94,10 @@ class StatsMixin:
         """收集当前打开文件夹中用于共享色板的全部标签。"""
         labels = [box.get('label', '') for boxes in self.detection_boxes_dict.values() for box in boxes]
         labels.extend(box.get('label', '') for box in self.detection_boxes)
-        labels.extend(item[2] for item in self.canvas_items)
+        labels.extend(as_paste_item(entry).label for entry in self.canvas_items)
         labels.extend(
-            item[2] for idx, items in self.canvas_items_dict.items()
-            if idx != self.current_background_index for item in items
+            as_paste_item(entry).label for idx, items in self.canvas_items_dict.items()
+            if idx != self.current_background_index for entry in items
         )
         return labels
 
@@ -104,7 +106,8 @@ class StatsMixin:
         stats = {}
         for idx in range(len(self.background_images)):
             items = self.canvas_items if idx == self.current_background_index else self.canvas_items_dict.get(idx, [])
-            for _, _, label in items:
+            for entry in items:
+                label = as_paste_item(entry).label
                 if label:
                     stats[label] = stats.get(label, 0) + 1
         return stats

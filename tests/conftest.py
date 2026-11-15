@@ -97,7 +97,12 @@ class _MockQWidget:
 class _MockQMainWindow(_MockQWidget):
     """最小化的 QMainWindow mock"""
     def statusBar(self):
-        sb = type('StatusBar', (), {'addWidget': lambda self, w: None})()
+        # addPermanentWidget：状态栏右下角常驻的「导出任务」标签用它挂，
+        # 桩里缺了它，凡构造 ImageEditor 的用例都会在 init_ui 直接 AttributeError
+        sb = type('StatusBar', (), {
+            'addWidget': lambda self, w, *a: None,
+            'addPermanentWidget': lambda self, w, *a: None,
+        })()
         return sb
     def setCentralWidget(self, *a): pass
     def setWindowTitle(self, *a): pass
@@ -354,7 +359,8 @@ qtcore.Qt = type('Qt', (), {
     'Key_Delete': 0x01000007,
     'Horizontal': 1, 'CustomContextMenu': 1, 'StrongFocus': 2,
     'LeftButton': 1, 'RightButton': 2,
-    'ControlModifier': 0x04000000, 'KeepAspectRatio': 1,
+    'ControlModifier': 0x04000000, 'ShiftModifier': 0x02000000,
+    'KeepAspectRatio': 1,
     'SmoothTransformation': 1, 'transparent': 0,
     'PointingHandCursor': 18,
     'OpenHandCursor': 17,
@@ -391,6 +397,7 @@ qtcore.QRectF = type('QRectF', (), {
     'height': lambda self: 10,
     'left': lambda self: 0,
     'top': lambda self: 0,
+    'toRect': lambda self: qtcore.QRect(),
 })
 qtcore.QRect = type('QRect', (), {'__init__': lambda self, *a: None})
 qtcore.QSize = type('QSize', (), {'__init__': lambda self, w=0, h=0: None})
@@ -448,6 +455,11 @@ qtgui.QPainter = type('QPainter', (), {
     'drawLine': lambda self, *a: None,
     'drawText': lambda self, *a: None,
     'fillRect': lambda self, *a: None,
+    # 旋转贴图（保存合成图）要用这三个以及 save/restore；桩里是空操作。
+    'save': lambda self: None,
+    'restore': lambda self: None,
+    'translate': lambda self, *a: None,
+    'rotate': lambda self, *a: None,
     'end': lambda self: None,
     'font': lambda self: type('F', (), {'pointSize': lambda: 12})(),
     'fontMetrics': lambda self: type('FM', (), {
@@ -478,6 +490,9 @@ qtgui.QFont = type('QFont', (), {
 qtgui.QKeySequence = type('QKeySequence', (), {
     '__init__': lambda self, *a: None,
 })
+# `canvas_renderer` 画旋转贴图的边框要用 `QPolygonF`；桩里缺了它，凡导入
+# canvas_renderer 的测试都会在收集期直接 ImportError。
+qtgui.QPolygonF = type('QPolygonF', (), {'__init__': lambda self, *a: None})
 qtgui.QDragEnterEvent = type('QDragEnterEvent', (), {'__init__': lambda self, *a: None})
 qtgui.QDropEvent = type('QDropEvent', (), {'__init__': lambda self, *a: None})
 qtgui.QDrag = type('QDrag', (), {'__init__': lambda self, *a: None, 'exec_': lambda self, *a: 0})

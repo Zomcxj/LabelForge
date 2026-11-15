@@ -281,6 +281,10 @@ a = Analysis(
         'labelforge.engine.image_loader', 'labelforge.engine.image_loader.status',
         'labelforge.engine.image_loader.scan', 'labelforge.engine.image_loader.mixin',
         'labelforge.engine.paste_engine',
+        # 贴图项与融合、抠图：都由函数内 import 引入，PyInstaller 走不到
+        'labelforge.engine.paste_item', 'labelforge.engine.paste_fusion',
+        'labelforge.engine.matting', 'labelforge.engine.matting_model',
+        'labelforge.engine.matting_service',
         'labelforge.engine.event_handler',
         'labelforge.engine.yolo_exporter', 'labelforge.engine.splitter',
         'labelforge.engine.dataset_grouper', 'labelforge.ui.mixins.dataset_grouper',

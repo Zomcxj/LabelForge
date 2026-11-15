@@ -12,6 +12,7 @@ from ..engine.save_manager import SaveManager
 from ..engine.label_manager import LabelManager
 from ..engine.image_loader import ImageLoaderMixin
 from ..engine.paste_engine import PasteEngineMixin
+from ..engine.paste_item import as_paste_item
 from ..engine.event_handler import EventHandlerMixin
 from .i18n import t as tr
 from .theme import ThemeManager
@@ -134,6 +135,21 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         from ..core.config import BOX_BORDER_CONFIG
         BOX_BORDER_CONFIG['width'] = max(1, min(4, float(settings.get('box_border_width', BOX_BORDER_CONFIG['width']))))
 
+        # 抠图与融合：设置页写的就是这两份字典，启动时按配置文件回填，
+        # 保证「界面上看到的」就是「推理/保存时用的」。
+        from ..core.config import MATTING_CONFIG, PASTE_FUSION_CONFIG
+        MATTING_CONFIG['model_path'] = str(
+            settings.get('matte_model_path', MATTING_CONFIG['model_path']) or '').strip()
+        MATTING_CONFIG['preset'] = settings.get('matte_preset', MATTING_CONFIG['preset'])
+        MATTING_CONFIG['input_size'] = int(
+            settings.get('matte_input_size', MATTING_CONFIG['input_size']) or 0)
+        MATTING_CONFIG['threshold'] = float(
+            settings.get('matte_threshold', MATTING_CONFIG['threshold']) or 0.0)
+        MATTING_CONFIG['output_dir'] = str(
+            settings.get('matte_output_dir', MATTING_CONFIG['output_dir']) or '').strip()
+        PASTE_FUSION_CONFIG['seamless'] = bool(
+            settings.get('seamless_paste', PASTE_FUSION_CONFIG['seamless']))
+
     # `current_background` 是画布当前要画的图：赋值时就同步画布显示面板的
     # 显隐（不能在 paintEvent 里改控件可见性，那会偶发 0xC0000005 崩溃）。
     @property
@@ -183,6 +199,12 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self._run_worker = None
         self._progress_dialog = None
         self.model_row = None
+        # 抠图模型惰性构造：只有配置了权重才建实例，未配置时入口置灰
+        self._matting_model = None
+        self._matte_worker = None
+        # 批量抠图：一个线程跑完整批，账本留在 _matte_batch_report 上
+        self._matte_batch_worker = None
+        self._matte_batch_report = None
         # 视频抽帧行与模型行各自独立：只点一个是 1 行，都点开是 2 行
         # None = 还没设过筛选，按全选处理；换成具体集合才是真的过滤
         self._class_filter = None
@@ -397,6 +419,10 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
             self.auto_save_p_checkbox.setChecked(not is_annotate)
             self.auto_save_b_checkbox.setText(f"{tr('自动保存B')}({tr('标注')})" if is_annotate else tr("自动保存B"))
             self.auto_save_p_checkbox.setText(f"{tr('自动保存P')}({tr('贴图')})" if not is_annotate else tr("自动保存P"))
+        # 导出任务标签随模式显隐；测试替身没有这个方法，取不到就跳过
+        refresh_task = getattr(self, '_refresh_export_task_label', None)
+        if callable(refresh_task):
+            refresh_task()
         from PySide6.QtCore import QTimer
         mode_text = "Annotate" if self.edit_mode == 'annotate' else "Paste"
         self.status_label.setText(f"Mode: {mode_text}")
@@ -443,6 +469,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         )
         self.canvas.update()
         self.update_label_list()
+        self._refresh_export_task_label()
         if hasattr(self, '_notify_lint_boxes_changed'):
             self._notify_lint_boxes_changed()
 
@@ -455,8 +482,433 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         )
         self.canvas.update()
         self.update_label_list()
+        self._refresh_export_task_label()
         if hasattr(self, '_notify_lint_boxes_changed'):
             self._notify_lint_boxes_changed()
+
+    def _refresh_export_task_label(self):
+        """右下角显示当前图片的导出任务（det / seg / obb / pose）；只在贴图模式显示。
+
+        导出任务由贴图决定（贴图旋转会把它变成 obb），标注模式下这块信息用不上，
+        隐藏它给状态栏留出宽度。
+
+        任务类型不单独存一份：形状一改（贴图旋转、框转 OBB、加多边形/关键点）
+        任务就会变，所以每次刷新都按当前的贴图项与检测框重算。
+        """
+        label = getattr(self, 'export_task_label', None)
+        if label is None:
+            return
+        set_visible = getattr(label, 'setVisible', None)
+        if getattr(self, 'edit_mode', 'paste') != 'paste':
+            if set_visible is not None:
+                set_visible(False)
+            return
+        if set_visible is not None:
+            set_visible(True)
+        from ..engine.yolo_exporter import detect_task
+        entries = []
+        for raw in (getattr(self, 'canvas_items', None) or []):
+            try:
+                entries.append({"shape_type": as_paste_item(raw).shape_type})
+            except TypeError:
+                continue
+        for box in (getattr(self, 'detection_boxes', None) or []):
+            if not isinstance(box, dict):
+                continue
+            entries.append({"shape_type": box.get("shape_type") or "rectangle",
+                            "group_id": box.get("group_id")})
+        label.setText(f"{tr('导出任务')}: {detect_task(entries)}")
+
+    # ===== 抠图素材（区域/检测框右键） =====
+
+    @property
+    def matting_model(self):
+        """抠图模型实例；未配置权重时返回 None（菜单项据此置灰）。
+
+        惰性构造：只在第一次读这个属性（建菜单、点击入口）时检查一次权重，
+        配置里没填路径或文件不存在都算未配置，不去碰 onnxruntime。
+        """
+        if self._matting_model is not None:
+            return self._matting_model
+        from ..core.config import MATTING_CONFIG
+        from ..engine.matting_model import MattingModel
+
+        model_path = (MATTING_CONFIG.get('model_path') or '').strip()
+        if not model_path:
+            return None
+        try:
+            self._matting_model = MattingModel(
+                model_path=model_path,
+                preset=MATTING_CONFIG.get('preset') or 'rmbg14',
+                input_size=MATTING_CONFIG.get('input_size') or None,
+                threads=MATTING_CONFIG.get('threads') or 0,
+            )
+        except (FileNotFoundError, ValueError):
+            return None
+        return self._matting_model
+
+    @matting_model.setter
+    def matting_model(self, value):
+        """注入/清空模型（设置页改完路径或测试替身用）。"""
+        self._matting_model = value
+
+    def _rebuild_matting_model(self):
+        """设置保存后按新配置重建模型；路径为空或权重不可用时清成 None。
+
+        构造只做参数与文件存在性校验，不建 onnxruntime 会话，所以这里可以
+        同步调；真正加载留到第一次推理。失败时把原因写到状态栏，入口置灰。
+        """
+        from ..core.config import MATTING_CONFIG
+        from ..engine.matting_model import MattingModel
+
+        path = (MATTING_CONFIG.get('model_path') or '').strip()
+        self._matting_model = None
+        if not path:
+            return
+        try:
+            self._matting_model = MattingModel(
+                model_path=path,
+                preset=MATTING_CONFIG.get('preset') or 'rmbg14',
+                input_size=MATTING_CONFIG.get('input_size') or None,
+                threads=MATTING_CONFIG.get('threads') or 0,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            self.status_label.setText(f"{tr('抠图模型不可用')}: {exc}")
+
+
+    def _matting_ready(self):
+        """抠图模型是否可用。"""
+        return self.matting_model is not None
+
+    def _matte_output_dir(self):
+        """抠图输出目录：配置值优先，否则 <背景图目录>_matting_output/。"""
+        from ..core.config import MATTING_CONFIG
+        from ..engine.matting_service import default_output_dir
+
+        configured = (MATTING_CONFIG.get('output_dir') or '').strip()
+        if configured:
+            return configured
+        base = getattr(self, '_memory_background_path', '') or ''
+        if not base:
+            base = os.path.dirname(self._matte_source_path())
+        return str(default_output_dir(base or os.getcwd()))
+
+    def _matte_source_path(self):
+        """当前背景图的完整路径；没有打开图片时返回空串。"""
+        images = getattr(self, 'background_images', None) or []
+        index = getattr(self, 'current_background_index', -1)
+        if 0 <= index < len(images):
+            return images[index]
+        return ''
+
+    def _current_background_rgb(self):
+        """当前背景图的 RGB 数组；没有背景图时返回 None。"""
+        pixmap = self.current_background
+        if pixmap is None:
+            return None
+        from ..engine.inference_image import qimage_to_rgb_array
+        return qimage_to_rgb_array(pixmap.toImage())
+
+    def _matte_plan(self, target):
+        """区域/标注 -> 抠图参数；取不到有效尺寸时返回 None。
+
+        只做取值，不碰像素也不碰模型，便于单独验证入口接线。
+        """
+        from ..engine.matting_service import target_box, target_polygon
+
+        if not isinstance(target, dict):
+            return None
+        try:
+            raw_box = target_box(target)
+        except (KeyError, TypeError, ValueError):
+            return None
+        if raw_box[2] <= 0 or raw_box[3] <= 0:
+            return None
+        return {
+            'box': raw_box,
+            'label': target.get('label') or 'object',
+            'source_name': os.path.basename(self._matte_source_path())
+                           or 'image.png',
+            'polygon': target_polygon(target),
+            'output_dir': self._matte_output_dir(),
+        }
+
+    def matte_selection_to_material(self, box=None, region=None):
+        """把 box 或 region 指代的区域抠成贴图素材。
+
+        产物恒为矩形位图；贴图默认 det，不继承来源形状。推理与存盘在后台
+        线程里做，结果经 `_apply_matte_result` 回到主线程，因此本方法返回
+        None（路径在结果的 `path` 上）。
+        """
+        from ..core.config import MATTING_CONFIG
+        from .inference_workers import MatteWorker
+
+        model = self.matting_model
+        if model is None:
+            self.status_label.setText(tr("未配置抠图模型"))
+            return None
+
+        worker = getattr(self, '_matte_worker', None)
+        if worker is not None and worker.isRunning():
+            self.status_label.setText(tr("正在抠图，请稍候"))
+            return None
+
+        plan = self._matte_plan(box if box is not None else region)
+        if plan is None:
+            self.status_label.setText(tr("请先选中一个区域或检测框"))
+            return None
+
+        rgb = self._current_background_rgb()
+        if rgb is None:
+            self.status_label.setText(tr("当前没有可抠图的背景图"))
+            return None
+
+        worker = MatteWorker(
+            model, rgb, plan,
+            threshold=MATTING_CONFIG.get('threshold', 0.0),
+            margin_ratio=MATTING_CONFIG.get('margin_ratio', 0.05))
+        worker.done.connect(self._apply_matte_result)
+        worker.failed.connect(self._on_matte_failed)
+        worker.finished.connect(self._on_matte_worker_finished)
+        self._matte_worker = worker
+        # 抠图期间不许再触发贴图/保存一类的画布改动
+        self._busy = True
+        self.status_label.setText(tr("正在抠图…"))
+        worker.start()
+        return None
+
+    def is_matte_running(self):
+        """是否有抠图线程在跑（单个或批量）。"""
+        for name in ('_matte_worker', '_matte_batch_worker'):
+            worker = getattr(self, name, None)
+            if worker is not None and worker.isRunning():
+                return True
+        return False
+
+    def cancel_matte_selection(self):
+        """取消进行中的抠图：线程在步骤之间退出，已落盘的文件保留。"""
+        worker = getattr(self, '_matte_worker', None)
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+            self.status_label.setText(tr("已取消抠图"))
+            return
+        batch = getattr(self, '_matte_batch_worker', None)
+        if batch is not None and batch.isRunning():
+            batch.cancel()
+            self.status_label.setText(tr("正在取消抠图…"))
+
+    def _apply_matte_result(self, result):
+        """抠图成功：贴图模式接到画布，标注模式只把 PNG 落到输出目录。
+
+        标注模式下抠图是「导出一张素材」的动作：不往画布加贴图项、不写
+        JSON、不动标注，只在状态栏报文件名；贴图模式则把产物接到画布上，
+        由用户自己决定什么时候保存。
+        """
+        from ..engine.matting_service import paste_item_from_matte
+        from ..engine.paste_fusion import rgba_to_pixmap
+
+        name = os.path.basename(result.path)
+        if getattr(self, 'edit_mode', 'paste') == 'annotate':
+            self.status_label.setText(f"{tr('已抠出')}: {name}")
+            return
+
+        self.save_undo_state()
+        item = paste_item_from_matte(
+            pixmap=rgba_to_pixmap(result.rgba),
+            rect=result.rect, label=result.label, path=result.path)
+        self.canvas_items.append(item)
+        # 抠完直接选中这一项：紧接着旋转/裁剪都作用在它身上
+        self.selected_item = len(self.canvas_items) - 1
+        _x, _y, _w, _h = item.rect_tuple()
+        self.selected_item_size = (_w, _h)
+        if self.current_background_index >= 0:
+            self.canvas_items_dict[self.current_background_index] = \
+                self.canvas_items.copy()
+        self._refresh_export_task_label()
+        # 素材已经写进文件夹：刷新贴图列表，让它在列表里立刻能选到
+        # （从文件夹加载的列表会重扫目录，抠图输出目录里的新文件就会出现）
+        refresh_list = getattr(self, 'refresh_paste_files', None)
+        if callable(refresh_list):
+            refresh_list()
+        self.canvas.update()
+        self.status_label.setText(f"{tr('已抠出')}: {name}")
+
+    def crop_matte_material(self, item_index, rect):
+        """把抠图素材裁到 rect（图像坐标），结果覆盖写回原 PNG。
+
+        画布上的贴图项同步改成裁剪后的位置与尺寸；旋转过的贴图不允许裁剪，
+        否则写回的像素与画布上看到的不一致。
+        """
+        from ..engine.matting_service import save_matte_png
+        from ..engine.paste_fusion import pixmap_to_rgba, rgba_to_pixmap
+        from ..engine.paste_item import PasteItem, as_paste_item
+
+        items = getattr(self, 'canvas_items', None) or []
+        if not (0 <= item_index < len(items)):
+            return False
+
+        item = as_paste_item(items[item_index])
+        path = getattr(item, 'path', None)
+        if not path:
+            self.status_label.setText(tr("该贴图不是抠图素材，无法写回文件"))
+            return False
+        if abs(item.angle) > 1e-9:
+            self.status_label.setText(tr("请先重置旋转再裁剪"))
+            return False
+
+        x, y, w, h = item.rect_tuple()
+        left = max(x, float(rect[0]))
+        top = max(y, float(rect[1]))
+        right = min(x + w, float(rect[0]) + float(rect[2]))
+        bottom = min(y + h, float(rect[1]) + float(rect[3]))
+        if right - left < 1 or bottom - top < 1:
+            self.status_label.setText(tr("裁剪范围太小"))
+            return False
+
+        source = pixmap_to_rgba(item.pixmap, max(1, int(round(w))),
+                                max(1, int(round(h))))
+        scale_x = source.shape[1] / float(w)
+        scale_y = source.shape[0] / float(h)
+        x0 = max(0, int(round((left - x) * scale_x)))
+        y0 = max(0, int(round((top - y) * scale_y)))
+        x1 = min(source.shape[1], int(round((right - x) * scale_x)))
+        y1 = min(source.shape[0], int(round((bottom - y) * scale_y)))
+        cropped = source[y0:y1, x0:x1]
+        if cropped.size == 0 or not cropped[:, :, 3].any():
+            self.status_label.setText(tr("裁剪后没有内容"))
+            return False
+
+        self.save_undo_state()
+        try:
+            save_matte_png(cropped, path)
+        except OSError as exc:
+            self.status_label.setText(
+                f"{tr('裁剪失败')}: {exc}")
+            return False
+
+        new_pixmap = rgba_to_pixmap(cropped)
+        items[item_index] = PasteItem(
+            pixmap=new_pixmap,
+            rect=(left, top, right - left, bottom - top),
+            label=item.label, angle=0.0, path=path)
+        if self.current_background_index >= 0:
+            self.canvas_items_dict[self.current_background_index] = (
+                self.canvas_items.copy())
+        self.selected_item = item_index
+        _cx, _cy, _cw, _ch = items[item_index].rect_tuple()
+        self.selected_item_size = (_cw, _ch)
+        self._refresh_export_task_label()
+        # 文件变了，列表里那份缓存也得换：否则缩略图还是旧图，
+        # 再从列表拖到画布上拿到的也是裁剪前的像素。
+        sync = getattr(self, 'sync_paste_pixmap', None)
+        if callable(sync):
+            sync(path, new_pixmap)
+        self.canvas.update()
+        self.status_label.setText(
+            f"{tr('已裁剪素材')}: {os.path.basename(path)}")
+        return True
+
+    def _on_matte_failed(self, message):
+        """抠图失败：只报原因，画布与标注都不动。"""
+        self.status_label.setText(f"{tr('抠图失败')}: {message}")
+
+    def _on_matte_worker_finished(self):
+        """线程收尾：无论成功、失败还是取消都复位忙碌态。"""
+        self._busy = False
+        self._matte_worker = None
+
+    # ===== 批量抠图（工具栏「抠图」） =====
+
+    def _matte_batch_jobs(self):
+        """数据集里所有带标注的图 -> [(路径, [标注...])]。
+
+        标注只读：缓存里有就用缓存，没有就从 sidecar JSON 读一次
+        （`load_detection_boxes` 只读文件，不写回）。贴图形状是已经贴上去的
+        产物，不是可抠的素材，批量时排除。
+        """
+        images = getattr(self, 'background_images', None) or []
+        cache = getattr(self, 'detection_boxes_dict', None) or {}
+        jobs = []
+        for index, path in enumerate(images):
+            boxes = cache.get(index)
+            if boxes is None:
+                boxes = self.load_detection_boxes(path)
+            targets = [box for box in (boxes or [])
+                       if isinstance(box, dict) and not box.get('is_paste')]
+            if targets:
+                jobs.append((path, targets))
+        return jobs
+
+    def batch_matte_dataset(self):
+        """对数据集所有标注目标批量抠图：串行、可取消、单张失败不中断。
+
+        整个批次在后台线程里跑（见 `BatchMatteWorker`），所以这里立刻返回；
+        不切当前图、不动标注，只往抠图输出目录写 PNG。
+        """
+        from ..core.config import MATTING_CONFIG
+        from .inference_workers import BatchMatteWorker
+
+        if not self._matting_ready():
+            self.status_label.setText(tr("未配置抠图模型"))
+            return None
+
+        worker = getattr(self, '_matte_batch_worker', None)
+        if worker is not None and worker.isRunning():
+            self.status_label.setText(tr("正在抠图，请稍候"))
+            return None
+
+        jobs = self._matte_batch_jobs()
+        total = sum(len(boxes) for _, boxes in jobs)
+        if not total:
+            self.status_label.setText(tr("没有可抠图的目标"))
+            return None
+
+        worker = BatchMatteWorker(
+            self.matting_model, jobs, self._matte_output_dir(),
+            threshold=MATTING_CONFIG.get('threshold', 0.0),
+            margin_ratio=MATTING_CONFIG.get('margin_ratio', 0.05))
+        worker.progress.connect(self._on_matte_batch_progress)
+        worker.finished_ok.connect(self._on_matte_batch_finished)
+        worker.failed.connect(self._on_matte_failed)
+        worker.finished.connect(self._on_matte_batch_worker_finished)
+        self._matte_batch_worker = worker
+        self._matte_batch_report = None
+        self._busy = True
+        self.status_label.setText(f"{tr('抠图中')}: 0/{total}")
+        worker.start()
+        return None
+
+    def _on_matte_batch_progress(self, done, total):
+        """批量进度：只在状态栏报「抠图中: 已完成/总数」。"""
+        self.status_label.setText(f"{tr('抠图中')}: {done}/{total}")
+
+    def _on_matte_batch_finished(self, report):
+        """批量结束：状态栏只报三个数，逐条失败原因写日志。"""
+        self._matte_batch_report = report
+        saved, skipped, failed = report.counts()
+        if report.cancelled:
+            self.status_label.setText(
+                f"{tr('已取消抠图')}: {tr('已完成')} {saved}/{report.total}")
+        else:
+            self.status_label.setText(
+                f"{tr('抠图完成')}: {saved}，{tr('跳过')}: {skipped}，"
+                f"{tr('失败')}: {failed}")
+        self._log_matte_batch_failures(report.failed)
+
+    def _log_matte_batch_failures(self, failures):
+        """失败清单写日志（状态栏只放得下计数，逐条原因留给日志）。"""
+        if not failures:
+            return
+        log = getattr(self, '_log_error', None)
+        if not callable(log):
+            return
+        for path, label, message in failures:
+            log(f"[抠图] {path} · {label} · {message}")
+
+    def _on_matte_batch_worker_finished(self):
+        """批量线程收尾：复位忙碌态（成功/失败/取消都走这里）。"""
+        self._busy = False
+        self._matte_batch_worker = None
 
     def toggle_grid(self):
         """切换网格显示"""
@@ -587,6 +1039,11 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         if compose_worker is not None and compose_worker.isRunning():
             compose_worker.cancel()
             compose_worker.wait(3000)
+        # 抠图线程同理：活线程会在窗口销毁后继续写盘
+        matte_worker = getattr(self, '_matte_worker', None)
+        if matte_worker is not None and matte_worker.isRunning():
+            matte_worker.cancel()
+            matte_worker.wait(3000)
         if hasattr(self, '_close_health_worker'):
             self._close_health_worker()
         if hasattr(self, '_processing_panel') and self._processing_panel:
@@ -615,7 +1072,8 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
     def get_label_stats(self):
         """获取标签统计"""
         stats = {}
-        for _, _, label in self.canvas_items:
+        for entry in self.canvas_items:
+            label = as_paste_item(entry).label
             stats[label] = stats.get(label, 0) + 1
         for box in self.detection_boxes:
             label = box.get('label', 'unknown')

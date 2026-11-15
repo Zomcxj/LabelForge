@@ -6,7 +6,8 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QGroupBox, QScrollArea, QWidget, QSpinBox, QStackedWidget,
-    QComboBox, QDoubleSpinBox, QListWidget, QListWidgetItem, QAbstractItemView
+    QComboBox, QDoubleSpinBox, QListWidget, QListWidgetItem, QAbstractItemView,
+    QFileDialog, QCheckBox
 )
 from PySide6.QtGui import QColor
 from PySide6.QtCore import Qt, QEvent
@@ -50,7 +51,8 @@ class SettingsDialog(QDialog):
         self._sync_titlebar()
 
     def closeEvent(self, event):
-        """关闭时恢复主窗口快捷键"""
+        """关闭时恢复主窗口快捷键，并收掉可能还在跑的权重下载。"""
+        self._stop_weight_download()
         super().closeEvent(event)
         if self._editor and hasattr(self._editor, '_shortcuts'):
             for sc in self._editor._shortcuts:
@@ -102,6 +104,13 @@ class SettingsDialog(QDialog):
         self.lint_page_btn.setMinimumHeight(38)
         self.lint_page_btn.clicked.connect(lambda: self._switch_page(2))
         nav_layout.addWidget(self.lint_page_btn)
+
+        self.matte_page_btn = QPushButton(tr("抠图"))
+        self.matte_page_btn.setCheckable(True)
+        self.matte_page_btn.setFixedWidth(108)
+        self.matte_page_btn.setMinimumHeight(38)
+        self.matte_page_btn.clicked.connect(lambda: self._switch_page(3))
+        nav_layout.addWidget(self.matte_page_btn)
         nav_layout.addStretch()
 
         self.stack = QStackedWidget()
@@ -442,6 +451,108 @@ class SettingsDialog(QDialog):
 
         self.stack.addWidget(lint_group)
 
+        # ===== 抠图页：抠图模型 + 贴图融合 =====
+        from ..core.config import MATTING_CONFIG, PASTE_FUSION_CONFIG
+
+        matte_page = QWidget()
+        matte_page_layout = QVBoxLayout(matte_page)
+        matte_page_layout.setContentsMargins(0, 0, 0, 0)
+
+        matte_group = QGroupBox(tr("抠图"))
+        matte_layout = QVBoxLayout(matte_group)
+        matte_layout.setContentsMargins(19, 14, 9, 9)
+
+        matte_path_row = QHBoxLayout()
+        matte_path_row.addWidget(QLabel(tr("权重路径") + ":"))
+        self.matte_path_input = QLineEdit()
+        self.matte_path_input.setObjectName("shortcutInput")
+        # 路径要看到文件名，给足宽度；标签不再按 2:1 挤压输入框
+        self.matte_path_input.setMinimumWidth(300)
+        self.matte_path_input.setText(str(MATTING_CONFIG.get('model_path') or ''))
+        matte_path_row.addWidget(self.matte_path_input, 1)
+        self.matte_path_btn = QPushButton(tr("浏览..."))
+        self.matte_path_btn.clicked.connect(self._choose_matte_model)
+        matte_path_row.addWidget(self.matte_path_btn)
+        # 权重不随包分发：这里一键下到约定目录，用户不用自己找镜像
+        self.matte_download_btn = QPushButton(tr("下载权重"))
+        self.matte_download_btn.setToolTip(
+            tr("下载 RMBG-1.4 权重到 项目目录/model/rmbg14.onnx（约 168 MB，非商用许可）"))
+        self.matte_download_btn.clicked.connect(self._download_matte_weight)
+        matte_path_row.addWidget(self.matte_download_btn)
+        matte_layout.addLayout(matte_path_row)
+
+        matte_size_row = QHBoxLayout()
+        matte_size_row.addWidget(QLabel(tr("输入尺寸") + ":"), 2)
+        self.matte_input_size_spin = QSpinBox()
+        self.matte_input_size_spin.setObjectName("paramSpin")
+        self.matte_input_size_spin.setRange(0, 8192)
+        self.matte_input_size_spin.setSingleStep(32)
+        self.matte_input_size_spin.setSpecialValueText(tr("按预设"))
+        self.matte_input_size_spin.setMinimumWidth(150)
+        self.matte_input_size_spin.setToolTip(
+            tr("0 表示按预设（1024）；换用其它导出时再填具体尺寸"))
+        matte_size_row.addWidget(self.matte_input_size_spin)
+        matte_size_row.addStretch()
+        matte_layout.addLayout(matte_size_row)
+
+        matte_threshold_row = QHBoxLayout()
+        matte_threshold_row.addWidget(QLabel(tr("阈值") + ":"), 2)
+        self.matte_threshold_spin = QDoubleSpinBox()
+        self.matte_threshold_spin.setObjectName("paramSpin")
+        self.matte_threshold_spin.setRange(0.0, 1.0)
+        self.matte_threshold_spin.setSingleStep(0.05)
+        self.matte_threshold_spin.setDecimals(2)
+        self.matte_threshold_spin.setMinimumWidth(150)
+        self.matte_threshold_spin.setToolTip(
+            tr("0 保留软 alpha；大于 0 时按该值切硬边"))
+        matte_threshold_row.addWidget(self.matte_threshold_spin)
+        matte_threshold_row.addStretch()
+        matte_layout.addLayout(matte_threshold_row)
+
+        matte_out_row = QHBoxLayout()
+        matte_out_row.addWidget(QLabel(tr("输出目录") + ":"))
+        self.matte_output_dir_input = QLineEdit()
+        self.matte_output_dir_input.setObjectName("shortcutInput")
+        self.matte_output_dir_input.setMinimumWidth(300)
+        self.matte_output_dir_input.setText(str(MATTING_CONFIG.get('output_dir') or ''))
+        matte_out_row.addWidget(self.matte_output_dir_input, 1)
+        self.matte_output_dir_btn = QPushButton(tr("浏览..."))
+        self.matte_output_dir_btn.clicked.connect(self._choose_matte_output_dir)
+        matte_out_row.addWidget(self.matte_output_dir_btn)
+        matte_layout.addLayout(matte_out_row)
+
+        self.matte_output_hint = QLabel(
+            tr("留空表示输出到 <背景图目录>_matting_output/"))
+        self.matte_output_hint.setWordWrap(True)
+        matte_layout.addWidget(self.matte_output_hint)
+
+        matte_bench_row = QHBoxLayout()
+        self.matte_benchmark_btn = QPushButton(tr("基准测试"))
+        self.matte_benchmark_btn.setToolTip(
+            tr("用当前权重跑三次，取中位数耗时"))
+        self.matte_benchmark_btn.clicked.connect(self._run_matte_benchmark)
+        matte_bench_row.addWidget(self.matte_benchmark_btn)
+        self.matte_status_label = QLabel("")
+        self.matte_status_label.setWordWrap(True)
+        matte_bench_row.addWidget(self.matte_status_label, 1)
+        matte_layout.addLayout(matte_bench_row)
+
+        matte_layout.addStretch()
+        matte_page_layout.addWidget(matte_group)
+
+        fusion_group = QGroupBox(tr("贴图融合"))
+        fusion_layout = QVBoxLayout(fusion_group)
+        fusion_layout.setContentsMargins(19, 14, 9, 9)
+        self.seamless_checkbox = QCheckBox(tr("泊松融合"))
+        self.seamless_checkbox.setChecked(bool(PASTE_FUSION_CONFIG.get('seamless')))
+        self.seamless_checkbox.setToolTip(
+            tr("勾选后保存合成图时按泊松融合落笔；画布预览仍是普通叠加"))
+        fusion_layout.addWidget(self.seamless_checkbox)
+        fusion_layout.addStretch()
+        matte_page_layout.addWidget(fusion_group)
+
+        self.stack.addWidget(matte_page)
+
         content_layout.addLayout(nav_layout, 0)
         content_layout.addWidget(self.stack, 1)
 
@@ -517,6 +628,159 @@ class SettingsDialog(QDialog):
         self.shortcut_page_btn.setChecked(index == 0)
         self.options_page_btn.setChecked(index == 1)
         self.lint_page_btn.setChecked(index == 2)
+        self.matte_page_btn.setChecked(index == 3)
+
+    # ---------- 抠图页 ----------
+
+    def _choose_matte_model(self):
+        """选择抠图权重文件（.onnx），选完只改输入框，保存时才落盘。"""
+        path, _ = QFileDialog.getOpenFileName(
+            self, i18n.t("选择抠图模型权重"), self.matte_path_input.text(),
+            "ONNX (*.onnx)")
+        if path:
+            self.matte_path_input.setText(path)
+
+    def _download_matte_weight(self):
+        """把 RMBG-1.4 权重下到约定目录；已有文件时只提示，不覆盖。"""
+        import os
+
+        from ..engine.matting_model import WEIGHT_DOWNLOAD, preset_weight_path
+
+        info = WEIGHT_DOWNLOAD.get('rmbg14')
+        if not info:
+            self.matte_status_label.setText(i18n.t("未配置抠图模型"))
+            return
+        target = preset_weight_path('rmbg14')
+        # 先看已经填好的权重路径，再看默认位置：任意一个已有文件就只提示，
+        # 免得误点一次白下 168 MB。
+        typed = self.matte_path_input.text().strip()
+        for existing in (typed, target):
+            if existing and os.path.isfile(existing):
+                if not typed:
+                    self.matte_path_input.setText(existing)
+                self.matte_status_label.setText(i18n.t("权重已就位"))
+                return
+
+        worker = getattr(self, '_weight_worker', None)
+        if worker is not None and worker.isRunning():
+            return
+
+        from .inference_workers import WeightDownloadWorker
+
+        self.matte_download_btn.setEnabled(False)
+        self.matte_status_label.setText(i18n.t("开始下载…"))
+        worker = WeightDownloadWorker(
+            info['url'], target, info.get('size', 0),
+            info.get('sha256', ''), parent=self)
+        worker.progress.connect(self._on_weight_progress)
+        worker.finished_ok.connect(self._on_weight_downloaded)
+        worker.failed.connect(self._on_weight_failed)
+        worker.finished.connect(self._on_weight_worker_finished)
+        self._weight_worker = worker
+        worker.start()
+
+    def _on_weight_progress(self, done, total):
+        """下载进度：总数未知时只报已下载多少 MB。"""
+        done_mb = done / 1024 / 1024
+        if total:
+            self.matte_status_label.setText(
+                i18n.t("下载中：{done}/{total} MB").format(
+                    done=f"{done_mb:.0f}", total=f"{total / 1024 / 1024:.0f}"))
+        else:
+            self.matte_status_label.setText(
+                i18n.t("下载中：{done} MB").format(done=f"{done_mb:.0f}"))
+
+    def _on_weight_downloaded(self, path):
+        """下完校验通过：把路径填进输入框（用户点保存后才生效）。"""
+        if not self.matte_path_input.text().strip():
+            self.matte_path_input.setText(path)
+        self.matte_status_label.setText(i18n.t("权重已下载，点保存后生效"))
+
+    def _on_weight_failed(self, message):
+        self.matte_status_label.setText(
+            i18n.t("下载失败：{err}").format(err=message))
+
+    def _on_weight_worker_finished(self):
+        self.matte_download_btn.setEnabled(True)
+        self._weight_worker = None
+
+    def _stop_weight_download(self):
+        """关窗时收掉下载线程，避免线程还在写文件、窗口对象已经没了。"""
+        worker = getattr(self, '_weight_worker', None)
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+            worker.wait(3000)
+
+    def _choose_matte_output_dir(self):
+        """选择抠图输出目录；取消则不动（留空即默认目录）。"""
+        directory = QFileDialog.getExistingDirectory(
+            self, i18n.t("输出目录"), self.matte_output_dir_input.text())
+        if directory:
+            self.matte_output_dir_input.setText(directory)
+
+    def _run_matte_benchmark(self):
+        """用当前权重跑三次取中位数，把耗时写在按钮右边。
+
+        这台机器没有权重时这里只报「模型不可用」，不会联网也不会自动下载。
+        """
+        from ..core.config import MATTING_CONFIG
+        from ..engine.matting_model import MattingModel
+
+        path = self.matte_path_input.text().strip()
+        if not path:
+            self.matte_status_label.setText(i18n.t("未配置抠图模型"))
+            return
+        preset = MATTING_CONFIG.get('preset') or 'rmbg14'
+        input_size = int(self.matte_input_size_spin.value()) or None
+        try:
+            model = MattingModel(
+                model_path=path, preset=preset, input_size=input_size,
+                threads=MATTING_CONFIG.get('threads') or 0)
+        except (FileNotFoundError, ValueError) as exc:
+            self.matte_status_label.setText(f"{i18n.t('抠图模型不可用')}: {exc}")
+            return
+
+        import numpy as np
+        size = int(model.spec['input_size'])
+        probe = np.full((size, size, 3), 128, dtype=np.uint8)
+        try:
+            seconds = model.benchmark(probe, runs=3)
+        except Exception as exc:
+            self.matte_status_label.setText(f"{i18n.t('抠图失败')}: {exc}")
+            return
+        self.matte_status_label.setText(
+            f"{i18n.t('基准测试')}: {seconds * 1000:.0f} ms")
+
+    def _matte_settings(self):
+        """当前控件值 -> 抠图/融合配置项（钳位到合法范围）。"""
+        from ..core.config import MATTING_CONFIG
+
+        preset = MATTING_CONFIG.get('preset') or 'rmbg14'
+        return {
+            'matte_model_path': self.matte_path_input.text().strip(),
+            'matte_preset': preset,
+            'matte_input_size': max(0, min(8192,
+                                           int(self.matte_input_size_spin.value()))),
+            'matte_threshold': max(0.0, min(1.0,
+                                            float(self.matte_threshold_spin.value()))),
+            'matte_output_dir': self.matte_output_dir_input.text().strip(),
+            'seamless_paste': self.seamless_checkbox.isChecked(),
+        }
+
+    def _load_matte_settings(self):
+        """把已生效的抠图/融合配置填回控件（与其它页同源：读配置字典）。"""
+        from ..core.config import MATTING_CONFIG, PASTE_FUSION_CONFIG
+
+        self.matte_path_input.setText(str(MATTING_CONFIG.get('model_path') or ''))
+        self.matte_input_size_spin.setValue(
+            max(0, min(8192, int(MATTING_CONFIG.get('input_size') or 0))))
+        self.matte_threshold_spin.setValue(
+            max(0.0, min(1.0, float(MATTING_CONFIG.get('threshold') or 0.0))))
+        self.matte_output_dir_input.setText(
+            str(MATTING_CONFIG.get('output_dir') or ''))
+        self.seamless_checkbox.setChecked(
+            bool(PASTE_FUSION_CONFIG.get('seamless')))
+        self.matte_status_label.setText("")
 
     def eventFilter(self, obj, event):
         """拦截快捷键输入框的按键事件（含Ctrl+组合键）"""
@@ -610,6 +874,7 @@ class SettingsDialog(QDialog):
         self.crosshair_alpha_spin.setValue(max(0, min(255, int(CROSSHAIR_CONFIG.get('alpha', 160)))))
         self._update_crosshair_color_button()
         self._load_lint_ignored_rules()
+        self._load_matte_settings()
 
     def _load_lint_ignored_rules(self):
         """从配置加载质检忽略规则并刷新列表。"""
@@ -736,6 +1001,14 @@ class SettingsDialog(QDialog):
 
         from ..core import config_manager as cm
         max_labels = self.max_labels_spin.value()
+        from ..core.config import MATTING_CONFIG, PASTE_FUSION_CONFIG
+        matte_settings = self._matte_settings()
+        MATTING_CONFIG['model_path'] = matte_settings['matte_model_path']
+        MATTING_CONFIG['preset'] = matte_settings['matte_preset']
+        MATTING_CONFIG['input_size'] = matte_settings['matte_input_size']
+        MATTING_CONFIG['threshold'] = matte_settings['matte_threshold']
+        MATTING_CONFIG['output_dir'] = matte_settings['matte_output_dir']
+        PASTE_FUSION_CONFIG['seamless'] = matte_settings['seamless_paste']
         cm.save_all(
             shortcuts=shortcuts,
             max_labels=max_labels,
@@ -759,11 +1032,15 @@ class SettingsDialog(QDialog):
             crosshair_alpha=crosshair_alpha,
             box_border_width=box_border_width,
             lint_ignored_rules=self._lint_ignored_rules,
+            **matte_settings,
         )
         if self._editor:
             self._editor._max_labels = max_labels
             self._editor._lint_ignored_rules = {
                 k: list(v) for k, v in self._lint_ignored_rules.items()}
+            # 权重/预设改完要重建模型实例，否则入口仍按旧路径判断可用性
+            if hasattr(self._editor, '_rebuild_matting_model'):
+                self._editor._rebuild_matting_model()
             if hasattr(self._editor, 'canvas'):
                 self._editor.canvas.update()
         self.accept()

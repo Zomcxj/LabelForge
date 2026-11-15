@@ -67,6 +67,11 @@ class ModelLoadWorker(QThread):
             else:
                 source = "user"
             size = detector.model_input_size()
+            # 在这里就把「不是检测模型」挡下来（例如误选了抠图权重）：
+            # 主线程随后会解析任务与输出格式，失败时只能打印异常栈
+            detector.resolve_task()
+            if detector.resolve_task() == "det":
+                detector.resolve_format()
             self.loaded.emit(detector, size, source)
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -124,6 +129,156 @@ class InferenceWorker(QThread):
 
     def cancel(self):
         self._interrupted = True
+
+
+class WeightDownloadWorker(QThread):
+    """后台下载抠图权重：先写 .part，校验大小与 sha256 通过后才改名。
+
+    下载与校验都在线程里做，界面只收进度；取消时删掉半截文件，目标路径上
+    永远不会留下不完整的权重。
+    """
+    progress = Signal(int, int)      # (已下载字节, 总字节；未知时为 0)
+    finished_ok = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, url, target, expected_size=0, expected_sha256="",
+                 parent=None):
+        super().__init__(parent)
+        self._url = url
+        self._target = target
+        self._expected_size = int(expected_size or 0)
+        self._expected_sha256 = (expected_sha256 or "").lower()
+        self._cancelled = False
+
+    def run(self):
+        import hashlib
+        import urllib.request
+
+        part = self._target + ".part"
+        try:
+            folder = os.path.dirname(os.path.abspath(self._target))
+            if folder:
+                os.makedirs(folder, exist_ok=True)
+            request = urllib.request.Request(
+                self._url, headers={"User-Agent": "LabelForge"})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                total = int(response.headers.get("Content-Length") or 0)
+                done = 0
+                with open(part, "wb") as handle:
+                    while True:
+                        if self._cancelled:
+                            raise RuntimeError(tr("已取消下载"))
+                        chunk = response.read(1 << 20)
+                        if not chunk:
+                            break
+                        handle.write(chunk)
+                        done += len(chunk)
+                        self.progress.emit(done, total)
+
+            size = os.path.getsize(part)
+            if self._expected_size and size != self._expected_size:
+                raise RuntimeError(
+                    tr("文件大小不符：{size} 字节，应为 {want}").format(
+                        size=size, want=self._expected_size))
+            if self._expected_sha256:
+                digest = hashlib.sha256()
+                with open(part, "rb") as handle:
+                    for block in iter(lambda: handle.read(1 << 20), b""):
+                        digest.update(block)
+                if digest.hexdigest() != self._expected_sha256:
+                    raise RuntimeError(tr("校验值不符，下载可能被截断或损坏"))
+            os.replace(part, self._target)
+            self.finished_ok.emit(self._target)
+        except Exception as exc:
+            if os.path.exists(part):
+                try:
+                    os.remove(part)
+                except OSError:
+                    pass
+            self.failed.emit(str(exc))
+
+    def cancel(self):
+        self._cancelled = True
+
+
+class MatteWorker(QThread):
+    """后台单次抠图：裁块、推理、裁边、存盘。
+
+    `done` 带回 `matting_service.MatteResult`，主线程据此建 Pixmap 追加到贴图
+    列表（Qt 对象与 editor 状态只归主线程）。取消只在步骤之间生效：取消时
+    既不写临时文件也不改名，所以不会留下半截 PNG。
+    """
+    done = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, model, rgb, plan, threshold=0.0, margin_ratio=0.05,
+                 parent=None):
+        super().__init__(parent)
+        self._model = model
+        self._rgb = rgb
+        self._plan = dict(plan)
+        self._threshold = threshold
+        self._margin_ratio = margin_ratio
+        self._cancelled = False
+
+    def run(self):
+        from ..engine import matting_service
+        try:
+            result = matting_service.matte_selection(
+                self._model, self._rgb,
+                threshold=self._threshold,
+                margin_ratio=self._margin_ratio,
+                cancel=lambda: self._cancelled,
+                **self._plan)
+            if result is not None:
+                self.done.emit(result)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+    def cancel(self):
+        self._cancelled = True
+
+
+class BatchMatteWorker(QThread):
+    """后台批量抠图：按 job 逐个目标串行跑，与单张走同一个编排函数。
+
+    `finished_ok` 带回 `matting_service.BatchMatteReport`（含成功/跳过/失败三份
+    清单，界面据此汇总）。推理已经吃满 CPU，串行即可；取消只在目标之间生效，
+    已落盘的 PNG 保留，未开始的目标不产生任何文件。图片由后台线程自己读，
+    不切画布——批量只读标注、只写抠图输出目录。
+    """
+    progress = Signal(int, int)
+    finished_ok = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, model, jobs, output_dir, threshold=0.0,
+                 margin_ratio=0.05, loader=None, parent=None):
+        super().__init__(parent)
+        self._model = model
+        self._jobs = list(jobs)
+        self._output_dir = output_dir
+        self._threshold = threshold
+        self._margin_ratio = margin_ratio
+        self._loader = loader or load_rgb
+        self._cancelled = False
+
+    def run(self):
+        from ..engine import matting_service
+        try:
+            report = matting_service.matte_batch(
+                self._model, self._jobs, self._output_dir,
+                load_rgb=self._loader,
+                threshold=self._threshold,
+                margin_ratio=self._margin_ratio,
+                cancel=lambda: self._cancelled,
+                progress=self.progress.emit,
+            )
+            self.finished_ok.emit(report)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+    def cancel(self):
+        self._cancelled = True
 
 
 def class_names_prompt(parent, model_path, suggested_path, expected_count=None):

@@ -2,7 +2,11 @@
 EditorProtocol - 定义 Manager 可以访问的编辑器接口
 Manager 依赖此协议而非直接依赖 ImageEditor，实现解耦和可测试性
 """
-from typing import Protocol, runtime_checkable, List, Set, Dict, Optional, Any
+from typing import (Protocol, runtime_checkable, List, Set, Dict, Optional, Any,
+                    TYPE_CHECKING)
+
+if TYPE_CHECKING:
+    from ..engine.paste_item import PasteItem
 
 
 @runtime_checkable
@@ -27,8 +31,8 @@ class EditorProtocol(Protocol):
         ...
 
     @property
-    def canvas_items(self) -> List[tuple]:
-        """当前画布贴图 list[(QPixmap, QRectF, str)]"""
+    def canvas_items(self) -> List["PasteItem"]:
+        """当前画布贴图 list[PasteItem]"""
         ...
 
     @property
@@ -91,7 +95,7 @@ class EditorProtocol(Protocol):
     # ===== 可写数据 =====
 
     @canvas_items.setter
-    def canvas_items(self, value: List[tuple]) -> None: ...
+    def canvas_items(self, value: List["PasteItem"]) -> None: ...
 
     @detection_boxes.setter
     def detection_boxes(self, value: List[dict]) -> None: ...

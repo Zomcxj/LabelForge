@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, QPoint, QRectF
 
 from ..core.config import BACKGROUND_SCALE_CONFIG, WINDOW_CONFIG
 from ..core.utils import format_size_ratio
+from ..engine.paste_item import as_paste_item
 from .canvas_renderer import CanvasRendererMixin
 from .canvas_interaction import CanvasInteractionMixin
 
@@ -152,7 +153,9 @@ class Canvas(CanvasRendererMixin, CanvasInteractionMixin, QWidget):
         handle_size = PASTE_ITEM_CONFIG['handle_size']
 
         for i in range(len(self._editor.canvas_items) - 1, -1, -1):
-            pixmap, rect, label = self._editor.canvas_items[i]
+            # 贴图项的 rect 可能是 QRectF，也可能是抠图产物那样的 (x, y, w, h)
+            # 四元组；统一经 rect_tuple() 取值，别直接调 .x()
+            rect = QRectF(*as_paste_item(self._editor.canvas_items[i]).rect_tuple())
 
             item_x = (rect.x() * self.background_scale) + background_rect.left()
             item_y = (rect.y() * self.background_scale) + background_rect.top()

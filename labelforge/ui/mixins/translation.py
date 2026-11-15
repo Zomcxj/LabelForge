@@ -53,6 +53,9 @@ class TranslationMixin:
             self.video_lbl.setText(tr("视频:"))
         if hasattr(self, 'video_load_btn'):
             self.video_load_btn.setToolTip(tr("视频抽帧:"))
+        if hasattr(self, 'matte_btn'):
+            self.matte_btn.setText(tr("抠图"))
+            self.matte_btn.setToolTip(tr("对数据集所有标注目标批量抠图"))
         if hasattr(self, '_refresh_bg_label_mode_button'):
             self._refresh_bg_label_mode_button()
         if hasattr(self, 'view_toggle_btn'):
@@ -173,6 +176,9 @@ class TranslationMixin:
             self.canvas_adjustment.retranslate_ui()
         if hasattr(self, '_update_shortcut_status_label'):
             self._update_shortcut_status_label()
+        # 导出任务标签的文字是拼出来的，切语言时要重拼一次
+        if hasattr(self, '_refresh_export_task_label'):
+            self._refresh_export_task_label()
 
     def _refresh_menu_shortcuts(self):
         """刷新选项菜单中的快捷键显示"""

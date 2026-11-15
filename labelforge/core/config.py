@@ -63,6 +63,23 @@ PASTE_ITEM_CONFIG = {
     'base_scale_factor': 0.5,  # 基础缩放因子
 }
 
+# 贴图融合默认值
+PASTE_FUSION_CONFIG = {
+    'seamless': False,     # 泊松融合（仅保存时生效，默认关闭）
+    'ratio_perturb': 0.05,  # 随机贴图时宽高比扰动幅度
+}
+
+# 抠图配置
+MATTING_CONFIG = {
+    'model_path': '',        # 抠图模型 ONNX 路径，空表示未配置
+    'preset': 'rmbg14',      # 只支持 rmbg14；旧配置里的其它值会归一到它
+    'input_size': 0,         # 0 表示按预设（1024）
+    'threshold': 0.0,        # 0 保留软 alpha，>0 为硬边阈值
+    'output_dir': '',        # 空表示 <背景图目录>_matting_output/
+    'margin_ratio': 0.05,    # 裁块外扩比例
+    'threads': 0,            # 0 表示自动
+}
+
 # 窗口配置
 WINDOW_CONFIG = {
     'default_width': 1600,  # 默认窗口宽度

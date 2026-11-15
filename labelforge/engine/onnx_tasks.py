@@ -107,18 +107,37 @@ def pose_keypoint_names(session):
     return []
 
 
+def static_shape(out):
+    """输出的静态维度；含符号名（`batch_size`、None）时返回 None。
+
+    动态轴导出的模型会把维度写成名字，`int()` 直接转会抛 ValueError。
+    这种输出不是检测头，跳过即可，不该当成错误往上抛。
+    """
+    dims = []
+    for dim in out.shape:
+        try:
+            dims.append(int(dim))
+        except (TypeError, ValueError):
+            return None
+    return tuple(dims)
+
+
 def proto_index(outputs):
     """找掩膜原型输出：4 维且通道数等于 MASK_DIM。返回 (下标, shape) 或 None。"""
     for index, out in enumerate(outputs):
-        shape = tuple(int(d) for d in out.shape)
-        if len(shape) == 4 and shape[1] == MASK_DIM:
+        shape = static_shape(out)
+        if shape and len(shape) == 4 and shape[1] == MASK_DIM:
             return index, shape
     return None
 
 
 def _head_shapes(outputs):
-    return [(index, tuple(int(d) for d in out.shape))
-            for index, out in enumerate(outputs) if len(out.shape) == 3]
+    heads = []
+    for index, out in enumerate(outputs):
+        shape = static_shape(out)
+        if shape and len(shape) == 3:
+            heads.append((index, shape))
+    return heads
 
 
 def channel_count(shape):

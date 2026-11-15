@@ -1,7 +1,11 @@
 """
 Canvas 绘制混入 - 负责所有绘制逻辑（背景、贴图、检测框、临时框、网格）
 """
-from PySide6.QtGui import QPainter, QPixmap, QColor, QPen, QFont, QFontMetrics
+import math
+
+from PySide6.QtGui import (
+    QPainter, QPixmap, QColor, QPen, QFont, QFontMetrics, QPolygonF,
+)
 from PySide6.QtCore import Qt, QPointF, QRectF
 import numpy as np
 
@@ -10,6 +14,7 @@ from ..core.config import (
     CROSSHAIR_CONFIG, REGION_HANDLE_EXTRA,
 )
 from ..engine.inference_scope import ScopeError, iter_windows_with_index
+from ..engine.paste_item import as_paste_item
 from ..ui.theme import ThemeManager
 
 class CanvasRendererMixin:
@@ -104,6 +109,7 @@ class CanvasRendererMixin:
                 self._draw_temp_region_polygon(sp, background_rect)
 
             sp.setOpacity(1.0)
+            self._draw_crop_overlay(sp, background_rect)
 
             if (getattr(self._editor, 'edit_mode', 'paste') == 'annotate' and
                     self.mouse_inside and self._editor.current_background is not None and
@@ -425,21 +431,125 @@ class CanvasRendererMixin:
         from ..core.config import DETECTION_BOX_CONFIG, REGION_HANDLE_EXTRA
         return DETECTION_BOX_CONFIG['resize_handle_size'] + REGION_HANDLE_EXTRA
 
+    def _draw_crop_overlay(self, painter, background_rect):
+        """裁剪素材时的取景框：框内提亮，边框上画八个可拖的手柄。"""
+        rect = getattr(self, '_crop_rect', None)
+        if background_rect is None or rect is None or rect.isEmpty():
+            return
+        scale = self.background_scale
+        screen = QRectF(background_rect.left() + rect.x() * scale,
+                        background_rect.top() + rect.y() * scale,
+                        rect.width() * scale, rect.height() * scale)
+        painter.save()
+        painter.setBrush(QColor(255, 255, 255, 40))
+        painter.setPen(QPen(QColor(255, 255, 255, 200), 1, Qt.DashLine))
+        painter.drawRect(screen)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor(0, 0, 0, 160), 1, Qt.SolidLine))
+        painter.drawRect(screen.adjusted(1, 1, -1, -1))
+
+        # 八个手柄：四角 + 四边中点，与命中判定的八个方位一一对应
+        half = 3.0
+        points = (
+            (screen.left(), screen.top()), (screen.center().x(), screen.top()),
+            (screen.right(), screen.top()), (screen.right(), screen.center().y()),
+            (screen.right(), screen.bottom()),
+            (screen.center().x(), screen.bottom()),
+            (screen.left(), screen.bottom()),
+            (screen.left(), screen.center().y()),
+        )
+        painter.setBrush(QColor(255, 255, 255))
+        painter.setPen(QPen(QColor(0, 0, 0, 180), 1, Qt.SolidLine))
+        for px, py in points:
+            painter.drawRect(QRectF(px - half, py - half, half * 2, half * 2))
+        painter.restore()
+
     def _draw_paste_items(self, painter, background_rect):
-        """绘制所有贴图"""
-        for i, (pixmap, rect, label) in enumerate(self._editor.canvas_items):
-            item_x = (rect.x() * self.background_scale) + background_rect.left()
-            item_y = (rect.y() * self.background_scale) + background_rect.top()
-            item_width = rect.width() * self.background_scale
-            item_height = rect.height() * self.background_scale
-
-            item_rect = QRectF(item_x, item_y, item_width, item_height)
-            is_selected = (i == self._editor.selected_item)
-
-            is_pressed_label = self._is_pressed_label({"label": label})
-            self._draw_single_paste_item(
-                painter, pixmap, item_rect, label, is_selected, is_pressed_label, i
+        """绘制所有贴图；旋转过的绕中心画，其余按外接框直接画。"""
+        for i, entry in enumerate(self._editor.canvas_items):
+            item = as_paste_item(entry)
+            x, y, w, h = item.rect_tuple()
+            item_rect = QRectF(
+                x * self.background_scale + background_rect.left(),
+                y * self.background_scale + background_rect.top(),
+                w * self.background_scale,
+                h * self.background_scale,
             )
+            is_selected = (i == self._editor.selected_item)
+            is_pressed = self._is_pressed_label({"label": item.label})
+
+            if abs(item.angle) < 1e-9:
+                self._draw_single_paste_item(
+                    painter, item.pixmap, item_rect, item.label,
+                    is_selected, is_pressed, i)
+                continue
+
+            self._draw_transformed_paste(painter, item.pixmap, item_rect, item,
+                                         is_selected, is_pressed)
+            self._draw_paste_frame(painter, item.label, item_rect, is_selected,
+                                   is_pressed, item.angle)
+            self._draw_paste_extras(painter, item.label, item_rect, is_selected,
+                                    i, item.angle)
+
+    def _draw_transformed_paste(self, painter, pixmap, item_rect, item,
+                                is_selected, is_pressed):
+        """绘制贴图本体：绕贴图中心旋转。"""
+        painter.save()
+        painter.translate(item_rect.center())
+        painter.rotate(item.angle)
+        centered = QRectF(-item_rect.width() / 2, -item_rect.height() / 2,
+                          item_rect.width(), item_rect.height())
+        painter.drawPixmap(centered.toRect(), pixmap)
+        color = QColor(self._editor.get_label_color(item.label))
+        alpha = 155 if (is_selected or is_pressed) else 60
+        painter.fillRect(centered, QColor(color.red(), color.green(),
+                                          color.blue(), alpha))
+        painter.restore()
+
+    def _draw_paste_frame(self, painter, label, item_rect, is_selected,
+                          is_pressed, angle=0.0):
+        """贴图边框：无角度画矩形，有角度画旋转后的四边形。"""
+        label_color = QColor(self._editor.get_label_color(label))
+        border = (QColor(255, 255, 255)
+                  if (is_selected or is_pressed) else label_color)
+        painter.setPen(self._get_box_border_pen(border,
+                                                is_selected or is_pressed))
+        if abs(angle) > 1e-9:
+            painter.drawPolygon(QPolygonF(
+                self._rotated_screen_corners(item_rect, angle)))
+            return
+        rx, ry = int(item_rect.left()), int(item_rect.top())
+        rw = int(item_rect.left() + item_rect.width()) - rx
+        rh = int(item_rect.top() + item_rect.height()) - ry
+        painter.drawRect(rx, ry, rw, rh)
+
+    @staticmethod
+    def _rotated_screen_corners(item_rect, angle):
+        """屏幕矩形绕自身中心旋转后的四角。"""
+        center = item_rect.center()
+        rad = math.radians(angle)
+        cos_a, sin_a = math.cos(rad), math.sin(rad)
+        corners = []
+        for px, py in ((item_rect.left(), item_rect.top()),
+                       (item_rect.right(), item_rect.top()),
+                       (item_rect.right(), item_rect.bottom()),
+                       (item_rect.left(), item_rect.bottom())):
+            dx, dy = px - center.x(), py - center.y()
+            corners.append(QPointF(center.x() + dx * cos_a - dy * sin_a,
+                                   center.y() + dx * sin_a + dy * cos_a))
+        return corners
+
+    def _draw_paste_extras(self, painter, label, item_rect, is_selected,
+                           item_index=0, angle=0.0):
+        """缩放柄（选中时）与类别标签；有角度时标签后面带上角度。"""
+        if is_selected:
+            label_color = QColor(self._editor.get_label_color(label))
+            hovered = (self.hover_resize_target == 'item'
+                       and self.hover_resize_handle == 'br')
+            self._draw_resize_handle(painter, item_rect, QColor(255, 255, 255),
+                                     label_color, hovered)
+        self._draw_paste_label(painter, item_rect.left(), item_rect.top(),
+                               label, is_selected, item_index, angle)
 
     def _get_box_border_pen(self, border_color, is_selected):
         from ..core.config import BOX_BORDER_CONFIG
@@ -464,41 +574,14 @@ class CanvasRendererMixin:
         return QPen(color, pen_width)
 
     def _draw_single_paste_item(self, painter, pixmap, item_rect, label, is_selected, is_pressed_label, item_index=0):
-        """绘制单个贴图"""
-        item_x = item_rect.left()
-        item_y = item_rect.top()
-        item_width = item_rect.width()
-        item_height = item_rect.height()
-
-        label_color_hex = self._editor.get_label_color(label)
-        lr = int(label_color_hex[1:3], 16)
-        lg = int(label_color_hex[3:5], 16)
-        lb = int(label_color_hex[5:7], 16)
-
-        if is_selected or is_pressed_label:
-            border_color = QColor(255, 255, 255)
-        else:
-            border_color = QColor(lr, lg, lb)
-        pen = self._get_box_border_pen(border_color, is_selected or is_pressed_label)
-        painter.setPen(pen)
-        rx, ry = int(item_x), int(item_y)
-        rw = int(item_x + item_width) - rx
-        rh = int(item_y + item_height) - ry
-        painter.drawRect(rx, ry, rw, rh)
-
-        if is_selected or is_pressed_label:
-            self._draw_paste_with_overlay(painter, pixmap, item_rect, label, 155)
-        else:
-            self._draw_paste_with_overlay(painter, pixmap, item_rect, label, 60)
-
-        if is_selected:
-            is_handle_hovered = (
-                self.hover_resize_target == 'item' and
-                self.hover_resize_handle == 'br'
-            )
-            self._draw_resize_handle(painter, item_rect, QColor(255, 255, 255), QColor(lr, lg, lb), is_handle_hovered)
-
-        self._draw_paste_label(painter, item_x, item_y, label, is_selected, item_index)
+        """绘制单个贴图：边框、本体、缩放柄与类别标签（保持既有绘制顺序）。"""
+        self._draw_paste_frame(painter, label, item_rect, is_selected,
+                               is_pressed_label)
+        self._draw_paste_with_overlay(
+            painter, pixmap, item_rect, label,
+            155 if (is_selected or is_pressed_label) else 60)
+        self._draw_paste_extras(painter, label, item_rect, is_selected,
+                                item_index)
 
     def _draw_paste_with_overlay(self, painter, pixmap, item_rect, label, fill_alpha):
         """绘制带标签色透明覆盖层的贴图。
@@ -581,10 +664,13 @@ class CanvasRendererMixin:
         painter.drawText(text_rect, Qt.AlignLeft | Qt.AlignVCenter, label)
         painter.restore()
 
-    def _draw_paste_label(self, painter, x, y, label, is_selected, item_index=0):
-        """绘制贴图标签"""
+    def _draw_paste_label(self, painter, x, y, label, is_selected,
+                          item_index=0, angle=0.0):
+        """绘制贴图标签；旋转过的贴图在名字后带「NN°」。"""
         if not self._editor.show_paste_names_checkbox.isChecked():
             return
+        if abs(angle) > 1e-9:
+            label = f"{label} {angle:.0f}°"
         label_color_hex = self._editor.get_label_color(label)
         lr = int(label_color_hex[1:3], 16)
         lg = int(label_color_hex[3:5], 16)

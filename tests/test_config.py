@@ -81,3 +81,29 @@ class TestConfigStructures:
         """新标签按排序位置分配 colors[0]，不能是红色系（用户感知差）。"""
         r = int(config.LABEL_COLORS[0][1:3], 16)
         assert r < 200, config.LABEL_COLORS[0]
+
+
+def test_paste_fusion_config_has_required_defaults():
+    """羽化/调色/投影已随界面一起删除，只剩泊松融合与宽高比扰动。"""
+    from labelforge.core.config import PASTE_FUSION_CONFIG
+    assert PASTE_FUSION_CONFIG['seamless'] is False
+    assert 0.0 <= PASTE_FUSION_CONFIG['ratio_perturb'] <= 0.1
+    for gone in ('feather', 'feather_max', 'color_match', 'shadow'):
+        assert gone not in PASTE_FUSION_CONFIG
+
+
+def test_matting_config_defaults():
+    from labelforge.core.config import MATTING_CONFIG
+    assert MATTING_CONFIG['model_path'] == ''
+    assert MATTING_CONFIG['preset'] == 'rmbg14'
+    assert MATTING_CONFIG['input_size'] == 0
+    assert MATTING_CONFIG['threshold'] == 0.0
+    assert MATTING_CONFIG['output_dir'] == ''
+    assert MATTING_CONFIG['margin_ratio'] == 0.05
+    assert MATTING_CONFIG['threads'] == 0
+
+
+def test_seamless_paste_defaults_to_off():
+    """规格 A5：泊松融合是全局开关，出厂默认关闭。"""
+    from labelforge.core.config import PASTE_FUSION_CONFIG
+    assert PASTE_FUSION_CONFIG['seamless'] is False

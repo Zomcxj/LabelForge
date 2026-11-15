@@ -8,6 +8,7 @@ from PySide6.QtCore import Signal, QObject
 from PySide6.QtWidgets import QMenu, QListWidgetItem
 
 from ..core.utils import extract_label_name, shape_task_type, TASK_DATA_ROLE
+from .paste_item import as_paste_item
 from ..ui import dialog_helpers
 from ..ui.i18n import t as tr
 
@@ -117,9 +118,10 @@ class LabelManager(QObject):
             
             # 删除所有使用该标签的贴图
             new_canvas_items = []
-            for pixmap, rect, label in self.editor.canvas_items:
-                if label != label_to_delete:
-                    new_canvas_items.append((pixmap, rect, label))
+            for entry in self.editor.canvas_items:
+                item = as_paste_item(entry)
+                if item.label != label_to_delete:
+                    new_canvas_items.append(item)
             self.editor.canvas_items = new_canvas_items
             self.editor.selected_item = None
             
@@ -127,7 +129,7 @@ class LabelManager(QObject):
                 if i in self.editor.canvas_items_dict:
                     new_items = []
                     for item in self.editor.canvas_items_dict[i]:
-                        if item[2] != label_to_delete:
+                        if as_paste_item(item).label != label_to_delete:
                             new_items.append(item)
                     self.editor.canvas_items_dict[i] = new_items
             
@@ -960,17 +962,23 @@ class LabelManager(QObject):
 
         canvas_items = getattr(self.editor, 'canvas_items', None) or []
         for i in range(len(canvas_items)):
-            pixmap, rect, label = canvas_items[i]
-            if label == old_label:
-                canvas_items[i] = (pixmap, rect, new_label)
+            item = as_paste_item(canvas_items[i])
+            if item.label == old_label:
+                item.label = new_label
+                canvas_items[i] = item
 
         for index, items in list(getattr(self.editor, 'canvas_items_dict', {}).items()):
             updated_items = []
-            for item in items or []:
-                if item and len(item) >= 3 and item[2] == old_label:
-                    updated_items.append((item[0], item[1], new_label))
-                else:
-                    updated_items.append(item)
+            for entry in items or []:
+                try:
+                    item = as_paste_item(entry)
+                except TypeError:
+                    # 来源不明的坏记录原样保留，改名不该顺手删数据
+                    updated_items.append(entry)
+                    continue
+                if item.label == old_label:
+                    item.label = new_label
+                updated_items.append(item)
             self.editor.canvas_items_dict[index] = updated_items
 
         # 磁盘载入的贴图在内存里是 is_paste 检测框；不同步改名的话，

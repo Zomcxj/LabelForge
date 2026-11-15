@@ -6,6 +6,8 @@ from PySide6.QtCore import Qt, QRectF, QUrl, QMimeData
 from PySide6.QtGui import QDrag
 
 from ..core.config import BACKGROUND_SCALE_CONFIG, PASTE_ITEM_CONFIG, NUDGE_CONFIG, DETECTION_BOX_WHEEL_CONFIG, DETECTION_BOX_CONFIG
+from ..engine.paste_item import as_paste_item
+from ..ui.i18n import t as tr
 from .canvas_drawing import CanvasDrawingMixin
 from .canvas_menu import CanvasMenuMixin
 from .hit_test import (box_hit_by_cursor, canvas_rect_of,
@@ -77,6 +79,19 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 return
             if event.button() == Qt.LeftButton and self._editor.current_background:
                 self._handle_background_click(mouse_pos)
+            return
+
+        if self._crop_paste_active():
+            # 裁剪素材：左键抓住边框/角拖动，右键取消
+            self._drag_out_pending = False
+            if event.button() == Qt.LeftButton:
+                handle = self._crop_handle_at(mouse_pos)
+                if handle is not None:
+                    self._crop_handle = handle
+                    self.setCursor(Qt.ClosedHandCursor)
+                    self.update()
+            elif event.button() == Qt.RightButton:
+                self._cancel_paste_crop()
             return
 
         if getattr(self, 'is_drawing_region', False):
@@ -494,7 +509,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.selected_box = None
         self.selected_boxes = []
         self.resize_handle = None
-        _, rect, _ = self._editor.canvas_items[item_index]
+        # rect 可能是四元组（抠图产物），统一转成 QRectF 再用
+        rect = QRectF(*as_paste_item(
+            self._editor.canvas_items[item_index]).rect_tuple())
 
         if self._editor.selected_item != item_index:
             self._editor.selected_item = item_index
@@ -789,6 +806,12 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                     self._do_canvas_drag_out()
                     return
 
+        if self._crop_paste_active():
+            if getattr(self, '_crop_handle', None) is not None:
+                self._update_crop_rect(event.pos())
+            self.update()
+            return
+
         if getattr(self, 'is_drawing_polygon', False):
             self.update()
             return
@@ -917,7 +940,8 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 self._select_hovered_detection_box(bg_rect)):
             pass
         elif not is_annotate and (item_index := self.find_item_at_position(self.mouse_pos)) is not None:
-            _, rect, _ = self._editor.canvas_items[item_index]
+            rect = QRectF(*as_paste_item(
+                self._editor.canvas_items[item_index]).rect_tuple())
             self._editor.selected_item = item_index
             self.selected_item_size = (rect.width(), rect.height())
             self.selected_box = None
@@ -931,7 +955,8 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 self.setCursor(Qt.OpenHandCursor)
         elif (self._editor.selected_item is not None and
             0 <= self._editor.selected_item < len(self._editor.canvas_items)):
-            _, rect, _ = self._editor.canvas_items[self._editor.selected_item]
+            rect = QRectF(*as_paste_item(
+                self._editor.canvas_items[self._editor.selected_item]).rect_tuple())
             handle = self._item_handle_at_pos(self.mouse_pos, rect)
             if handle:
                 self.hover_resize_target = 'item'
@@ -1154,7 +1179,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         delta = self.mouse_pos - self.drag_start
         bg_rect = self.get_background_rect()
         if bg_rect:
-            p, rect, label = self._editor.canvas_items[self._editor.selected_item]
+            index = self._editor.selected_item
+            item = as_paste_item(self._editor.canvas_items[index])
+            rect = QRectF(*item.rect_tuple())
             dx = delta.x() / self.background_scale
             dy = delta.y() / self.background_scale
 
@@ -1170,8 +1197,8 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 nx = min(nx, bw - rect.width())
                 ny = min(ny, bh - rect.height())
 
-            nr = QRectF(nx, ny, rect.width(), rect.height())
-            self._editor.canvas_items[self._editor.selected_item] = (p, nr, label)
+            item.rect = QRectF(nx, ny, rect.width(), rect.height())
+            self._editor.canvas_items[index] = item
             self.drag_start = self.mouse_pos
             self.update()
 
@@ -1179,7 +1206,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if not self._can_edit_canvas():
             return
         if self._editor.current_background:
-            p, rect, label = self._editor.canvas_items[self._editor.selected_item]
+            index = self._editor.selected_item
+            item = as_paste_item(self._editor.canvas_items[index])
+            rect = QRectF(*item.rect_tuple())
             nr = QRectF(rect)
 
             bg_rect = self.get_background_rect()
@@ -1222,7 +1251,8 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
 
                 self.selected_item_size = (new_w, new_h)
 
-            self._editor.canvas_items[self._editor.selected_item] = (p, nr, label)
+            item.rect = nr
+            self._editor.canvas_items[index] = item
             self.update()
 
     def mouseDoubleClickEvent(self, event):
@@ -1237,6 +1267,22 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         super().mouseDoubleClickEvent(event)
 
     def keyPressEvent(self, event):
+        if self._crop_paste_active():
+            if event.key() == Qt.Key_Escape:
+                self._cancel_paste_crop()
+                event.accept()
+                return
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                self._finish_paste_crop()
+                event.accept()
+                return
+        # 抠图没有进度窗，Esc 是唯一的取消入口：只在有抠图线程时接管
+        if (event.key() == Qt.Key_Escape
+                and getattr(self._editor, 'is_matte_running',
+                            lambda: False)()):
+            self._editor.cancel_matte_selection()
+            event.accept()
+            return
         if getattr(self, 'is_drawing_region', False) and event.key() == Qt.Key_Escape:
             self._cancel_region_drawing()
             event.accept()
@@ -1271,6 +1317,14 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
 
     def mouseReleaseEvent(self, event):
         self._drag_out_pending = False
+
+        if self._crop_paste_active():
+            if event.button() == Qt.LeftButton:
+                if getattr(self, '_crop_handle', None) is not None:
+                    self._crop_handle = None
+                    self.setCursor(Qt.CrossCursor)
+                    self.update()
+            return
 
         if getattr(self, 'is_drawing_region', False) and self.draw_start_pos is not None:
             self._complete_region_drawing(event.pos())
@@ -1333,6 +1387,13 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             self._scale_background(event)
             return False
 
+        # Shift + 滚轮：按 1° 连续旋转选中的贴图项（360° 全角度）
+        if (event.modifiers() & Qt.ShiftModifier
+                and self._editor.selected_item is not None
+                and self._can_rotate_selected_item()):
+            self._rotate_selected_item_by_wheel(event)
+            return False
+
         if self._wheel_goes_to_region():
             self._wheel_region(event)
             return True
@@ -1344,6 +1405,160 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if self.selected_box is not None:
             self._wheel_selected_box(event)
         return False
+
+    def _crop_paste_active(self):
+        """是否正在裁剪某张抠图素材。"""
+        return getattr(self, '_crop_item_index', None) is not None
+
+    #: 命中裁剪框边框的容差（屏幕像素）
+    _CROP_HANDLE_TOLERANCE = 6.0
+
+    def _start_paste_crop(self, item_index):
+        """进入裁剪模式：裁剪框先等于贴图外接框，拖它的边框/角收范围。"""
+        from ..engine.paste_item import as_paste_item
+        items = getattr(self._editor, 'canvas_items', None) or []
+        if not (0 <= item_index < len(items)):
+            return
+        item = as_paste_item(items[item_index])
+        status = getattr(self._editor, 'status_label', None)
+        if not getattr(item, 'path', None):
+            if status is not None:
+                status.setText(tr("该贴图不是抠图素材，无法写回文件"))
+            return
+        if abs(item.angle) > 1e-9:
+            if status is not None:
+                status.setText(tr("请先重置旋转再裁剪"))
+            return
+        x, y, w, h = item.rect_tuple()
+        self._crop_item_index = item_index
+        # 记下源文件：拖边框期间换了图/删了项时按它核对，避免裁到别的素材上
+        self._crop_item_path = getattr(item, 'path', None)
+        # 裁剪框不能超出贴图本身，拖动时按这个外接框夹
+        self._crop_bounds = (x, y, w, h)
+        self._crop_rect = QRectF(x, y, w, h)
+        self._crop_handle = None
+        self.setCursor(Qt.CrossCursor)
+        if status is not None:
+            status.setText(tr("裁剪素材：拖动边框调整范围，回车应用，Esc 取消"))
+        self.update()
+
+    def _cancel_paste_crop(self):
+        """退出裁剪模式，不动素材。"""
+        self._crop_item_index = None
+        self._crop_item_path = None
+        self._crop_bounds = None
+        self._crop_rect = None
+        self._crop_handle = None
+        self.unsetCursor()
+        status = getattr(self._editor, 'status_label', None)
+        if status is not None:
+            status.setText(tr("已取消裁剪"))
+        self.update()
+
+    def _crop_handle_at(self, mouse_pos):
+        """光标落在裁剪框的哪条边/哪个角；都不在返回 None。"""
+        rect = getattr(self, '_crop_rect', None)
+        if rect is None:
+            return None
+        point = self._canvas_to_image_point(mouse_pos)
+        if point is None:
+            return None
+        px, py = point
+        left, top = rect.x(), rect.y()
+        right, bottom = left + rect.width(), top + rect.height()
+        tol = self._CROP_HANDLE_TOLERANCE / max(self.background_scale, 1e-6)
+        if not (left - tol <= px <= right + tol
+                and top - tol <= py <= bottom + tol):
+            return None
+        near_left = abs(px - left) <= tol
+        near_right = abs(px - right) <= tol
+        near_top = abs(py - top) <= tol
+        near_bottom = abs(py - bottom) <= tol
+        if near_top and near_left:
+            return 'tl'
+        if near_top and near_right:
+            return 'tr'
+        if near_bottom and near_left:
+            return 'bl'
+        if near_bottom and near_right:
+            return 'br'
+        if near_left:
+            return 'l'
+        if near_right:
+            return 'r'
+        if near_top:
+            return 't'
+        if near_bottom:
+            return 'b'
+        return None
+
+    def _update_crop_rect(self, mouse_pos):
+        """拖动边框/角：只移动被抓住的那几条边，并夹在贴图外接框内。"""
+        handle = getattr(self, '_crop_handle', None)
+        rect = getattr(self, '_crop_rect', None)
+        bounds = getattr(self, '_crop_bounds', None)
+        if handle is None or rect is None or bounds is None:
+            return
+        point = self._canvas_to_image_point(mouse_pos)
+        if point is None:
+            return
+        px, py = point
+        bx, by, bw, bh = bounds
+        left, top = rect.x(), rect.y()
+        right, bottom = left + rect.width(), top + rect.height()
+        min_size = 2.0
+        if 'l' in handle:
+            left = max(bx, min(px, right - min_size))
+        if 'r' in handle:
+            right = min(bx + bw, max(px, left + min_size))
+        if 't' in handle:
+            top = max(by, min(py, bottom - min_size))
+        if 'b' in handle:
+            bottom = min(by + bh, max(py, top + min_size))
+        self._crop_rect = QRectF(left, top, right - left, bottom - top)
+
+    def _finish_paste_crop(self):
+        """回车应用：交给编辑器裁剪并写回文件。"""
+        from ..engine.paste_item import as_paste_item
+        index = getattr(self, '_crop_item_index', None)
+        expected = getattr(self, '_crop_item_path', None)
+        rect = getattr(self, '_crop_rect', None)
+        self._crop_item_index = None
+        self._crop_item_path = None
+        self._crop_bounds = None
+        self._crop_rect = None
+        self._crop_handle = None
+        self.unsetCursor()
+        items = getattr(self._editor, 'canvas_items', None) or []
+        item = None
+        if index is not None and 0 <= index < len(items):
+            item = as_paste_item(items[index])
+        # 拖边框期间换了图或删了项：下标可能已经指到别的素材上，宁可不裁
+        if item is not None and getattr(item, 'path', None) == expected:
+            if rect is not None and not rect.isEmpty():
+                crop = getattr(self._editor, 'crop_matte_material', None)
+                if callable(crop):
+                    crop(index, (rect.x(), rect.y(), rect.width(),
+                                 rect.height()))
+        self.update()
+
+    def _can_rotate_selected_item(self):
+        """当前是否有一张贴图项可以旋转。"""
+        index = self._editor.selected_item
+        items = getattr(self._editor, 'canvas_items', None) or []
+        return index is not None and 0 <= index < len(items)
+
+    def _rotate_selected_item_by_wheel(self, event):
+        """Shift + 滚轮旋转 1°；连续滚动只压一次撤销，免得撤销栈被刷爆。"""
+        import time
+
+        step = 1 if event.angleDelta().y() > 0 else -1
+        now = time.monotonic()
+        same_run = now - getattr(self, '_rotate_wheel_at', 0.0) < 0.6
+        rotate = getattr(self, '_rotate_paste_item', None)
+        if callable(rotate):
+            rotate(self._editor.selected_item, step, record_undo=not same_run)
+        self._rotate_wheel_at = now
 
     def _wheel_goes_to_region(self):
         """滚轮是否该作用在区域上。
@@ -1727,7 +1942,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         step = max(0.01, min(0.30, float(DETECTION_BOX_WHEEL_CONFIG.get('paste_item_scale_step', 0.15))))
         scale_factor = 1.0 + step if delta > 0 else max(0.1, 1.0 - step)
 
-        pixmap, rect, label = self._editor.canvas_items[self._editor.selected_item]
+        index = self._editor.selected_item
+        item = as_paste_item(self._editor.canvas_items[index])
+        rect = QRectF(*item.rect_tuple())
 
         new_width = rect.width() * scale_factor
         new_height = rect.height() * scale_factor
@@ -1749,7 +1966,8 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             new_width, new_height
         )
 
-        self._editor.canvas_items[self._editor.selected_item] = (pixmap, new_rect, label)
+        item.rect = new_rect
+        self._editor.canvas_items[index] = item
         self.selected_item_size = (new_width, new_height)
 
     def _scale_selected_box(self, event):
@@ -1902,15 +2120,17 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             self._sync_detection_box_to_dict(self.selected_box)
             self.update()
         elif self._editor.selected_item is not None and 0 <= self._editor.selected_item < len(self._editor.canvas_items):
-            p, rect, label = self._editor.canvas_items[self._editor.selected_item]
+            index = self._editor.selected_item
+            item = as_paste_item(self._editor.canvas_items[index])
+            rect = QRectF(*item.rect_tuple())
             step = NUDGE_CONFIG['step']
             bg = self._editor.current_background
             bw = bg.width() if bg else 0
             bh = bg.height() if bg else 0
             nx = max(0, min(rect.x() + dx * step, bw - rect.width()))
             ny = max(0, min(rect.y() + dy * step, bh - rect.height()))
-            nr = QRectF(nx, ny, rect.width(), rect.height())
-            self._editor.canvas_items[self._editor.selected_item] = (p, nr, label)
+            item.rect = QRectF(nx, ny, rect.width(), rect.height())
+            self._editor.canvas_items[index] = item
             self.update()
 
     def resizeEvent(self, event):

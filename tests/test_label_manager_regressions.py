@@ -799,8 +799,8 @@ def test_rename_paste_label_updates_list_and_canvas_items():
 
     assert manager.rename_paste_label("logo", "badge") is True
     assert editor.paste_label_list.item(1).text() == "badge"
-    assert editor.canvas_items[0][2] == "badge"
-    assert editor.canvas_items_dict[0][0][2] == "badge"
+    assert editor.canvas_items[0].label == "badge"
+    assert editor.canvas_items_dict[0][0].label == "badge"
     assert editor.label_color_map == {"badge": "#123"}
 
 
@@ -1085,7 +1085,7 @@ def test_modify_paste_label_rewrites_disk(tmp_path, monkeypatch):
     manager.modify_paste_label()
 
     assert item.text() == "badge"
-    assert editor.canvas_items[0][2] == "badge"
+    assert editor.canvas_items[0].label == "badge"
     with open(out_sidecar, encoding="utf-8") as f:
         shapes = json.load(f)["shapes"]
     assert shapes[0]["label"] == "badge"

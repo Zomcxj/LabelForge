@@ -170,10 +170,10 @@ def test_reset_button_sits_immediately_left_of_save():
 
 
 def test_settings_pages_align_their_first_row():
-    """快捷键页、参数页、质检忽略页的第一行必须处在同一高度。"""
+    """快捷键页、参数页、质检忽略页、抠图页（抠图 + 贴图融合两组）首行对齐。"""
     source = SETTINGS_SRC.read_text(encoding="utf-8")
-    # 三个页 group 的边距都要显式设为同一组值
-    assert source.count("setContentsMargins(19, 14, 9, 9)") == 3
+    # 五个页 group 的边距都要显式设为同一组值
+    assert source.count("setContentsMargins(19, 14, 9, 9)") == 5
     # 快捷键页里 scroll 内容不能再叠加一层边距，否则首行会下移
     assert "scroll_layout.setContentsMargins(0, 0, 0, 0)" in source
 

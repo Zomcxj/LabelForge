@@ -32,16 +32,32 @@ sys.exit(0)
 """
 
 
+# Windows 上 Qt 子进程收尾偶发崩溃：0xC0000005 / 0xC0000409。
+_QT_EXIT_CRASH = {3221225477, 3221226505}
+
+
 def _run_real_qt(script):
+    """跑一段真 Qt 脚本；stdout 完整但退出码异常时重试。"""
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PYTHONPATH=str(ROOT))
-    result = subprocess.run(
-        [sys.executable, "-c", script + _GUARD],
-        cwd=ROOT, env=env, text=True, capture_output=True,
-        timeout=180,
-        encoding="utf-8", errors="replace",
-    )
-    assert result.returncode == 0, result.stderr
-    return result.stdout
+    last = None
+    for _ in range(3):
+        result = subprocess.run(
+            [sys.executable, "-c", script + _GUARD],
+            cwd=ROOT, env=env, text=True, capture_output=True,
+            timeout=180,
+            encoding="utf-8", errors="replace",
+        )
+        if result.returncode == 0:
+            return result.stdout
+        last = result
+        crash = (result.returncode in _QT_EXIT_CRASH
+                 or (not result.stderr.strip() and bool(result.stdout.strip())))
+        if not crash:
+            break
+    assert last is not None and last.returncode == 0, (
+        f"exit={None if last is None else last.returncode} "
+        + (last.stderr if last is not None else "子进程没有启动"))
+    return last.stdout
 
 
 def _lines(out):

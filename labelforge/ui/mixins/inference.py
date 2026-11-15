@@ -158,8 +158,13 @@ class InferenceMixin:
         self._model_size = size
         # seg / obb / pose 没有「输出格式」可判；只有检测模型才解析，
         # 否则给一个和实际布局对不上的 v5/v8 标签
-        self._model_format = (detector.resolve_format()
-                              if detector.resolve_task() == "det" else None)
+        try:
+            self._model_format = (detector.resolve_format()
+                                  if detector.resolve_task() == "det" else None)
+        except Exception as exc:      # noqa: BLE001 - 解析失败按加载失败处理
+            # worker 已先校验过一次；这里是兜底，绝不能让异常冒到主线程
+            self._on_model_failed(str(exc))
+            return
         # 不要把这里当成「数据集快照」定稿：加载模型与「跑哪份数据集」是两回事，
         # 在这里记下来会让「先加载模型、再切数据集」之后的推理结果全被丢弃。
         # 快照在 `_start_inference` 里按当次任务记。

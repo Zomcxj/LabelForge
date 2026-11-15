@@ -5,7 +5,7 @@ import os
 import json
 from . import config as config_module
 from .utils import parse_label_stat_item
-from .config import SHORTCUT_CONFIG, STATUSBAR_CONFIG, DETECTION_BOX_CONFIG, MAGNIFIER_CONFIG, LABEL_CACHE_SLOTS, NUDGE_CONFIG, DETECTION_BOX_WHEEL_CONFIG, CROSSHAIR_CONFIG, BOX_BORDER_CONFIG, LABEL_COLORS, OBB_CONFIG, normalized_fill_rgb
+from .config import SHORTCUT_CONFIG, STATUSBAR_CONFIG, DETECTION_BOX_CONFIG, MAGNIFIER_CONFIG, LABEL_CACHE_SLOTS, NUDGE_CONFIG, DETECTION_BOX_WHEEL_CONFIG, CROSSHAIR_CONFIG, BOX_BORDER_CONFIG, LABEL_COLORS, OBB_CONFIG, MATTING_CONFIG, PASTE_FUSION_CONFIG, normalized_fill_rgb
 
 
 LEGACY_CONFIG_PATH = os.path.join(
@@ -92,6 +92,41 @@ def _normalize_inference_settings(raw):
     normalized.pop("class_filter", None)
     normalized.pop("replace_auto", None)
     return normalized
+
+
+MATTE_INPUT_SIZE_RANGE = (32, 8192)
+
+
+def _normalize_matte_preset(value):
+    """抠图预设：只认模型侧登记的预设，其余回落默认值。
+
+    未知预设会让 `MattingModel` 构造抛 ValueError、入口直接置灰，配置里
+    留着它只会让用户以为「路径没生效」，所以读回来就纠正。
+    """
+    from labelforge.engine.matting_model import MATTING_PRESETS
+
+    value = str(value or '').strip()
+    return value if value in MATTING_PRESETS else MATTING_CONFIG['preset']
+
+
+def _normalize_matte_input_size(value):
+    """抠图输入尺寸：0 表示按预设，正数夹到 32~8192。"""
+    try:
+        size = int(value)
+    except (TypeError, ValueError):
+        return int(MATTING_CONFIG['input_size'])
+    if size <= 0:
+        return 0
+    return max(MATTE_INPUT_SIZE_RANGE[0], min(MATTE_INPUT_SIZE_RANGE[1], size))
+
+
+def _normalize_matte_threshold(value):
+    """抠图阈值：夹到 0~1；0 表示保留模型输出的软 alpha。"""
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        return float(MATTING_CONFIG['threshold'])
+    return max(0.0, min(1.0, threshold))
 
 
 def _filter_shortcuts(shortcuts):
@@ -535,6 +570,14 @@ def load_all():
         'crosshair_color': str(config.get('crosshair_color', CROSSHAIR_CONFIG['color'])),
         'crosshair_alpha': int(config.get('crosshair_alpha', CROSSHAIR_CONFIG['alpha'])),
         'box_border_width': float(config.get('box_border_width', BOX_BORDER_CONFIG['width'])),
+        'matte_model_path': str(config.get('matte_model_path', MATTING_CONFIG['model_path']) or ''),
+        'matte_preset': _normalize_matte_preset(config.get('matte_preset', MATTING_CONFIG['preset'])),
+        'matte_input_size': _normalize_matte_input_size(
+            config.get('matte_input_size', MATTING_CONFIG['input_size'])),
+        'matte_threshold': _normalize_matte_threshold(
+            config.get('matte_threshold', MATTING_CONFIG['threshold'])),
+        'matte_output_dir': str(config.get('matte_output_dir', MATTING_CONFIG['output_dir']) or ''),
+        'seamless_paste': bool(config.get('seamless_paste', PASTE_FUSION_CONFIG['seamless'])),
         'label_colors': normalized_palette,
         'label_color_map': _repair_label_color_map(
             _normalize_label_color_map(config.get('label_color_map')), normalized_palette,
@@ -556,7 +599,10 @@ def save_all(shortcuts=None, theme=None, language=None, max_labels=None,
                detection_box_wheel_edge_step=None,
               crosshair_width=None, crosshair_color=None, crosshair_alpha=None,
                box_border_width=None, label_colors=None, label_color_map=None,
-               lint_ignored_rules=None, inference_settings=None):
+               lint_ignored_rules=None, inference_settings=None,
+               matte_model_path=None, matte_preset=None, matte_input_size=None,
+               matte_threshold=None, matte_output_dir=None,
+               seamless_paste=None):
     """保存所有配置"""
     config = load_config()
     if shortcuts is not None:
@@ -624,4 +670,16 @@ def save_all(shortcuts=None, theme=None, language=None, max_labels=None,
         config['label_color_map'] = _normalize_label_color_map(label_color_map)
     if inference_settings is not None:
         config['inference_settings'] = _normalize_inference_settings(inference_settings)
+    if matte_model_path is not None:
+        config['matte_model_path'] = str(matte_model_path or '').strip()
+    if matte_preset is not None:
+        config['matte_preset'] = _normalize_matte_preset(matte_preset)
+    if matte_input_size is not None:
+        config['matte_input_size'] = _normalize_matte_input_size(matte_input_size)
+    if matte_threshold is not None:
+        config['matte_threshold'] = _normalize_matte_threshold(matte_threshold)
+    if matte_output_dir is not None:
+        config['matte_output_dir'] = str(matte_output_dir or '').strip()
+    if seamless_paste is not None:
+        config['seamless_paste'] = bool(seamless_paste)
     return save_config(config)

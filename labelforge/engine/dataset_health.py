@@ -8,6 +8,7 @@ import math
 import os
 
 from .parallel_scan import scan_images
+from .paste_item import as_paste_item
 from .quality_lint import _bbox
 from ..core.utils import calculate_iou, output_sidecar_paths, PathUtils
 from ..core.config import QUALITY_LINT_CONFIG
@@ -173,18 +174,23 @@ def collect_shape_geometry(image_paths, memory_boxes=None, is_interrupted=None):
 
 
 def collect_paste_geometry(canvas_items_dict):
-    """从 {index: [(pixmap, rect, label), ...]} 提取贴图几何。"""
+    """从 {index: [PasteItem 或旧三元组, ...]} 提取贴图几何。"""
     boxes = []
     for index, items in (canvas_items_dict or {}).items():
         for entry in items or []:
-            if not entry or len(entry) < 3:
-                continue
-            _pixmap, rect, label = entry[0], entry[1], entry[2]
             try:
-                x = _finite_float(rect.x())
-                y = _finite_float(rect.y())
-                w = _finite_float(rect.width())
-                h = _finite_float(rect.height())
+                item = as_paste_item(entry)
+            except TypeError:
+                continue
+            if item.rect is None:
+                continue
+            label = item.label
+            try:
+                x, y, w, h = item.rect_tuple()
+                x = _finite_float(x)
+                y = _finite_float(y)
+                w = _finite_float(w)
+                h = _finite_float(h)
             except Exception:
                 continue
             if None in (x, y, w, h) or w <= 0 or h <= 0:

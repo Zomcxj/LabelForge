@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QRectF
 from ..core.config import RANDOM_POSITION_CONFIG, PASTE_ITEM_CONFIG
 from ..core.utils import extract_label_name, calculate_iou
 from ..ui.i18n import t as tr
+from .paste_item import PasteItem, as_paste_item
 
 
 OVERLAP_OFFSET_STEP = 3
@@ -90,8 +91,14 @@ class PasteEngineMixin:
 
         rect = QRectF(x, y, width, height)
         paste_label = self._get_paste_label(index)
+        # 记下来源文件：从列表点到画布的素材也要能「裁剪素材」并写回这张图
+        source_path = self.small_images[index][0]
 
-        self.canvas_items.append((pixmap, rect, paste_label))
+        self.canvas_items.append(
+            PasteItem(pixmap, rect, paste_label, path=source_path))
+        refresh = getattr(self, '_refresh_export_task_label', None)
+        if callable(refresh):
+            refresh()
         self.canvas.update()
 
     def _get_paste_label(self, index):
@@ -139,6 +146,9 @@ class PasteEngineMixin:
         if self.current_background_index >= 0:
             self.canvas_items_dict[self.current_background_index] = self.canvas_items.copy()
         self.selected_item = None
+        refresh = getattr(self, '_refresh_export_task_label', None)
+        if callable(refresh):
+            refresh()
         self.canvas.update()
 
     def _sample_center_in_regions(self, regions, new_width, new_height, bg_w, bg_h, rng):
@@ -325,7 +335,8 @@ class PasteEngineMixin:
             if valid_position:
                 rect = QRectF(x, y, new_width, new_height)
                 paste_label = self._get_paste_label(idx)
-                self.canvas_items.append((pixmap, rect, paste_label))
+                self.canvas_items.append(
+                    PasteItem(pixmap, rect, paste_label, path=file_path))
                 pasted_boxes.append((x, y, x + new_width, y + new_height))
 
         if not background:
@@ -333,6 +344,9 @@ class PasteEngineMixin:
 
         if self.current_background_index >= 0:
             self.canvas_items_dict[self.current_background_index] = self.canvas_items.copy()
+        refresh = getattr(self, '_refresh_export_task_label', None)
+        if callable(refresh):
+            refresh()
 
     def batch_paste_images(self):
         """从当前图片开始依次处理所有图片，应用随机贴图，然后返回当前图片"""
@@ -382,7 +396,8 @@ class PasteEngineMixin:
                     self.detection_boxes_dict[i] = temp_detection_boxes.copy()
 
                 self.current_background_index = i
-                self.canvas_items = self.canvas_items_dict.get(i, []).copy()
+                self.canvas_items = [as_paste_item(entry) for entry in
+                                     self.canvas_items_dict.get(i, [])]
 
                 self.random_paste_images(background=pixmap, detection_boxes=temp_detection_boxes)
 
@@ -405,7 +420,8 @@ class PasteEngineMixin:
             self.current_background_index = original_index
             self.current_background = original_background
             self.detection_boxes = original_detection_boxes
-            self.canvas_items = self.canvas_items_dict.get(original_index, []).copy()
+            self.canvas_items = [as_paste_item(entry) for entry in
+                                 self.canvas_items_dict.get(original_index, [])]
             self.canvas.update()
 
         # 工厂里 setAutoClose(False)，收尾必须手动关（save_manager 同惯例）；

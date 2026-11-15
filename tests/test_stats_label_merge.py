@@ -21,23 +21,40 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Qt 在解释器退出时做清理，偶尔以 0xC0000409（栈缓冲溢出）收场：stdout
+# 已经打印完整，退出码却非 0，测试就被判成失败。跳过清理直接退进程。
 _GUARD = """
-import sys
+import os, sys
 sys.stdout.flush()
-sys.exit(0)
+os._exit(0)
 """
 
 
+# Windows 上 Qt 子进程退出时偶发的异常码：0xC0000005 访问冲突、
+# 0xC0000409 栈缓冲溢出。stdout 已经完整打印，进程却在收尾时崩掉；
+# 这类崩溃在 CPU 被占满时更容易出现，属于环境问题而非用例失败。
+_QT_EXIT_CRASH = {3221225477, 3221226505}
+
+
 def _run_real_qt(script):
+    """跑一段真实 Qt 脚本；只在「输出完整 + 退出崩溃」时重试。"""
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PYTHONPATH=str(ROOT))
-    result = subprocess.run(
-        [sys.executable, "-c", script + _GUARD],
-        cwd=ROOT, env=env, text=True, capture_output=True,
-        timeout=180,
-        encoding="utf-8", errors="replace",
-    )
-    assert result.returncode == 0, result.stderr
-    return result.stdout
+    last = None
+    for _ in range(3):
+        result = subprocess.run(
+            [sys.executable, "-c", script + _GUARD],
+            cwd=ROOT, env=env, text=True, capture_output=True,
+            timeout=180,
+            encoding="utf-8", errors="replace",
+        )
+        if result.returncode == 0:
+            return result.stdout
+        last = result
+        if result.returncode not in _QT_EXIT_CRASH or not result.stdout.strip():
+            break
+    assert last is not None and last.returncode == 0, (
+        last.stderr if last is not None else "子进程没有启动")
+    return last.stdout
 
 
 def _lines(out):

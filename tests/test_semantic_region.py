@@ -395,7 +395,7 @@ def test_random_paste_images_no_regions_deterministic(monkeypatch):
     assert len(engine_a.canvas_items) > 0
     assert len(engine_a.canvas_items) == len(engine_b.canvas_items)
     for (ra, rb) in zip(engine_a.canvas_items, engine_b.canvas_items):
-        rect_a, rect_b = ra[1], rb[1]
+        rect_a, rect_b = ra.rect, rb.rect
         assert rect_a.x() == rect_b.x()
         assert rect_a.y() == rect_b.y()
         assert rect_a.width() == rect_b.width()

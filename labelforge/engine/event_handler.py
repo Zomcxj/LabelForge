@@ -208,6 +208,9 @@ class EventHandlerMixin:
                 self.save_undo_state()
             del self.canvas_items[self.selected_item]
             self.selected_item = None
+            refresh = getattr(self, '_refresh_export_task_label', None)
+            if callable(refresh):
+                refresh()
             self.canvas.update()
 
     def keyPressEvent(self, event):
@@ -400,6 +403,9 @@ class EventHandlerMixin:
         self.selected_item = None
         self.canvas.selected_box = None
         self.canvas.selected_boxes = []
+        refresh = getattr(self, '_refresh_export_task_label', None)
+        if callable(refresh):
+            refresh()
         self.canvas.update()
 
     def on_labels_checkbox_changed(self):

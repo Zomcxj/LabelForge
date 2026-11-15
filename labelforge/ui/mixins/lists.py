@@ -1,5 +1,8 @@
 """Lists UI building mixin."""
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem, QSpinBox
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
+    QListWidgetItem, QMenu, QSpinBox,
+)
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QSize, QTimer
 from ...core.config import PASTE_PARAMS
@@ -215,6 +218,15 @@ class ListsMixin:
         self.toggle_view_btn.clicked.connect(self.toggle_view_mode)
         small_list_layout.addWidget(self.toggle_view_btn, 1)
 
+        # 重新从磁盘读一遍列表里的文件：外部改过图、删过文件时不用重新加载文件夹
+        self.paste_refresh_btn = QPushButton()
+        self.paste_refresh_btn.setObjectName("iconBtn")
+        self.paste_refresh_btn.setFixedSize(22, 22)
+        self.paste_refresh_btn.setIcon(QIcon(_load_svg_icon(SVG_REFRESH, 14)))
+        self.paste_refresh_btn.setToolTip(tr("重新读取贴图列表里的文件"))
+        self.paste_refresh_btn.clicked.connect(self.refresh_paste_files)
+        small_list_layout.addWidget(self.paste_refresh_btn)
+
         small_list_layout.addStretch()
         group_layout.addLayout(small_list_layout)
 
@@ -224,6 +236,10 @@ class ListsMixin:
         self.small_list.setObjectName("smallList")
         self.small_list.setMinimumHeight(0)
         self.small_list.itemClicked.connect(self.add_small_to_canvas)
+        # 右键只用来重命名素材，点击仍然是「放到画布」
+        self.small_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.small_list.customContextMenuRequested.connect(
+            self._show_paste_list_menu)
         self._configure_small_list()
         group_layout.addWidget(self.small_list, 1)
 
@@ -231,10 +247,33 @@ class ListsMixin:
 
         layout.addWidget(group, 1)
 
+    def _show_paste_list_menu(self, pos):
+        """贴图列表右键菜单：重命名或删除磁盘上的素材文件。"""
+        if getattr(self, '_is_delete_view', False):
+            return
+        item = self.small_list.itemAt(pos)
+        if item is None:
+            return
+        # 只记下标：菜单开着时列表可能被刷新（`clear()` 会删掉 QListWidgetItem），
+        # 把 item 留到菜单关闭之后再读就是「C++ object already deleted」。
+        index = item.data(Qt.UserRole)
+        menu = QMenu(self)
+        rename_action = menu.addAction(tr("重命名素材…"))
+        delete_action = menu.addAction(tr("删除素材…"))
+        chosen = menu.exec_(self.small_list.viewport().mapToGlobal(pos))
+        if chosen is rename_action:
+            self.rename_paste_file(index)
+        elif chosen is delete_action:
+            self.delete_paste_file(index)
+
     def _create_paste_params(self, layout):
-        """创建贴图参数设置"""
+        """贴图参数：贴图个数与短边尺寸范围。"""
+        root = QVBoxLayout()
+        root.setContentsMargins(0, 5, 0, 5)
+        root.setSpacing(4)
+
         paste_params_layout = QHBoxLayout()
-        paste_params_layout.setContentsMargins(0, 5, 0, 5)
+        paste_params_layout.setSpacing(6)
 
         self.paste_count_lbl = QLabel(tr("贴图个数:"))
         paste_params_layout.addWidget(self.paste_count_lbl)
@@ -273,7 +312,8 @@ class ListsMixin:
         self._on_max_size_changed(self.max_size_spin.value())
 
         paste_params_layout.addStretch()
-        layout.addLayout(paste_params_layout)
+        root.addLayout(paste_params_layout)
+        layout.addLayout(root)
 
     def _configure_small_list(self):
         """配置贴图列表"""

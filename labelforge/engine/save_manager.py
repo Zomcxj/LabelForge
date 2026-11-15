@@ -5,11 +5,12 @@
 import os
 import json
 from typing import TYPE_CHECKING
-from PySide6.QtCore import Signal, QObject, QRectF
-from PySide6.QtGui import QPixmap, QPainter, QColor
+from PySide6.QtCore import Signal, QObject, QPointF, QRectF
+from PySide6.QtGui import QPixmap, QPainter, QColor, QImage
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication
 from ..core.config import LABELME_VERSION, DEFAULT_PREFIX
 from ..core.utils import PathUtils, calculate_iou
+from .paste_item import as_paste_item
 from ..ui.i18n import t as tr
 
 if TYPE_CHECKING:
@@ -79,7 +80,142 @@ def _show_messagebox(msg_type, parent, title, text):
     dialog.exec_()
 
 
-class SaveManager(QObject):
+class SaveManagerMixin:
+    """写盘路径共用的贴图转换：贴图项 -> LabelMe shape、贴图项 -> 合成图。
+
+    写盘路径（当前图保存、保存全部、sidecar）都从这里取：形状、融合参数与
+    角度只有一套口径，否则同一张图换个入口保存就和画布对不上。
+    """
+
+    #: 泊松融合时贴图四周要留的边界像素（cv2.seamlessClone 需要 mask 外的
+    #: 一圈参考像素；留不出来就退回普通合成）
+    SEAMLESS_MARGIN = 8
+
+    @staticmethod
+    def _paste_item_to_shape(item):
+        """贴图项 -> LabelMe shape。角度为 0 写矩形，否则写旋转框。"""
+        from .shape_io import labelme_shape_from_box
+        x, y, w, h = item.rect_tuple()
+        box = {"label": item.label, "x": x, "y": y, "width": w, "height": h}
+        if item.shape_type == "rotation":
+            box["shape_type"] = "rotation"
+            box["points"] = [list(p) for p in item.corners()]
+        shape = labelme_shape_from_box(box)
+        shape["flags"] = {"paste": True}
+        return shape
+
+    @staticmethod
+    def _item_rgba(item):
+        """贴图本体 -> (H, W, 4) uint8，按外接框尺寸取样。"""
+        from .paste_fusion import pixmap_to_rgba
+        x, y, w, h = item.rect_tuple()
+        return pixmap_to_rgba(item.pixmap, max(1, int(round(w))),
+                              max(1, int(round(h))))
+
+    @classmethod
+    def _draw_paste_item_on(cls, painter, item):
+        """把一张贴图画到 painter 上；有角度时绕外接框中心旋转。"""
+        x, y, w, h = item.rect_tuple()
+        if not item.angle:
+            painter.drawPixmap(QRectF(x, y, w, h).toRect(), item.pixmap)
+            return
+        painter.save()
+        painter.translate(QPointF(x + w / 2.0, y + h / 2.0))
+        painter.rotate(item.angle)
+        painter.drawPixmap(
+            QRectF(-w / 2.0, -h / 2.0, w, h).toRect(), item.pixmap)
+        painter.restore()
+
+    @classmethod
+    def _draw_paste_items_on(cls, painter, items):
+        """把贴图按外接框角度画到合成画布上。
+
+        泊松融合要写回像素，只在 `_compose_pastes()` 里做——这里纯粹是绘制。
+        """
+        for raw in items:
+            cls._draw_paste_item_on(painter, as_paste_item(raw))
+
+    @classmethod
+    def _compose_pastes(cls, image, items):
+        """在 QImage 上合成所有贴图，必要时做泊松融合（A5，仅保存时生效）。
+
+        普通项目走 painter 绘制；泊松要写回像素，所以先把 painter 收尾、
+        混合完再重开，保证与列表顺序一致。
+        """
+        from ..core.config import PASTE_FUSION_CONFIG
+        seamless = bool(PASTE_FUSION_CONFIG.get('seamless'))
+        painter = QPainter(image)
+        try:
+            for raw in items:
+                item = as_paste_item(raw)
+                if seamless:
+                    painter.end()
+                    if cls._seamless_blend_into(image, item):
+                        painter = QPainter(image)
+                        continue
+                    painter = QPainter(image)
+                cls._draw_paste_item_on(painter, item)
+        finally:
+            painter.end()
+
+    @classmethod
+    def _seamless_blend_into(cls, image, item):
+        """把一张贴图用泊松融合写进 image；返回是否已经画过这张贴图。
+
+        返回 False 表示「什么都没画」，调用方仍需要走普通绘制；返回 True 表示
+        贴图已经落在 image 上（混合成功，或混合失败后按普通合成落笔）。
+
+        只有贴图本体参与混合，透明像素不进 mask。
+        旋转过的贴图不做泊松（seamlessClone 只支持轴对齐落笔）。
+        """
+        import cv2
+        import numpy as np
+        from .paste_fusion import bgr_to_qimage, qimage_to_bgr
+        if item.angle:
+            return False
+        x, y, w, h = item.rect_tuple()
+        width = max(1, int(round(w)))
+        height = max(1, int(round(h)))
+        core = cls._item_rgba(item)
+        if core.shape[:2] != (height, width):
+            return False
+        mask = np.where(core[:, :, 3] > 0, 255, 0).astype(np.uint8)
+        if not mask.any():
+            return False
+        left, top = int(round(x)), int(round(y))
+        margin = cls.SEAMLESS_MARGIN
+        rx = max(0, left - margin)
+        ry = max(0, top - margin)
+        rw = min(image.width() - rx, width + 2 * margin)
+        rh = min(image.height() - ry, height + 2 * margin)
+        if rw < width + 2 or rh < height + 2:
+            # 贴到图边上了，留不出 mask 外的参考像素
+            return False
+
+        painter = QPainter(image)
+        try:
+            cls._draw_paste_item_on(painter, item)
+        finally:
+            painter.end()
+
+        dst = qimage_to_bgr(image.copy(rx, ry, rw, rh))
+        src = np.ascontiguousarray(core[:, :, 2::-1])      # RGBA -> BGR
+        center = (left - rx + width // 2, top - ry + height // 2)
+        try:
+            blended = cv2.seamlessClone(src, dst, mask, center,
+                                        cv2.NORMAL_CLONE)
+        except cv2.error:
+            # 区域退化（mask 贴边、尺寸不合法等）：保留已经画好的普通合成
+            return True
+        painter = QPainter(image)
+        try:
+            painter.drawImage(rx, ry, bgr_to_qimage(blended))
+        finally:
+            painter.end()
+        return True
+
+
+class SaveManager(SaveManagerMixin, QObject):
     """保存管理器 - 管理贴图的保存操作"""
 
     # 信号：保存完成后通知编辑器刷新 UI
@@ -125,17 +261,28 @@ class SaveManager(QObject):
         if not save_info:
             return
         file_path, _, _ = save_info
-        result = QPixmap(self.editor.current_background.size())
+        result = self._new_composite(self.editor.current_background)
         painter = QPainter(result)
-        painter.fillRect(result.rect(), QColor(255, 255, 255))
-        painter.drawPixmap(0, 0, self.editor.current_background)
-        for pixmap, rect, label in self.editor.canvas_items:
-            painter.drawPixmap(rect.toRect(), pixmap)
-        painter.end()
+        try:
+            painter.drawPixmap(0, 0, self.editor.current_background)
+        finally:
+            painter.end()
+        self._compose_pastes(result, self.editor.canvas_items)
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         if not result.save(file_path):
             from ..core.exception_hook import _write_log
             _write_log(f"自动保存B失败: {file_path}")
+
+    @staticmethod
+    def _new_composite(background):
+        """建一张白底 QImage：合成图在这里画，泊松融合才好写回像素。
+
+        用 RGB32（不带 alpha）与旧的 `QPixmap` 合成图保持同一落盘格式：
+        成品是白底不透明的图，多出的 alpha 通道只会让 PNG 变大。
+        """
+        image = QImage(background.size(), QImage.Format_RGB32)
+        image.fill(QColor(255, 255, 255))
+        return image
 
     def auto_save_project(self):
         """自动保存 JSON（P）"""
@@ -163,15 +310,15 @@ class SaveManager(QObject):
         
         file_path, base_name, prefix = save_info
         
-        result = QPixmap(self.editor.current_background.size())
+        result = self._new_composite(self.editor.current_background)
         painter = QPainter(result)
-        painter.fillRect(result.rect(), QColor(255, 255, 255))
-        painter.drawPixmap(0, 0, self.editor.current_background)
+        try:
+            painter.drawPixmap(0, 0, self.editor.current_background)
+        finally:
+            painter.end()
         
-        for pixmap, rect, label in self.editor.canvas_items:
-            painter.drawPixmap(rect.toRect(), pixmap)
+        self._compose_pastes(result, self.editor.canvas_items)
         
-        painter.end()
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         save_success = result.save(file_path)
         
@@ -324,7 +471,12 @@ class SaveManager(QObject):
             if pixmap.isNull():
                 continue
             
-            temp_canvas_items = self.editor.canvas_items_dict.get(i, [])
+            if i == getattr(self.editor, 'current_background_index', -1):
+                # 当前图用编辑中的那一份：字典里存的是上次切图/退出时的快照，
+                # 贴图改过标签或旋转后还没回写，用它会写出旧状态。
+                temp_canvas_items = list(self.editor.canvas_items)
+            else:
+                temp_canvas_items = self.editor.canvas_items_dict.get(i, [])
             
             original_file_name = os.path.basename(file_path)
             output_dir = PathUtils.get_output_dir(file_path)
@@ -338,15 +490,15 @@ class SaveManager(QObject):
             base_name = f"{prefix}_{original_file_name}" if prefix else original_file_name
             save_file_path = os.path.join(output_dir, base_name)
             
-            result = QPixmap(pixmap.size())
+            result = self._new_composite(pixmap)
             painter = QPainter(result)
-            painter.fillRect(result.rect(), QColor(255, 255, 255))
-            painter.drawPixmap(0, 0, pixmap)
+            try:
+                painter.drawPixmap(0, 0, pixmap)
+            finally:
+                painter.end()
             
-            for p_pixmap, rect, label in temp_canvas_items:
-                painter.drawPixmap(rect.toRect(), p_pixmap)
+            self._compose_pastes(result, temp_canvas_items)
             
-            painter.end()
             os.makedirs(os.path.dirname(save_file_path), exist_ok=True)
             if not result.save(save_file_path):
                 from ..core.exception_hook import _write_log
@@ -386,14 +538,6 @@ class SaveManager(QObject):
         self.label_list_changed.emit()
         self.editor._busy = False
     
-    @staticmethod
-    def _build_labelme_shape(label, x, y, w, h):
-        """构建 LabelMe 格式的 shape 字典"""
-        from .shape_io import labelme_shape_from_box
-        return labelme_shape_from_box({
-            "label": label, "x": x, "y": y, "width": w, "height": h,
-        })
-
     @staticmethod
     def _deduplicate_rectangles(items, get_rect):
         """按列表顺序保留首个 IoU 达 98% 的对象；带 label 的按类别分别去重。
@@ -438,6 +582,8 @@ class SaveManager(QObject):
         json_path = os.path.splitext(image_path)[0] + '.json'
         
         items_to_use = canvas_items if canvas_items is not None else self.editor.canvas_items
+        # 入参可能来自旧三元组（撤销栈、外部调用方），统一归一化后再用
+        items_to_use = [as_paste_item(entry) for entry in items_to_use]
         width = image_width if image_width is not None else (
             self.editor.current_background.width() if self.editor.current_background else 0
         )
@@ -447,7 +593,9 @@ class SaveManager(QObject):
         index_to_use = current_index if current_index is not None else self.editor.current_background_index
         items_to_use = self._deduplicate_rectangles(
             items_to_use,
-            lambda item: item[1],
+            # 外接框可以是 QRectF，也可以是四元组；去重只认几何，
+            # 统一成 QRectF 免得四元组在 `.x()` 上炸。
+            lambda item: QRectF(*item.rect_tuple()),
         )
         if canvas_items is None:
             self.editor.canvas_items = items_to_use
@@ -482,12 +630,9 @@ class SaveManager(QObject):
         }
         
         # 添加贴图（flags.paste 供统计区分贴图与检测框）
-        for pixmap, rect, label in items_to_use:
-            shape = self._build_labelme_shape(
-                label, rect.x(), rect.y(), rect.width(), rect.height()
-            )
-            shape["flags"] = {"paste": True}
-            json_data["shapes"].append(shape)
+        for raw in items_to_use:
+            json_data["shapes"].append(
+                self._paste_item_to_shape(as_paste_item(raw)))
         
         # 添加检测框
         if index_to_use >= 0:

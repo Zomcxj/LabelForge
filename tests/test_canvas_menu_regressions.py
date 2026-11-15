@@ -1,5 +1,6 @@
 """画布右键菜单回归测试。"""
 from labelforge.canvas.canvas_menu import CanvasMenuMixin
+from labelforge.ui import i18n
 
 
 class FakeCheckbox:
@@ -543,3 +544,205 @@ def test_remove_current_background_closes_lint_dialog(tmp_path):
     canvas._remove_current_background()
 
     assert canvas._editor.closed == [True]
+
+
+# ===== 抠图素材入口 =====
+
+class _FakeAction:
+    """QAction 替身：记录文案、可用态、tooltip 与触发回调。"""
+
+    def __init__(self, text, parent=None):
+        self.text = text
+        self.enabled = True
+        self.tooltip = ""
+        self.slots = []
+        self.triggered = type("Signal", (), {
+            "connect": lambda signal_self, fn: self.slots.append(fn)})()
+
+    def setEnabled(self, value):
+        self.enabled = bool(value)
+
+    def isEnabled(self):
+        return self.enabled
+
+    def setToolTip(self, text):
+        self.tooltip = text
+
+    def fire(self):
+        for slot in self.slots:
+            slot(False)
+
+
+class _FakeMenu:
+    def __init__(self):
+        self.added = []
+        self.separators = 0
+
+    def addAction(self, action):
+        self.added.append(action)
+
+    def addSeparator(self):
+        self.separators += 1
+        # 真 Qt 的分隔线也是一条 QAction，会出现在 actions() 里；
+        # `_show_box_label_menu` 靠 actions()[-1] 删掉多余的分隔线，替身要一致
+        self.added.append(_FakeAction(""))
+
+    def actions(self):
+        return list(self.added)
+
+    def removeAction(self, action):
+        if action in self.added:
+            self.added.remove(action)
+
+    def exec_(self, *args):
+        pass
+
+
+def _menu_canvas(monkeypatch, matting_model=None):
+    """一个只够跑右键菜单构建的假画布。"""
+    from labelforge.canvas import canvas_menu as cm
+
+    monkeypatch.setattr(cm, "QAction", _FakeAction)
+
+    class Editor:
+        detection_boxes = [{
+            "label": "car", "x": 10, "y": 10, "width": 20, "height": 20,
+        }]
+        background_dataset_labels = {"car"}
+        global_labels = set()
+        detection_boxes_dict = {}
+        paste_label_list = None
+        label_list = None
+        _recent_labels = []
+        _cached_bg_label_stats = []
+        _is_delete_view = False
+        status_label = None
+        matting_call = None
+
+        def __init__(self):
+            self.matting_model = matting_model
+
+        def matte_selection_to_material(self, box=None, region=None):
+            self.matting_call = (box, region)
+
+    class Canvas(cm.CanvasMenuMixin):
+        def __init__(self):
+            self._editor = Editor()
+
+        def _rounded_menu(self, parent):
+            self.menu = _FakeMenu()
+            return self.menu
+
+        def mapToGlobal(self, point):
+            return point
+
+        def _quick_switch_labels(self, current_label):
+            return [], []
+
+        def update(self):
+            pass
+
+    return Canvas()
+
+
+def test_box_menu_offers_matting_and_greys_it_out_without_a_model(monkeypatch):
+    canvas = _menu_canvas(monkeypatch, matting_model=None)
+
+    canvas._show_box_label_menu(0, type("P", (), {"x": lambda self: 0,
+                                                  "y": lambda self: 0})())
+
+    matte_actions = [a for a in canvas.menu.added
+                     if a.text == i18n.t("抠图素材")]
+    assert len(matte_actions) == 1
+    action = matte_actions[0]
+    assert action.enabled is False
+    assert action.tooltip == i18n.t("先加载抠图模型")
+
+    action.fire()
+    box, region = canvas._editor.matting_call
+    assert box["label"] == "car" and region is None
+
+
+def test_box_menu_enables_matting_when_a_model_is_configured(monkeypatch):
+    canvas = _menu_canvas(monkeypatch, matting_model=object())
+
+    canvas._show_box_label_menu(0, type("P", (), {"x": lambda self: 0,
+                                                  "y": lambda self: 0})())
+
+    action = [a for a in canvas.menu.added if a.text == i18n.t("抠图素材")][0]
+    assert action.enabled is True
+    assert action.tooltip == ""
+
+
+def test_region_menu_offers_matting_with_the_region_contents(monkeypatch):
+    canvas = _menu_canvas(monkeypatch, matting_model=object())
+    canvas._editor.edit_mode = "paste"
+    canvas._editor.region_boxes = []
+    canvas._editor.paste_region_boxes = [{
+        "shape_type": "rectangle", "x": 5, "y": 6, "width": 7, "height": 8,
+    }]
+    canvas._editor.region_fixed = False
+    canvas._editor.paste_region_fixed = False
+    canvas._region_at = lambda mouse_pos: 0
+
+    canvas._show_region_context_menu(type("P", (), {
+        "x": lambda self: 0, "y": lambda self: 0})())
+
+    action = [a for a in canvas.menu.added if a.text == i18n.t("抠图素材")][0]
+    assert action.enabled is True
+    action.fire()
+    box, region = canvas._editor.matting_call
+    assert box is None
+    assert region == {"shape_type": "rectangle", "x": 5, "y": 6,
+                      "width": 7, "height": 8}
+
+
+
+def test_annotate_box_menu_keeps_single_box_matting(monkeypatch):
+    """标注模式保留单检测框抠图素材。"""
+    canvas = _menu_canvas(monkeypatch, matting_model=object())
+    canvas._editor.edit_mode = "annotate"
+
+    canvas._show_box_label_menu(0, type("P", (), {"x": lambda self: 0,
+                                                  "y": lambda self: 0})())
+
+    texts = [a.text for a in canvas.menu.added]
+    assert i18n.t("抠图素材") in texts
+    # 多区域抠图已经删掉，两种模式都不该再出现
+    assert i18n.t("抠出本图全部区域") not in texts
+
+
+def test_annotate_region_menu_has_no_matting(monkeypatch):
+    """标注模式下的区域是推理范围，不提供抠图素材。"""
+    canvas = _menu_canvas(monkeypatch, matting_model=object())
+    canvas._editor.edit_mode = "annotate"
+    canvas._editor.region_boxes = [{
+        "shape_type": "rectangle", "x": 5, "y": 6, "width": 7, "height": 8,
+    }]
+    canvas._editor.region_fixed = False
+    canvas._region_at = lambda mouse_pos: 0
+
+    canvas._show_region_context_menu(type("P", (), {
+        "x": lambda self: 0, "y": lambda self: 0})())
+
+    texts = [a.text for a in canvas.menu.added]
+    assert i18n.t("抠图素材") not in texts
+    assert i18n.t("抠出本图全部区域") not in texts
+
+
+def test_paste_mode_region_menu_keeps_single_region_matting(monkeypatch):
+    """贴图模式的区域仍可单个抠。"""
+    canvas = _menu_canvas(monkeypatch, matting_model=object())
+    canvas._editor.edit_mode = "paste"
+    canvas._editor.paste_region_boxes = [{
+        "shape_type": "rectangle", "x": 5, "y": 6, "width": 7, "height": 8,
+    }]
+    canvas._editor.paste_region_fixed = False
+    canvas._region_at = lambda mouse_pos: 0
+
+    canvas._show_region_context_menu(type("P", (), {
+        "x": lambda self: 0, "y": lambda self: 0})())
+
+    texts = [a.text for a in canvas.menu.added]
+    assert i18n.t("抠图素材") in texts
+    assert i18n.t("抠出本图全部区域") not in texts
