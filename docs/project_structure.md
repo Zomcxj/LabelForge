@@ -59,13 +59,20 @@ LabelForge/
 │   │   │   └── status.py
 │   │   ├── label_manager.py
 │   │   ├── inference_scope.py # 滑窗/区域推理范围枚举与跨窗去重（纯逻辑，无 Qt 依赖）
+│   │   ├── matting.py        # 抠图后处理：alpha 二值化、外接框、RGBA 合成（纯 numpy）
+│   │   ├── matting_model.py  # 抠图模型预设、ONNX 会话惰性加载、下载地址与校验值
+│   │   ├── matting_service.py # 抠图编排：裁块→推理→夹回原框→命名→存盘；批量账本（无 Qt 依赖）
 │   │   ├── paste_engine.py
+│   │   ├── paste_fusion.py   # 贴图合成：泊松融合、像素格式互转
+│   │   ├── paste_item.py     # 贴图项 PasteItem：位图/外接框/标签/角度/源文件路径
 │   │   ├── quality_lint.py     # 标注质检扫描（越界/小目标两档/重复/重叠/近似名/分组，纯逻辑）
 │   │   ├── save_manager.py
 │   │   ├── shape_io.py         # 形状编解码、置信度显示与 YOLO 行生成（矩形/多边形/关键点/旋转框）
 │   │   ├── splitter.py
 │   │   ├── video_io.py       # 视频探测/抽帧时间轴/解码导出/映射清单/合成/逐帧推理编码 render_video（cv2 延迟导入，无 Qt 依赖）
 │   │   ├── video_render.py   # 叠加标签框：QPainter 离屏绘制（延迟导入 PySide6，纯函数；合成页与推理成片页共用）
+│   │   ├── video_dataset.py  # 推理成片写出的数据集：逐帧标注 sidecar 与帧清单
+│   │   ├── video_tracking.py # 跨帧跟踪：IoU 两阶段关联 + 卡尔曼预测 + 滑动中位数平滑（无 Qt 依赖）
 │   │   ├── undo_manager.py
 │   │   ├── yolo_exporter.py
 │   │   └── augmenter/
@@ -167,6 +174,18 @@ LabelForge/
 │   ├── test_video_compose_ui.py      # 合成页控件与 render 接线（真实 Qt 全链路）
 │   ├── test_video_render_frames.py   # ④A 引擎 render_video：逐帧推理/回读验收/取消留半成品
 │   ├── test_video_render_ui.py       # ④A 推理成片页：worker/mixin 接线 + 真实 Qt 全链路（弹窗→引擎）
+│   ├── test_video_tracking.py        # 跨帧跟踪：两阶段 IoU 关联/短轨迹过滤/平滑/逐帧编号
+│   ├── test_video_dataset.py         # 推理成片写出的数据集：逐帧标注与帧清单
+│   ├── test_matting_postprocess.py   # 抠图后处理：alpha 二值化/外接框/RGBA 合成
+│   ├── test_matting_service.py       # 抠图模型预设、前处理与权重校验值
+│   ├── test_matting_orchestrator.py  # 抠图编排：裁块/夹回原框/命名/存盘/取消
+│   ├── test_matte_crop.py            # 画布裁剪素材：拖边框、回车应用、写回 PNG（真实 Qt）
+│   ├── test_paste_item.py            # 贴图项：角度派生形状、四角、旧三元组兼容
+│   ├── test_paste_fusion.py          # 泊松融合与像素格式互转
+│   ├── test_paste_list_actions.py    # 贴图列表刷新/改名/删除，菜单期间重建不崩
+│   ├── test_paste_rotation_export.py # 贴图旋转、角度标签与导出
+│   ├── test_weight_download.py       # 权重下载线程：校验通过才改名，失败不留半截文件
+│   ├── test_onnx_dynamic_shape.py    # 动态轴导出的 ONNX 不把模型加载打崩
 │   ├── test_inference_scope.py       # 滑窗/语义区域范围枚举与跨窗去重
 │   ├── test_inference_scope_wiring.py # 推理范围接入任务层：三模式偏移/参考图尺寸/合并阈值跟随/取消
 │   ├── test_inference_scope_ui.py    # 推理范围界面接线（真实 Qt 子进程）
