@@ -12,7 +12,7 @@ from ..core.config import MATTING_CONFIG
 
 
 #: 预设规格。mean/std 为 0~255 像素归一化后的均值与标准差。
-#: 只支持 RMBG-1.4 一套：多预设会让「权重路径 + 预设」两张表不一致就报错，
+#: 只支持一套抠图模型：多预设会让「权重路径 + 预设」两张表不一致就报错，
 #: 而用户实际只需要一个能用的模型。
 MATTING_PRESETS = {
     # BRIA RMBG-1.4：U2Net 系架构，CPU 上单张约 2 秒，权重为非商用许可

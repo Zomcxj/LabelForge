@@ -476,7 +476,7 @@ class SettingsDialog(QDialog):
         # 权重不随包分发：这里一键下到约定目录，用户不用自己找镜像
         self.matte_download_btn = QPushButton(tr("下载权重"))
         self.matte_download_btn.setToolTip(
-            tr("下载 RMBG-1.4 权重到 项目目录/model/rmbg14.onnx（约 168 MB，非商用许可）"))
+            tr("下载抠图模型权重到 项目目录/model/rmbg14.onnx（约 168 MB，非商用许可）"))
         self.matte_download_btn.clicked.connect(self._download_matte_weight)
         matte_path_row.addWidget(self.matte_download_btn)
         matte_layout.addLayout(matte_path_row)
@@ -641,7 +641,7 @@ class SettingsDialog(QDialog):
             self.matte_path_input.setText(path)
 
     def _download_matte_weight(self):
-        """把 RMBG-1.4 权重下到约定目录；已有文件时只提示，不覆盖。"""
+        """把抠图模型权重下到约定目录；已有文件时只提示，不覆盖。"""
         import os
 
         from ..engine.matting_model import WEIGHT_DOWNLOAD, preset_weight_path
