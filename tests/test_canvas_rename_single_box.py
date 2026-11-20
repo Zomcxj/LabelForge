@@ -33,7 +33,9 @@ sys.exit(0)
 
 
 # Windows 上 Qt 子进程收尾偶发崩溃：0xC0000005 / 0xC0000409。
-_QT_EXIT_CRASH = {3221225477, 3221226505}
+# POSIX 下同一类崩溃表现为信号退出：-6 = SIGABRT（QThread 未收尾）、
+# -11 = SIGSEGV。两种都要重试，否则只有 Windows 能兜住。
+_QT_EXIT_CRASH = {3221225477, 3221226505, -6, -11}
 
 
 def _run_real_qt(script):
