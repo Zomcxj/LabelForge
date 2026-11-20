@@ -202,9 +202,6 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         # 抠图模型惰性构造：只有配置了权重才建实例，未配置时入口置灰
         self._matting_model = None
         self._matte_worker = None
-        # 批量抠图：一个线程跑完整批，账本留在 _matte_batch_report 上
-        self._matte_batch_worker = None
-        self._matte_batch_report = None
         # 视频抽帧行与模型行各自独立：只点一个是 1 行，都点开是 2 行
         # None = 还没设过筛选，按全选处理；换成具体集合才是真的过滤
         self._class_filter = None
@@ -678,12 +675,9 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         return None
 
     def is_matte_running(self):
-        """是否有抠图线程在跑（单个或批量）。"""
-        for name in ('_matte_worker', '_matte_batch_worker'):
-            worker = getattr(self, name, None)
-            if worker is not None and worker.isRunning():
-                return True
-        return False
+        """是否有抠图线程在跑。"""
+        worker = getattr(self, '_matte_worker', None)
+        return worker is not None and worker.isRunning()
 
     def cancel_matte_selection(self):
         """取消进行中的抠图：线程在步骤之间退出，已落盘的文件保留。"""
@@ -691,11 +685,6 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         if worker is not None and worker.isRunning():
             worker.cancel()
             self.status_label.setText(tr("已取消抠图"))
-            return
-        batch = getattr(self, '_matte_batch_worker', None)
-        if batch is not None and batch.isRunning():
-            batch.cancel()
-            self.status_label.setText(tr("正在取消抠图…"))
 
     def _apply_matte_result(self, result):
         """抠图成功：贴图模式接到画布，标注模式只把 PNG 落到输出目录。
@@ -816,99 +805,6 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         """线程收尾：无论成功、失败还是取消都复位忙碌态。"""
         self._busy = False
         self._matte_worker = None
-
-    # ===== 批量抠图（工具栏「抠图」） =====
-
-    def _matte_batch_jobs(self):
-        """数据集里所有带标注的图 -> [(路径, [标注...])]。
-
-        标注只读：缓存里有就用缓存，没有就从 sidecar JSON 读一次
-        （`load_detection_boxes` 只读文件，不写回）。贴图形状是已经贴上去的
-        产物，不是可抠的素材，批量时排除。
-        """
-        images = getattr(self, 'background_images', None) or []
-        cache = getattr(self, 'detection_boxes_dict', None) or {}
-        jobs = []
-        for index, path in enumerate(images):
-            boxes = cache.get(index)
-            if boxes is None:
-                boxes = self.load_detection_boxes(path)
-            targets = [box for box in (boxes or [])
-                       if isinstance(box, dict) and not box.get('is_paste')]
-            if targets:
-                jobs.append((path, targets))
-        return jobs
-
-    def batch_matte_dataset(self):
-        """对数据集所有标注目标批量抠图：串行、可取消、单张失败不中断。
-
-        整个批次在后台线程里跑（见 `BatchMatteWorker`），所以这里立刻返回；
-        不切当前图、不动标注，只往抠图输出目录写 PNG。
-        """
-        from ..core.config import MATTING_CONFIG
-        from .inference_workers import BatchMatteWorker
-
-        if not self._matting_ready():
-            self.status_label.setText(tr("未配置抠图模型"))
-            return None
-
-        worker = getattr(self, '_matte_batch_worker', None)
-        if worker is not None and worker.isRunning():
-            self.status_label.setText(tr("正在抠图，请稍候"))
-            return None
-
-        jobs = self._matte_batch_jobs()
-        total = sum(len(boxes) for _, boxes in jobs)
-        if not total:
-            self.status_label.setText(tr("没有可抠图的目标"))
-            return None
-
-        worker = BatchMatteWorker(
-            self.matting_model, jobs, self._matte_output_dir(),
-            threshold=MATTING_CONFIG.get('threshold', 0.0),
-            margin_ratio=MATTING_CONFIG.get('margin_ratio', 0.05))
-        worker.progress.connect(self._on_matte_batch_progress)
-        worker.finished_ok.connect(self._on_matte_batch_finished)
-        worker.failed.connect(self._on_matte_failed)
-        worker.finished.connect(self._on_matte_batch_worker_finished)
-        self._matte_batch_worker = worker
-        self._matte_batch_report = None
-        self._busy = True
-        self.status_label.setText(f"{tr('抠图中')}: 0/{total}")
-        worker.start()
-        return None
-
-    def _on_matte_batch_progress(self, done, total):
-        """批量进度：只在状态栏报「抠图中: 已完成/总数」。"""
-        self.status_label.setText(f"{tr('抠图中')}: {done}/{total}")
-
-    def _on_matte_batch_finished(self, report):
-        """批量结束：状态栏只报三个数，逐条失败原因写日志。"""
-        self._matte_batch_report = report
-        saved, skipped, failed = report.counts()
-        if report.cancelled:
-            self.status_label.setText(
-                f"{tr('已取消抠图')}: {tr('已完成')} {saved}/{report.total}")
-        else:
-            self.status_label.setText(
-                f"{tr('抠图完成')}: {saved}，{tr('跳过')}: {skipped}，"
-                f"{tr('失败')}: {failed}")
-        self._log_matte_batch_failures(report.failed)
-
-    def _log_matte_batch_failures(self, failures):
-        """失败清单写日志（状态栏只放得下计数，逐条原因留给日志）。"""
-        if not failures:
-            return
-        log = getattr(self, '_log_error', None)
-        if not callable(log):
-            return
-        for path, label, message in failures:
-            log(f"[抠图] {path} · {label} · {message}")
-
-    def _on_matte_batch_worker_finished(self):
-        """批量线程收尾：复位忙碌态（成功/失败/取消都走这里）。"""
-        self._busy = False
-        self._matte_batch_worker = None
 
     def toggle_grid(self):
         """切换网格显示"""

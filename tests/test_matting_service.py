@@ -46,18 +46,19 @@ def test_matting_config_defaults():
     assert MATTING_CONFIG['threads'] == 0
 
 
-def test_tiny_targets_are_skipped():
-    from labelforge.engine.matting_service import should_skip_box
+def test_model_dir_sits_in_the_user_directory():
+    """权重目录必须挂在用户目录下。
 
-    assert should_skip_box((0, 0, 5, 40)) is True      # 短边 5 < 8
-    assert should_skip_box((0, 0, 8, 8)) is False
+    不能按 __file__ 往上推：打包后 __file__ 在 PyInstaller 的临时解压目录
+    （%TEMP%\\_MEIxxxxx）里，进程退出整棵目录被删，下载好的权重下次启动就没了。
+    """
+    from labelforge.engine.matting_model import MODEL_DIR
 
-
-def test_batch_key_is_background_stem_plus_label():
-    from labelforge.engine.matting_service import batch_key
-
-    assert batch_key("C:/data/frame_001.png", "car") == "frame_001_car"
-    assert batch_key("frame_001.png", "a/b:c") == "frame_001_a_b_c"
+    expected = os.path.join(os.path.expanduser("~"), ".labelforge", "models")
+    assert MODEL_DIR == expected
+    assert "_MEI" not in MODEL_DIR
+    assert preset_weight_path("rmbg14") == os.path.join(
+        expected, "rmbg14.onnx")
 
 
 def test_unknown_preset_raises():
@@ -442,7 +443,7 @@ def test_matte_selection_hands_the_plan_to_a_background_worker(monkeypatch):
     assert not hasattr(editor, "_matte_progress_dialog")
 
 
-# ===== 批量抠图：入口、进度、失败与取消 =====
+# ===== 单张抠图：会话替身 =====
 
 def _fake_session():
     """整块都是前景的会话替身（输出 logits），不读权重。"""
@@ -460,294 +461,7 @@ def _fake_session():
     return _Solid()
 
 
-def _batch_model():
-    from labelforge.engine.matting_model import MattingModel
-
-    return MattingModel(preset="rmbg14", input_size=32, session=_fake_session())
-
-
-def _batch_boxes():
-    return {
-        0: [
-            {"label": "car", "x": 10, "y": 10, "width": 30, "height": 30},
-            {"label": "cap", "x": 0, "y": 0, "width": 4, "height": 30},
-        ],
-        1: [{"label": "person", "x": 20, "y": 20, "width": 40, "height": 40}],
-    }
-
-
-class _BatchEditorBase:
-    """批量抠图用例共用的假宿主：只带入口真正会用到的那几个属性。"""
-
-    def __init__(self, tmp_path, model=None):
-        self.tmp_path = tmp_path
-        self.status_label = _StatusLabel()
-        self._matting_model = model
-        self._matte_worker = None
-        self._matte_batch_worker = None
-        self._matte_batch_report = None
-        self._busy = False
-        self.detection_boxes_dict = _batch_boxes()
-        self.background_images = [
-            str(tmp_path / "images" / "frame_001.png"),
-            str(tmp_path / "images" / "frame_002.png"),
-        ]
-        self.current_background_index = 0
-        self._memory_background_path = str(tmp_path / "images")
-        self.logged = []
-
-    def _log_error(self, message):
-        self.logged.append(message)
-
-
-def test_batch_matte_dataset_without_a_model_only_sets_the_status(
-        tmp_path, monkeypatch):
-    from labelforge.ui.main_window import ImageEditor
-
-    class Editor(_BatchEditorBase, ImageEditor):
-        def __init__(self):
-            _BatchEditorBase.__init__(self, tmp_path=tmp_path, model=None)
-
-    monkeypatch.setitem(MATTING_CONFIG, 'model_path', '')
-    editor = Editor()
-    assert editor.batch_matte_dataset() is None
-    assert editor.status_label.text == i18n.t("未配置抠图模型")
-    assert editor._matte_batch_worker is None
-
-
-def test_batch_matte_dataset_without_targets_says_so(tmp_path):
-    from labelforge.ui.main_window import ImageEditor
-
-    class Editor(_BatchEditorBase, ImageEditor):
-        def __init__(self):
-            _BatchEditorBase.__init__(self, tmp_path=tmp_path, model=object())
-            self.detection_boxes_dict = {}
-
-        def load_detection_boxes(self, path):
-            return []
-
-    editor = Editor()
-    assert editor.batch_matte_dataset() is None
-    assert editor.status_label.text == i18n.t("没有可抠图的目标")
-
-
-def test_batch_matte_dataset_reads_uncached_boxes_from_disk(tmp_path):
-    """没打开过的图也要进批次：缓存缺失时读 sidecar，只读不写。"""
-    from labelforge.ui.main_window import ImageEditor
-
-    class Editor(_BatchEditorBase, ImageEditor):
-        def __init__(self):
-            _BatchEditorBase.__init__(self, tmp_path=tmp_path, model=object())
-            self.detection_boxes_dict = {}
-            self.read = []
-
-        def load_detection_boxes(self, path):
-            self.read.append(path)
-            return [{"label": "car", "x": 1, "y": 1, "width": 20, "height": 20}]
-
-    editor = Editor()
-    jobs = editor._matte_batch_jobs()
-
-    assert [os.path.basename(path) for path, _ in jobs] == [
-        "frame_001.png", "frame_002.png"]
-    assert len(editor.read) == 2
-
-
-def test_batch_matte_dataset_skips_paste_shapes(tmp_path):
-    from labelforge.ui.main_window import ImageEditor
-
-    class Editor(_BatchEditorBase, ImageEditor):
-        def __init__(self):
-            _BatchEditorBase.__init__(self, tmp_path=tmp_path, model=object())
-            self.detection_boxes_dict = {0: [
-                {"label": "car", "x": 0, "y": 0, "width": 20, "height": 20,
-                 "is_paste": True},
-            ]}
-
-        def load_detection_boxes(self, path):
-            return []
-
-    assert Editor()._matte_batch_jobs() == []
-
-
-def test_batch_matte_dataset_hands_the_jobs_to_a_background_worker(
-        tmp_path, monkeypatch):
-    from labelforge.ui import inference_workers
-    from labelforge.ui.main_window import ImageEditor
-
-    started = []
-
-    class FakeBatchWorker:
-        def __init__(self, model, jobs, output_dir, threshold=0.0,
-                     margin_ratio=0.05):
-            started.append((model, jobs, output_dir, threshold, margin_ratio))
-            self.progress = _Signal()
-            self.finished_ok = _Signal()
-            self.failed = _Signal()
-            self.finished = _Signal()
-            self.running = False
-
-        def isRunning(self):
-            return self.running
-
-        def cancel(self):
-            self.running = False
-
-        def start(self):
-            started.append("started")
-            self.running = True
-
-    class Editor(_BatchEditorBase, ImageEditor):
-        def __init__(self):
-            _BatchEditorBase.__init__(self, tmp_path=tmp_path,
-                                      model=_batch_model())
-
-    monkeypatch.setitem(MATTING_CONFIG, 'output_dir', '')
-    monkeypatch.setattr(inference_workers, "BatchMatteWorker", FakeBatchWorker)
-    editor = Editor()
-
-    assert editor.batch_matte_dataset() is None
-
-    model, jobs, output_dir, threshold, margin_ratio = started[0]
-    assert model is editor._matting_model
-    assert [os.path.basename(path) for path, _ in jobs] == [
-        "frame_001.png", "frame_002.png"]
-    assert sum(len(boxes) for _, boxes in jobs) == 3
-    assert output_dir == str(tmp_path / "images_matting_output")
-    assert threshold == MATTING_CONFIG["threshold"]
-    assert margin_ratio == MATTING_CONFIG["margin_ratio"]
-    assert started[1] == "started"
-    assert editor._busy is True
-    # 批量抠图同样不弹进度窗，进度只走状态栏
-    assert not hasattr(editor, "_matte_progress_dialog")
-    assert editor.status_label.text == f"{i18n.t('抠图中')}: 0/3"
-
-
-def test_batch_matte_dataset_reuses_the_running_worker_guard(
-        tmp_path, monkeypatch):
-    from labelforge.ui.main_window import ImageEditor
-
-    class FakeBatchWorker:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def isRunning(self):
-            return True
-
-        def start(self):
-            raise AssertionError("已在批量抠图时不应再启动一个线程")
-
-    class Editor(_BatchEditorBase, ImageEditor):
-        def __init__(self):
-            _BatchEditorBase.__init__(self, tmp_path=tmp_path,
-                                      model=_batch_model())
-            self._matte_batch_worker = FakeBatchWorker()
-
-    editor = Editor()
-    assert editor.batch_matte_dataset() is None
-    assert editor.status_label.text == i18n.t("正在抠图，请稍候")
-
-
-def test_batch_progress_and_finish_handler_report_counts(tmp_path):
-    from labelforge.engine import matting_service
-    from labelforge.ui.main_window import ImageEditor
-
-    class Editor(_BatchEditorBase, ImageEditor):
-        def __init__(self):
-            _BatchEditorBase.__init__(self, tmp_path=tmp_path,
-                                      model=_batch_model())
-
-    editor = Editor()
-    jobs = editor._matte_batch_jobs()
-    out = tmp_path / "images_matting_output"
-    report = matting_service.matte_batch(
-        editor._matting_model, jobs, str(out),
-        lambda path: np.full((80, 80, 3), 120, dtype=np.uint8))
-
-    editor._on_matte_batch_progress(2, 3)
-    assert editor.status_label.text == f"{i18n.t('抠图中')}: 2/3"
-
-    editor._on_matte_batch_finished(report)
-    assert editor._matte_batch_report is report
-    text = editor.status_label.text
-    assert text.startswith(f"{i18n.t('抠图完成')}: 2")
-    assert i18n.t("跳过") in text and i18n.t("失败") in text
-    assert sorted(p.name for p in out.iterdir()) == [
-        "frame_001_car_001.png", "frame_002_person_001.png"]
-
-    editor._busy = True
-    editor._on_matte_batch_worker_finished()
-    assert editor._busy is False
-    assert editor._matte_batch_worker is None
-
-
-def test_batch_finish_handler_logs_each_failure(tmp_path):
-    from labelforge.engine.matting_service import BatchMatteReport
-    from labelforge.ui.main_window import ImageEditor
-
-    class Editor(_BatchEditorBase, ImageEditor):
-        def __init__(self):
-            _BatchEditorBase.__init__(self, tmp_path=tmp_path,
-                                      model=_batch_model())
-
-    editor = Editor()
-    report = BatchMatteReport()
-    report.total = 1
-    report.failed.append(("frame_001.png", "car", "磁盘已满"))
-
-    editor._on_matte_batch_finished(report)
-
-    assert editor.logged
-    assert "frame_001.png" in editor.logged[0]
-    assert "磁盘已满" in editor.logged[0]
-
-
-def test_batch_cancelled_report_says_cancelled(tmp_path):
-    from labelforge.engine.matting_service import BatchMatteReport
-    from labelforge.ui.main_window import ImageEditor
-
-    class Editor(_BatchEditorBase, ImageEditor):
-        def __init__(self):
-            _BatchEditorBase.__init__(self, tmp_path=tmp_path,
-                                      model=_batch_model())
-
-    editor = Editor()
-    report = BatchMatteReport()
-    report.total = 5
-    report.cancelled = True
-
-    editor._on_matte_batch_finished(report)
-
-    assert editor.status_label.text.startswith(i18n.t("已取消抠图"))
-
-
-def test_cancel_matte_selection_cancels_the_batch_worker(tmp_path):
-    from labelforge.ui.main_window import ImageEditor
-
-    class FakeBatchWorker:
-        def __init__(self):
-            self.cancelled = False
-
-        def isRunning(self):
-            return True
-
-        def cancel(self):
-            self.cancelled = True
-
-    class Editor(_BatchEditorBase, ImageEditor):
-        def __init__(self):
-            _BatchEditorBase.__init__(self, tmp_path=tmp_path,
-                                      model=_batch_model())
-            self._matte_batch_worker = FakeBatchWorker()
-
-    editor = Editor()
-    editor.cancel_matte_selection()
-
-    assert editor._matte_batch_worker.cancelled is True
-    assert editor.status_label.text == i18n.t("正在取消抠图…")
-
-
-# ===== 真 Qt：工具栏按钮确实接到了批量入口 =====
+# ===== 真 Qt：Esc 取消单个抠图 =====
 
 _QT_EXIT_CRASH = {3221225477, 3221226505}
 
@@ -770,34 +484,6 @@ def _run_real_qt(script, guard="\nimport sys\nsys.stdout.flush()\nsys.exit(0)\n"
         if not crash:
             break
     return last
-
-
-def test_real_toolbar_matte_button_starts_the_batch_entry(tmp_path):
-    """真控件冒烟：按钮存在、文案可翻译、点击走到「未配置抠图模型」。"""
-    config_path = tmp_path / "config.json"
-    script = f"""
-import os
-os.environ['LABELFORGE_CONFIG_PATH'] = r"{config_path}"
-from PySide6.QtWidgets import QApplication
-from labelforge.ui import i18n
-from labelforge.ui.main_window import ImageEditor
-
-app = QApplication.instance() or QApplication([])
-window = ImageEditor()
-btn = window.matte_btn
-print(btn.text() == i18n.t("抠图"))
-print(btn.toolTip() == i18n.t("对数据集所有标注目标批量抠图"))
-print(window._matting_ready() is False)
-btn.click()
-app.processEvents()
-print(window.status_label.text() == i18n.t("未配置抠图模型"))
-print(window._matte_batch_worker is None)
-"""
-    result = _run_real_qt(script)
-    assert result.returncode == 0, (
-        f"exit={result.returncode} {result.stderr}")
-    lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
-    assert lines == ["True"] * 5, lines
 
 
 def test_real_escape_cancels_a_running_matte_without_any_progress_window(tmp_path):

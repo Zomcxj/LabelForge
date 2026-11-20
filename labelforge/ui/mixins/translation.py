@@ -53,9 +53,6 @@ class TranslationMixin:
             self.video_lbl.setText(tr("视频:"))
         if hasattr(self, 'video_load_btn'):
             self.video_load_btn.setToolTip(tr("视频抽帧:"))
-        if hasattr(self, 'matte_btn'):
-            self.matte_btn.setText(tr("抠图"))
-            self.matte_btn.setToolTip(tr("对数据集所有标注目标批量抠图"))
         if hasattr(self, '_refresh_bg_label_mode_button'):
             self._refresh_bg_label_mode_button()
         if hasattr(self, 'view_toggle_btn'):

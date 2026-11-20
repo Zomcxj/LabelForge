@@ -36,10 +36,15 @@ WEIGHT_DOWNLOAD = {
     },
 }
 
-#: 权重的约定目录：仓库根的 model/（已在 .gitignore 内，不随源码分发）
-MODEL_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "model")
+#: 权重的约定目录。
+#: 不能用 __file__ 往上推：打包后 __file__ 落在 PyInstaller 的临时解压目录
+#: （%TEMP%\_MEIxxxxx\...）里，进程一退出整棵目录就被删掉，下载好的权重
+#: 下次启动就没了。改挂到用户目录，与配置文件 ~/.labelforge.json 同级。
+def default_model_dir():
+    return os.path.join(os.path.expanduser("~"), ".labelforge", "models")
+
+
+MODEL_DIR = default_model_dir()
 
 
 def preset_weight_path(preset, model_dir=None):

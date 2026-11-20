@@ -118,16 +118,6 @@ class ToolbarMixin:
             self.video_load_btn.setToolTip(tr("未安装 opencv（cv2），视频功能不可用"))
         upload_layout.addWidget(self.video_load_btn)
 
-        # 批量抠图：整批标注目标逐个抠成素材，与「视频」同一行。
-        # 未配置权重时不置灰——点下去会在状态栏说「未配置抠图模型」，
-        # 比一个说不出原因的灰按钮更好排查。
-        self.matte_btn = QPushButton(tr("抠图"))
-        self.matte_btn.setObjectName("labelBtn")
-        self.matte_btn.setMinimumHeight(24)
-        self.matte_btn.setToolTip(tr("对数据集所有标注目标批量抠图"))
-        self.matte_btn.clicked.connect(self.batch_matte_dataset)
-        upload_layout.addWidget(self.matte_btn)
-
         upload_layout.addSpacing(2)
         self.model_lbl = QLabel(tr("模型推理:"))
         upload_layout.addWidget(self.model_lbl)

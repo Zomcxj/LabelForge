@@ -20,8 +20,6 @@ INDEX_WIDTH = 3
 TEMP_SUFFIX = ".part"
 #: 能靠顶点算外接框的形状（旋转框的 x/y/width/height 是轴对齐外接框）
 POINT_SHAPES = ("polygon", "rotation")
-#: 短边小于该像素的目标抠不出有意义素材，批量时跳过
-MIN_TARGET_SHORT_SIDE = 8
 
 
 def default_output_dir(background_dir):
@@ -47,19 +45,6 @@ def sanitise_name(value, fallback):
     cleaned = INVALID_NAME_CHARS.sub("_", str(value or "")).strip()
     cleaned = cleaned.strip(".")
     return cleaned or fallback
-
-
-def should_skip_box(box):
-    """短边小于 8px 的目标抠不出有意义素材，批量时跳过。"""
-    _, _, w, h = box
-    return min(w, h) < MIN_TARGET_SHORT_SIDE
-
-
-def batch_key(source_name, label):
-    """批量去重键 `<背景主名>_<标签>`：同一张图的同一标签只抠一次。"""
-    stem = sanitise_name(
-        os.path.splitext(os.path.basename(str(source_name or "")))[0], "image")
-    return f"{stem}_{sanitise_name(label, 'object')}"
 
 
 def next_matte_path(directory, label, source_name):
@@ -272,105 +257,3 @@ def matte_selection(model, rgb, box, label, source_name, output_dir,
     save_matte_png(rgba, path)
     return MatteResult(rgba=rgba, rect=rect, path=os.fspath(path),
                        label=label or "object")
-
-
-class BatchMatteReport:
-    """一次批量抠图的账本：成功、跳过（小目标/重复/无前景）、失败。
-
-    计数口径是「目标数」：不取消时 saved + skipped + failed 恒等于 total，
-    这样状态栏报出来的三个数加起来就是批量处理了多少个目标。
-    """
-
-    __slots__ = ("saved", "skipped", "failed", "cancelled", "total")
-
-    def __init__(self):
-        self.saved = []
-        self.skipped = []
-        self.failed = []
-        self.cancelled = False
-        self.total = 0
-
-    def counts(self):
-        """(完成, 跳过, 失败) 三个数，供界面直接拼状态栏。"""
-        return len(self.saved), len(self.skipped), len(self.failed)
-
-    def __repr__(self):
-        saved, skipped, failed = self.counts()
-        return (f"BatchMatteReport(saved={saved}, skipped={skipped}, "
-                f"failed={failed}, cancelled={self.cancelled}, "
-                f"total={self.total})")
-
-
-def matte_batch(model, jobs, output_dir, load_rgb, threshold=0.0,
-                margin_ratio=0.05, cancel=None, progress=None):
-    """按 jobs 串行抠图，返回 BatchMatteReport。
-
-    jobs 是 `[(图片路径, [标注字典, ...]), ...]`：标注只读，本函数不写回任何
-    JSON，只往 output_dir 落 PNG。同一张图的同一标签（`batch_key`）只抠一次，
-    短边不足 `MIN_TARGET_SHORT_SIDE` 的目标直接跳过。单张失败记进
-    `report.failed` 后继续下一个目标；取消时已完成的部分保留，未开始的
-    目标不产生任何文件。progress 收到 `(已完成, 总数)`。
-    """
-    report = BatchMatteReport()
-    report.total = sum(len(boxes or ()) for _, boxes in jobs)
-    seen = set()
-    cached_path, cached_rgb, cached_error = None, None, None
-    done = 0
-
-    for image_path, boxes in jobs:
-        source_name = os.path.basename(str(image_path)) or "image.png"
-        for box in boxes or ():
-            if cancel is not None and cancel():
-                report.cancelled = True
-                return report
-
-            label = (box.get("label") if isinstance(box, dict) else None) or "object"
-            try:
-                raw_box = target_box(box)
-            except (AttributeError, KeyError, TypeError, ValueError) as exc:
-                report.failed.append((image_path, label, f"标注缺少尺寸: {exc}"))
-                done += 1
-                if progress is not None:
-                    progress(done, report.total)
-                continue
-
-            if should_skip_box(raw_box):
-                report.skipped.append((image_path, label, "小目标"))
-            elif batch_key(source_name, label) in seen:
-                report.skipped.append((image_path, label, "重复"))
-            else:
-                seen.add(batch_key(source_name, label))
-                if cached_path != image_path:
-                    cached_path, cached_rgb, cached_error = image_path, None, None
-                    try:
-                        cached_rgb = load_rgb(image_path)
-                    except Exception as exc:
-                        cached_error = str(exc)
-                if cached_rgb is None:
-                    report.failed.append(
-                        (image_path, label, cached_error or "图片读取失败"))
-                else:
-                    try:
-                        result = matte_selection(
-                            model, cached_rgb, raw_box, label, source_name,
-                            output_dir, threshold=threshold,
-                            margin_ratio=margin_ratio,
-                            polygon=target_polygon(box), cancel=cancel)
-                    except Exception as exc:
-                        report.failed.append((image_path, label, str(exc)))
-                    else:
-                        if result is not None:
-                            report.saved.append(result)
-                        elif cancel is not None and cancel():
-                            # 推理途中被取消：不算「没有前景」，直接收工
-                            report.cancelled = True
-                            return report
-                        else:
-                            report.skipped.append((image_path, label, "无前景"))
-
-            done += 1
-            if progress is not None:
-                progress(done, report.total)
-
-    return report
-

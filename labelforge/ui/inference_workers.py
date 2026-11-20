@@ -239,48 +239,6 @@ class MatteWorker(QThread):
         self._cancelled = True
 
 
-class BatchMatteWorker(QThread):
-    """后台批量抠图：按 job 逐个目标串行跑，与单张走同一个编排函数。
-
-    `finished_ok` 带回 `matting_service.BatchMatteReport`（含成功/跳过/失败三份
-    清单，界面据此汇总）。推理已经吃满 CPU，串行即可；取消只在目标之间生效，
-    已落盘的 PNG 保留，未开始的目标不产生任何文件。图片由后台线程自己读，
-    不切画布——批量只读标注、只写抠图输出目录。
-    """
-    progress = Signal(int, int)
-    finished_ok = Signal(object)
-    failed = Signal(str)
-
-    def __init__(self, model, jobs, output_dir, threshold=0.0,
-                 margin_ratio=0.05, loader=None, parent=None):
-        super().__init__(parent)
-        self._model = model
-        self._jobs = list(jobs)
-        self._output_dir = output_dir
-        self._threshold = threshold
-        self._margin_ratio = margin_ratio
-        self._loader = loader or load_rgb
-        self._cancelled = False
-
-    def run(self):
-        from ..engine import matting_service
-        try:
-            report = matting_service.matte_batch(
-                self._model, self._jobs, self._output_dir,
-                load_rgb=self._loader,
-                threshold=self._threshold,
-                margin_ratio=self._margin_ratio,
-                cancel=lambda: self._cancelled,
-                progress=self.progress.emit,
-            )
-            self.finished_ok.emit(report)
-        except Exception as exc:
-            self.failed.emit(str(exc))
-
-    def cancel(self):
-        self._cancelled = True
-
-
 def class_names_prompt(parent, model_path, suggested_path, expected_count=None):
     """类别缺失时收集类别名，并在模型同级目录写同名 txt。
 
