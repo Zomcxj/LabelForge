@@ -11,6 +11,7 @@ LabelForge/
 ├── requirements.txt           # 运行期依赖
 ├── requirements-dev.txt       # 开发与测试依赖
 ├── requirements-build.txt     # PyInstaller 构建依赖
+├── pytest.ini                 # pytest 配置：默认 -n 2 双线并行
 ├── README.md                  # 项目说明
 ├── LICENSE                    # GNU LGPL v3.0 许可证（LGPL-3.0-only）
 ├── THIRD-PARTY.md             # 第三方组件清单与 Qt 源码获取方式
@@ -61,7 +62,7 @@ LabelForge/
 │   │   ├── inference_scope.py # 滑窗/区域推理范围枚举与跨窗去重（纯逻辑，无 Qt 依赖）
 │   │   ├── matting.py        # 抠图后处理：alpha 二值化、外接框、RGBA 合成（纯 numpy）
 │   │   ├── matting_model.py  # 抠图模型预设、ONNX 会话惰性加载、下载地址与校验值
-│   │   ├── matting_service.py # 抠图编排：裁块→推理→夹回原框→命名→存盘；批量账本（无 Qt 依赖）
+│   │   ├── matting_service.py # 抠图编排：裁块→推理→夹回原框→命名→存盘（无 Qt 依赖）
 │   │   ├── paste_engine.py
 │   │   ├── paste_fusion.py   # 贴图合成：泊松融合、像素格式互转
 │   │   ├── paste_item.py     # 贴图项 PasteItem：位图/外接框/标签/角度/源文件路径
