@@ -1,8 +1,49 @@
 from typing import List, Tuple
 
+import numpy as np
 from PySide6.QtGui import QImage
 
-from .base import BaseTransform, register_transform, rgb888_buffer
+from .base import (
+    BaseTransform,
+    qimage_to_rgb_array,
+    register_transform,
+    rgb_array_to_qimage,
+)
+
+
+def _generator(rng) -> np.random.Generator:
+    """由 random.Random（或全局 random 模块）派生 numpy Generator。
+
+    传进来的 rng 是 `random.Random`，numpy 用不了；只从它取一个整数作种子，
+    同一个 seed 仍然得到同一串噪声（与逐像素时代同样可复现）。
+    """
+    return np.random.default_rng(rng.randrange(2 ** 32))
+
+
+def gaussian_noise_array(
+    arr: np.ndarray, mean: float, sigma: float, rng
+) -> np.ndarray:
+    """给每个通道加高斯噪声，截断到 [0, 255]。"""
+    gen = _generator(rng)
+    noise = gen.normal(mean, sigma, size=arr.shape).astype(np.float32)
+    return np.clip(arr.astype(np.float32) + noise, 0, 255).astype(np.uint8)
+
+
+def salt_pepper_array(arr: np.ndarray, prob: float, rng) -> np.ndarray:
+    """按 prob 比例撒椒盐：一半置 255，一半置 0。不修改传入数组。"""
+    gen = _generator(rng)
+    out = np.array(arr, dtype=np.uint8, copy=True)
+    h, w = out.shape[:2]
+    total = h * w
+    n_salt = int(total * prob / 2)
+    n_pepper = int(total * prob / 2)
+    if n_salt:
+        flat = gen.integers(0, total, size=n_salt)
+        out[flat // w, flat % w] = 255
+    if n_pepper:
+        flat = gen.integers(0, total, size=n_pepper)
+        out[flat // w, flat % w] = 0
+    return out
 
 
 @register_transform
@@ -18,18 +59,9 @@ class GaussianNoise(BaseTransform):
         self, image: QImage, boxes: List[dict],
         image_width: int, image_height: int
     ) -> Tuple[QImage, List[dict]]:
-        img = image.convertToFormat(QImage.Format_RGB888)
-        arr = rgb888_buffer(img)
-        stride = img.bytesPerLine()
-        for y in range(img.height()):
-            offset = y * stride
-            for x in range(img.width()):
-                idx = offset + x * 3
-                for c in range(3):
-                    noise = int(self.rng.gauss(self.mean, self.sigma))
-                    arr[idx + c] = max(0, min(255, arr[idx + c] + noise))
-        result = QImage(arr, img.width(), img.height(), stride, QImage.Format_RGB888)
-        return result, boxes
+        arr = gaussian_noise_array(qimage_to_rgb_array(image),
+                                   self.mean, self.sigma, self.rng)
+        return rgb_array_to_qimage(arr), boxes
 
 
 @register_transform
@@ -44,21 +76,5 @@ class SaltPepper(BaseTransform):
         self, image: QImage, boxes: List[dict],
         image_width: int, image_height: int
     ) -> Tuple[QImage, List[dict]]:
-        img = image.convertToFormat(QImage.Format_RGB888)
-        arr = rgb888_buffer(img)
-        stride = img.bytesPerLine()
-        total = img.width() * img.height()
-        n_salt = int(total * self.prob / 2)
-        n_pepper = int(total * self.prob / 2)
-        for _ in range(n_salt):
-            x = self.rng.randrange(img.width())
-            y = self.rng.randrange(img.height())
-            idx = y * stride + x * 3
-            arr[idx] = arr[idx + 1] = arr[idx + 2] = 255
-        for _ in range(n_pepper):
-            x = self.rng.randrange(img.width())
-            y = self.rng.randrange(img.height())
-            idx = y * stride + x * 3
-            arr[idx] = arr[idx + 1] = arr[idx + 2] = 0
-        result = QImage(arr, img.width(), img.height(), stride, QImage.Format_RGB888)
-        return result, boxes
+        arr = salt_pepper_array(qimage_to_rgb_array(image), self.prob, self.rng)
+        return rgb_array_to_qimage(arr), boxes

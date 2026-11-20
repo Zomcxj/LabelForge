@@ -10,7 +10,17 @@ class CanvasDrawingMixin:
     """检测框绘制、拖动、缩放"""
 
     def _can_edit_canvas(self):
-        return not getattr(self._editor, '_is_delete_view', False)
+        """画布现在能不能改。
+
+        图像处理面板开着时只放行**区域绘制态**：按选区裁剪要在同一块画布上
+        画矩形，其余（标注框、多边形、点、贴图拖动）一律锁住——预览态下多画
+        一个框就会写进真实数据。
+        """
+        if getattr(self._editor, '_is_delete_view', False):
+            return False
+        # 图像处理面板开着时**放行**：既要在画布上画选区，也要能拖动/缩放已有
+        # 选区。标注与贴图的写入由各自的处理函数单独挡住（见 `_handle_left_click`）。
+        return True
 
     def _region_editing_allowed(self):
         """现在允许编辑区域框吗（**当前模式是否有在调的入口**）。
@@ -26,6 +36,8 @@ class CanvasDrawingMixin:
         只放行**未锁定**的区域：锁定的区域要「最底层、不可修改」，由
         `_region_at()` 跳过它，这里不必再判一次。
         """
+        if getattr(self._editor, '_image_tools_active', False):
+            return True
         if self._is_paste_mode():
             return True
         return bool(getattr(self._editor, '_scope_panel_open', False))
@@ -112,6 +124,9 @@ class CanvasDrawingMixin:
         画完立即退出绘制态：一个按钮只画一个区域，不会再连着画下一个，
         要再画就再点一次按钮。宿主那侧靠回调把新区域刷进面板列表，
         所以复位前后都要通知一声。
+
+        图像处理面板是例外：它的选区就是「处理的边界」，画布画什么必须等于
+        处理用什么，所以只保留最后一笔并**留在绘制态**，让用户能直接重画。
         """
         self._notify_region_changed()
         self._reset_region_drawing_state()
@@ -213,6 +228,8 @@ class CanvasDrawingMixin:
         self._finish_region_polygon(pop_duplicate=pop_duplicate)
 
     def _handle_drawing_press(self, mouse_pos):
+        if getattr(self._editor, '_image_tools_active', False):
+            return True
         if not self._can_edit_canvas():
             return True
         if (not self._editor.background_images or
@@ -301,6 +318,8 @@ class CanvasDrawingMixin:
         return [float(x), float(y)]
 
     def _handle_polygon_press(self, mouse_pos):
+        if getattr(self._editor, '_image_tools_active', False):
+            return True
         if not self._can_edit_canvas():
             return True
         if (not self._editor.background_images or
@@ -418,6 +437,8 @@ class CanvasDrawingMixin:
         )
 
     def _handle_point_press(self, mouse_pos):
+        if getattr(self._editor, '_image_tools_active', False):
+            return True
         from ..ui.dialogs import LabelSelectionDialog
         if not self._can_edit_canvas():
             return True

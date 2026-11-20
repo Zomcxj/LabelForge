@@ -75,7 +75,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if not self._can_edit_canvas():
             self._drag_out_pending = False
             if event.button() == Qt.RightButton:
-                self._handle_right_click(mouse_pos)
+                # 预览态不给右键菜单：里面能删标签文件、能把图片移走
+                if not getattr(self._editor, '_image_tools_active', False):
+                    self._handle_right_click(mouse_pos)
                 return
             if event.button() == Qt.LeftButton and self._editor.current_background:
                 self._handle_background_click(mouse_pos)
@@ -206,6 +208,15 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 or getattr(self, 'is_drawing_region', False)
                 or getattr(self, 'is_drawing_region_polygon', False)):
             return
+        if getattr(self._editor, '_image_tools_active', False):
+            # 图像处理面板：只认选区（拖动/缩放）与画布平移，不碰标注和贴图
+            if self._region_editing_allowed() and self._handle_region_click(mouse_pos):
+                return
+            if self._editor.current_background and self._handle_background_click(mouse_pos):
+                return
+            self._clear_selection()
+            return
+
         is_annotate = getattr(self._editor, 'edit_mode', 'paste') == 'annotate'
 
         if is_annotate:

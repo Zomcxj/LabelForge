@@ -122,6 +122,10 @@ class CanvasMenuMixin:
         画布上所有区域相关的读写都经这里取列表，**不要**直接摸
         `region_boxes`——否则贴图模式会改到推理的那份。
         """
+        if getattr(self._editor, '_image_tools_active', False):
+            if not isinstance(getattr(self._editor, 'image_tools_regions', None), list):
+                self._editor.image_tools_regions = []
+            return self._editor.image_tools_regions
         if self._is_paste_mode():
             if not isinstance(getattr(self._editor, 'paste_region_boxes', None), list):
                 self._editor.paste_region_boxes = []

@@ -27,6 +27,7 @@ from .mixins.theme import ThemeMixin
 from .mixins.translation import TranslationMixin
 from .mixins.dataset_grouper import DatasetGrouperMixin
 from .mixins.dataset_tools import DatasetToolsMixin
+from .mixins.image_tools import ImageToolsMixin
 from .mixins.inference import InferenceMixin
 from .mixins.video import VideoMixin
 from .mixins.toolbar import ToolbarMixin
@@ -38,7 +39,7 @@ from .mixins.panels import PanelsMixin
 
 class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin, QualityLintMixin, MemoryRecordMixin, LabelCacheSlotMixin,
                    ToolbarMixin, OptionsPopupMixin, CacheMenuMixin, ListsMixin, PanelsMixin, ImageLoaderMixin, PasteEngineMixin,
-                   DatasetGrouperMixin, DatasetToolsMixin, InferenceMixin, VideoMixin, EventHandlerMixin, QMainWindow):
+                   DatasetGrouperMixin, DatasetToolsMixin, ImageToolsMixin, InferenceMixin, VideoMixin, EventHandlerMixin, QMainWindow):
     """贴图标注工具主窗口"""
 
     def __init__(self):
@@ -171,6 +172,12 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self.background_images = []
         self._current_background = None
         self.current_background_index = -1
+        # 图像处理面板状态：面板开着时画布进预览态，标注隐藏/编辑锁定
+        self._image_tools_active = False
+        self._image_tools_geometric = False
+        self._image_tools_original = None
+        self.image_tools_regions = []
+        self.image_tools_region_mode = "none"
         self.small_images = []
         self._memory_background_path = ""
         self._memory_paste_path = ""
@@ -871,7 +878,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
             self._center_processing_panel()
 
     def _show_export_menu(self):
-        """顶部'导出'按钮弹出菜单: 增强划分 / 数据集分组"""
+        """顶部'导出'按钮弹出菜单: 增强划分 / 数据集分组 / 图像处理"""
         from PySide6.QtWidgets import QMenu
         from PySide6.QtCore import QPoint
 
@@ -879,6 +886,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         menu.setObjectName("optionsMenu")
         action_aug = menu.addAction(tr("增强划分"))
         action_group = menu.addAction(tr("数据集分组"))
+        action_image_tools = menu.addAction(tr("图像处理"))
 
         btn_pos = self.process_btn.mapToGlobal(QPoint(0, self.process_btn.height()))
         action = menu.exec_(btn_pos)
@@ -887,6 +895,8 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
             self._toggle_processing_panel()
         elif action == action_group:
             self._open_dataset_grouper()
+        elif action == action_image_tools:
+            self._open_image_tools()
 
     def _update_processing_panel_labels(self):
         if hasattr(self, '_processing_panel') and self._processing_panel:

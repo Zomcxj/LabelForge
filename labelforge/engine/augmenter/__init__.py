@@ -12,6 +12,8 @@ from .crop import (
 )
 
 from . import flipt, color, noise, translate, rotate, scale
+# 图像处理工具新增的变换：导入即完成注册
+from . import color2, filters, geom2
 
 
 class Augmenter:

@@ -52,12 +52,13 @@ def _run_real_qt(script):
 
 # ---------- 注册表 ----------
 
-def test_all_twelve_transforms_are_registered():
-    names = get_all_transforms()
-    assert sorted(names) == [
+def test_base_twelve_transforms_are_registered():
+    """原有 12 项必须在注册表里；图像处理工具会追加更多，故用子集断言。"""
+    names = set(get_all_transforms())
+    assert {
         "bright", "contrast", "fliph", "flipv", "gauss", "hue",
         "rotate", "saltpepper", "saturation", "scale", "trans", "value",
-    ]
+    } <= names
 
 
 def test_registered_classes_subclass_base_transform():

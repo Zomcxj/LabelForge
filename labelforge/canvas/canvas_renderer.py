@@ -93,7 +93,8 @@ class CanvasRendererMixin:
                 self._draw_paste_items(sp, background_rect)
 
             if (self._editor.show_labels_checkbox.isChecked() and
-                background_rect and self._editor.detection_boxes):
+                background_rect and self._editor.detection_boxes and
+                    not self._hide_detection_boxes()):
                 self._draw_detection_boxes(sp, background_rect)
 
             if background_rect and self._show_regions():
@@ -288,9 +289,10 @@ class CanvasRendererMixin:
         面板开着时在标注模式画区域也要可见，否则无法确认绘制位置。
         只影响「画不画临时框」，不改交互。
         """
-        return self._is_paste_mode() or bool(
+        return (self._is_paste_mode() or bool(
             getattr(self, 'is_drawing_region', False)
             or getattr(self, 'is_drawing_region_polygon', False))
+            or bool(getattr(self._editor, '_image_tools_active', False)))
 
     def _show_regions(self):
         """是否画区域轮廓：贴图模式，或推理范围选了区域。
@@ -299,8 +301,17 @@ class CanvasRendererMixin:
         某块地方。编辑仍然只在贴图模式（`_is_paste_mode()` 不动，免得影响
         贴图交互）。
         """
-        return self._is_paste_mode() or bool(
+        return (self._is_paste_mode() or bool(
             getattr(self._editor, '_show_scope_regions', False))
+            or bool(getattr(self._editor, '_image_tools_active', False)))
+
+    def _hide_detection_boxes(self):
+        """图像处理预览是否该把标注框藏起来。
+
+        只有几何类操作会改变像素尺寸，那时框的坐标已经失效；隐掉比画错位置好。
+        """
+        return (bool(getattr(self._editor, '_image_tools_active', False))
+                and bool(getattr(self._editor, '_image_tools_geometric', False)))
 
     def _draw_regions(self, painter, background_rect, locked_only=None):
         """绘制语义区域，支持矩形与多边形。

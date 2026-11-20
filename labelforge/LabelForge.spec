@@ -31,6 +31,13 @@ _extra_hiddenimports = [
     'labelforge.ui.sliding_window_dialog',
     'labelforge.ui.mixins.inference',
     'labelforge.engine.inference_scope',
+    # 图像处理工具：弹窗与引擎都由函数内 import 引入，显式列出避免漏收
+    'labelforge.engine.image_tools',
+    'labelforge.engine.augmenter.color2',
+    'labelforge.engine.augmenter.filters',
+    'labelforge.engine.augmenter.geom2',
+    'labelforge.ui.image_tools_panel',
+    'labelforge.ui.mixins.image_tools',
     # onnxruntime 在函数内导入，显式声明避免打包时漏收原生库
     'onnxruntime',
     'cv2',

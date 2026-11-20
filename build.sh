@@ -298,6 +298,11 @@ a = Analysis(
         'labelforge.engine.inference_scope',
         'labelforge.engine.onnx_inference', 'labelforge.engine.inference_image',
         'labelforge.engine.inference_task',
+        # 图像处理工具：弹窗与引擎都由函数内 import 引入，显式列出避免漏收
+        'labelforge.engine.image_tools',
+        'labelforge.engine.augmenter.color2', 'labelforge.engine.augmenter.filters',
+        'labelforge.engine.augmenter.geom2',
+        'labelforge.ui.image_tools_panel', 'labelforge.ui.mixins.image_tools',
         # seg / obb / pose 的后处理模块：被 onnx_inference 静态导入，
         # 显式列出以免打包时因分析顺序漏收
         'labelforge.engine.onnx_tasks',

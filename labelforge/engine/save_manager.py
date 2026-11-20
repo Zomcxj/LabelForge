@@ -251,7 +251,10 @@ class SaveManager(SaveManagerMixin, QObject):
         return (file_path, base_name, prefix)
     
     def _get_save_info_or_none(self):
-        if self.editor._is_delete_view or self.editor.current_background is None or not self.editor.canvas_items:
+        if (self.editor._is_delete_view
+                or getattr(self.editor, '_image_tools_active', False)
+                or self.editor.current_background is None
+                or not self.editor.canvas_items):
             return None
         return self.get_save_info()
 
