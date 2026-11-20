@@ -863,6 +863,11 @@ app.processEvents()
 panel = w._scope_panel
 panel.set_mode(MODE_WINDOW)
 app.processEvents()
+# 先用已知参数铺底：`_effective_window_spec()` 会把「配置里存的」当作默认值，
+# 而配置文件是每个 pytest worker 共用的——并行跑时用例顺序变了，重叠可能
+# 继承自本进程里更早某个用例落盘的值。铺底后这条用例与执行顺序无关。
+panel.window_params.set_spec({"w": 640, "h": 640, "overlap": 200})
+app.processEvents()
 
 def count_grid():
     im = QImage(canvas.size(), QImage.Format_ARGB32)

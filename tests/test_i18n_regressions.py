@@ -1,4 +1,5 @@
 """国际化回归测试。"""
+import functools
 import string
 
 from labelforge.ui import i18n
@@ -50,13 +51,19 @@ def test_crop_template_format_renders_in_both_languages():
         i18n.set_lang(original_lang)
 
 
+@functools.lru_cache(maxsize=1)
 def _iter_tr_keys():
-    """扫 labelforge/ 下所有 `tr("...")` / `t("...")` 的字面量 key。"""
+    """扫 labelforge/ 下所有 `tr("...")` / `t("...")` 的字面量 key。
+
+    返回元组而不是生成器，并用 `lru_cache` 缓存：下面两条用例都要这份清单，
+    缓存后整棵树只解析一遍（110 个文件 × ast.parse，重复扫会多花一倍时间）。
+    """
     import ast
     import os
 
     root_dir = os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), 'labelforge')
+    found = []
     for root, dirs, files in os.walk(root_dir):
         dirs[:] = [d for d in dirs if d != '__pycache__']
         for name in files:
@@ -77,7 +84,10 @@ def _iter_tr_keys():
                     continue
                 arg = node.args[0]
                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                    yield arg.value, f"{os.path.relpath(path, root_dir)}:{node.lineno}"
+                    found.append(
+                        (arg.value,
+                         f"{os.path.relpath(path, root_dir)}:{node.lineno}"))
+    return tuple(found)
 
 
 def test_every_tr_key_exists_in_both_language_tables():
