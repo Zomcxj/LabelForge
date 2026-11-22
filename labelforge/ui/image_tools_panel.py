@@ -4,7 +4,7 @@
 `engine/image_tools.py`。
 """
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QImage, QPainter
+from PySide6.QtGui import QColor, QFontMetrics, QIcon, QImage, QPainter
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QSpinBox, QDoubleSpinBox, QVBoxLayout, QWidget,
@@ -24,6 +24,10 @@ _SELECTION_MODES = (
 
 # 参数改动写进配置的延迟；连续拖滚动条时只落一次
 _PERSIST_DELAY_MS = 800
+
+# 勾选框宽度按当前语言量出来：英文文案明显比中文长，写死宽度会把英文截断。
+# 宽度 = 最长文案像素宽 + 复选框方框与间距
+_CHECK_TEXT_PADDING = 28
 
 # 保存结果这类一次性提示在状态行停留的时长
 _FLASH_MS = 4000
@@ -77,6 +81,7 @@ class ImageToolsPanel(QWidget):
         # 状态行分两级：常规状态（预览提示）与一次性提示（保存结果）。
         # 一次性提示显示期间，预览提示只记下不显示，到点再顶上。
         self._status_base = ""
+        self._status_key = ""
         self._flash_timer = QTimer(self)
         self._flash_timer.setSingleShot(True)
         self._flash_timer.timeout.connect(self._restore_status)
@@ -111,6 +116,8 @@ class ImageToolsPanel(QWidget):
         box = QVBoxLayout(holder)
         box.setContentsMargins(0, 0, 0, 0)
 
+        # 分组框与操作勾选框都记下来，切语言时按 key 重设文字
+        self._group_boxes = {}
         current_group = None
         group_layout = None
         for key in it.OPERATION_ORDER:
@@ -120,14 +127,30 @@ class ImageToolsPanel(QWidget):
                 group_box = QGroupBox(tr(group))
                 group_layout = QVBoxLayout(group_box)
                 box.addWidget(group_box)
+                self._group_boxes[group] = group_box
             group_layout.addWidget(self._build_operation_row(key, label, params))
         box.addStretch()
         return holder
 
+    def _check_width(self):
+        """勾选框宽度：按当前语言里最长的一条文案算，英文界面自动变宽。"""
+        metrics = QFontMetrics(self.font())
+        widest = max(
+            (metrics.horizontalAdvance(tr(it.OPERATION_META[key][1]))
+             for key in it.OPERATION_ORDER), default=0)
+        return widest + _CHECK_TEXT_PADDING
+
+    def _fit_mode_combo(self):
+        """选区下拉按最长选项定宽，英文的 Rectangle 比「矩形」宽不少。"""
+        metrics = QFontMetrics(self._mode_combo.font())
+        widest = max((metrics.horizontalAdvance(self._mode_combo.itemText(i))
+                      for i in range(self._mode_combo.count())), default=0)
+        self._mode_combo.setMinimumWidth(widest + 44)
+
     def _build_operation_row(self, key, label, params):
         """一个操作占一行；参数多于两个时换到第二行，避免超出面板宽度。"""
         check = QCheckBox(tr(label))
-        check.setFixedWidth(110)
+        check.setFixedWidth(self._check_width())
         self._checks[key] = check
         check.stateChanged.connect(
             lambda _state, k=key: self._on_operation_toggled(k))
@@ -137,8 +160,10 @@ class ImageToolsPanel(QWidget):
             layout = QHBoxLayout(row)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(check)
-            widgets = [self._make_param_widget(layout, spec) for spec in params]
+            # 空白放在勾选框之后、参数框之前：参数框因此贴着面板右边，
+            # 中英文勾选框宽度不同也不会让输入框左右漂移
             layout.addStretch()
+            widgets = [self._make_param_widget(layout, spec) for spec in params]
         else:
             layout = QVBoxLayout(row)
             layout.setContentsMargins(0, 0, 0, 0)
@@ -151,9 +176,9 @@ class ImageToolsPanel(QWidget):
             for start in range(0, len(params), 2):
                 line = QHBoxLayout()
                 line.setContentsMargins(18, 0, 0, 0)
+                line.addStretch()
                 for spec in params[start:start + 2]:
                     widgets.append(self._make_param_widget(line, spec))
-                line.addStretch()
                 layout.addLayout(line)
         self._param_widgets[key] = widgets
         return row
@@ -189,12 +214,16 @@ class ImageToolsPanel(QWidget):
             getter = widget.value
         widget.setFixedWidth(74)
         widget.setFixedHeight(22)
+        # 数字右对齐：个位与十位对齐，扫一列就能看出量级
+        if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+            widget.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         parent_layout.addWidget(widget)
         return (name, widget, getter)
 
     def _build_selection_bar(self):
         bar = QHBoxLayout()
-        bar.addWidget(QLabel(tr("选区:")))
+        self._selection_lbl = QLabel(tr("选区:"))
+        bar.addWidget(self._selection_lbl)
 
         self._mode_combo = QComboBox()
         for text, key in _SELECTION_MODES:
@@ -205,6 +234,7 @@ class ImageToolsPanel(QWidget):
         # 同一项再点一次也要能重新进入绘制态（画完一处想再画一处）
         self._mode_combo.activated.connect(self._on_mode_activated)
         bar.addWidget(self._mode_combo)
+        self._fit_mode_combo()
 
         self._add_btn = QPushButton(tr("＋选区"))
         self._add_btn.clicked.connect(self._on_add_region)
@@ -403,9 +433,42 @@ class ImageToolsPanel(QWidget):
             return
         self.set_status(f"{tr('已存为')} {it.preset_name(slot)}")
 
+    def retranslate(self):
+        """切语言后重设面板上的全部静态文字（运行中切语言时由主窗口调用）。"""
+        self.setWindowTitle(tr("图像编辑"))
+        for group, box in getattr(self, '_group_boxes', {}).items():
+            box.setTitle(tr(group))
+        # 英文文案比中文长，宽度要跟着重算，否则勾选框会被截断
+        width = self._check_width()
+        for key, check in self._checks.items():
+            label = it.OPERATION_META[key][1]
+            check.setText(tr(label))
+            check.setFixedWidth(width)
+        self._selection_lbl.setText(tr("选区:"))
+        for index, (text, _key) in enumerate(_SELECTION_MODES):
+            self._mode_combo.setItemText(index, tr(text))
+        self._fit_mode_combo()
+        self._add_btn.setText(tr("＋选区"))
+        self._clear_btn.setText(tr("清除选区"))
+        self._prev_btn.setToolTip(tr("上一张"))
+        self._next_btn.setToolTip(tr("下一张"))
+        self._compare_btn.setToolTip(tr("按住看原图"))
+        self._save_btn.setText(tr("保存图片"))
+        self._save_btn.setToolTip(tr("写进与数据集同级的 exports 目录"))
+        self._save_copy_btn.setText(tr("另存为…"))
+        self._save_copy_btn.setToolTip(tr("自行选择位置与文件名"))
+        self._reset_btn.setText(tr("复位"))
+        self._preset_save_btn.setText(tr("存为预设"))
+        self._preset_save_btn.setToolTip(tr("存进预设槽 A~E，数据增强面板直接选用"))
+        # 状态行按记下的键重译；一次性提示（已生成新图等）不再翻译
+        if getattr(self, '_status_key', ''):
+            self._status_base = tr(self._status_key)
+            self._show_status(self._status_base)
+
     def set_status(self, text):
         """常规状态（预览提示）：一次性提示还在显示时只记下，到点再顶上。"""
-        self._status_base = text or ""
+        self._status_key = text or ""
+        self._status_base = tr(self._status_key) if self._status_key else ""
         if not self._flash_timer.isActive():
             self._show_status(self._status_base)
 
@@ -417,7 +480,8 @@ class ImageToolsPanel(QWidget):
     def set_status_now(self, text):
         """用户直接操作引起的状态（按住看原图）：立刻显示，撤掉一次性提示。"""
         self._cancel_flash()
-        self._status_base = text or ""
+        self._status_key = text or ""
+        self._status_base = tr(self._status_key) if self._status_key else ""
         self._show_status(self._status_base)
 
     def _cancel_flash(self):

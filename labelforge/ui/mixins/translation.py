@@ -104,6 +104,10 @@ class TranslationMixin:
         scope_panel = getattr(self, '_scope_panel', None)
         if scope_panel is not None and hasattr(scope_panel, 'retranslate'):
             scope_panel.retranslate()
+        # 图像编辑面板也是非模态的，同样可能一边开着一边切语言
+        image_tools_panel = getattr(self, '_image_tools_panel', None)
+        if image_tools_panel is not None and hasattr(image_tools_panel, 'retranslate'):
+            image_tools_panel.retranslate()
         for header_name in ('bg_list_header', 'label_group_header', 'paste_group_header'):
             header = getattr(self, header_name, None)
             if header is None:
