@@ -34,11 +34,11 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
     def _region_draw_armed(self):
         """当前的「区域绘制态」还算数吗。
 
-        判据是**有没有被入口 arm 过**：右键菜单的「添加区域（矩形/多边形）」、
+        判据是有没有被入口 arm 过：右键菜单的「添加区域（矩形/多边形）」、
         或范围面板上的「添加区域」按钮，都会经 `_start_add_region*()` 打个
         `_region_draw_armed_flag`。
 
-        这样判而不是「模式对不对」，因为绘制态的残留和模式切换**无关**：从贴图
+        这样判而不是「模式对不对」，因为绘制态的残留和模式切换无关：从贴图
         模式切到标注模式、或面板关掉时忘了复位，`is_drawing_region` 都会留在
         True。那时若照旧放行，之后每一个左键都被当成「继续画区域」，用户会看到
         「切到标注模式后画不了标注框，反而冒出一个区域」。
@@ -149,15 +149,15 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             self._drag_out_pending = False
             return
 
-        # 「准备拖出复制」只在该次按下**没抓到任何东西**时才挂起：
+        # 「准备拖出复制」只在该次按下没抓到任何东西时才挂起：
         # 抓到标注框/贴图/区域说明用户是在编辑，不是要往外拖文件。
-        # 判据放在点击**之后**：`_handle_background_click` 等要等点击处理完
+        # 判据放在点击之后：`_handle_background_click` 等要等点击处理完
         # 才知道有没有真的抓起来（按在图上就会进入画布拖动）。
         #
-        # **图有没有被缩放**决定这次拖动是「拖出文件」还是「平移画布」：
+        # 图有没有被缩放决定这次拖动是「拖出文件」还是「平移画布」：
         # - 图没缩放（自适应）：按在图上拖动 = 把这张图拖出去。注意拖出的
         #   判定要早于平移，否则按在图上会先被判成平移，拖出永远挂不起来。
-        # - 图已手动缩放：拖动 = 平移画布，**不**拖出。放大后要挪动看细节，
+        # - 图已手动缩放：拖动 = 平移画布，不拖出。放大后要挪动看细节，
         #   这时候弹文件是干扰。
         # - 复制关掉：一律平移，与以前逐字一致。
         copy_on = bool(getattr(self._editor, '_canvas_image_copy_enabled', False))
@@ -182,7 +182,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 and copy_on
                 and not zoomed
                 and self.find_item_at_position(mouse_pos) is None
-                # 这里问的是「有没有东西挡着」，与能否编辑无关，所以**要**算上
+                # 这里问的是「有没有东西挡着」，与能否编辑无关，所以要算上
                 # 已锁定的区域：锁定的区域也是区域，压在它上面往外拖不该弹文件。
                 and self._region_at(mouse_pos, include_locked=True) is None
             )
@@ -190,7 +190,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self._drag_out_start = mouse_pos if self._drag_out_pending else None
 
     def _press_is_on_background(self, mouse_pos):
-        """这次按下是否落在**图片本身**上（而不是图外的空白）。
+        """这次按下是否落在图片本身上（而不是图外的空白）。
 
         拖出复制只对「拖这张图」有意义；点在图外空白处（画布的留白）仍按老
         规矩处理，免得在空白处拖动也弹出一个文件。
@@ -209,7 +209,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
                 or getattr(self, 'is_drawing_region_polygon', False)):
             return
         if getattr(self._editor, '_image_tools_active', False):
-            # 图像处理面板：只认选区（拖动/缩放）与画布平移，不碰标注和贴图
+            # 图像编辑面板：只认选区（拖动/缩放）与画布平移，不碰标注和贴图
             if self._region_editing_allowed() and self._handle_region_click(mouse_pos):
                 return
             if self._editor.current_background and self._handle_background_click(mouse_pos):
@@ -220,7 +220,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         is_annotate = getattr(self._editor, 'edit_mode', 'paste') == 'annotate'
 
         if is_annotate:
-            # **未锁定的区域优先于标签框**——未锁区域画在框之上，重叠处
+            # 未锁定的区域优先于标签框——未锁区域画在框之上，重叠处
             # 点击就该归它；想让下面的框拿到点击，先把区域锁上，
             # 锁定的区域在 `_region_at()` 里已被跳过。
             if self._region_editing_allowed():
@@ -252,7 +252,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
 
     def _handle_region_click(self, mouse_pos):
         """区域编辑入口：顶点/手柄→缩放，边上→插点，内部→拖动。"""
-        # 平时只在贴图模式编辑区域；但**范围面板开着**时例外：面板开着时
+        # 平时只在贴图模式编辑区域；但范围面板开着时例外：面板开着时
         # 画布通常停在标注模式（正在审标注），此时也要允许调区域。
         # 判据与滚轮缩放共用 `_region_editable()`，保证两处不会各说各话。
         if not self._region_editable():
@@ -717,7 +717,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if not background_rect.contains(mouse_pos):
             return False
 
-        # 按在图上就是「拖动画布」。**不要求图比画布大**：图装得下时
+        # 按在图上就是「拖动画布」。不要求图比画布大：图装得下时
         # `background_offset` 照样参与渲染（`canvas.py` 的 `get_background_rect`
         # 会把它加进去），所以照样该能挪。只在大图时才进入拖动的话，
         # 未放大时按住拖会完全没反应。
@@ -776,7 +776,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         """把当前图作为文件拖出（Qt 拖放），交给系统/其他程序接收。
 
         触发时机由 `mousePressEvent`（挂起）与 `mouseMoveEvent`（位移够阈值）
-        共同决定，**这里不再自己判窗口内外**：原来那句「光标离开主窗口才算」
+        共同决定，这里不再自己判窗口内外：原来那句「光标离开主窗口才算」
         让主窗口最大化时永远拖不出去。
         """
         if not getattr(self._editor, '_canvas_image_copy_enabled', False):
@@ -1017,18 +1017,18 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             self.update()
 
     def _check_region_hover(self):
-        """区域悬停：记下**悬停在哪条手柄上**，并把光标切成对应形状。
+        """区域悬停：记下悬停在哪条手柄上，并把光标切成对应形状。
 
-        区域的悬停态与检测框一致：检测框把悬停的那个角画成**白色正方形**
+        区域的悬停态与检测框一致：检测框把悬停的那个角画成白色正方形
         （`_draw_box_handles()` 里的 `is_hovered` 分支），区域这里同样记录
         悬停的手柄名到 `hover_region_handle`，渲染端据此画正方形。
 
-        返回值沿用旧语义：**是否落在某个区域上**（供调用方决定后续分流）。
+        返回值沿用旧语义：是否落在某个区域上（供调用方决定后续分流）。
         """
         self.hover_region_handle = None
         if self._active_region_fixed():
             return False
-        # 悬停态只在**当前模式可编辑**时给，与点击/滚轮同一把尺子；
+        # 悬停态只在当前模式可编辑时给，与点击/滚轮同一把尺子；
         # 面板没开时不该画出「可以拖」的假象。
         if not self._region_editable():
             return False
@@ -1048,7 +1048,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             return True
         handle = self._region_handle_at(self.mouse_pos, index)
         if handle:
-            # 与检测框一致：悬停在手柄上画白色正方形 + **小手**光标。
+            # 与检测框一致：悬停在手柄上画白色正方形 + 小手光标。
             # 检测框那边（`_select_hovered_detection_box`）给的就是
             # `PointingHandCursor`；这里曾错写成十字（CrossCursor），
             # 用户看到「移到区域手柄上变十字」就是那个错。
@@ -1352,9 +1352,9 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         self.is_dragging_background = False
         self.is_dragging_box = False
         self.is_resizing_box = False
-        # 区域手势收尾要通知宿主：范围面板显示的是 `region_boxes` 的**快照**，
+        # 区域手势收尾要通知宿主：范围面板显示的是 `region_boxes` 的快照，
         # 拖动/缩放/改顶点之后坐标已经变了，不通知它就一直停在旧坐标上。
-        # 只在**区域几何确实变化**时通知，避免每次松开鼠标都重复刷新面板。
+        # 只在区域几何确实变化时通知，避免每次松开鼠标都重复刷新面板。
         region_touched = bool(getattr(self, 'is_dragging_region_vertex', False)
                               or getattr(self, 'is_dragging_region', False)
                               or getattr(self, 'is_resizing_region', False))
@@ -1574,7 +1574,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
     def _wheel_goes_to_region(self):
         """滚轮是否该作用在区域上。
 
-        与检测框同一套分流：鼠标**贴边**时滚轮单边调整，在**中间**时整体
+        与检测框同一套分流：鼠标贴边时滚轮单边调整，在中间时整体
         缩放。边上不画手柄，所以这里要主动判一次位置，不能靠「有没有抓手柄」。
         """
         return (self._region_editable()
@@ -1605,12 +1605,12 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             self._adjust_selected_box_edge(event, edge)
 
     def _selected_box_takes_wheel(self):
-        """当前选中的检测框是否应当**优先**响应这次滚轮。
+        """当前选中的检测框是否应当优先响应这次滚轮。
 
-        区域也支持贴边滚轮，但不能因此抢占检测框自身的滚轮事件——回归测试
-        钉住「标注模式下选中检测框时，悬停在区域上也必须缩框、不动区域」。
+        区域也支持贴边滚轮，但不能因此抢占检测框自身的滚轮事件：标注模式下
+        选中检测框时，悬停在区域上仍须缩框、不动区域。
 
-        判据：**标注模式**下、有选中的检测框，且鼠标落在它身上（框内，或贴着
+        判据：标注模式下、有选中的检测框，且鼠标落在它身上（框内，或贴着
         它的某条边）时，滚轮归框；区域只在没有框在管这件事时接手。
 
         贴图模式下恒为 False：那时画布改的是素材，标注框不该抢滚轮——已有的
@@ -1628,16 +1628,16 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         return self._get_selected_box_edge() is not None
 
     def _wheel_target_region(self):
-        """滚轮该作用在哪个区域上——**贴边含外侧**，与检测框一致。
+        """滚轮该作用在哪个区域上——贴边含外侧，与检测框一致。
 
-        检测框的滚轮命中**不要求鼠标在框内**，贴在外侧正对某条边也算，
+        检测框的滚轮命中不要求鼠标在框内，贴在外侧正对某条边也算，
         区域这里保持同一口径。
 
         注意不能用 `_region_at()`（严格在区域内部）：scale=1.28 时
         「右边内侧 5px」会返回 None，因为内侧那点已落在 `min_size` 边距之外
         被算作「不在区域内」，贴边滚就会没反应。
 
-        现在的判据：鼠标在区域内 **或** 落在某条边的容差带里（含外侧）都算。
+        现在的判据：鼠标在区域内 或 落在某条边的容差带里（含外侧）都算。
         容差用 `_region_handle_hit_size()`（屏上像素）换算回图内坐标，与
         单边调整/手柄命中同一把尺子。
 
@@ -1651,7 +1651,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         if inside is not None:
             return inside
 
-        # 区域内没有：看是否贴在某个**未锁定**区域的边附近（外侧也算）
+        # 区域内没有：看是否贴在某个未锁定区域的边附近（外侧也算）
         background_rect = self.get_background_rect()
         if background_rect is None or not self.background_scale:
             return None
@@ -1673,7 +1673,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             else:
                 left, top = r.get('x', 0), r.get('y', 0)
                 right, bottom = left + r.get('width', 0), top + r.get('height', 0)
-            # 与检测框同一判据：**外侧不设距离上限**——鼠标贴在右边多远都算
+            # 与检测框同一判据：外侧不设距离上限——鼠标贴在右边多远都算
             # 「在管右边这一条」（检测框实测偏移 60px 仍返回 'right'）；另一轴
             # 只要求落在该边覆盖范围内（用 tol 放宽一点，边缘上仍算）。
             if (min(abs(mx - left), abs(mx - right)) <= tol
@@ -1682,7 +1682,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             if (min(abs(my - top), abs(my - bottom)) <= tol
                     and left - tol <= mx <= right + tol):
                 return i
-            # 外侧正对某条边：横向/纵向**任意远**都接管（与 `_wheel_region`
+            # 外侧正对某条边：横向/纵向任意远都接管（与 `_wheel_region`
             # 的判定配套，否则这里先返回 None，那边根本没机会判）。
             if mx < left and top - tol <= my <= bottom + tol:
                 return i
@@ -1699,14 +1699,14 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
 
         检测框那边（`_get_selected_box_edge()`）的命中规则是：
 
-        - 鼠标在框**外**、且落在另一轴的范围里 → 直接认正对着的那条边；
-          **外侧多远都算**（实测偏移 60px 仍返回 'right'）。
+        - 鼠标在框外、且落在另一轴的范围里 → 直接认正对着的那条边；
+          外侧多远都算（实测偏移 60px 仍返回 'right'）。
         - 四条都不满足 → 取距离最近的一条。
 
         只用 `_region_handle_hit_size()`（屏上 8px 换算回图内，scale=1.28 时
         图内仅 6.25px）的话，鼠标压在外侧 8px 就没反应。
 
-        现在**外侧不设限**（与检测框一致），只在「鼠标落在区域内部」时才用
+        现在外侧不设限（与检测框一致），只在「鼠标落在区域内部」时才用
         这个容差去决定「算贴边还是算中间」，避免把整个内部都当边缘。
         """
         base = self._region_handle_hit_size()          # 屏上像素，已夹在 8..24
@@ -1715,7 +1715,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
     def _wheel_region(self, event):
         """区域滚轮：贴边 → 单边调整；在中间 → 整体缩放。
 
-        判据是「鼠标是否落在某条边的容差带里」——**含区域外侧**，
+        判据是「鼠标是否落在某条边的容差带里」——含区域外侧，
         与检测框的滚轮口径对齐。
         容差随缩放换算，见 `_region_wheel_edge_tolerance()`。
         """
@@ -1736,7 +1736,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         right, bottom = left + r['width'], top + r['height']
         tol = self._region_wheel_edge_tolerance()
 
-        # 与检测框 `_get_selected_box_edge()` **同一套判据**：先在**外侧**
+        # 与检测框 `_get_selected_box_edge()` 同一套判据：先在外侧
         # 找正对着的那条边——外侧不设距离上限，鼠标贴在
         # 右边多远都算右边；再退回「内部且贴边」的容差带；都不满足才是整体缩放。
         edge = None
@@ -1750,7 +1750,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
             edge = 'bottom'
         elif min(abs(mx - left), abs(mx - right),
                  abs(my - top), abs(my - bottom)) <= tol:
-            # 区域**内部**贴近某条边：也算单边调整
+            # 区域内部贴近某条边：也算单边调整
             edge = self._region_edge_at(self.mouse_pos, index)
 
         if edge is not None:
@@ -1815,7 +1815,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
     def _region_edge_at(self, mouse_pos, index):
         """返回鼠标相对该区域最近的一条边：`left/right/top/bottom`。
 
-        与检测框的 `_get_selected_box_edge()` 同一套判据：先在框**外**找正对着
+        与检测框的 `_get_selected_box_edge()` 同一套判据：先在框外找正对着
         的那条边，都在外面时取距离最近的。区域内侧也算，鼠标压在边上时
         同样调整那条边。
         """
@@ -1852,7 +1852,7 @@ class CanvasInteractionMixin(CanvasDrawingMixin, CanvasMenuMixin):
         return min(distances, key=distances.get)
 
     def _adjust_hovered_region_edge(self, event, index, edge):
-        """滚轮**单边**调整该区域：只动被点名的那条边，其余三边不动。
+        """滚轮单边调整该区域：只动被点名的那条边，其余三边不动。
 
         这是检测框 `_adjust_selected_box_edge()` 的区域版。与
         `_scale_hovered_region()`（绕中心等比缩放）互补：

@@ -215,8 +215,8 @@ print("OK")
     assert "OK" in out
 
 
-def test_failed_reload_clears_the_geometric_hide():
-    """Important 8：读不到图时不能让上一轮的几何状态继续藏标注。"""
+def test_failed_reload_clears_the_preview_status():
+    """Important 8：读不到图时不能让上一轮的预览状态继续挂着。"""
     out = _run_qt(_TWO_IMAGES + '''
 window = ImageEditor()
 paths = make_dataset()
@@ -226,13 +226,13 @@ window.load_image_by_index(0)
 window._open_image_tools()
 window._image_tools_panel._checks["fliph"].setChecked(True)
 window._image_tools_apply()
-QTest_wait = None
-assert window._image_tools_geometric is True
+assert "标注已隐藏" in window._image_tools_panel._status.text()
 window.background_images = [os.path.join(os.path.dirname(paths[0]), "missing.png")]
 window._image_tools_reload()
 assert window._image_tools_original is None
-assert window._image_tools_geometric is False
-assert window.canvas._hide_detection_boxes() is False
+# 面板还开着：标注照藏，但提示要回到「没在预览」的状态
+assert "标注已隐藏" not in window._image_tools_panel._status.text()
+assert window.canvas._hide_detection_boxes() is True
 assert window.image_tools_regions == []
 print("OK")
 ''')

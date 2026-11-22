@@ -247,7 +247,7 @@ class PasteEngineMixin:
         num_paste = self.paste_count_spin.value()
         selected_indices = rng.choices(range(len(self.small_images)), k=num_paste)
 
-        # 用**贴图**那份区域：贴图落点看 `paste_region_boxes`，推理范围看
+        # 用贴图那份区域：贴图落点看 `paste_region_boxes`，推理范围看
         # `region_boxes`。读 `region_boxes` 会让贴图的落点约束变成推理范围，
         # 两类区域就混在一起了。
         regions = [
@@ -388,8 +388,8 @@ class PasteEngineMixin:
                 if i in self.detection_boxes_dict:
                     # 判据是「下标在不在字典里」：空列表（0 框）也是有效缓存。
                     # 用 len>0 判会把刚清空的图当成没加载过而重读磁盘，
-                    # sidecar 里的旧框会把已删的框复活（审计 B5；与
-                    # image_loader/mixin._load_detection_boxes_for_index 同一判据）。
+                    # sidecar 里的旧框会把已删的框复活；判据与
+                    # image_loader/mixin._load_detection_boxes_for_index 保持一致。
                     temp_detection_boxes = self.detection_boxes_dict[i].copy()
                 else:
                     temp_detection_boxes = self.load_detection_boxes(file_path)

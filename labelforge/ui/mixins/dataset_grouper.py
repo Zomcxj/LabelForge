@@ -1,4 +1,4 @@
-"""Dataset grouping (label similarity clustering) behavior for the main window."""
+"""主窗口的数据集分组行为，按标签相似度聚类。"""
 import os
 
 

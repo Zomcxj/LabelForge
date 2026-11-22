@@ -145,7 +145,7 @@ def _is_safe_relative_name(name):
 def read_manifest(path):
     """读并校验清单；任何不一致都报错，不返回半可信的清单。
 
-    ④B 正式合成只依赖清单与图片，因此这里必须挡住：版本不认识、时间/FPS
+    正式合成只依赖清单与图片，因此这里必须挡住：版本不认识、时间/FPS
     非有限、尺寸/帧数非正、帧号不递增或重复、时间与帧号不自洽、文件名越出
     输出目录。complete 原样带出，由调用方决定是否可用于正式合成。
     """
@@ -526,7 +526,7 @@ def extract_frames(video_path, target_fps, start=None, end=None,
     )
 
 
-# ---------- ④B 抽帧标注合成 ----------
+# ---------- 抽帧标注合成 ----------
 
 COMPOSE_SUFFIX = ".mp4"
 
@@ -672,7 +672,7 @@ def _read_sidecar_boxes_for_compose(image_path):
     """读一张图的标注，返回 `(boxes, 是否有可用标注)`。
 
     - sidecar 不存在 → `([], False)`：按无标签画面写入，计入「无标注」。
-    - 存在但读不出来/结构不对 → 抛 `VideoError`。**不当作无标注**：
+    - 存在但读不出来/结构不对 → 抛 `VideoError`。不当作无标注：
       损坏的标注静默变成干净画面，会表现为这段本来就没标。
     - 正常解析出框 → `(boxes, True)`；shapes 为空（或没解析出有效框）
       也是 `([], False)`——画面上确实没有框。
@@ -714,7 +714,7 @@ def scan_sidecar_labels(image_paths):
     """扫描一组图片的 sidecar，统计每个类别出现的次数。
 
     返回 `{类别: 次数}`，按次数从多到少、同次数按名称排序（界面直接照着
-    列表展示，顺序稳定）。缺 sidecar 的图跳过；**标注损坏则报错**，不能
+    列表展示，顺序稳定）。缺 sidecar 的图跳过；标注损坏则报错，不能
     当成「那张图没标注」——否则界面会少列类别，用户以为自己没标这类。
     """
     counts = {}
@@ -729,9 +729,9 @@ def scan_sidecar_labels(image_paths):
 
 
 def _slice_paths(paths, start_index=None, end_index=None):
-    """按「从第几张到第几张」裁出要合成的图片（**都是包含端点的下标**）。
+    """按「从第几张到第几张」裁出要合成的图片（都是包含端点的下标）。
 
-    裁在**建 plan 之前**：这样帧号、进度、清单时长全都基于裁过的序列，
+    裁在建 plan 之前：这样帧号、进度、清单时长全都基于裁过的序列，
     不需要在循环里到处判范围（漏一处就会写出越界的帧）。
 
     两端都可以为 None（= 不裁那一端）。越界不报错而是夹紧——界面上的
@@ -743,7 +743,7 @@ def _slice_paths(paths, start_index=None, end_index=None):
     end = total - 1 if end_index is None else int(end_index)
     if total == 0:
         return []
-    # 「空范围」要在夹紧**之前**判：夹紧会把 end=-1 抬成 0，那样 0..-1 就会
+    # 「空范围」要在夹紧之前判：夹紧会把 end=-1 抬成 0，那样 0..-1 就会
     # 悄悄变成「只合成第一张」，用户选了空却拿到一帧，比报错更糟。
     # 只把「真的没有重叠」当空：start 已经超过末张，或 end 还没到首张。
     if start > total - 1 or end < 0 or start > end:
@@ -757,10 +757,10 @@ def compose_video(manifest_path=None, images_dir=None, output_path=None,
                   output_fps=None, one_frame_per_image=False,
                   standard_fps=None, cancel=None, progress=None, render=None,
                   start_index=None, end_index=None):
-    """把抽帧图片合成为视频（④B）。
+    """把抽帧图片合成为视频。
 
     有清单按清单顺序与时长；没有清单则用 `output_fps`（每秒几帧）。
-    `start_index`/`end_index` 是**包含端点**的下标，用来只合成其中一段
+    `start_index`/`end_index` 是包含端点的下标，用来只合成其中一段
     （默认从第一张到最后一张）。时长按裁后的帧数等比折算，否则「选 10 张
     却按整段时长出片」会变成极慢的播放。
     编码走同目录 `.partial.mp4` 临时文件，全部校验通过才 `os.replace`
@@ -924,7 +924,7 @@ def _probe_output(path):
 
 @dataclass
 class RenderVideoResult:
-    """④A 逐帧推理编码的结果。
+    """逐帧推理编码的结果。
 
     `frames_written` 在取消时表示已写进去的帧数；`source_frame_count` 是
     探测到的源帧数，用来对照 `frame_count`（实际编码帧数）。
@@ -1013,8 +1013,8 @@ def _cancelled_render_result(tmp_path, output_path, info, frames_written,
                              low_score_kept=0):
     """取消收尾：能播的半成品留在 `.partial.mp4`，正式输出名绝不占用。
 
-    ④A 是全app最慢的一条路（18 秒视频要推理 541 次），用户中途取消时已经
-    跑完的那几分钟不该白费——留一个能播的半成品，比删掉更有用。零帧取消
+    推理成片是全部功能里最慢的一条路径（18 秒视频要推理 541 次），用户中途取消时已经
+    已处理的那部分不必丢弃：留一个可播放的半成品，比直接删除更有用。零帧取消
     或尺寸被截边的半成品是废的，直接清掉，不留打不开的假产物。
     """
     if frames_written > 0 and _partial_is_playable(tmp_path, info):
@@ -1036,13 +1036,13 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
                  cancel=None, progress=None, on_frame=None,
                  tracking=None, dataset=None, min_hits=2,
                  class_names=None, snapshot=None):
-    """④A：原视频逐帧推理，把框画在每一帧上，再编码成新视频。
+    """原视频逐帧推理，把框画在每一帧上，再编码成新视频。
 
-    与 ④B（`compose_video`）的区别：画面来自原视频的**全部**帧而不是抽帧
-    图片，标注是现场推理得到的，所以不需要 ② 的清单。输出帧数、分辨率、
+    与 抽帧合成（`compose_video`）的区别：画面来自原视频的全部帧而不是抽帧
+    图片，标注是现场推理得到的，所以不需要抽帧清单。输出帧数、分辨率、
     帧率、时长都与源一致。
 
-    `scope` 是 ③ 的范围配置（None = 全图），复用 `detect_in_scope()`。
+    `scope` 是推理范围配置（None = 全图），复用 `detect_in_scope()`。
     `render` 是 `video_render.RenderSpec`（None = 只推理不绘制）；
     类别色必须由调用方在主线程预先取好放进 spec，后台不能读 editor 取色。
 
@@ -1057,7 +1057,7 @@ def render_video(video_path, detector, output_path=None, resize_fn=None,
 
     取消是例外：跑完的帧不白费，能播的半成品以 `.partial.mp4` 名保留并在
     结果里给出 `partial_path`（正式输出名始终不占用）。零帧取消或半成品
-    尺寸不对则清掉。这是本条与 ④B（取消即删）的唯一分歧，见计划 §4.5。
+    尺寸不对则清掉。这是本条与 抽帧合成（取消即删）的唯一分歧。
     """
     cv2 = _load_cv2()
     if not output_path:

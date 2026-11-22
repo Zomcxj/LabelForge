@@ -19,7 +19,7 @@ class InferenceMixin:
     # ---------- 模型参数行 ----------
 
     def _inference_allowed_by_mode(self):
-        """当前模式允许推理吗——**贴图模式一律不准**。
+        """当前模式允许推理吗——贴图模式一律不准。
 
         只做 `row.hide()` 是不够的：参数行的第一个图标在贴图模式下照样能把行
         `show()` 回来，行一显示两个推理按钮就被重新 enable——那是「收起」，
@@ -33,7 +33,7 @@ class InferenceMixin:
     def _toggle_model_row(self):
         """第一个图标：显示/隐藏参数行；关掉后不能推理。
 
-        贴图模式下**直接拒绝**：推理与贴图是两件事，这个图标不该还有把参数行
+        贴图模式下直接拒绝：推理与贴图是两件事，这个图标不该还有把参数行
         带回推理的能力。
         """
         if not self._inference_allowed_by_mode():
@@ -50,10 +50,10 @@ class InferenceMixin:
         """贴图模式自动收起参数行并停用推理，切回标注模式再恢复。
 
         贴图模式下 `_update_inference_buttons()` 会因为模式条件把两个推理按钮
-        钉死在 disable，所以**即使有人把参数行弄出来了也推不了**——不能靠
+        钉死在 disable，所以即使有人把参数行弄出来了也推不了——不能靠
         「收起」当禁用，参数行图标一按就能恢复推理。
 
-        要**记住切换前的状态**：若在标注模式下本来就收着参数行，切回时也不该
+        要记住切换前的状态：若在标注模式下本来就收着参数行，切回时也不该
         替它展开——模式切换只管「贴图模式下必须是收起的」这一条。
         """
         row = getattr(self, 'model_row', None)
@@ -95,7 +95,7 @@ class InferenceMixin:
     def _saved_inference_settings(self):
         """上次用过的输入尺寸与任务；阈值与窗口参数另有来源，这里不给。
 
-        阈值（置信度/NMS）**刻意不读回**：它们是「这次要怎么看」的临时
+        阈值（置信度/NMS）刻意不读回：它们是「这次要怎么看」的临时
         旋钮，跨启动沿用会让用户对着自己忘了调过的值犯迷糊——框多框少
         说不清。不给键即可，worker 拿到 None 就走引擎默认值。
 
@@ -327,7 +327,7 @@ class InferenceMixin:
     def _open_scope_panel(self):
         """打开范围面板（非模态）；确定后更新范围与窗口参数。
 
-        非模态是**必需**的：弹窗开着时用户要点画布画区域，而应用级模态会
+        非模态是必需的：弹窗开着时用户要点画布画区域，而应用级模态会
         让 Qt 丢弃发往画布的鼠标事件，「点编辑区域直接在图上画」会失效。
         因此这里用 `show()`，结果由 `finished_ok` 信号回传，不再有 `exec_()`
         的返回值可看。
@@ -348,7 +348,7 @@ class InferenceMixin:
             self._scope_panel = panel
         # 先把宿主当前的范围模式抓下来。下面 set_windows/set_region_count 等都会
         # 经 `overlay_changed` 回调 `_on_scope_overlay_changed`，而那里会读
-        # **面板**当时的 mode 写回 `_scope_mode`——面板此刻还停在构造默认值
+        # 面板当时的 mode 写回 `_scope_mode`——面板此刻还停在构造默认值
         # （全图），于是「上次选了区域 → 再开面板」会被静默重置成全图。
         # 抓成局部量、最后再落回去，面板一开就跟宿主状态一致。
         wanted_mode = getattr(self, '_scope_mode', MODE_FULL)
@@ -379,7 +379,7 @@ class InferenceMixin:
         panel.activateWindow()
 
     def _scope_anchor_rect(self):
-        """面板左上角该对齐的那块：**「标签管理」区**。
+        """面板左上角该对齐的那块：「标签管理」区。
 
         锚点就是 `label_group` 自己那块（含竖直方向：面板顶边 = 标签管理区顶边）。
 
@@ -419,7 +419,7 @@ class InferenceMixin:
         快照到宿主上，画布绘制时不依赖面板还活着（面板关掉后画布可能仍要
         重绘一帧）。
 
-        **这条也是「面板改动即时生效」的唯一通道**：面板没有确定按钮了，
+        这条也是「面板改动即时生效」的唯一通道：面板没有确定按钮了，
         所以「模式」「窗口参数」「区域编辑态」都在这儿落地。
         """
         panel = getattr(self, '_scope_panel', None)
@@ -457,8 +457,8 @@ class InferenceMixin:
         """面板某条区域的锁按钮被切换：写到画布那条区域上并刷新。
 
         锁定的含义见 `canvas_menu.set_region_locked()`：不锁 → 画在检测框之上
-        且可改；锁上 → 落到检测框之下且不可改。**锁只是不许在画布上改，区域
-        照常参与推理**，所以这里不碰 `_scope_for_run()` 取的那份区域列表。
+        且可改；锁上 → 落到检测框之下且不可改。锁只是不许在画布上改，区域
+        照常参与推理，所以这里不碰 `_scope_for_run()` 取的那份区域列表。
         """
         canvas = getattr(self, 'canvas', None)
         if canvas is None or not hasattr(canvas, 'set_region_locked'):
@@ -473,7 +473,7 @@ class InferenceMixin:
     def _on_scope_panel_closed(self, accepted):
         """面板关闭（只剩右上角 X 这一条路径）：撤掉画布上的范围提示。
 
-        **没有「取消」了，所以关窗不回滚**：面板上所有的改动在改的那一刻就已
+        没有「取消」了，所以关窗不回滚：面板上所有的改动在改的那一刻就已
         经经 `overlay_changed` 写回宿主，这里不再做「确定才生效」那套搬运。
         """
         self._scope_panel_open = False
@@ -495,7 +495,7 @@ class InferenceMixin:
             # 用 set_regions（而不是只报个数）：面板要显示每条区域的坐标，
             # 画完一个就该在列表里看到新的一行。
             #
-            # 只有**推理区域**有面板反馈（第 11 轮去掉贴图区域面板后更纯粹）：
+            # 只有推理区域有面板反馈（第 11 轮去掉贴图区域面板后更纯粹）：
             # 贴图区域在画布上直接增删，没有面板要同步，这里不必按模式分流。
             panel.set_regions(self._region_boxes())
         self.status_label.setText(tr("区域绘制结束"))
@@ -597,13 +597,13 @@ class InferenceMixin:
         row.set_scope_summary(tr(names[mode]), detail)
 
     def _sync_scope_region_display(self):
-        """区域轮廓只在「面板开着 **且** 选了区域」时画。
+        """区域轮廓只在「面板开着 且 选了区域」时画。
 
         两条约束合起来：
         - 滑窗和区域各自的内容独立显示：选了滑窗就只该看到滑窗网格，
           不能还挂着区域框。
         - 关掉面板后区域框不该还留在画布上：所以关掉面板就收起轮廓
-          （面板只是**调范围**时的参照，不是常驻叠加层）。
+          （面板只是调范围时的参照，不是常驻叠加层）。
 
         编辑能力不受影响：贴图模式下区域本来就看得到、画得动（见渲染侧的
         `_show_regions()`），这里的开关只管「标注模式下的范围提示」。
@@ -630,7 +630,7 @@ class InferenceMixin:
     def _run_inference_from_here(self):
         """从当前位置推理到目标张号（张数范围），弹出进度小窗。
 
-        「目标张号」由参数行「推理范围」右侧的输入框给出，语义是**第几张**
+        「目标张号」由参数行「推理范围」右侧的输入框给出，语义是第几张
         （1 基，含），不是「跑多少张」：当前是第 200 张时填 300 → 跑 200~300，
         填 100 → 跑 100~200。填 0 表示不限制，跑到列表末尾。
         """
@@ -673,7 +673,7 @@ class InferenceMixin:
         if detector is None:
             self._inference_warn(tr("请先加载模型"))
             return
-        # 贴图模式的提示要**先于**「参数行已关闭」：贴图模式下参数行正是被自动
+        # 贴图模式的提示要先于「参数行已关闭」：贴图模式下参数行正是被自动
         # 收起的，报「参数行已关闭」会让用户以为自己关掉了什么、去翻按钮。
         if not self._inference_allowed_by_mode():
             self.status_label.setText(tr("贴图模式下不可推理，请切回标注模式"))
@@ -703,14 +703,14 @@ class InferenceMixin:
 
         self._save_inference_settings()
         # 数据集快照在这里定稿：它表达的是「这轮跑的是哪份数据集」，用来丢弃
-        # **跑到一半**换了数据集时迟到的结果。
+        # 跑到一半换了数据集时迟到的结果。
         #
         # 原来这份快照只在加载模型时写（`_on_model_loaded`），于是「先加载模型、
         # 再切数据集」之后快照永远不等于当前数据集，`_inference_dataset_changed()`
         # 恒为 True，所有结果一进门就被当「过期的」丢掉——现象是日志/进度窗
         # 明明显示检测到框，却一张都没保存。
         self._inference_dataset = tuple(images)
-        # 逐张收尾用的三个集合必须**每轮重置**：上一轮若异常结束（比如加载模型
+        # 逐张收尾用的三个集合必须每轮重置：若前一次异常结束（比如加载模型
         # 失败、或另一个 worker 抢先），收尾没跑到就留下了旧键，新的一轮会把
         # 这些键当「已处理」跳过，表现成「这几张明明跑了却没应用/没刷新」。
         self._batch_handled_keys = set()
@@ -741,7 +741,7 @@ class InferenceMixin:
         """单张结果落地：写盘 + 刷新该行的状态圆点。
 
         逐张写盘是硬要求：json 一张张出来、圆点逐个变绿，用户随时能看到
-        进度，取消或崩溃时已完成的图也不会白跑。**包括当前显示图**——批量
+        进度，取消或崩溃时已完成的图也不会白跑。包括当前显示图——批量
         推理的起点就是当前图，跳过它会出现「第一张一直不变绿、结束才绿」。
 
         当前图走 `_apply_inference_to_current`（正常保存流程：内存、画布、
@@ -771,7 +771,7 @@ class InferenceMixin:
             getattr(self, '_batch_handled_keys', ())) | {key}
         replace_auto = self._replace_mode()
         class_filter = self._filter_for_run()
-        # 合并一次，**磁盘与内存用同一份结果**：`write_one_result` 内部也按
+        # 合并一次，磁盘与内存用同一份结果：`write_one_result` 内部也按
         # 同样的参数合并，所以两者不会分叉。
         merged = merge_boxes(memory.get(key), result.boxes,
                              replace_auto=replace_auto,
@@ -834,7 +834,7 @@ class InferenceMixin:
                                       skip_indices=handled,
                                       written_indices=written,
                                       failed_indices=failed)
-        # 收尾统一刷新：取消时**已跑完**的图也必须当场变绿，
+        # 收尾统一刷新：取消时已跑完的图也必须当场变绿，
         # 不能等切到那张图才更新。
         #
         # 逐张路径虽然各自刷过一次，但那几次可能落在盘点之前/被扫描结果覆盖，
@@ -899,11 +899,11 @@ class InferenceMixin:
         return bool(row is not None and row.replace_mode())
 
     def _update_inference_buttons(self):
-        """参数行开着、有模型、且**当前模式允许推理**才让推理。
+        """参数行开着、有模型、且当前模式允许推理才让推理。
 
         模式条件是第 10 轮加的硬条件：只要在贴图模式，无论参数行是开是关，
         两个推理按钮都钉在 disable。这样「参数行图标」即便被以任何方式弄出来
-        （快捷键、代码路径、以后新增的入口），也推不了。
+        （快捷键、代码路径等其它入口），也推不了。
         """
         detector = getattr(self, '_detector', None)
         busy = getattr(self, '_run_worker', None) is not None
@@ -947,7 +947,7 @@ class InferenceMixin:
         """整批结束后的收尾：汇总提示。
 
         绝大多数图在 `_on_result_ready` 里已经逐张处理过了（skip_indices
-        就是它们），**这里不能再处理一遍**：补充模式下重复合并会把同一批框
+        就是它们），这里不能再处理一遍：补充模式下重复合并会把同一批框
         写两遍，覆盖模式下则会多压一层撤销快照。
 
         单张推理（`current_only=True`）没接 `result_ready`，所以当前图在这里
@@ -1006,10 +1006,10 @@ class InferenceMixin:
             return False
         path = self.background_images[index]
         if not merged and not (getattr(self, 'canvas_items', None) or []):
-            # 无框也无贴图：按既定的「不写盘」规则处理（`200ace1`：否则数据集中
-            # 会产生大量 shapes 为 [] 的空 json）。
+            # 无框也无贴图：按既定的「不写盘」规则处理，否则数据集中
+            # 会产生大量 shapes 为 [] 的空 json。
             #
-            # 但磁盘上可能还留着**这一轮刚清掉的旧内容**（覆盖模式下的上一轮
+            # 但磁盘上可能还留着本轮刚清掉的旧内容（覆盖模式下先前写入的
             # 自动框）。`remove_empty_sidecar` 只删「原文 shapes 为空」的文件，
             # 看到旧框会拒绝删，于是磁盘停在旧状态、图标也就一直显示「已标注」，
             # 要切图才变。这种情况先把清空后的状态写出去，让它真的变空，再删。
@@ -1056,7 +1056,7 @@ class InferenceMixin:
     def _save_inference_settings(self):
         """只持久化「下次打开还想用」的东西。
 
-        明确**不存**置信度/NMS：它们每次启动都该回到默认值，
+        明确不存置信度/NMS：它们每次启动都该回到默认值，
         存了反而会在下次加载模型时被 `_saved_inference_settings` 之外的
         路径读回去。输入尺寸与窗口参数保留。
         """
@@ -1084,7 +1084,7 @@ class InferenceMixin:
         return dict(spec) if isinstance(spec, dict) else {}
 
     def _window_spec_for_run(self):
-        """跑任务时该用的窗口参数：**面板当下的输入**优先。
+        """跑任务时该用的窗口参数：面板当下的输入优先。
 
         面板里的宽/高/重叠/去重比例是用户按这一眼要用的值，跑之前最后一刻
         改的那些必须生效。原先这里读 `_effective_window_spec()`（本次会话设过的

@@ -1,4 +1,4 @@
-"""图像处理预览期间的画布锁：标注编辑与显示（真实 Qt 子进程）。"""
+"""图像编辑预览期间的画布锁：标注编辑与显示（真实 Qt 子进程）。"""
 import os
 import subprocess
 import sys
@@ -41,10 +41,7 @@ for name, handler in (("box", window.canvas._handle_drawing_press),
                       ("point", window.canvas._handle_point_press)):
     assert handler(QPointF(5, 5)) is True, name
 assert len(window.detection_boxes) == before, window.detection_boxes
-window._image_tools_geometric = True
-assert window.canvas._hide_detection_boxes() is True
-window._image_tools_geometric = False
-assert window.canvas._hide_detection_boxes() is False
+assert window.canvas._hide_detection_boxes() is True, "图像编辑开着就该藏标注框"
 window._image_tools_active = False
 assert window.canvas._hide_detection_boxes() is False
 print("OK")

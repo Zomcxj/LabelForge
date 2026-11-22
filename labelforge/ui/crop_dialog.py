@@ -325,7 +325,7 @@ class CropConfigDialog(QDialog):
     # ---- 工具 ----
 
     def _make_lock_btn(self):
-        """🔒/🔓 图标按钮，点击上锁/解锁。
+        """锁图标按钮，点击上锁/解锁。
 
         用 checkable QPushButton 而非 QCheckBox：isChecked/setChecked/toggled 语义完全一致，
         既有联动与测试无需改动，同时图标随状态切换、不再占一行文字宽度。
@@ -374,7 +374,7 @@ class CropConfigDialog(QDialog):
     def _apply_template(self, spec):
         """套用最近模板：回填全部参数（含填充），其余按当前锁定状态重算。
 
-        回填前必须先放开区间：上一轮的补边硬墙/锁定区间还留在控件上，
+        回填前必须先放开区间：前一次的补边硬墙/锁定区间还留在控件上，
         setValue(800) 会被旧范围静默钳成 352（模板值根本没生效）。
         """
         controls = (self._w, self._h, self._ov_x, self._ov_y, self._rows, self._cols,
@@ -480,7 +480,7 @@ class CropConfigDialog(QDialog):
     def _apply_readonly(self):
         """锁满 2 个时管理第三项的自由度：区间可编辑，而不是一律置灰只读。
 
-        锁定两项**不等于**唯一确定第三项：
+        锁定两项不等于唯一确定第三项：
           · 锁「重叠+数量」→ 尺寸是一段区间（如 1920 图上锁 3 列/重叠 88 有 305 个可行值）
           · 锁「尺寸+数量」→ 重叠同理（两轴共用重叠，故取两轴可行区间的交集）
           · 锁「尺寸+重叠」→ 数量是纯结果，没有任何自由度，才该只读
@@ -528,9 +528,9 @@ class CropConfigDialog(QDialog):
             wdg.setReadOnly(ro_cnt)
 
     def _relax_ranges(self):
-        """放开上一轮的区间收窄，回到控件原始范围。
+        """放开前一次的区间收窄，回到控件原始范围。
 
-        与 _set_ov 先放开重叠上限同理：不放开，本轮的派生值就会被上一轮的区间钳掉。
+        与 _set_ov 先放开重叠上限同理：不放开，本轮的派生值就会被前一次的区间钳掉。
         收尾由 _apply_readonly 按当前锁定状态重新收窄。
         """
         for spin in (self._w, self._h):
@@ -638,7 +638,7 @@ class CropConfigDialog(QDialog):
         rw, rh = self._ref_size()
         if not rw:
             return
-        # 先解除上一轮的区间收窄：否则新算出的派生值会被旧范围静默截断
+        # 先解除先前的区间收窄：否则新算出的派生值会被旧范围静默截断
         # （例如锁 cnt+ov 后改重叠，宽高反推值 734 会被旧下界 800 覆盖）。
         self._relax_ranges()
         locked = set(self._lock_order)
@@ -710,16 +710,16 @@ class CropConfigDialog(QDialog):
         ov = self._ov.value()
         lim = self._ov_hi_limit()
         clamped = False
-        # ① 重叠：两轴共用一个值，须同时满足两轴；也须尊重半窗上限（两者叠加）。
+        # 重叠：两轴共用一个值，须同时满足两轴，也要尊重半窗上限（两者叠加）。
         # 改重叠本身、开关填充、套模板、换图、上锁后都要重算。
-        # 宽高不在这里吸附：③ 的 setRange 会以同样的合规段钳住越界值（等价，已对拍验证）。
+        # 宽高不在这里吸附：下面 setRange 会用同样的合规段钳住越界值，两者等价。
         if source in ("ov", "fill", "template", "image", "lock", None):
             fixed = nearest_pad_compliant_overlap(rw, rh, self._w.value(),
                                                   self._h.value(), ov, lim)
             if fixed != ov:
                 self._set_ov(fixed)
                 clamped = True
-        # ② 硬墙：把三项范围都钳到当前值所在段（放最后，用吸附后的值定位）。
+        # 硬墙：把三项范围都钳到当前值所在的段（放最后，用吸附后的值定位）。
         # 收窄范围本身也会钳住越界的当前值，同样算「吸附过」，必须提示。
         if self._apply_pad_walls(rw, rh):
             clamped = True
@@ -808,7 +808,7 @@ class CropConfigDialog(QDialog):
         self._debounce.start()
 
     def _relayout_axis(self, axis, length, count, overlap):
-        """Recompute one dimension while preserving its row/column count."""
+        """重算某一个维度，同时保持它的行数或列数不变。"""
         minimum = max(8, overlap + 1)
         size = max(minimum, (length + (count - 1) * overlap + count - 1) // count)
         starts = window_starts(length, size, overlap, fill=self._fill.isChecked())

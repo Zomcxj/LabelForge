@@ -224,7 +224,7 @@ def is_auto_box(box):
 
 
 def is_paste_box(box):
-    """是否为贴图。贴图单独存进 json，**不属于「检测框」**，覆盖时不动它。"""
+    """是否为贴图。贴图单独存进 json，不属于「检测框」，覆盖时不动它。"""
     flags = box.get("flags")
     return isinstance(flags, dict) and bool(flags.get("paste"))
 
@@ -232,14 +232,14 @@ def is_paste_box(box):
 def merge_boxes(existing, detected, replace_auto=False, class_filter=None):
     """把推理结果并入现有标注。
 
-    `replace_auto=True`（界面上的「覆盖」）时**先清掉这一图现有的所有检测框**
+    `replace_auto=True`（界面上的「覆盖」）时先清掉这一图现有的所有检测框
     ——人工画的也清——再并入本次结果：「覆盖」的语义是本图检测框完全重来。
-    只清上一轮推理框的话，手工框会与本轮结果叠在一起。
+    只清前一次推理框的话，手工框会与本次结果叠在一起。
 
-    **贴图一律保留**。`existing` 来自 sidecar，里面混着贴图条目；贴图是
+    贴图一律保留。`existing` 来自 sidecar，里面混着贴图条目；贴图是
     另一条存储线，不能被这一步连带清掉。
 
-    class_filter 给定时做严格筛选：覆盖没开时，上一轮推理留下的、类别不在
+    class_filter 给定时做严格筛选：覆盖没开时，前一次推理留下的、类别不在
     白名单里的框也要一并丢掉。否则筛选只能「加」不能「减」——上一次没筛跑出
     的类别会一直留在画布上，看起来就像筛选没生效。
 
@@ -252,14 +252,14 @@ def merge_boxes(existing, detected, replace_auto=False, class_filter=None):
             kept.append(box)
             continue
         if replace_auto:
-            # 覆盖 = 本图检测框完全重来，人工框与上一轮推理框一起清
+            # 覆盖 = 本图检测框整体重做，人工框与自动框一并清除
             continue
         # 未覆盖时只做严格筛选：只清推理框，人工框无论类别都保留
         if (class_filter is not None and is_auto_box(box)
                 and class_label_of(box) not in class_filter):
             continue
         kept.append(box)
-    # 切点必须取**实际保留下来的**原有标注数，不能取 len(existing)：
+    # 切点必须取实际保留下来的原有标注数，不能取 len(existing)：
     # 覆盖模式与类别筛选都会丢掉原有框，用原长度当切点会让前几个新结果
     # 被当成「已有标注」而不发分组号——姿态实例框与它的前几个关键点就掉组。
     split_index = len(kept)
@@ -389,7 +389,7 @@ def _scope_iou(detector):
 def _masked_crop(rgb, region, x1, y1, x2, y2):
     """裁出 [x1,y1,x2,y2)，返回 (裁剪图, 实际起点 x, 实际起点 y)。
 
-    起点取整后**返回给调用方当偏移**：ROI 坐标可能是小数，掩膜按整数像素
+    起点取整后返回给调用方当偏移：ROI 坐标可能是小数，掩膜按整数像素
     判定，两者若各算各的会差半个像素。
     多边形 ROI 把界外像素涂成 letterbox 背景色，只在副本上操作，原图不动；
     矩形 ROI 无需掩膜。掩膜用 numpy 向量化 ray-casting（逐像素调
@@ -455,8 +455,8 @@ def run_batch(paths, detector, loader, resize_fn, keys=None,
     `detector.detect()` 单次调用，结果与不传 scope 完全一致。scope 由
     `inference_scope.normalize_scope()` 校验过，ROI 已是快照。
 
-    on_result 每张跑完立刻调用一次，参数 (key, ImageResult)。**必须在这里
-    落盘**，不能等整批结束：用户要看到 json 一张张出来、列表圆点逐个变绿，
+    on_result 每张跑完立刻调用一次，参数 (key, ImageResult)。必须在这里
+    落盘，不能等整批结束：用户要看到 json 一张张出来、列表圆点逐个变绿，
     中途取消或崩溃时已完成的图也不能白跑。
 
     progress_fn 每张完成后调用一次，参数为
@@ -512,7 +512,7 @@ def failure_summary(results):
 
 
 def beijing_timestamp(now=None):
-    """北京时间的时刻（`时:分:秒.毫秒`），**不含年月日**。
+    """北京时间的时刻（`时:分:秒.毫秒`），不含年月日。
 
     这是给推理进度窗的日志行用的：一次批量推理只跑一趟，同一秒内不会有跨天
     的记录，年月日是纯噪声，去掉后一行更短、文件名看得更清。
@@ -645,7 +645,7 @@ def write_one_result(result, existing=None, replace_auto=False,
     `existing` 给 None 表示从磁盘读（调用方有更新鲜的内存时应当传进来）。
     没检出且合并后仍无任何标注的不写盘：否则数据集中会多出大量 shapes 为 []
     的空 json。已有标注（人工/贴图/多边形）的图照常写回，因为 replace_auto
-    可能刚好删掉了上一轮的推理框。
+    可能刚好删掉了前一次写入的推理框。
 
     失败抛 `InferenceError`，让调用方按「这张写失败」处理，别把整批拖掉。
     """
@@ -662,7 +662,7 @@ def write_one_result(result, existing=None, replace_auto=False,
                                    result.height):
             raise InferenceError(f"写入失败: {result.path}")
         return True
-    # 合并后没有标注：replace_auto 可能刚把上一轮的推理框删光，
+    # 合并后没有标注：replace_auto 可能刚把自动框删光，
     # 这时盘上还留着它们，必须先写出真实内容再按需删文件。
     if not existing:
         remove_empty_sidecar(result.path)
@@ -677,14 +677,14 @@ def write_results(results, memory_boxes=None, replace_auto=False, skip_index=Non
                   class_filter=None):
     """批量把结果写进各自 sidecar，返回 (写入数, 失败路径列表)。
 
-    逐张调用 `write_one_result`。**逐张写盘**（而不是攒到最后一起写）是硬要求：
+    逐张调用 `write_one_result`。逐张写盘（而不是攒到最后一起写）是硬要求：
     界面按每张完成就刷新列表圆点，用户也要能随时看到已写出的 json。
 
     memory_boxes 里已有的图以内存为准：内存可能比磁盘新，直接读盘会把
     刚做的编辑当成不存在，进而丢掉。skip_index 交给调用方用正常保存
     流程处理（当前显示图还涉及贴图与画布状态）。
 
-    class_filter 会传给 merge_boxes，把上一轮不在白名单里的推理框也清掉。
+    class_filter 会传给 merge_boxes，把前一次不在白名单里的推理框也清掉。
     """
     memory_boxes = memory_boxes or {}
     written = 0

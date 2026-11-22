@@ -1,4 +1,4 @@
-"""Shared SVG icon rendering helpers and icon data."""
+"""共用的 SVG 图标绘制函数与图标数据。"""
 from PySide6.QtGui import QPixmap, QPainter
 from PySide6.QtCore import Qt
 
@@ -49,3 +49,9 @@ SVG_MODEL_ALL = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fil
 SVG_BURST = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.2 4.6 4.9-1.5-2.4 4.5 4.3 3-4.7 1.6 1 4.8-4.3-2.7-3.3 3.7-.6-4.9-4.9.3 3.3-3.6-3.4-3.5 4.9-.2.4-4.9 3.2 3.6z"/></svg>'
 # 胶片：视频抽帧（加载视频导出图片）
 SVG_VIDEO = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="7" y1="4" x2="7" y2="20"/><line x1="17" y1="4" x2="17" y2="20"/><line x1="2" y1="9" x2="7" y2="9"/><line x1="2" y1="15" x2="7" y2="15"/><line x1="17" y1="9" x2="22" y2="9"/><line x1="17" y1="15" x2="22" y2="15"/></svg>'
+
+# 左/右箭头：图像编辑面板翻上一张、下一张
+SVG_ARROW_LEFT = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 4 7 12 15 20"/></svg>'
+SVG_ARROW_RIGHT = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 4 17 12 9 20"/></svg>'
+# 眼睛：按住对比原图
+SVG_EYE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg>'

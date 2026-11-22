@@ -119,6 +119,11 @@ class Canvas(CanvasRendererMixin, CanvasInteractionMixin, QWidget):
 
         scaled_width = bg_w * self.background_scale
         scaled_height = bg_h * self.background_scale
+        # 适配窗口时贴边的那一维会因浮点误差比画布多出零点几像素，
+        # 取整后上边线掉到 -1，看起来像被裁掉一条。这里夹回画布尺寸。
+        if not self.is_manual_scale:
+            scaled_width = min(scaled_width, float(self.width()))
+            scaled_height = min(scaled_height, float(self.height()))
 
         x = (self.width() - scaled_width) // 2 + self.background_offset.x()
         y = (self.height() - scaled_height) // 2 + self.background_offset.y()
@@ -139,6 +144,26 @@ class Canvas(CanvasRendererMixin, CanvasInteractionMixin, QWidget):
             self.background_scale = 1.0
         self.background_offset = QPoint(0, 0)
         self.is_manual_scale = False
+
+    def clamp_background_offset(self):
+        """把手动平移量夹回可视范围：图比画布大时不留空白，比画布小时居中。
+
+        手动缩放后换图（如按住看原图）会沿用旧缩放比，旧平移量在新图上
+        可能把图顶到画布外，表现为上边线被盖住。
+        """
+        if self._editor.current_background is None:
+            return
+        bg_w = self._editor.current_background.width()
+        bg_h = self._editor.current_background.height()
+        if bg_w <= 0 or bg_h <= 0:
+            return
+        scaled_w = bg_w * self.background_scale
+        scaled_h = bg_h * self.background_scale
+        limit_x = max(0.0, (scaled_w - self.width()) / 2.0)
+        limit_y = max(0.0, (scaled_h - self.height()) / 2.0)
+        dx = max(-limit_x, min(self.background_offset.x(), limit_x))
+        dy = max(-limit_y, min(self.background_offset.y(), limit_y))
+        self.background_offset = QPoint(int(dx), int(dy))
 
     def find_item_at_position(self, pos):
         """查找指定位置的贴图索引（含右下角缩放手柄区域）"""

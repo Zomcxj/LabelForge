@@ -1,5 +1,5 @@
 """
-Theme module - manages dark/light theme switching
+深浅主题切换
 """
 import os
 from enum import Enum
@@ -979,7 +979,7 @@ class ThemeManager:
         """全项目进度条统一圆角样式。
 
         圆角要同时写在 QProgressBar 与 ::chunk 上：只写外层会让填充块顶着
-        直角边角，看起来像没生效。`radius` 给 0 以外的值时记得 height 至少
+        直角边角，看起来像没生效。`radius` 给 0 以外的值时，height 至少
         是它的两倍，否则圆角被压扁。
         """
         t = cls._current_theme

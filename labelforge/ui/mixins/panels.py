@@ -1,4 +1,4 @@
-"""Panels UI building mixin."""
+"""侧边面板的界面构建混入类。"""
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QPushButton
 from PySide6.QtCore import Qt, QTimer, QRect
 from ...canvas import Canvas
@@ -8,7 +8,7 @@ from ..i18n import t as tr
 
 
 class PanelsMixin:
-    """Panels widgets and behavior."""
+    """侧边面板的控件与行为。"""
 
     def _create_splitter(self):
         """创建分割器"""
@@ -132,7 +132,7 @@ class PanelsMixin:
         control_widget = QWidget()
         control_layout = QVBoxLayout(control_widget)
         control_layout.setSpacing(6)
-        # Top 0 matches canvas top edge (sides/bottom keep inset).
+        # 上边为 0 时与画布上边缘齐平，左右与下边仍留内边距。
         control_layout.setContentsMargins(6, 0, 6, 6)
         self._side_control_layout = control_layout
         self._side_control_widget = control_widget
@@ -146,7 +146,7 @@ class PanelsMixin:
         return control_widget
 
     def _update_side_panel_stretches(self):
-        """Equal height among expanded sections; collapsed keep header only."""
+        """展开的区块等高，折叠的只留标题栏。"""
         from PySide6.QtWidgets import QSizePolicy
 
         layout = getattr(self, '_side_control_layout', None)
@@ -172,7 +172,7 @@ class PanelsMixin:
                 layout.setStretchFactor(outer, 0)
 
     def _make_side_collapsible(self, title_key):
-        """Create a collapsible side section with arrow on the left of the title."""
+        """建一个可折叠的侧边区块，箭头在标题左侧。"""
         outer = QFrame()
         outer.setObjectName("sideCollapsible")
         outer_layout = QVBoxLayout(outer)

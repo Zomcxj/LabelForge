@@ -1,4 +1,4 @@
-"""Cache Menu UI building mixin."""
+"""缓存菜单的界面构建混入类。"""
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QLineEdit, QWidgetAction
 from PySide6.QtCore import Qt
 from ..i18n import t as tr
@@ -6,7 +6,7 @@ from ...widgets.hover_menu import HoverKeepMenu
 
 
 class CacheMenuMixin:
-    """Cache Menu widgets and behavior."""
+    """缓存菜单的控件与行为。"""
 
     def _rebuild_label_cache_menu(self):
         if not hasattr(self, 'cache_btn'):

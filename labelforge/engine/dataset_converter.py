@@ -11,7 +11,7 @@
 - 转换前完成校验，失败时不写出半成品；
 - 所有解析 / 写出异常统一转换为 DatasetToolError。
 
-历史上本模块依赖 supervision 作为可选依赖，但它把 scipy 一并拖入 exe，
+早期版本中本模块依赖 supervision 作为可选依赖，但它把 scipy 一并拖入 exe，
 单文件包体积从 52MB 涨到 91MB。当前实现已完全自研，无任何外部依赖。
 """
 import json
@@ -1191,7 +1191,7 @@ def _write_chunk(chunk: "Dataset", output_format: str, layout: dict,
                  is_interrupted: Optional[Callable] = None) -> None:
     """按格式写出一个分块。
 
-    COCO 的标注是**单个 json**，只能整体写出、无法分块；调用方应在只传
+    COCO 的标注是单个 json，只能整体写出、无法分块；调用方应在只传
     一个分块时用它。``layout["annotations"]`` 对 coco 是文件路径、对
     yolo/voc/labelme 是目录，这里按格式区分，不能一律当目录用。
     """

@@ -246,17 +246,17 @@ class LabelManager(QObject):
                 notify(current_index)
             return
 
-        # Stats mode: full rename (memory + color + stats + disk)
+        # 统计模式：内存、颜色、统计与磁盘一起改名
         self.rename_detection_label(old_label, new_label, rewrite_disk=True)
     
     def delete_selected_label(self):
         """快捷键删除标签（不弹确认框）。
 
         删除范围按「哪儿的选区更具体」决定：
-        - **画布上选中了框** → 只删那几个框（选哪删哪）；
-        - **侧栏标签列表选中了某项** → 沿用原来的语义：`all` 模式删那一行对应
+        - 画布上选中了框 → 只删那几个框（选哪删哪）；
+        - 侧栏标签列表选中了某项 → 沿用原来的语义：`all` 模式删那一行对应
           的单个框，`stats` 模式删当前图里该标签的全部框；
-        - **都没选**（焦点就在画布上但没点框）→ 删掉**当前图全部**标签框。
+        - 都没选（焦点就在画布上但没点框）→ 删掉当前图全部标签框。
 
         注意不能一上来就问 `label_list.selectedItems()`、空就直接 return：
         那样焦点明明在画布上、快捷键也照常送达（`QShortcut` 本来就不受焦点
@@ -277,7 +277,7 @@ class LabelManager(QObject):
             return
         if canvas_selection == "stale":
             # 画布状态显示为已选中，但下标全部失效（切图/重推理后残留）：
-            # 这种状态下**什么都不做**，否则会以「没选中」为由删光整图的框。
+            # 这种状态下什么都不做，否则会以「没选中」为由删光整图的框。
             return
 
         if not selected_items:
@@ -312,7 +312,7 @@ class LabelManager(QObject):
         return {i for i in raw if isinstance(i, int) and 0 <= i < total}
 
     def _canvas_raw_selection(self):
-        """画布上报的选中项**原样**（不筛合法性）。"""
+        """画布上报的选中项原样（不筛合法性）。"""
         canvas = getattr(self.editor, 'canvas', None)
         if canvas is None:
             return []
@@ -326,7 +326,7 @@ class LabelManager(QObject):
         """画布的选中状况：`none` / `valid` / `stale`。
 
         - `none`：画布上没有任何选中迹象；
-        - `valid`：至少有**一个合法下标**可用（就按它删）；
+        - `valid`：至少有一个合法下标可用（就按它删）；
         - `stale`：有选中迹象但一个合法下标都没有（切图/重推理后残留旧下标）。
           `stale` 必须与 `none` 区分：混为一谈会以「没选中」为由删光整图。
         """
@@ -406,7 +406,7 @@ class LabelManager(QObject):
                     list(self.editor.detection_boxes)
             self.editor.canvas.selected_box = None
             self.editor.canvas.selected_boxes = []
-            # Drop global label only if no remaining box uses it on any image.
+            # 只有全数据集都没有框再用它时，才删掉全局标签。
             still_used = any(
                 box.get("label") == label_to_delete
                 for boxes in self.editor.detection_boxes_dict.values()
@@ -502,7 +502,7 @@ class LabelManager(QObject):
         )
     
     def _dataset_labels_for_dialog(self, prefer_first=None):
-        """Dataset labels for LabelSelectionDialog (same sources as canvas)."""
+        """给标签选择对话框用的数据集标签，来源与画布一致。"""
         labels = set()
         bg = getattr(self.editor, 'background_dataset_labels', None) or set()
         if isinstance(bg, (set, list, tuple)):
@@ -551,7 +551,7 @@ class LabelManager(QObject):
             self.label_list_changed.emit()
     
     def _label_already_exists(self, label):
-        """True if label is already used in the current dataset/session."""
+        """该标签在当前数据集或本次会话里是否已经用过。"""
         if not label:
             return False
         color_map = getattr(self.editor, 'label_color_map', None)
@@ -577,7 +577,7 @@ class LabelManager(QObject):
         return False
 
     def _stats_color_for(self, label):
-        """Color from bg stats cache for label, if any."""
+        """从背景标签统计缓存里取这个标签的颜色，没有则返回 None。"""
         if not label:
             return ''
         cached = getattr(self.editor, '_cached_bg_label_stats', None) or []
@@ -589,7 +589,7 @@ class LabelManager(QObject):
         return ''
 
     def _apply_rename_color(self, old_label, new_label, target_exists, move_if_unused=True):
-        """Apply color on rename given whether target already existed *before* rename."""
+        """改名时应用颜色规则；参数表示改名之前目标标签是否已经存在。"""
         color_map = getattr(self.editor, 'label_color_map', None)
         if not isinstance(color_map, dict):
             return
@@ -604,7 +604,7 @@ class LabelManager(QObject):
             if move_if_unused and old_label in color_map and old_label != new_label:
                 color_map.pop(old_label, None)
         else:
-            # Brand-new name: inherit old color.
+            # 全新名字：沿用旧名字的颜色。
             if old_label in color_map:
                 old_color = color_map[old_label]
                 color_map[new_label] = old_color
@@ -629,17 +629,17 @@ class LabelManager(QObject):
             _write_log(f"保存标签颜色配置失败: {e}")
 
     def _transfer_label_color(self, old_label, new_label, move_if_unused=True):
-        """Color rules on rename (detects target existence at call time)."""
+        """改名时的颜色规则，目标标签是否存在在调用时判定。"""
         target_exists = self._label_already_exists(new_label)
         # When called after rename, new_label is always "existing" via global_labels.
         # Prefer explicit pre-check via _apply_rename_color from callers.
         self._apply_rename_color(old_label, new_label, target_exists, move_if_unused=move_if_unused)
 
     def _seed_stats_cache_from_disk_and_memory(self):
-        """Build full stats: disk for unloaded images + memory for loaded ones.
+        """重建完整统计：未加载的图按磁盘算，已加载的按内存算。
 
-        Memory wins for indexes already in detection_boxes_dict so recent
-        canvas/list edits are reflected without missing unloaded files.
+        下标在 detection_boxes_dict 里的以内存为准，这样画布与列表上的
+        改动能及时反映，同时不会漏掉未加载的文件。
         """
         import os
         from .image_loader import collect_background_label_stats_and_tasks
@@ -659,9 +659,9 @@ class LabelManager(QObject):
                 if not isinstance(index, int) or index < 0 or index >= len(images):
                     continue
                 if not boxes:
-                    # Empty slot (e.g. batch-loaded placeholder): disk counts stand.
+                    # 空占位（批量加载时的占位项）：仍按磁盘统计。
                     continue
-                # Subtract prior disk contribution for this file, then add memory.
+                # 先减掉这张图之前的磁盘计数，再加上内存里的数量。
                 json_path = f"{os.path.splitext(images[index])[0]}.json"
                 try:
                     from .image_loader import count_labels_in_json
@@ -682,7 +682,7 @@ class LabelManager(QObject):
                     counts[label] = counts.get(label, 0) + 1
                     label_tasks.setdefault(label, set()).add(shape_task_type(box))
         elif boxes_dict:
-            # No image list: count memory only.
+            # 没有图片列表：只统计内存。
             counts = {}
             for boxes in boxes_dict.values():
                 for box in boxes or []:
@@ -697,7 +697,7 @@ class LabelManager(QObject):
             for box in getattr(self.editor, 'detection_boxes', []) or []:
                 if not isinstance(box, dict):
                     continue
-                # Avoid double-count if same objects already in dict values.
+                # 字典里已有同一批对象时不重复计数。
                 already = any(box is b for bs in boxes_dict.values() for b in (bs or []))
                 if already:
                     continue
@@ -725,15 +725,15 @@ class LabelManager(QObject):
         if path:
             self.editor._cached_bg_label_stats_path = path
 
-    # Back-compat alias used by older call sites / tests.
+    # 兼容旧调用处的别名。
     def _seed_stats_cache_from_memory(self):
         self._seed_stats_cache_from_disk_and_memory()
 
     def _bump_cached_stats_for_box(self, box, delta=1):
-        """Incrementally fold one box into the stats cache (no full rescan).
+        """把一个框增量并入统计缓存，不整体重扫。
 
-        Called when a box is added/removed on the canvas. Falls back to a full
-        seed when the cache is empty/unusable, so counts never drift silently.
+        画布上增删框时调用；缓存为空或不可用时回落到完整重建，
+        避免计数悄悄对不上。
         """
         label = box.get('label') if isinstance(box, dict) else None
         if not (isinstance(label, str) and label.strip()):
@@ -776,15 +776,15 @@ class LabelManager(QObject):
         self.editor._cached_bg_label_stats = cached
 
     def _sync_cached_stats_label_rename(self, old_label, new_label, delta=None):
-        """Update stats cache after rename.
+        """改名后更新统计缓存。
 
-        delta=None: full rename (all old_label → new_label, merge counts)
-        delta=N: only N occurrences moved from old → new (single-box rename)
+        delta 为 None：整体改名，旧标签的计数全部并入新标签
+        delta 为 N：只有 N 个框从旧标签挪到新标签（改单个框）
         """
         color_map = getattr(self.editor, 'label_color_map', None)
         cached = getattr(self.editor, '_cached_bg_label_stats', None)
         if not isinstance(cached, list) or not cached:
-            # Full seed (disk+memory). Caller already applied rename to memory/disk.
+            # 完整重建（磁盘 + 内存）；改名已由调用方写进内存与磁盘。
             self._seed_stats_cache_from_disk_and_memory()
             cached = getattr(self.editor, '_cached_bg_label_stats', None) or []
             for item in cached:
@@ -819,7 +819,7 @@ class LabelManager(QObject):
                     count = 0
                 color = item.get('color', '') or ''
                 tasks = list(item.get('tasks') or [])
-                # Prefer color that already belonged to the target label.
+                # 目标标签原本就有颜色时优先用它。
                 if orig_label == new_label and color:
                     target_color = color
                 if label in merged:
@@ -881,7 +881,7 @@ class LabelManager(QObject):
         self.editor._cached_bg_label_stats = list(by_label.values())
 
     def rename_detection_label(self, old_label, new_label, rewrite_disk=True):
-        """Rename a detection/background label in memory and optionally all sidecar JSONs."""
+        """在内存里改检测框或背景标签名，可选地同时改所有 sidecar JSON。"""
         import os
 
         old_label = (old_label or "").strip()
@@ -889,7 +889,7 @@ class LabelManager(QObject):
         if not old_label or not new_label or old_label == new_label:
             return False
 
-        # Capture before membership changes.
+        # 先记下来，后面要改成员。
         target_exists = self._label_already_exists(new_label)
 
         current_index = getattr(self.editor, 'current_background_index', -1)
@@ -927,7 +927,7 @@ class LabelManager(QObject):
 
         self._apply_rename_color(old_label, new_label, target_exists, move_if_unused=True)
         self._sync_cached_stats_label_rename(old_label, new_label)
-        # Keep path so stats dialog prefers this live cache.
+        # 带上路径，统计窗口才会优先用这份实时缓存。
         path = getattr(self.editor, '_memory_background_path', '') or ''
         if path and not getattr(self.editor, '_cached_bg_label_stats_path', ''):
             self.editor._cached_bg_label_stats_path = path
@@ -947,7 +947,7 @@ class LabelManager(QObject):
         return True
 
     def rename_paste_label(self, old_label, new_label, rewrite_disk=False):
-        """Rename a paste label in memory lists and canvas items."""
+        """改贴图标签名：内存列表与画布上的贴图项一起改。"""
         old_label = (old_label or "").strip()
         new_label = (new_label or "").strip()
         if not old_label or not new_label or old_label == new_label:
@@ -1122,9 +1122,9 @@ class LabelManager(QObject):
                 label_tasks.setdefault(label, set()).add(shape_task_type(box))
 
         if mode == 'all':
-            # One row per detection box on the current image.
+            # 当前图每个检测框一行。
             # 排序：先无组别，再按 group_id 从小到大；同组保持原框顺序。
-            # Qt.ItemDataRole.UserRole == 0x0100 (avoid Qt mock AttributeError in tests)
+            # UserRole 的取值是 0x0100，这里直接写数值，免得替身上取属性报错
             def _group_sort_key(entry):
                 box_index, box = entry
                 gid = box.get("group_id")

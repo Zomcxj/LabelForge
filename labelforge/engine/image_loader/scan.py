@@ -18,16 +18,14 @@ __all__ = [
 
 def scan_dataset_full(image_paths, is_interrupted=None, progress_cb=None,
                       tasks_out=None):
-    """Return (labels_set, {label: count}, {image_path: status}) in one pass.
+    """一趟走完，返回 (标签集合, {标签: 数量}, {图片路径: 状态})。
 
-    Parsing each sidecar once yields both the dataset label counts and the
-    per-image annotated/empty/unannotated status, so populating a large
-    dataset's list never needs a second full JSON scan.
+    每份 sidecar 只解析一次，标签计数与逐图状态一起得到，
+    大列表因此不需要再扫第二遍 JSON。
 
-    progress_cb: optional callable(batch_statuses: dict) invoked every
-    PROGRESS_BATCH results so callers can stream partial results to the UI
-    instead of waiting for the whole dataset (keeps the status circles filling
-    in progressively on large datasets).
+    progress_cb：每处理 PROGRESS_BATCH 条就回调一次 {路径: 状态}，
+    调用方可以把中间结果先填进界面，不用等整份数据集跑完
+    （大列表的状态圆点因此是一个个亮起来的）。
 
     tasks_out: optional dict filled with {label: set(task_types)} during the
     same pass, so the stats dialog can show 框类型 without rescanning.
@@ -104,7 +102,7 @@ def collect_background_label_stats_and_tasks(image_paths, is_interrupted=None):
     """一次扫描同时得到 {label: count} 与 {label: set(task_types)}。
 
     统计弹窗原先分别调 `collect_background_label_counts()` 与
-    `collect_background_label_tasks()`，**把每个 sidecar json 解析了两遍**，
+    `collect_background_label_tasks()`，把每个 sidecar json 解析了两遍，
     而且都在 UI 线程上，数据集一大就要好几秒。这里复用
     `scan_dataset_full()` 的单趟解析：它本来就在同一次读取里同时产出
     counts 与 tasks。
@@ -166,7 +164,7 @@ _count_labels_in_json = count_labels_in_json
 
 
 def collect_background_label_counts(image_paths, is_interrupted=None):
-    """Count every shape occurrence across background sidecar JSONs."""
+    """统计所有背景图 sidecar JSON 里每个形状出现的次数。"""
     counts = {}
     pending = []
     for image_path in image_paths:
@@ -210,7 +208,7 @@ def _scan_label_tasks_in_json(json_path):
 
 
 def collect_background_label_tasks(image_paths, is_interrupted=None):
-    """Collect the set of task types (det/seg/pose/obb) per label across sidecars."""
+    """按标签汇总 sidecar 里的任务类型（det/seg/pose/obb）。"""
     tasks = {}
     pending = []
     for image_path in image_paths:
@@ -232,7 +230,7 @@ def collect_background_label_tasks(image_paths, is_interrupted=None):
 
 
 class DatasetLabelScanWorker(QThread):
-    """Scan a fixed dataset snapshot outside the UI thread."""
+    """在 UI 线程之外扫描一份固定的数据集快照。"""
     labels_scanned = Signal(int, tuple, object, object, object, object)
     statuses_progress = Signal(int, tuple, object)
 

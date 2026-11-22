@@ -15,7 +15,7 @@ __all__ = [
 ]
 
 
-# background list item UserRole keys (Qt.ItemDataRole.UserRole == 0x0100)
+# 背景图列表项的 UserRole 键，UserRole 的取值是 0x0100
 BG_ROLE_INDEX = 0x0100
 BG_ROLE_PATH = 0x0101
 BG_ROLE_STATUS = 0x0102
@@ -23,15 +23,15 @@ BG_ROLE_STATUS = 0x0102
 STATUS_UNANNOTATED = "unannotated"
 STATUS_ANNOTATED = "annotated"
 STATUS_EMPTY = "empty"
-# Provisional status used while bulk-populating the list: the sidecar JSON
-# exists but has not been scanned yet. Replaced by the background scan worker.
+# 批量填充列表时的临时状态：sidecar JSON 已存在但还没扫过，
+# 由后台扫描完成后替换。
 STATUS_PENDING = "pending"
 
 _STATUS_ICON_CACHE = {}
 
 
 def annotation_status_for_image(image_path):
-    """Classify sidecar LabelMe JSON: unannotated / annotated / empty."""
+    """给 sidecar JSON 归类：未标注 / 已标注 / 空。"""
     if not image_path:
         return STATUS_UNANNOTATED
     json_path = os.path.splitext(image_path)[0] + ".json"
@@ -49,11 +49,10 @@ def annotation_status_for_image(image_path):
 
 
 def annotation_status_for_image_light(image_path):
-    """Cheap provisional status: no JSON parse, only a file-existence check.
+    """先给一个省事的临时状态：只查文件在不在，不解析 JSON。
 
-    Used while bulk-populating the background list so the UI thread never
-    parses thousands of sidecar JSONs. The real status is filled in later by
-    the background scan worker.
+    批量铺列表时用它，免得 UI 线程去啃几千份 sidecar；
+    真正的状态由后台扫描线程随后补上。
     """
     if not image_path:
         return STATUS_UNANNOTATED
@@ -64,7 +63,7 @@ def annotation_status_for_image_light(image_path):
 
 
 def _status_icon(status, size=12):
-    """Small circular status icon for background list rows / filter button."""
+    """背景图列表行与筛选按钮用的小圆点状态图标。"""
     cache_key = (status, size)
     if cache_key in _STATUS_ICON_CACHE:
         return _STATUS_ICON_CACHE[cache_key]
@@ -74,7 +73,7 @@ def _status_icon(status, size=12):
     painter = QPainter(pm)
     painter.setRenderHint(QPainter.Antialiasing)
     if status == "all":
-        # three mini dots: green / gray / orange
+        # 三颗小圆点：绿 / 灰 / 橙
         for i, color in enumerate(("#2ecc71", "#95a5a6", "#e67e22")):
             painter.setBrush(QColor(color))
             painter.setPen(Qt.NoPen)
@@ -92,7 +91,7 @@ def _status_icon(status, size=12):
         painter.setPen(Qt.NoPen)
         painter.drawEllipse(4, 4, size - 8, size - 8)
     elif status == STATUS_PENDING:
-        # Dashed gray ring: JSON exists but has not been scanned yet.
+        # 灰色虚线圆环：JSON 已存在但还没扫过。
         painter.setBrush(Qt.transparent)
         painter.setPen(QPen(QColor("#95a5a6"), 1.5, Qt.DashLine))
         painter.drawEllipse(1, 1, size - 2, size - 2)
@@ -107,11 +106,10 @@ def _status_icon(status, size=12):
 
 
 def decorate_background_list_item(item, image_path, index=None, light=False):
-    """Attach path/index/status metadata and status icon to a list item.
+    """给列表项挂上路径、下标、状态与状态图标。
 
-    light=True skips parsing the sidecar JSON (only checks existence) so
-    bulk-populating a large dataset stays off the JSON parser. The accurate
-    status is applied later via apply_background_status_to_item.
+    light=True 时不解析 sidecar，只查存在性，批量铺大列表因此绕开
+    JSON 解析；准确状态稍后由 apply_background_status_to_item 补上。
     """
     if item is None:
         return STATUS_UNANNOTATED
@@ -140,7 +138,7 @@ def decorate_background_list_item(item, image_path, index=None, light=False):
 
 
 def apply_background_status_to_item(item, status):
-    """Update an existing list row with a resolved status + icon + tooltip."""
+    """用算好的状态刷新已有列表行的图标与提示。"""
     if item is None:
         return
     if hasattr(item, 'setData'):

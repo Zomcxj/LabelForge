@@ -172,9 +172,8 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         self.background_images = []
         self._current_background = None
         self.current_background_index = -1
-        # 图像处理面板状态：面板开着时画布进预览态，标注隐藏/编辑锁定
+        # 图像编辑面板状态：面板开着时画布进预览态，标注隐藏、编辑锁定
         self._image_tools_active = False
-        self._image_tools_geometric = False
         self._image_tools_original = None
         self.image_tools_regions = []
         self.image_tools_region_mode = "none"
@@ -222,16 +221,16 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
 
         # 语义区域（仅运行时存在，不持久化/不导出）
         #
-        # **两份独立区域**：推理的区域贴图不能显示和操作，
+        # 两份独立区域：推理的区域贴图不能显示和操作，
         # 贴图的区域推理不能显示和操作。
-        # - `region_boxes`   ：**推理**范围（滑窗/区域推理用），画在标注模式
-        # - `paste_region_boxes`：**贴图**落点约束，画在贴图模式，从空开始
+        # - `region_boxes`   ：推理范围（滑窗/区域推理用），画在标注模式
+        # - `paste_region_boxes`：贴图落点约束，画在贴图模式，从空开始
         # 两份各自有面板、各自可编辑，互不可见、互不影响。
         self.region_boxes = []
         self.paste_region_boxes = []
         self.region_fixed = False
         self.paste_region_fixed = False
-        # 范围面板是否开着。**在这里就初始化**：画布在鼠标事件里会读它
+        # 范围面板是否开着。在这里就初始化：画布在鼠标事件里会读它
         # （`_region_editing_allowed`），只靠「第一次开面板时赋值」会让开面板
         # 之前的状态是「属性不存在」，`getattr(..., False)` 虽然兜住了，但
         # 直接读就会 AttributeError。
@@ -433,7 +432,7 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
         QTimer.singleShot(2000, lambda: self.status_label.setText(""))
 
     def _apply_paste_label_visibility(self):
-        """Annotate: hide paste label column + paste list; paste: show both."""
+        """标注模式隐藏贴图标签列与贴图列表，贴图模式两者都显示。"""
         show = getattr(self, 'edit_mode', 'paste') != 'annotate'
         if hasattr(self, 'paste_label_column'):
             self.paste_label_column.setVisible(show)
@@ -878,15 +877,15 @@ class ImageEditor(TranslationMixin, ThemeMixin, BackgroundListMixin, StatsMixin,
             self._center_processing_panel()
 
     def _show_export_menu(self):
-        """顶部'导出'按钮弹出菜单: 增强划分 / 数据集分组 / 图像处理"""
+        """顶部'导出'按钮弹出菜单: 增强划分 / 数据集分组 / 图像编辑"""
         from PySide6.QtWidgets import QMenu
         from PySide6.QtCore import QPoint
 
         menu = QMenu(self)
         menu.setObjectName("optionsMenu")
         action_aug = menu.addAction(tr("增强划分"))
+        action_image_tools = menu.addAction(tr("图像编辑"))
         action_group = menu.addAction(tr("数据集分组"))
-        action_image_tools = menu.addAction(tr("图像处理"))
 
         btn_pos = self.process_btn.mapToGlobal(QPoint(0, self.process_btn.height()))
         action = menu.exec_(btn_pos)

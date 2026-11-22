@@ -1,10 +1,9 @@
-"""Canvas display controls (bottom-left overlay).
+"""画布显示控制，浮在左下角。
 
-Three vertical tracks side by side — label opacity, image brightness and
-contrast. Each track is a vertical slider with a caption at its foot and the
-live value above it. A row-level reset sits at the card's bottom-right corner.
+三条竖向滑轨并排：标签透明度、图像亮度、对比度。每条滑轨下方是标题、
+上方显示当前值，右下角有一个整体复位按钮。
 
-The panel only emits signals; the owner applies the values to the canvas.
+面板只发信号，取值由使用方应用到画布上。
 """
 
 from PySide6.QtCore import Qt, QTimer, Signal, QSize
@@ -35,7 +34,7 @@ TONE_DEBOUNCE_MS = 33
 
 
 class _VerticalTrack(QWidget):
-    """One vertical slider column: value, track, caption."""
+    """一根竖向滑条：数值、轨道与标题。"""
 
     def __init__(self, caption, tooltip, minimum, maximum, default,
                  display, parent=None):
@@ -119,7 +118,7 @@ class _VerticalTrack(QWidget):
 
 
 class CanvasDisplayPanel(QWidget):
-    """Vertical display controls: label opacity, brightness, contrast."""
+    """竖向显示控制：标签透明度、亮度、对比度。"""
 
     label_opacity_changed = Signal(int)
     image_tone_changed = Signal(int, int)

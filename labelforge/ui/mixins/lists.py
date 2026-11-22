@@ -1,4 +1,4 @@
-"""Lists UI building mixin."""
+"""列表区域的界面构建混入类。"""
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
     QListWidgetItem, QMenu, QSpinBox,
@@ -12,7 +12,7 @@ from ...widgets.drag_out_list import DragOutListWidget
 
 
 class ListsMixin:
-    """Lists widgets and behavior."""
+    """列表区域的控件与行为。"""
 
     def _create_background_list_section(self, layout):
         """创建背景图列表区域"""

@@ -1,5 +1,5 @@
 """
-Language module - Chinese/English switching
+中英文界面文案切换
 """
 
 _strings = {
@@ -341,7 +341,7 @@ _strings = {
         "选择 ONNX 模型": "选择 ONNX 模型",
         "置信度": "置信度",
         # 「conf」只给模型参数行用（中英都显示 conf）。视频弹窗的
-        # 「叠加标签框」复选框仍用 "置信度"，所以是**另一个键**而不是改值。
+        # 「叠加标签框」复选框仍用 "置信度"，所以是另一个键而不是改值。
         "conf": "conf",
         "NMS": "NMS",
         "覆盖": "覆盖",
@@ -565,6 +565,21 @@ _strings = {
         "选择": "选择",
         "数据增强": "数据增强",
         "原图": "原图",
+        "按长边缩放": "按长边缩放",
+        "自适应均衡": "自适应均衡",
+        "自动色阶": "自动色阶",
+        "色调分离": "色调分离",
+        "开运算": "开运算",
+        "闭运算": "闭运算",
+        "形态学梯度": "形态学梯度",
+        "顶帽": "顶帽",
+        "黑帽": "黑帽",
+        "USM 锐化": "USM 锐化",
+        "拉普拉斯锐化": "拉普拉斯锐化",
+        "双边滤波": "双边滤波",
+        "非局部均值降噪": "非局部均值降噪",
+        "运动模糊": "运动模糊",
+        "马赛克": "马赛克",
         "图片比例:": "图片比例:",
         "模式:": "模式:",
         "全部增强": "全部增强",
@@ -852,7 +867,19 @@ _strings = {
         "贴图融合": "贴图融合",
         "泊松融合": "泊松融合",
         "勾选后保存合成图时按泊松融合落笔；画布预览仍是普通叠加": "勾选后保存合成图时按泊松融合落笔；画布预览仍是普通叠加",
-        "图像处理": "图像处理",
+        "图像编辑": "图像编辑",
+        "预设:": "预设:",
+        "去图像编辑": "去图像编辑",
+        "包含原图": "包含原图",
+        "还没有预设：点「去图像编辑」调好参数后存为预设": "还没有预设：点「去图像编辑」调好参数后存为预设",
+        "没有可增强的内容：选一个预设，或勾选包含原图/滑窗裁剪": "没有可增强的内容：选一个预设，或勾选包含原图/滑窗裁剪",
+        "打开图像编辑面板调整参数并存成预设": "打开图像编辑面板调整参数并存成预设",
+        "图像编辑面板不可用": "图像编辑面板不可用",
+        "存为预设": "存为预设",
+        "存进预设槽 A~E，数据增强面板直接选用": "存进预设槽 A~E，数据增强面板直接选用",
+        "已存为": "已存为",
+        "预设A": "预设A", "预设B": "预设B", "预设C": "预设C",
+        "预设D": "预设D", "预设E": "预设E",
         "当前": "当前",
         "上一张": "上一张",
         "下一张": "下一张",
@@ -860,6 +887,24 @@ _strings = {
         "选文件夹…": "选文件夹…",
         "没有可用的记忆目录": "没有可用的记忆目录",
         "预览中, 标注已隐藏": "预览中, 标注已隐藏",
+        "原图": "原图",
+        "按住看原图": "按住看原图",
+        "生成新图": "生成新图",
+        "已生成新图": "已生成新图",
+        "另存为": "另存为",
+        "另存为…": "另存为…",
+        "写进与数据集同级的 exports 目录": "写进与数据集同级的 exports 目录",
+        "自行选择位置与文件名": "自行选择位置与文件名",
+        "复位": "复位",
+        "保存预设": "保存预设",
+        "载入预设": "载入预设",
+        "载入图像编辑面板保存的预设": "载入图像编辑面板保存的预设",
+        "把当前勾选与参数存成预设文件": "把当前勾选与参数存成预设文件",
+        "把勾选的处理项与参数存成 JSON 文件，下次载入即恢复": "把勾选的处理项与参数存成 JSON 文件，下次载入即恢复",
+        "从 JSON 文件恢复勾选与参数": "从 JSON 文件恢复勾选与参数",
+        "预设里不可增强的处理项": "预设里不可增强的处理项",
+        "预设文件 (*.json)": "预设文件 (*.json)",
+        "已载入处理项": "已载入处理项",
         "删除视图下不可用": "删除视图下不可用",
         "未打开图片": "未打开图片",
         "选区:": "选区:",
@@ -1474,6 +1519,21 @@ _strings = {
         "选择": "Browse",
         "数据增强": "Augment",
         "原图": "Original",
+        "按长边缩放": "Resize (long side)",
+        "自适应均衡": "Adaptive equalize",
+        "自动色阶": "Auto levels",
+        "色调分离": "Posterize",
+        "开运算": "Open",
+        "闭运算": "Close",
+        "形态学梯度": "Morphological gradient",
+        "顶帽": "Top hat",
+        "黑帽": "Black hat",
+        "USM 锐化": "USM sharpen",
+        "拉普拉斯锐化": "Laplacian sharpen",
+        "双边滤波": "Bilateral filter",
+        "非局部均值降噪": "Non-local means denoise",
+        "运动模糊": "Motion blur",
+        "马赛克": "Mosaic",
         "图片比例:": "Ratio:",
         "模式:": "Mode:",
         "全部增强": "Apply All",
@@ -1765,7 +1825,25 @@ _strings = {
         "贴图融合": "Paste fusion",
         "泊松融合": "Poisson blending",
         "勾选后保存合成图时按泊松融合落笔；画布预览仍是普通叠加": "Poisson-blend when saving the composite; the canvas preview stays a plain overlay",
-        "图像处理": "Image Processing",
+        "图像编辑": "Image Editing",
+        "预设:": "Preset:",
+        "去图像编辑": "Edit in image editor",
+        "包含原图": "Include original",
+        "还没有预设：点「去图像编辑」调好参数后存为预设":
+            "No preset yet: click \"Edit in image editor\", tune the values "
+            "and save them as a preset",
+        "没有可增强的内容：选一个预设，或勾选包含原图/滑窗裁剪":
+            "Nothing to augment: pick a preset, or tick \"Include original\" "
+            "or \"Sliding crop\"",
+        "打开图像编辑面板调整参数并存成预设":
+            "Open the image editing panel to tune the values and save a preset",
+        "图像编辑面板不可用": "The image editing panel is unavailable",
+        "存为预设": "Save as preset",
+        "存进预设槽 A~E，数据增强面板直接选用":
+            "Store into preset slot A-E; the augmentation panel picks it up",
+        "已存为": "Saved as",
+        "预设A": "Preset A", "预设B": "Preset B", "预设C": "Preset C",
+        "预设D": "Preset D", "预设E": "Preset E",
         "当前": "Current",
         "上一张": "Previous",
         "下一张": "Next",
@@ -1773,6 +1851,28 @@ _strings = {
         "选文件夹…": "Choose folder…",
         "没有可用的记忆目录": "No remembered folder available",
         "预览中, 标注已隐藏": "Previewing; annotations hidden",
+        "原图": "Original",
+        "按住看原图": "Hold to compare",
+        "生成新图": "Generate new image",
+        "已生成新图": "New image created:",
+        "另存为": "Save as",
+        "另存为…": "Save as…",
+        "写进与数据集同级的 exports 目录": "Write into the exports folder beside the dataset",
+        "自行选择位置与文件名": "Choose the folder and file name",
+        "复位": "Reset",
+        "保存预设": "Save preset",
+        "载入预设": "Load preset",
+        "载入图像编辑面板保存的预设":
+            "Load a preset saved in the image editing panel",
+        "把当前勾选与参数存成预设文件":
+            "Save the current choices and values as a preset",
+        "把勾选的处理项与参数存成 JSON 文件，下次载入即恢复":
+            "Save the checked operations and their values to a JSON file",
+        "从 JSON 文件恢复勾选与参数":
+            "Restore operations and values from a JSON file",
+        "预设里不可增强的处理项": "Operations not available for augmentation:",
+        "预设文件 (*.json)": "Preset files (*.json)",
+        "已载入处理项": "Operations loaded:",
         "删除视图下不可用": "Not available in the delete view",
         "未打开图片": "No image loaded",
         "选区:": "Selection:",
@@ -1826,7 +1926,7 @@ _current_lang = "zh"
 
 
 def t(key):
-    """Translate key to current language"""
+    """把 key 翻成当前语言。"""
     return _strings.get(_current_lang, _strings["zh"]).get(key, key)
 
 

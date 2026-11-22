@@ -16,15 +16,15 @@
 三项都做 log1p/标准化后再算距离：类别数多时原始频次与面积的量级差几个
 数量级，不压一下欧氏距离会被频次单独主导。
 
-聚类用**层次凝聚（Agglomerative）**，单链距离：
+聚类用层次凝聚（Agglomerative），单链距离：
 - 不用 k-means++：它要随机初值，同一份数据每次聚类结果可能不同（对「把
   数据集切成几份」这种要可复现的操作是硬伤）。
 - 单链的链式效应在这里正合适：我们要的是「把相近的类别串成一串」，
   而不是把空间均匀切块。
-- K 不由用户事先给定：用**树状图剪枝**按距离跳变自动选，得到的 K 与
+- K 不由用户事先给定：用树状图剪枝按距离跳变自动选，得到的 K 与
   数据本身的层次结构一致；用户仍可在界面上手动改。
 
-相似度评估用**轮廓系数**的标准定义（点到点的距离，不用到簇心的距离）：
+相似度评估用轮廓系数的标准定义（点到点的距离，不用到簇心的距离）：
 - 到簇心的写法在簇退化成单点时 a(i)→0、s(i)→1，会系统性偏向最大的 K。
 - 点到点的写法里，簇一旦过分裂，最近异簇距离 b(i) 跟着下降、s(i) 跟着
   下跌，过分裂会被惩罚掉。
@@ -365,7 +365,7 @@ def _choose_k(merge_distances: List[float], max_k: int) -> int:
 
 
 def _silhouette(points: List[List[float]], groups: List[List[int]]) -> float:
-    """平均轮廓系数（标准定义：a/b 都用点到**点**的距离）。
+    """平均轮廓系数（标准定义：a/b 都用点到点的距离）。
 
     单点簇按惯例记 0；某点所在簇之外没有别的簇时记 0。
     """
@@ -400,7 +400,7 @@ def _silhouette(points: List[List[float]], groups: List[List[int]]) -> float:
 
 
 def _partition_indices(points: List[List[float]], k: int) -> List[List[int]]:
-    """把特征点分成 k 组，返回每组包含的**原始下标**。
+    """把特征点分成 k 组，返回每组包含的原始下标。
 
     先做层次凝聚得到合并序列，再在「还剩 k 个簇」的那一步切开。
     """
@@ -414,7 +414,7 @@ def _partition_indices(points: List[List[float]], k: int) -> List[List[int]]:
     if not history:
         return [list(range(n))]
 
-    # history[i] 是**第 i+1 次合并之后**的簇（此时剩 n-i-1 个簇）。
+    # history[i] 是第 i+1 次合并之后的簇（此时剩 n-i-1 个簇）。
     # 要剩 k 个簇，就取 i = n - k - 1。
     index = n - k - 1
     if index < 0:
@@ -554,7 +554,7 @@ def write_dataset_yaml(path: str, dataset_root: str, train_rel: str, val_rel: st
                        labels: Sequence[str]) -> None:
     """写 YOLO 训练用的 data.yaml。
 
-    生成的 yaml 描述的是**用户自己的数据集**，不带任何第三方许可证标记
+    生成的 yaml 描述的是用户自己的数据集，不带任何第三方许可证标记
     ——YAML 注释虽不影响解析，但把别人的许可证盖在用户的数据上是错的。
     """
     lines = [
@@ -589,7 +589,7 @@ def export_groups(folder: str, groups: List[List[str]], analysis: GroupAnalysis,
         <folder>/g0/classes.txt
         <folder>/<folder名>_g0.yaml
 
-    一张图若含多个组的类别，会被复制进它涉及的**每个**组——分组的是
+    一张图若含多个组的类别，会被复制进它涉及的每个组——分组的是
     类别而不是图片，一个画面里的不同类别本来就可能属于不同组。
     """
     if not groups:

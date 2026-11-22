@@ -1,4 +1,4 @@
-"""Memory record behavior for the main window."""
+"""主窗口的记忆记录行为。"""
 
 import os
 from datetime import datetime
@@ -18,12 +18,11 @@ class MemoryRecordMixin:
         self._is_delete_view = False
 
     def _build_bg_label_stats_snapshot(self):
-        """Build background label stats snapshot for memory / stats restore.
+        """生成背景标签统计快照，供记忆记录与统计窗口恢复使用。
 
-        Reuses the live scan cache when it is fresh (scan finished, dataset
-        unchanged, no edits since). Only falls back to a full disk rescan when
-        the cache cannot be trusted — that rescan is O(n) JSON parsing and
-        must not run on every dataset switch.
+        扫描刚跑完、数据集没变、之后也没有改动时，直接用现成的缓存；
+        只有缓存不可信时才整盘重扫。重扫要解析一遍所有 JSON，
+        不能每次切数据集都做。
         """
         cached = getattr(self, '_cached_bg_label_stats', None) or []
         current_path = getattr(self, '_memory_background_path', '') or ''

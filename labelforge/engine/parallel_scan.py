@@ -18,8 +18,8 @@ def scan_images(image_paths, work, on_result, is_interrupted=None,
     """对每张图跑 `work`，按完成顺序调用 `on_result`。
 
     `work(index, path)` 在线程池里执行；返回值原样交给 `on_result`。
-    `is_interrupted()` 返回真时立刻停止消费，**并放弃仍在排队、还没开始的
-    任务**：`wait=True` 会让 requestInterruption 之后仍被未启动的读盘任务
+    `is_interrupted()` 返回真时立刻停止消费，并放弃仍在排队、还没开始的
+    任务：`wait=True` 会让 requestInterruption 之后仍被未启动的读盘任务
     拖住，所以中断时两者必须都是「不等」。
 
     返回 True 表示被中断、结果不完整。

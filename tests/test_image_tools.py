@@ -1,4 +1,4 @@
-"""图像处理工具的操作清单与处理链测试。"""
+"""图像编辑工具的操作清单与处理链测试。"""
 import os
 import subprocess
 import sys
@@ -19,6 +19,10 @@ EXPECTED_KEYS = {
     "gauss_blur", "box_blur", "median", "sharpen", "sobel", "emboss",
     "dilate", "erode", "threshold", "adaptive_thresh",
     "gauss", "saltpepper",
+    # 后续补充：几何、色彩、滤镜各一批
+    "resize", "clahe", "auto_levels", "posterize",
+    "morph_open", "morph_close", "morph_gradient", "tophat", "blackhat",
+    "usm", "laplacian", "bilateral", "nlmeans", "motion_blur", "mosaic",
 }
 
 
@@ -36,9 +40,9 @@ def _run_real_qt(script):
     return result.stdout
 
 
-def test_operation_meta_covers_all_34():
+def test_operation_meta_covers_every_operator():
     assert set(it.OPERATION_META) == EXPECTED_KEYS
-    assert len(it.OPERATION_ORDER) == 34
+    assert len(it.OPERATION_ORDER) == len(EXPECTED_KEYS)
     assert set(it.OPERATION_ORDER) == EXPECTED_KEYS
 
 

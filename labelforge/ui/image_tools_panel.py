@@ -1,17 +1,18 @@
-"""图像处理面板：只收集操作项与参数，预览由宿主画在主画布上。
+"""图像编辑面板：只收集操作项与参数，预览由宿主画在主画布上。
 
 这里不读图、不存图、不显示图像——图片由主界面决定，处理链与操作清单位于
 `engine/image_tools.py`。
 """
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QIcon, QImage, QPainter
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QSpinBox, QDoubleSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel,
+    QPushButton, QScrollArea, QSpinBox, QDoubleSpinBox, QVBoxLayout, QWidget,
 )
 
 from ..engine import image_tools as it
 from .dialog_helpers import sync_titlebar
+from .icons import SVG_ARROW_LEFT, SVG_ARROW_RIGHT, SVG_EYE, _load_svg_icon
 from .i18n import t as tr
 from .theme import ThemeManager
 
@@ -20,6 +21,12 @@ _SELECTION_MODES = (
     ("矩形", "rect"),
     ("多边形", "polygon"),
 )
+
+# 参数改动写进配置的延迟；连续拖滚动条时只落一次
+_PERSIST_DELAY_MS = 800
+
+# 保存结果这类一次性提示在状态行停留的时长
+_FLASH_MS = 4000
 
 
 def _flatten_alpha(image):
@@ -38,23 +45,41 @@ def _flatten_alpha(image):
 
 
 class ImageToolsPanel(QWidget):
-    """导出菜单里的「图像处理」入口，浮在主窗口右侧。"""
+    """导出菜单里的「图像编辑」入口，浮在主窗口右侧。"""
 
     specs_changed = Signal()
     closed = Signal()
     previous_requested = Signal()
     next_requested = Signal()
+    # 「按住看原图」按下与松开；保存都交给宿主，面板不碰文件
+    compare_started = Signal()
+    compare_finished = Signal()
+    save_new_requested = Signal()
+    save_copy_requested = Signal()
 
     def __init__(self, editor, parent=None):
         super().__init__(parent, Qt.Window | Qt.WindowCloseButtonHint)
         self._editor = editor
-        self.setWindowTitle(tr("图像处理"))
+        self.setWindowTitle(tr("图像编辑"))
         self.setStyleSheet(ThemeManager.get_dialog_style())
         self.setMinimumWidth(380)
         self.resize(380, 720)
 
         self._checks = {}
         self._param_widgets = {}
+
+        # 参数改动先攒着，停手再写配置：每转一格就 fsync 一次太贵
+        self._persist_timer = QTimer(self)
+        self._persist_timer.setSingleShot(True)
+        self._persist_timer.setInterval(_PERSIST_DELAY_MS)
+        self._persist_timer.timeout.connect(self._persist_params)
+
+        # 状态行分两级：常规状态（预览提示）与一次性提示（保存结果）。
+        # 一次性提示显示期间，预览提示只记下不显示，到点再顶上。
+        self._status_base = ""
+        self._flash_timer = QTimer(self)
+        self._flash_timer.setSingleShot(True)
+        self._flash_timer.timeout.connect(self._restore_status)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
@@ -65,12 +90,18 @@ class ImageToolsPanel(QWidget):
         scroll.setWidget(self._build_operations())
         layout.addWidget(scroll, 1)
 
+        layout.addLayout(self._build_nav_bar())
         layout.addLayout(self._build_selection_bar())
+        layout.addLayout(self._build_action_bar())
+        # 状态行固定占一行高度：文字出现或消失都不能把上面的按钮顶上去。
+        # 放不下时按宽度省略，不换行（换行会把整块布局挤高）。
         self._status = QLabel("")
-        self._status.setWordWrap(True)
+        self._status.setWordWrap(False)
+        self._status.setFixedHeight(self._status.fontMetrics().height() + 2)
         layout.addWidget(self._status)
 
         sync_titlebar(self)
+        self._apply_saved_params()
         self._enter_region_mode(self.region_mode())
 
     # ---------- 界面构建 ----------
@@ -183,12 +214,66 @@ class ImageToolsPanel(QWidget):
         self._clear_btn.clicked.connect(self.clear_selection)
         bar.addWidget(self._clear_btn)
 
-        self._mask_check = QCheckBox(tr("仅选区内生效"))
-        self._mask_check.setChecked(True)
-        self._mask_check.stateChanged.connect(self._emit_specs_changed)
-        bar.addWidget(self._mask_check)
+        bar.addStretch()
+        return bar
+
+    def _build_nav_bar(self):
+        """翻图与对比：图标按钮，省出一行宽度给选区。"""
+        bar = QHBoxLayout()
+
+        self._prev_btn = self._icon_button(SVG_ARROW_LEFT, tr("上一张"))
+        self._prev_btn.clicked.connect(self.previous_requested)
+        bar.addWidget(self._prev_btn)
+
+        self._next_btn = self._icon_button(SVG_ARROW_RIGHT, tr("下一张"))
+        self._next_btn.clicked.connect(self.next_requested)
+        bar.addWidget(self._next_btn)
+
+        self._compare_btn = self._icon_button(SVG_EYE, tr("按住看原图"))
+        self._compare_btn.pressed.connect(self.compare_started)
+        self._compare_btn.released.connect(self.compare_finished)
+        bar.addWidget(self._compare_btn)
 
         bar.addStretch()
+        return bar
+
+    def _icon_button(self, svg, tooltip):
+        """图标按钮：外观与主界面工具栏的图标键一致，文字只放在提示里。"""
+        btn = QPushButton("")
+        btn.setObjectName("iconBtn")
+        btn.setIcon(QIcon(_load_svg_icon(svg, 14)))
+        btn.setFixedSize(24, 24)
+        btn.setToolTip(tooltip)
+        return btn
+
+    def _build_action_bar(self):
+        """保存与预设：两行各两个按钮，每个都是完整宽度。"""
+        bar = QVBoxLayout()
+        bar.setSpacing(6)
+
+        row1 = QHBoxLayout()
+        self._save_btn = QPushButton(tr("保存图片"))
+        self._save_btn.setToolTip(tr("写进与数据集同级的 exports 目录"))
+        self._save_btn.clicked.connect(self.save_new_requested)
+        row1.addWidget(self._save_btn)
+
+        self._save_copy_btn = QPushButton(tr("另存为…"))
+        self._save_copy_btn.setToolTip(tr("自行选择位置与文件名"))
+        self._save_copy_btn.clicked.connect(self.save_copy_requested)
+        row1.addWidget(self._save_copy_btn)
+        bar.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        self._reset_btn = QPushButton(tr("复位"))
+        self._reset_btn.clicked.connect(self.reset_all)
+        row2.addWidget(self._reset_btn)
+
+        self._preset_save_btn = QPushButton(tr("存为预设"))
+        self._preset_save_btn.setToolTip(
+            tr("存进预设槽 A~E，数据增强面板直接选用"))
+        self._preset_save_btn.clicked.connect(self._on_save_preset)
+        row2.addWidget(self._preset_save_btn)
+        bar.addLayout(row2)
         return bar
 
     # ---------- 对外接口 ----------
@@ -200,7 +285,8 @@ class ImageToolsPanel(QWidget):
         return self._mode_combo.currentData()
 
     def mask_enabled(self):
-        return self._mask_check.isChecked()
+        """有选区就只在选区内生效，不需要额外的开关。"""
+        return bool(self.selections())
 
     def selection_mode(self):
         """选区实际的形状，取自区域本身；没有区域返回 None。
@@ -241,10 +327,118 @@ class ImageToolsPanel(QWidget):
         selections = self.selections()
         return selections[0][0] if selections else []
 
+    def preset_steps(self):
+        """当前勾选项的参数快照，用于保存预设。
+
+        裁剪依赖选区坐标，不属于预设能携带的东西，跳过。
+        """
+        steps = []
+        for key in it.OPERATION_ORDER:
+            if not self._checks[key].isChecked():
+                continue
+            if key == "crop_region":
+                continue
+            params = {name: getter()
+                      for name, _widget, getter in self._param_widgets[key]}
+            steps.append({"name": key, "params": params})
+        return steps
+
+    def reset_all(self):
+        """清空勾选并把每个参数退回算子类的默认值。"""
+        for key in it.OPERATION_ORDER:
+            self._checks[key].blockSignals(True)
+            self._checks[key].setChecked(False)
+            self._checks[key].blockSignals(False)
+            for name, widget, _getter in self._param_widgets[key]:
+                params = it.OPERATION_META[key][2]
+                default = next((spec[-1] for spec in params if spec[0] == name),
+                               None)
+                if default is None:
+                    continue
+                widget.blockSignals(True)
+                self._set_param_value(widget, default)
+                widget.blockSignals(False)
+        self._emit_specs_changed()
+
+    def _apply_saved_params(self):
+        """把配置里记住的参数填回控件；勾选状态不恢复。"""
+        saved = it.load_saved_params()
+        for key, params in saved.items():
+            for name, widget, _getter in self._param_widgets.get(key, []):
+                if name in params:
+                    widget.blockSignals(True)
+                    self._set_param_value(widget, params[name])
+                    widget.blockSignals(False)
+
+    def _persist_params(self):
+        """把每个算子的当前参数写进配置（不看有没有勾选）。"""
+        entries = {}
+        for key, widgets in self._param_widgets.items():
+            params = {name: getter() for name, _widget, getter in widgets}
+            if params:
+                entries[key] = params
+        it.save_saved_params(entries)
+
+    def _set_param_value(self, widget, value):
+        """按控件类型写入参数值；类型对不上就原样不动。"""
+        if isinstance(widget, QCheckBox):
+            widget.setChecked(bool(value))
+        elif isinstance(widget, QComboBox):
+            index = widget.findData(value)
+            if index >= 0:
+                widget.setCurrentIndex(index)
+        elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                widget.setValue(value)
+
+    def _on_save_preset(self):
+        """存成预设：自动占 A~E 中第一个空槽，五个满了覆盖最旧的。"""
+        steps = self.preset_steps()
+        if not steps:
+            self.set_status(tr("没有勾选任何处理项"))
+            return
+        slot = it.store_preset(steps)
+        if not slot:
+            self.set_status(tr("保存失败"))
+            return
+        self.set_status(f"{tr('已存为')} {it.preset_name(slot)}")
+
     def set_status(self, text):
-        self._status.setText(text)
+        """常规状态（预览提示）：一次性提示还在显示时只记下，到点再顶上。"""
+        self._status_base = text or ""
+        if not self._flash_timer.isActive():
+            self._show_status(self._status_base)
+
+    def flash_status(self, text):
+        """一次性提示（保存结果等）：立刻显示并保持几秒，不被预览提示冲掉。"""
+        self._show_status(text or "")
+        self._flash_timer.start(_FLASH_MS)
+
+    def set_status_now(self, text):
+        """用户直接操作引起的状态（按住看原图）：立刻显示，撤掉一次性提示。"""
+        self._cancel_flash()
+        self._status_base = text or ""
+        self._show_status(self._status_base)
+
+    def _cancel_flash(self):
+        """撤掉一次性提示，立即回落到常规状态。"""
+        if self._flash_timer.isActive():
+            self._flash_timer.stop()
+            self._show_status(self._status_base)
+
+    def _restore_status(self):
+        self._show_status(self._status_base)
+
+    def _show_status(self, text):
+        """状态行：一行高度，过长按宽度省略，不挤压上面的按钮。"""
+        metrics = self._status.fontMetrics()
+        available = max(self._status.width() - 4, 60)
+        self._status.setText(metrics.elidedText(text, Qt.ElideRight, available))
 
     def closeEvent(self, event):
+        # 关窗时把没落盘的参数立刻写掉，不然最后那次改动会丢
+        self._persist_timer.stop()
+        self._persist_params()
         self.closed.emit()
         super().closeEvent(event)
 
@@ -345,26 +539,15 @@ class ImageToolsPanel(QWidget):
     # ---------- 内部 ----------
 
     def _on_operation_toggled(self, _key):
-        self._update_mask_state()
         self._emit_specs_changed()
 
-    def _update_mask_state(self):
-        """几何类操作会改变画布尺寸，无法做选区合成，勾选时禁用蒙版。
-
-        禁用期间把用户原来的勾选记下来，取消几何项后恢复——否则蒙版会被悄悄
-        关掉，之后再怎么拉选区都不生效。
-        """
-        geometric = any(it.is_geometric(k) and self._checks[k].isChecked()
-                        for k in it.OPERATION_ORDER)
-        if geometric:
-            self._mask_wanted = self._mask_check.isChecked()
-            self._mask_check.setEnabled(False)
-            if self._mask_check.isChecked():
-                self._mask_check.setChecked(False)
-            return
-        self._mask_check.setEnabled(True)
-        if getattr(self, '_mask_wanted', True):
-            self._mask_check.setChecked(True)
+    def geometric_active(self):
+        """当前勾选里是否含几何类（会改尺寸，没法做选区合成）。"""
+        return any(it.is_geometric(k) and self._checks[k].isChecked()
+                   for k in it.OPERATION_ORDER)
 
     def _emit_specs_changed(self, *_args):
+        # 参数一改，上一条保存提示就过期了
+        self._cancel_flash()
+        self._persist_timer.start()
         self.specs_changed.emit()

@@ -27,7 +27,7 @@ class ImageLoaderMixin:
     """图片加载混入类 - 加载背景图、贴图、检测框"""
 
     def _start_background_replacement(self):
-        """Invalidate scans and labels before replacing the background dataset."""
+        """替换背景数据集之前，先让扫描结果与标签失效。"""
         self._pending_memory_index = None
         if hasattr(self, '_background_load_timer') and self._background_load_timer:
             self._background_load_timer.stop()
@@ -61,7 +61,7 @@ class ImageLoaderMixin:
             self._background_label_scan_worker = None
 
     def _finish_background_replacement_without_scan(self):
-        """Clear scan state when replacement produced no dataset to scan."""
+        """替换后没有可扫描的数据集时，清掉扫描状态。"""
         self._background_label_scan_in_progress = False
         self._background_label_scan_pending = False
         self._background_label_scan_completed = False
@@ -130,7 +130,7 @@ class ImageLoaderMixin:
                     self.background_list.addItem(item)
 
                     self.canvas_items_dict[new_index] = []
-                    # **不要**在这里预置 `detection_boxes_dict[new_index] = []`：
+                    # 不要在这里预置 `detection_boxes_dict[new_index] = []`：
                     # 缓存判据是「下标在不在字典里」（空列表也是有效缓存），预置
                     # 一个空列表就等于告诉后面那行「这张已经加载过了、结果就是
                     # 空的」，于是磁盘上的框永远不会被读进来。
@@ -285,7 +285,7 @@ class ImageLoaderMixin:
             return False, 0, 0
         if not os.path.isdir(folder):
             # 文件夹在运行期间被删掉（或整个盘符拔了）：列表里那些行都指向不存在
-            # 的文件，留着只会让人点开报错。此时**清空画布与列表**，让界面如实
+            # 的文件，留着只会让人点开报错。此时清空画布与列表，让界面如实
             # 反映「现在没有数据集」，而不是假装还能刷新。
             # 区分「从来没加载过」（folder 为空，上面那条）与「加载过但现在没了」：
             # 后者要清，前者没东西可清，提示也更有意义。
@@ -369,7 +369,7 @@ class ImageLoaderMixin:
         return True, len(added), len(removed)
 
     def _finalize_dataset_load(self):
-        """Dataset fully loaded: apply a pending saved background index (memory restore)."""
+        """数据集加载完成：应用记下的背景图位置。"""
         pending = getattr(self, '_pending_memory_index', None)
         if pending is None:
             return
@@ -395,12 +395,11 @@ class ImageLoaderMixin:
         self.update_file_count()
 
     def _load_next_background_batch(self):
-        """Load next batch of background images into the list.
+        """往列表里填下一批背景图。
 
-        Decoration is now cheap (no JSON parse), so instead of a fixed small
-        batch we fill rows for a short time budget per tick. This keeps the UI
-        responsive while populating tens of thousands of rows in a few ticks
-        rather than sleeping 30ms per 50 items (which dominated load time).
+        填充不再解析 JSON，开销很小，所以不再按固定条数分批，改成每轮
+        用一小段时间尽量多填。几轮就能铺满几万行，界面全程可响应，
+        不必像以前那样每 50 条睡 30 毫秒。
         """
         TIME_BUDGET = 0.012  # seconds of work per tick
         deadline = time.perf_counter() + TIME_BUDGET
@@ -420,7 +419,7 @@ class ImageLoaderMixin:
                     item.setHidden(True)
                 bg_list.addItem(item)
                 self.canvas_items_dict[idx] = []
-                # **不要**在这里预置 `detection_boxes_dict[idx] = []`：缓存判据是
+                # 不要在这里预置 `detection_boxes_dict[idx] = []`：缓存判据是
                 # 「下标在不在字典里」（空列表也是有效缓存），预置空列表等于告诉
                 # `_load_detection_boxes_for_index()`「这张已加载过、结果就是空的」，
                 # 磁盘上的框永远读不进来（大文件夹走这条流式加载路径，症状是
@@ -783,7 +782,7 @@ class ImageLoaderMixin:
     def _load_detection_boxes_for_index(self, index, file_path):
         """加载指定索引的检测框（优先从缓存，否则从文件）
 
-        缓存判据是「**这个下标在不在字典里**」，不能写成 `len(...) > 0`。
+        缓存判据是「这个下标在不在字典里」，不能写成 `len(...) > 0`。
         空列表（0 框）也是有效缓存：覆盖模式刚把这张图清空时，若把空缓存
         当成「没加载过」而重读磁盘，磁盘上的旧 json 会把刚清掉的框又搬回来，
         连带 `detection_boxes_dict[index]` 也被旧内容覆盖（症状是推理跑完
@@ -870,7 +869,7 @@ class ImageLoaderMixin:
             if self.current_background_index >= 0:
                 self.canvas_items_dict[self.current_background_index] = self.canvas_items.copy()
                 self.detection_boxes_dict[self.current_background_index] = self.detection_boxes.copy()
-                # 诊断：切走之前先记下**上一张**的 json 状态。若它随后消失，
+                # 诊断：切走之前先记下上一张的 json 状态。若它随后消失，
                 # 下面这次 save_current_json() 就是第一嫌疑人。
                 from ...core import json_trace
                 if 0 <= self.current_background_index < len(self.background_images):
@@ -913,7 +912,7 @@ class ImageLoaderMixin:
             self._log_error(f"select_background 错误: {e}\n{error_msg}")
 
     def _start_dataset_label_scan(self):
-        """Start a label-only scan for the current immutable image list."""
+        """对当前这份图片列表启动一次只扫标签的任务。"""
         image_paths = tuple(self.background_images)
         worker = DatasetLabelScanWorker(
             self._background_label_scan_generation, image_paths, self
@@ -932,7 +931,7 @@ class ImageLoaderMixin:
         worker.start()
 
     def _on_dataset_label_scan_finished(self, worker):
-        """Release finished workers and clear pending state after cancellation."""
+        """取消后回收已结束的线程，并清掉待处理状态。"""
         self._background_label_scan_workers.discard(worker)
         if worker is not self._background_label_scan_worker:
             return
@@ -948,7 +947,7 @@ class ImageLoaderMixin:
 
     def _apply_dataset_labels(self, generation, image_paths, labels, counts=None,
                               statuses=None, tasks=None):
-        """Apply only the latest worker result for the unchanged dataset."""
+        """数据集没变时，只采用最新一次扫描的结果。"""
         if (generation != self._background_label_scan_generation
                 or tuple(self.background_images) != tuple(image_paths)):
             return
@@ -995,7 +994,7 @@ class ImageLoaderMixin:
             self._update_processing_panel_labels()
 
     def _apply_statuses_progress(self, generation, image_paths, batch):
-        """Stream partial scan results into the list as they arrive."""
+        """扫描结果分批到达时，边到边填进列表。"""
         if (generation != self._background_label_scan_generation
                 or tuple(self.background_images) != tuple(image_paths)):
             return
@@ -1023,7 +1022,7 @@ class ImageLoaderMixin:
         return mapping
 
     def _apply_background_statuses(self, statuses):
-        """Fill resolved per-image statuses into already-built list rows."""
+        """把算好的状态填进已经建好的列表行。"""
         bg_list = getattr(self, 'background_list', None)
         if bg_list is None:
             return
@@ -1049,7 +1048,7 @@ class ImageLoaderMixin:
             viewport().update()
 
     def _cleanup_background_label_scan_worker(self):
-        """Request a bounded shutdown before the window releases its worker."""
+        """窗口释放线程之前，先请求它限时收尾。"""
         if hasattr(self, '_background_load_timer') and self._background_load_timer:
             self._background_load_timer.stop()
             self._background_load_timer = None

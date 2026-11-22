@@ -1,4 +1,4 @@
-"""Label cache slot behavior for the main window."""
+"""主窗口的标签缓存槽行为。"""
 
 from datetime import datetime
 
@@ -67,7 +67,7 @@ class LabelCacheSlotMixin:
         if not items:
             self.status_label.setText(tr("无可复制标签"))
             return
-        # Keep direct calls on lightweight test doubles compatible with the old host-class method.
+        # 对轻量替身直接调用时，保持与旧宿主方法兼容。
         slot_index = LabelCacheSlotMixin._get_next_writable_label_cache_slot_index(self)
         if slot_index is None:
             self.status_label.setText(tr("没有可写入的缓存槽"))
@@ -127,12 +127,12 @@ class LabelCacheSlotMixin:
     def _sync_pasted_boxes_to_cache(self, box_index=None):
         """把「从缓存槽粘出来的那几个框」的当前位置回写进槽，当新的模板。
 
-        只在**被拖的正是粘贴副本**时才回写：`box_index` 是画布传进来的被拖框
+        只在被拖的正是粘贴副本时才回写：`box_index` 是画布传进来的被拖框
         下标，不属于粘贴区间就什么都不做。
 
-        不看 `box_index` 的话，只要粘过一次，之后拖动**任何**框都会把粘贴区间
+        不看 `box_index` 的话，只要粘过一次，之后拖动任何框都会把粘贴区间
         里的内容写回槽，缓存槽就被意外改写。而且粘贴时副本会被
-        `_offset_overlapping_paste_group` 挪开避让，写回去的是**挪过的位置**，
+        `_offset_overlapping_paste_group` 挪开避让，写回去的是挪过的位置，
         模板会跟着悄悄变。
         """
         if self._last_paste_slot is None or self._last_paste_count <= 0:

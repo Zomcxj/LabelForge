@@ -159,3 +159,78 @@ class ChannelExtract(_ColorBase):
 
     def _run(self, arr):
         return channel_array(arr, self._channel)
+
+
+def clahe_array(arr: np.ndarray, clip: float, tile: int) -> np.ndarray:
+    """对比度受限自适应均衡：按小块做直方图均衡，逆光和夜景最吃这一手。"""
+    import cv2
+
+    lab = cv2.cvtColor(arr, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+    grid = max(1, int(tile))
+    equalizer = cv2.createCLAHE(clipLimit=max(0.1, float(clip)),
+                                tileGridSize=(grid, grid))
+    merged = cv2.merge([equalizer.apply(l), a, b])
+    return cv2.cvtColor(merged, cv2.COLOR_LAB2RGB)
+
+
+def auto_levels_array(arr: np.ndarray, clip_percent: float) -> np.ndarray:
+    """自动色阶：按分位数把每个通道拉回 0~255，裁掉极端像素。"""
+    import numpy as np
+
+    pct = max(0.0, min(20.0, float(clip_percent)))
+    out = arr.astype(np.float32)
+    for channel in range(out.shape[2]):
+        plane = out[:, :, channel]
+        low = np.percentile(plane, pct)
+        high = np.percentile(plane, 100.0 - pct)
+        if high <= low:
+            continue
+        out[:, :, channel] = (plane - low) * 255.0 / (high - low)
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def posterize_array(arr: np.ndarray, levels: int) -> np.ndarray:
+    """色调分离：把 256 级压到 levels 级，做海报化/减少色阶。"""
+    import numpy as np
+
+    count = max(2, min(32, int(levels)))
+    step = 256 // count
+    return np.clip((arr // step) * step, 0, 255).astype(np.uint8)
+
+
+@register_transform
+class CLAHE(_ColorBase):
+    name = "clahe"
+
+    def __init__(self, clip: float = 2.0, tile: int = 8, rng=None):
+        super().__init__(rng)
+        self._clip = max(0.1, float(clip))
+        self._tile = max(1, int(tile))
+
+    def _run(self, arr):
+        return clahe_array(arr, self._clip, self._tile)
+
+
+@register_transform
+class AutoLevels(_ColorBase):
+    name = "auto_levels"
+
+    def __init__(self, clip_percent: float = 0.5, rng=None):
+        super().__init__(rng)
+        self._clip = max(0.0, min(20.0, float(clip_percent)))
+
+    def _run(self, arr):
+        return auto_levels_array(arr, self._clip)
+
+
+@register_transform
+class Posterize(_ColorBase):
+    name = "posterize"
+
+    def __init__(self, levels: int = 6, rng=None):
+        super().__init__(rng)
+        self._levels = max(2, min(32, int(levels)))
+
+    def _run(self, arr):
+        return posterize_array(arr, self._levels)

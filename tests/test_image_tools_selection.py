@@ -1,4 +1,4 @@
-"""图像处理面板的选区落在主画布的区域层上（真实 Qt 子进程）。"""
+"""图像编辑面板的选区落在主画布的区域层上（真实 Qt 子进程）。"""
 import os
 import subprocess
 import sys

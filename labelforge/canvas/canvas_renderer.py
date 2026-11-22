@@ -47,7 +47,7 @@ class CanvasRendererMixin:
         self.apply_display_adjustments()
 
         # 满幅离屏 QPixmap 只服务放大镜（_draw_magnifier 从 scene 取像素）。
-        # 关闭时直接画到 self，省一次分配+透明填充+整幅 blit（审计 P2）。
+        # 关闭时直接画到 self，省一次分配、一次透明填充和一次整幅 blit。
         scene = None
         if getattr(self._editor, '_magnifier_enabled', False):
             scene = QPixmap(self.size())
@@ -81,7 +81,7 @@ class CanvasRendererMixin:
 
             sp.setOpacity(self.shape_opacity)
 
-            # 区域分**两趟**画，检测框夹在中间（未锁区域在「最上层」、
+            # 区域分两趟画，检测框夹在中间（未锁区域在「最上层」、
             # 锁定的在「最底层」）：
             #   锁定的区域  → 检测框 → 贴图项 → 未锁定的区域
             # 这样未锁区域压住框、锁定的被框压住，与点击优先级一一对应
@@ -196,7 +196,7 @@ class CanvasRendererMixin:
     def _show_scope_grid(self):
         """是否在主画布上画滑窗网格。
 
-        条件：范围面板开着**且**当前选的是「滑窗」。滑窗和区域的内容各自
+        条件：范围面板开着且当前选的是「滑窗」。滑窗和区域的内容各自
         直接显示在画布上，所以切到区域时网格就该消失，只剩区域框；
         关掉面板则两者都不显示（它只是调参时的参照）。
         """
@@ -208,7 +208,7 @@ class CanvasRendererMixin:
     def _draw_scope_grid(self, painter, background_rect):
         """把滑窗的窗口网格画在主画布上（换算到背景图坐标）。
 
-        每个窗口的**左下角**标出行列号 `r1c1`，与数据增强预览里标的号
+        每个窗口的左下角标出行列号 `r1c1`，与数据增强预览里标的号
         同源同格式，所以这里用 `iter_windows_with_index()` 而不是自己排行列。
 
         窗口起点复用引擎的窗口数学，与「每张图 X × Y = N 个窗口」的文字
@@ -265,7 +265,7 @@ class CanvasRendererMixin:
         painter.restore()
 
     def _scope_grid_reference_size(self):
-        """窗口网格按哪个尺寸切：当前背景图的**原始像素**尺寸。
+        """窗口网格按哪个尺寸切：当前背景图的原始像素尺寸。
 
         用原来的图像尺寸而不是画布尺寸：窗口是原图上的裁剪范围，按画布
         （已缩放）算会让格子数目与真实要跑的窗口数对不上。
@@ -284,7 +284,7 @@ class CanvasRendererMixin:
                 and not getattr(self._editor, '_is_delete_view', False))
 
     def _region_draw_visible(self):
-        """临时区域框是否该画：贴图模式，或**区域绘制态**中（含面板开着时）。
+        """临时区域框是否该画：贴图模式，或区域绘制态中（含面板开着时）。
 
         面板开着时在标注模式画区域也要可见，否则无法确认绘制位置。
         只影响「画不画临时框」，不改交互。
@@ -306,17 +306,17 @@ class CanvasRendererMixin:
             or bool(getattr(self._editor, '_image_tools_active', False)))
 
     def _hide_detection_boxes(self):
-        """图像处理预览是否该把标注框藏起来。
+        """图像编辑期间是否该把标注框藏起来。
 
-        只有几何类操作会改变像素尺寸，那时框的坐标已经失效；隐掉比画错位置好。
+        进入图像编辑就藏：处理链会改像素，标注框的坐标随之失效，画出来也是
+        错位的。编辑态下不画框，要核对标注时请先关掉图像编辑面板。
         """
-        return (bool(getattr(self._editor, '_image_tools_active', False))
-                and bool(getattr(self._editor, '_image_tools_geometric', False)))
+        return bool(getattr(self._editor, '_image_tools_active', False))
 
     def _draw_regions(self, painter, background_rect, locked_only=None):
         """绘制语义区域，支持矩形与多边形。
 
-        `locked_only`：`True` 只画**已锁定**的、`False` 只画**未锁定**的、
+        `locked_only`：`True` 只画已锁定的、`False` 只画未锁定的、
         `None` 两趟都画（老调用方/测试用）。分两趟是为了让锁定的区域落在
         检测框之下、未锁定的压在其上——层级要和点击优先级一致，否则「看着
         在上面、点下去却是别的框」。
@@ -378,16 +378,16 @@ class CanvasRendererMixin:
                 painter.drawEllipse(p, radius, radius)
 
     def _draw_region_handles(self, painter, x, y, w, h, color):
-        """区域缩放手柄：**只画四角**，与检测框完全同一套画法。
+        """区域缩放手柄：只画四角，与检测框完全同一套画法。
 
         手柄与检测框完全同一套画法，与 `_draw_box_handles()` 一样的两态：
 
-        - **悬停**：白色正方形（`hover_region_handle` 命中的那一个）
-        - **常态**：白色底圆减去区域内部，再叠一个区域色的实心圆
+        - 悬停：白色正方形（`hover_region_handle` 命中的那一个）
+        - 常态：白色底圆减去区域内部，再叠一个区域色的实心圆
 
-        **只画四个角**：检测框 `_draw_box_handles()` 的 `corners` 就是四个角，
+        只画四个角：检测框 `_draw_box_handles()` 的 `corners` 就是四个角，
         边中点一个都不画——这是逐像素核对过的，不是推断。四边中点虽然仍能
-        抓（`_region_handle_at()` 认八处），但**不画**，与检测框保持一致。
+        抓（`_region_handle_at()` 认八处），但不画，与检测框保持一致。
 
         半径用 `_region_handle_draw_size()`：与命中判定同一套随缩放放大的
         口径，保证「看到的圆」就是「抓得到的圆」。
@@ -570,12 +570,12 @@ class CanvasRendererMixin:
         return QPen(border_color, pen_width)
 
     def _get_region_border_pen(self, color, is_selected):
-        """区域边框笔：**复用检测框那把尺子，整体 +1**。
+        """区域边框笔：复用检测框那把尺子，整体 +1。
 
         边框粗细只比检测框参数 +1，所以这里不自己定粗细，
         而是拿 `BOX_BORDER_CONFIG['width']` 加 1，再套上
-        与 `_get_box_border_pen()` **同一套**「选中 ×1.5、夹在 1..4」的规则。
-        两边算法一致，以后检测框改粗细，区域自动跟着走。
+        与 `_get_box_border_pen()` 同一套「选中 ×1.5、夹在 1..4」的规则。
+        两边算法一致，检测框改粗细时区域自动跟随。
         """
         from ..core.config import BOX_BORDER_CONFIG, REGION_BORDER_EXTRA
         base = (max(1, min(4, float(BOX_BORDER_CONFIG['width'])))
@@ -599,7 +599,7 @@ class CanvasRendererMixin:
 
         shape_opacity == 1.0（默认）时直接「图 → 色层」两步 SourceOver：
         over 运算满足结合律，与旧「临时 QPixmap 里合成再 blit」逐像素一致，
-        但省掉每帧每图一次 QPixmap 分配（审计 P3）。
+        但省掉每帧每图一次 QPixmap 分配。
 
         shape_opacity != 1 时不能直接画：外层衰减会分别作用于图与色层，
         与旧「先全强度合成、再整体衰减」语义不同——保留旧合成路径，

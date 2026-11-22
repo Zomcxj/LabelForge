@@ -1,4 +1,4 @@
-"""Theme and title-bar behavior for the main window."""
+"""主窗口的主题与标题栏行为。"""
 
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication

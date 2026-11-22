@@ -1,4 +1,5 @@
 import copy
+import inspect
 import json
 import os
 import random
@@ -12,7 +13,7 @@ from .crop import (
 )
 
 from . import flipt, color, noise, translate, rotate, scale
-# 图像处理工具新增的变换：导入即完成注册
+# 图像编辑工具新增的变换：导入即完成注册
 from . import color2, filters, geom2
 
 
@@ -32,7 +33,8 @@ class Augmenter:
         self,
         background_images: List[str],
         detection_boxes_dict: Dict[int, List[dict]],
-        transform_specs: List[Tuple[Type[BaseTransform], Dict[str, Tuple[float, float]]]],
+        # 参数值两种写法：(下限, 上限) 在该区间随机取值；其它类型按固定值传
+        transform_specs: List[Tuple[Type[BaseTransform], Dict[str, object]]],
         image_ratio: float = 1.0,
         mode: str = "all",
         include_original: bool = False,
@@ -258,25 +260,26 @@ class Augmenter:
         return win
 
     def _build_kwargs(self, cls, ranges, mode):
+        """把每个参数的采样区间随机取一个值。
+
+        取整还是保留小数由构造签名的默认值决定，不再按类名逐条特判：
+        参数名与算子类始终是同一份定义，改名不会让这里静默失效。
+        """
+        sig = inspect.signature(cls.__init__)
         kwargs = {}
-        for pname, (vmin, vmax) in ranges.items():
-            kwargs[pname] = self._rng.uniform(vmin, vmax)
-        if cls.__name__ in ("RandomRotation", "RandomScale"):
-            if "angle" in kwargs:
-                kwargs["max_angle"] = abs(kwargs.pop("angle"))
-            if "scale" in kwargs:
-                v = kwargs.pop("scale")
-                kwargs["min"] = min(v, 1.0)
-                kwargs["max"] = max(v, 1.0)
-        if cls.__name__ == "RandomTranslate":
-            if "offset" in kwargs:
-                v = int(abs(kwargs.pop("offset")))
-                kwargs["max_dx"] = v
-                kwargs["max_dy"] = v
-        if cls.__name__ in ("Brightness", "Hue", "Value") and "delta" in kwargs:
-            kwargs["delta"] = int(kwargs["delta"])
-        if cls.__name__ == "GaussianNoise" and "sigma" in kwargs:
-            kwargs["sigma"] = int(kwargs["sigma"])
+        for pname, spec in ranges.items():
+            if isinstance(spec, (tuple, list)) and len(spec) == 2:
+                value = self._rng.uniform(spec[0], spec[1])
+                default = sig.parameters[pname].default                     if pname in sig.parameters else None
+                if isinstance(default, int) and not isinstance(default, bool):
+                    value = int(round(value))
+            else:
+                # 字符串/枚举这类没法在区间里取值的参数，按固定值传
+                value = spec
+            kwargs[pname] = value
+        # 缩放这类成对出现的参数，采样后必须保持 下限 <= 上限
+        if "min" in kwargs and "max" in kwargs and kwargs["min"] > kwargs["max"]:
+            kwargs["min"], kwargs["max"] = kwargs["max"], kwargs["min"]
         kwargs["rng"] = self._rng
         return kwargs
 

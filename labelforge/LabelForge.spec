@@ -31,7 +31,7 @@ _extra_hiddenimports = [
     'labelforge.ui.sliding_window_dialog',
     'labelforge.ui.mixins.inference',
     'labelforge.engine.inference_scope',
-    # 图像处理工具：弹窗与引擎都由函数内 import 引入，显式列出避免漏收
+    # 图像编辑工具：弹窗与引擎都由函数内 import 引入，显式列出避免漏收
     'labelforge.engine.image_tools',
     'labelforge.engine.augmenter.color2',
     'labelforge.engine.augmenter.filters',

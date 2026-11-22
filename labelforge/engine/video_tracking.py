@@ -317,7 +317,7 @@ def _median(values):
 
 
 def smooth_history(history, method="median", window=5, alpha=0.6):
-    """对一条轨迹的历史框做**因果**平滑（只用当前及过去的帧）。
+    """对一条轨迹的历史框做因果平滑（只用当前及过去的帧）。
 
     因果平滑是为了保持单遍解码：若用对称窗口就必须先读完整个视频，
     再解一次码才能绘制。
@@ -360,7 +360,7 @@ def drop_short_tracks(tracks, min_hits=2):
 class TrackingSession:
     """把跟踪、平滑与逐帧缓冲合成一个对象，供 render_video 顺序调用。
 
-    `step()` 逐帧喂入检测框，返回**已平滑、已带 track_id** 的框；
+    `step()` 逐帧喂入检测框，返回已平滑、已带 track_id 的框；
     帧数据被缓存，收尾时用 `finalize()` / `finalize_frames()` 做短轨迹过滤。
     缓存只是框字典，内存占用远小于帧图像。
     """

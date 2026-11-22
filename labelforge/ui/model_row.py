@@ -82,7 +82,7 @@ class ModelRow(QWidget):
 
         # 功能之间用 '-' 隔开：7 组 = 加载模型+模型名 | 置信度+NMS
         # | 输入尺寸 | 覆盖/补充 | 类别筛选 | 推理范围+摘要 | 目标张号。
-        # 置信度与 NMS 同组，中间**不**隔。
+        # 置信度与 NMS 同组，中间不隔。
         self._add_param_separator(layout)
 
         self.conf_lbl = QLabel(tr("conf"))
@@ -108,7 +108,7 @@ class ModelRow(QWidget):
 
         self._size_sep_before = self._add_param_separator(layout)
 
-        # 输入尺寸只对**动态轴**模型有意义（静态轴模型的尺寸由模型自身决定）。
+        # 输入尺寸只对动态轴模型有意义（静态轴模型的尺寸由模型自身决定）。
         # 静态模型下整组控件（标签 + 两个输入框 + "x"）直接不显示，而不是
         # 「显示但禁用」——摆放一组无法修改的控件只会被反复点击。
         self.size_lbl = QLabel(tr("输入尺寸"))
@@ -135,8 +135,8 @@ class ModelRow(QWidget):
         self.replace_btn = QPushButton()
         self.replace_btn.setObjectName("optionsBtn")
         self.replace_btn.setCheckable(True)
-        # 默认覆盖：推理结果直接替换上一轮，不叠加。这个选择不写配置，
-        # 每次启动都回到覆盖，避免上次改过补充的用户拿到叠出来的结果。
+        # 默认覆盖：推理结果直接替换已有框，不叠加。该选择不写入配置，
+        # 每次启动都回到覆盖，避免上次改成补充的用户拿到叠出来的结果。
         self.replace_btn.setChecked(True)
         self.replace_btn.setFixedHeight(24)
         self.replace_btn.setToolTip(tr("覆盖：替换上一轮推理框；补充：保留并追加"))
@@ -168,11 +168,11 @@ class ModelRow(QWidget):
         self.scope_summary_label.setObjectName("modelRowScope")
         layout.addWidget(self.scope_summary_label)
 
-        # 批量的「张数范围」放在推理范围右侧。语义是**结束张号**：
+        # 批量的「张数范围」放在推理范围右侧。语义是结束张号：
         # 当前图是第 200 张时填 300 → 跑 200~300；填 100 → 跑 100~200。所以
         # 它表达的是「从当前图到第 N 张」这条区间，方向由两边大小自动决定。
         #
-        # 前缀名加在输入框**自己左边**：推理范围按钮右侧仅有一个序号时，
+        # 前缀名加在输入框自己左边：推理范围按钮右侧仅有一个序号时，
         # 无法判断该数字的含义。
         self._add_param_separator(layout)
         self.batch_to_label = QLabel(tr("目标张号"))
@@ -205,7 +205,7 @@ class ModelRow(QWidget):
     def _add_param_separator(self, layout):
         """插入一个 `-` 分隔符（参数行各功能组之间用）。
 
-        用 QLabel 而不是 `addSpacing`：分隔符要**看得见**，纯间距只是空白。
+        用 QLabel 而不是 `addSpacing`：分隔符要看得见，纯间距只是空白。
         颜色由 `#modelRow QLabel` 的 `text_secondary` 给出，明暗主题都可读。
         """
         sep = QLabel("-")
@@ -245,8 +245,8 @@ class ModelRow(QWidget):
                   end2end=False, resolved_task=""):
         """加载完成后填入模型信息。
 
-        **动态轴**模型的尺寸必须由用户指定，所以整组「输入尺寸」控件显示且可编辑；
-        **静态轴**模型的尺寸由模型自身决定，整组直接**不显示**——摆一组
+        动态轴模型的尺寸必须由用户指定，所以整组「输入尺寸」控件显示且可编辑；
+        静态轴模型的尺寸由模型自身决定，整组直接不显示——摆一组
         无法修改的输入框只会被反复点击。
 
         端到端模型（v26）导出时已内置 NMS，界面上的 NMS 值改了不起作用，
@@ -282,7 +282,7 @@ class ModelRow(QWidget):
 
         隐藏而不是禁用：静态模型的尺寸不可改，留着只会误导。
 
-        两侧的分隔符跟着一起藏**掉一个**：这组如果看不见，它左右那两条 `-`
+        两侧的分隔符跟着一起藏掉一个：这组如果看不见，它左右那两条 `-`
         就会挨在一起，显示成 `NMS [0.45] - - 覆盖`，形似多出一个分隔符。
         组收起时只留左边那条，于是读起来仍是「… NMS - 覆盖 …」。
         """
@@ -346,7 +346,7 @@ class ModelRow(QWidget):
     def set_scope_summary(self, name, detail=""):
         """在按钮右侧显示当前范围。
 
-        `detail` 保留给以后放参数摘要：本轮只显示模式名（三种模式的参数在
+        `detail` 留给参数摘要：当前只显示模式名（三种模式的参数在
         弹窗里都能看到，摘要在行上不必再挤一行数字）。给 detail 时放进
         tooltip，hover 仍能看到。
         """
@@ -445,7 +445,7 @@ class ModelRow(QWidget):
         self.input_size_changed.emit(width, height)
 
     def _emit_batch_to(self, value=None):
-        # 只有**用户真手输**才会走到这里（`set_batch_to` 屏蔽信号，程序化设置
+        # 只有用户真手输才会走到这里（`set_batch_to` 屏蔽信号，程序化设置
         # 不算）。标记下来，后续换数据集时不再用默认值覆盖用户的意图。
         self._batch_to_user_set = True
         self.batch_to_changed.emit(self.batch_to_target())

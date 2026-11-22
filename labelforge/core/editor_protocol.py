@@ -1,6 +1,6 @@
 """
 EditorProtocol - 定义 Manager 可以访问的编辑器接口
-Manager 依赖此协议而非直接依赖 ImageEditor，实现解耦和可测试性
+Manager 依赖此协议而非直接依赖 ImageEditor，便于替换与测试
 """
 from typing import (Protocol, runtime_checkable, List, Set, Dict, Optional, Any,
                     TYPE_CHECKING)

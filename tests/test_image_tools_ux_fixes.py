@@ -77,16 +77,38 @@ print("OK")
     assert "OK" in out
 
 
-def test_mask_choice_survives_a_geometric_operation():
-    """勾几何项会暂时关掉蒙版，取消勾选后必须恢复。"""
+def test_selection_limits_processing_without_an_extra_checkbox():
+    """有选区就只在选区内生效：不再提供「仅选区内生效」开关。"""
+    out = _run_qt(_SETUP + '''
+from PySide6.QtWidgets import QCheckBox
+window = build()
+panel = window._image_tools_panel
+assert not any("仅选区内" in cb.text()
+               for cb in panel.findChildren(QCheckBox)), "开关应当去掉"
+assert panel.mask_enabled() is False, "没有选区时整图生效"
+window.image_tools_regions.append(
+    {"shape_type": "rectangle", "x": 10, "y": 10, "width": 20, "height": 20})
+assert panel.mask_enabled() is True, "画了选区就只在选区内生效"
+window.image_tools_regions.clear()
+assert panel.mask_enabled() is False
+print("OK")
+''')
+    assert "OK" in out
+
+
+def test_geometric_operations_keep_the_selection_but_skip_the_mask():
+    """几何类改尺寸不能做蒙版合成，但选区不该被删掉。"""
     out = _run_qt(_SETUP + '''
 window = build()
 panel = window._image_tools_panel
-assert panel.mask_enabled() is True
+window.image_tools_regions.append(
+    {"shape_type": "rectangle", "x": 10, "y": 10, "width": 20, "height": 20})
 panel._checks["rotate"].setChecked(True)
-assert panel.mask_enabled() is False
+assert panel.geometric_active() is True
+assert len(window.image_tools_regions) == 1, "选区不该被清掉"
 panel._checks["rotate"].setChecked(False)
-assert panel.mask_enabled() is True, "取消几何项后蒙版勾选应当恢复"
+assert panel.geometric_active() is False
+assert panel.mask_enabled() is True, "取消几何项后选区照样生效"
 print("OK")
 ''')
     assert "OK" in out

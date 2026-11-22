@@ -1,4 +1,4 @@
-"""LabelMe shape <-> internal box conversion."""
+"""LabelMe 形状与内部框结构的互转。"""
 import math
 
 
@@ -190,7 +190,7 @@ def point_in_box(x, y, box):
 
 
 def point_in_polygon(x, y, points):
-    """Ray-casting; True if (x, y) is inside the polygon."""
+    """射线法判定点 (x, y) 是否落在多边形内部。"""
     if len(points) < 3:
         return False
     inside = False
@@ -204,7 +204,7 @@ def point_in_polygon(x, y, points):
 
 
 def point_line_distance(point, line):
-    """Distance from point (x, y) to segment line[(x1,y1),(x2,y2)]."""
+    """点 (x, y) 到线段 [(x1,y1),(x2,y2)] 的距离。"""
     (x1, y1), (x2, y2) = line
     px, py = point
     dx, dy = x2 - x1, y2 - y1
@@ -218,9 +218,9 @@ def point_line_distance(point, line):
 
 
 def nearest_polygon_edge(point, points, epsilon):
-    """Insertion index of the nearest edge within epsilon, else None.
+    """离得最近且在容差内的边的插入下标，没有则返回 None。
 
-    Index i means: insert between points[i-1] and points[i].
+    下标 i 表示插在 points[i-1] 与 points[i] 之间。
     """
     best_i = None
     min_dist = float("inf")
@@ -262,7 +262,7 @@ def yolo_seg_line(box, class_id, image_width, image_height):
 
 
 def rect_to_rotation_points(x, y, width, height):
-    """Axis-aligned rectangle -> 4 CCW corner points (LabelMe rotation order)."""
+    """轴对齐矩形转成四个逆时针角点，顺序与 LabelMe 旋转框一致。"""
     return [
         [x, y],
         [x + width, y],
@@ -277,7 +277,7 @@ def start_at_top_left(points):
     画布把类别名画在 `points[0]`，所以起点不同就会让同一个形状的标签跑到
     另一个角上：手绘总是从落笔处（视觉左上）开始，推理结果却是模型给的顺序。
 
-    取最靠上的那个角；**同一行（y 差在 1e-6 内）时取最靠左的**。容差是必需的：
+    取最靠上的那个角；同一行（y 差在 1e-6 内）时取最靠左的。容差是必需的：
     旋转后的两个上角 y 只差 1e-16 量级，直接比浮点会随机挑中右边那个，
     同一个框每次旋转后标签就左右跳。
 
@@ -300,7 +300,7 @@ def order_rotation_points(points):
     p0→p1 的边算角度增量，所以：
 
     - 起点必须是视觉最靠左上的那个角，否则标签跑在另一头；
-    - 绕向必须是**顺时针**（屏幕坐标），与手绘旋转框一致，否则同一个框
+    - 绕向必须是顺时针（屏幕坐标），与手绘旋转框一致，否则同一个框
       手绘和推理拖起来方向相反。
 
     手绘旋转框是 `[[x, y], [x+w, y], [x+w, y+h], [x, y+h]]`，正好是左上起点 +
@@ -318,7 +318,7 @@ def order_rotation_points(points):
 
 
 def rotation_center(points):
-    """Center of a 4-point rotation shape (diagonal midpoint)."""
+    """四点旋转框的中心，取对角线中点。"""
     if not points or len(points) < 4:
         return None
     cx = (points[0][0] + points[2][0]) / 2
@@ -327,7 +327,7 @@ def rotation_center(points):
 
 
 def rotate_points(points, center, angle):
-    """Rotate points around center by angle (radians), returning new point list."""
+    """把点绕中心旋转 angle 弧度，返回新的点列表。"""
     cx, cy = center
     cos_a = math.cos(angle)
     sin_a = math.sin(angle)
@@ -346,10 +346,9 @@ def rotation_points_bbox(points):
 
 
 def move_rotation_vertex(points, index, new_pos):
-    """Drag one OBB corner while keeping a rectangle with the same orientation.
+    """拖动旋转框的一个角，同时保持矩形与原来的朝向。
 
-    The opposite corner stays fixed; the two adjacent corners slide along the
-    original edge directions so all angles remain 90°.
+    对角固定不动，相邻两个角沿原来的边方向滑动，四个角始终是直角。
     """
     if len(points) != 4:
         return points

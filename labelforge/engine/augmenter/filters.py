@@ -1,6 +1,6 @@
 """滤镜类变换：模糊、锐化、边缘、浮雕、形态学与二值化。
 
-所有操作用 cv2 在 RGB 数组上完成，`boxes` 原样返回——本工具只做图像处理，
+所有操作用 cv2 在 RGB 数组上完成，`boxes` 原样返回——本工具只做图像编辑，
 不改标注。每个类都有一个同名的纯函数 `*_array`，便于直接测像素行为。
 """
 from typing import List, Tuple
@@ -232,3 +232,220 @@ class AdaptiveThreshold(_FilterBase):
 
     def _run(self, arr):
         return adaptive_threshold_array(arr, self._block, self._c)
+
+
+# ---------------------------------------------------------------- 形态学
+
+#: 形态学算子：名字 -> OpenCV 常量
+_MORPH_CODES = {
+    "open": cv2.MORPH_OPEN,
+    "close": cv2.MORPH_CLOSE,
+    "gradient": cv2.MORPH_GRADIENT,
+    "tophat": cv2.MORPH_TOPHAT,
+    "blackhat": cv2.MORPH_BLACKHAT,
+}
+
+
+def morph_array(arr: np.ndarray, op: str, ksize: int) -> np.ndarray:
+    """形态学运算：开/闭/梯度/顶帽/黑帽。核为方形的 ksize×ksize。"""
+    code = _MORPH_CODES.get(str(op), cv2.MORPH_OPEN)
+    k = _odd(ksize, minimum=3)
+    kernel = np.ones((k, k), np.uint8)
+    return cv2.morphologyEx(arr, code, kernel)
+
+
+@register_transform
+class MorphOpen(_FilterBase):
+    name = "morph_open"
+
+    def __init__(self, ksize: int = 3, rng=None):
+        super().__init__(rng)
+        self._ksize = _odd(ksize, minimum=3)
+
+    def _run(self, arr):
+        return morph_array(arr, "open", self._ksize)
+
+
+@register_transform
+class MorphClose(_FilterBase):
+    name = "morph_close"
+
+    def __init__(self, ksize: int = 3, rng=None):
+        super().__init__(rng)
+        self._ksize = _odd(ksize, minimum=3)
+
+    def _run(self, arr):
+        return morph_array(arr, "close", self._ksize)
+
+
+@register_transform
+class MorphGradient(_FilterBase):
+    name = "morph_gradient"
+
+    def __init__(self, ksize: int = 3, rng=None):
+        super().__init__(rng)
+        self._ksize = _odd(ksize, minimum=3)
+
+    def _run(self, arr):
+        return morph_array(arr, "gradient", self._ksize)
+
+
+@register_transform
+class TopHat(_FilterBase):
+    name = "tophat"
+
+    def __init__(self, ksize: int = 9, rng=None):
+        super().__init__(rng)
+        self._ksize = _odd(ksize, minimum=3)
+
+    def _run(self, arr):
+        return morph_array(arr, "tophat", self._ksize)
+
+
+@register_transform
+class BlackHat(_FilterBase):
+    name = "blackhat"
+
+    def __init__(self, ksize: int = 9, rng=None):
+        super().__init__(rng)
+        self._ksize = _odd(ksize, minimum=3)
+
+    def _run(self, arr):
+        return morph_array(arr, "blackhat", self._ksize)
+
+
+# ------------------------------------------------------- 锐化与降噪
+
+def usm_array(arr: np.ndarray, radius: float, amount: float) -> np.ndarray:
+    """USM 锐化：原图 + amount ×（原图 − 高斯模糊）。amount=0 时回到原图。"""
+    r = max(0.1, float(radius))
+    a = max(0.0, float(amount))
+    if a == 0.0:
+        return arr.copy()
+    blurred = cv2.GaussianBlur(arr, (0, 0), r)
+    return cv2.addWeighted(arr, 1.0 + a, blurred, -a, 0)
+
+
+def laplacian_array(arr: np.ndarray, ksize: int) -> np.ndarray:
+    """拉普拉斯锐化：把二阶导叠加回原图，边缘更硬。"""
+    k = _odd(ksize, minimum=3)
+    gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+    edge = cv2.convertScaleAbs(cv2.Laplacian(gray, cv2.CV_16S, ksize=k))
+    return cv2.addWeighted(arr, 1.0, _to_rgb(edge), 0.5, 0)
+
+
+def bilateral_array(arr: np.ndarray, d: int, sigma_color: float,
+                    sigma_space: float) -> np.ndarray:
+    """双边滤波：保边平滑，皮肤/布料去噪常用。"""
+    return cv2.bilateralFilter(arr, max(1, int(d)), float(sigma_color),
+                               float(sigma_space))
+
+
+def nlmeans_array(arr: np.ndarray, h: float) -> np.ndarray:
+    """非局部均值降噪：比高斯慢，但细节保留得更好。"""
+    strength = max(1.0, float(h))
+    return cv2.fastNlMeansDenoisingColored(
+        np.ascontiguousarray(arr), None, strength, strength, 7, 21)
+
+
+def motion_blur_array(arr: np.ndarray, length: int, angle: float) -> np.ndarray:
+    """运动模糊：沿给定角度拉一条长度为 length 的核。"""
+    size = max(1, int(length))
+    kernel = np.zeros((size, size), np.float32)
+    kernel[size // 2, :] = 1.0
+    matrix = cv2.getRotationMatrix2D((size / 2 - 0.5, size / 2 - 0.5),
+                                     float(angle), 1.0)
+    kernel = cv2.warpAffine(kernel, matrix, (size, size))
+    total = kernel.sum()
+    if total <= 0:
+        return arr.copy()
+    return cv2.filter2D(arr, -1, kernel / total)
+
+
+def mosaic_array(arr: np.ndarray, block: int) -> np.ndarray:
+    """马赛克：按 block×block 取块内均值。用于遮住人脸、车牌等区域。"""
+    b = max(1, int(block))
+    h, w = arr.shape[:2]
+    if b == 1 or h < b or w < b:
+        return arr.copy()
+    small = cv2.resize(arr, (max(1, w // b), max(1, h // b)),
+                       interpolation=cv2.INTER_LINEAR)
+    return cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+
+
+@register_transform
+class USMSharpen(_FilterBase):
+    name = "usm"
+
+    def __init__(self, radius: float = 3.0, amount: float = 1.0, rng=None):
+        super().__init__(rng)
+        self._radius = float(radius)
+        self._amount = float(amount)
+
+    def _run(self, arr):
+        return usm_array(arr, self._radius, self._amount)
+
+
+@register_transform
+class LaplacianSharpen(_FilterBase):
+    name = "laplacian"
+
+    def __init__(self, ksize: int = 3, rng=None):
+        super().__init__(rng)
+        self._ksize = _odd(ksize, minimum=3)
+
+    def _run(self, arr):
+        return laplacian_array(arr, self._ksize)
+
+
+@register_transform
+class Bilateral(_FilterBase):
+    name = "bilateral"
+
+    def __init__(self, d: int = 9, sigma_color: float = 75.0,
+                 sigma_space: float = 75.0, rng=None):
+        super().__init__(rng)
+        self._d = max(1, int(d))
+        self._sigma_color = float(sigma_color)
+        self._sigma_space = float(sigma_space)
+
+    def _run(self, arr):
+        return bilateral_array(arr, self._d, self._sigma_color,
+                               self._sigma_space)
+
+
+@register_transform
+class NLMeans(_FilterBase):
+    name = "nlmeans"
+
+    def __init__(self, h: float = 10.0, rng=None):
+        super().__init__(rng)
+        self._h = max(1.0, float(h))
+
+    def _run(self, arr):
+        return nlmeans_array(arr, self._h)
+
+
+@register_transform
+class MotionBlur(_FilterBase):
+    name = "motion_blur"
+
+    def __init__(self, length: int = 15, angle: float = 0.0, rng=None):
+        super().__init__(rng)
+        self._length = max(1, int(length))
+        self._angle = float(angle)
+
+    def _run(self, arr):
+        return motion_blur_array(arr, self._length, self._angle)
+
+
+@register_transform
+class Mosaic(_FilterBase):
+    name = "mosaic"
+
+    def __init__(self, block: int = 12, rng=None):
+        super().__init__(rng)
+        self._block = max(1, int(block))
+
+    def _run(self, arr):
+        return mosaic_array(arr, self._block)

@@ -1,13 +1,13 @@
 """视频弹窗：抽帧与合成两个标签页。
 
-- **抽帧页**：选视频 → 探测 → 按「每秒抽几帧」导出图片 + 清单。
-- **合成页**：选图片目录 → 自动判断有没有 `video_manifest.json`：
+- 抽帧页：选视频 → 探测 → 按「每秒抽几帧」导出图片 + 清单。
+- 合成页：选图片目录 → 自动判断有没有 `video_manifest.json`：
   有就按清单的时长合成（不用填帧率），没有才用用户填的「每秒几帧」。
 
 两页各有自己的动作按钮与提示区，`action` 记录用户按的是哪一个，
 主窗口据此分发到对应的后台任务。
 
-按「开始」只发 `start_requested`，**不关窗**：任务在跑时弹窗留着显示底部
+按「开始」只发 `start_requested`，不关窗：任务在跑时弹窗留着显示底部
 进度条（参数锁住），跑完由主窗口 `accept()` 关掉。参数非法不发信号，
 在当前页的提示区说明原因。
 """
@@ -403,7 +403,7 @@ class VideoDialog(QDialog):
         return self.compose_tab
 
     def _build_render_tab(self):
-        """④A 逐帧推理成片：源视频 + 模型 + 叠加选项 + 输出。
+        """逐帧推理成片：源视频 + 模型 + 叠加选项 + 输出。
 
         与抽帧页共用同一个「已选视频」（同一份源，选一次就能抽帧或成片），
         但输出路径与叠加选项独立。
@@ -958,7 +958,7 @@ class VideoDialog(QDialog):
             f"{tr('共')} {total} {tr('张，将合成第')} {start}–{end} {tr('张')}")
 
     def compose_range(self):
-        """当前选择的范围 `(start, end)`，**包含两端**；无来源时 `(None, None)`。"""
+        """当前选择的范围 `(start, end)`，包含两端；无来源时 `(None, None)`。"""
         if self._compose_frame_count() <= 0:
             return None, None
         return self.compose_start_spin.value(), self.compose_end_spin.value()
@@ -1030,14 +1030,14 @@ class VideoDialog(QDialog):
     def compose_overlay_settings(self):
         """合成页的叠加参数；不叠加（或没有类别可选）时返回 None。
 
-        名字带 compose 是因为**两页各有一组叠加控件**：合成页的类别来自
+        名字带 compose 是因为两页各有一组叠加控件：合成页的类别来自
         sidecar 标注、推理成片页的来自模型类别表。叫 render_settings 会
         让人以为是推理成片页的参数。
 
         `labels` 用列表而不是集合：空列表 = 一个都不画，与 None（全画）
         区分开，引擎那边靠这个区分。
 
-        这里只看「有没有得画」和用户的勾选，**不看控件的 enabled 状态**：
+        这里只看「有没有得画」和用户的勾选，不看控件的 enabled 状态：
         任务在跑时控件是禁用的，而 `settings()` 恰好可能在那之后被调用。
         """
         return self._compose_overlay.options()

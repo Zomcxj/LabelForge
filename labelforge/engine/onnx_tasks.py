@@ -1,6 +1,6 @@
 """seg / obb / pose 三种推理任务的后处理：布局识别、解码与几何转换。
 
-只做纯计算：不导入 Qt，不碰会话，坐标一律停在**模型输入坐标系**（letterbox
+只做纯计算：不导入 Qt，不碰会话，坐标一律停在模型输入坐标系（letterbox
 之后）。逆变换、类别名映射与内部 box 组装由 `onnx_inference` 负责。
 
 两条导出线的差异是硬事实，见 `decode_*` 的说明：
@@ -175,7 +175,7 @@ def detect_task_from_outputs(outputs, num_classes=None, kpt_shape=None):
     有 4 维原型输出就是分割；否则拿唯一的 3 维头，用「通道数 = 4 + 类别数 +
     额外通道」反推。
 
-    **只有类别数已知才能判 OBB / 姿态**：4+C 与 4+C+1 只差一列（80 类检测
+    只有类别数已知才能判 OBB / 姿态：4+C 与 4+C+1 只差一列（80 类检测
     85 列 == 80 类 OBB 85 列），类别数未知时这两者的候选会大面积撞车，猜错
     就是把整批标注解成旋转框。所以类别数未知时只认端到端形态，其余一律
     交给产出 None 或退回检测。
@@ -245,7 +245,7 @@ def decode_rows(raw, task, num_classes=None, kpt_count=0, end2end=None,
                 conf_threshold=0.25, max_det=DEFAULT_MAX_DET):
     """按任务拆出 (框, 分数, 类别 id, 尾巴通道)。
 
-    返回的框在**模型输入坐标系**：非端到端是 cx,cy,w,h，端到端是 x1,y1,x2,y2。
+    返回的框在模型输入坐标系：非端到端是 cx,cy,w,h，端到端是 x1,y1,x2,y2。
     尾巴通道：seg 是 32 个掩膜系数，obb 是 1 个弧度角，pose 是 K*3 个关键点。
     """
     arr = _as_rows(raw, task)
@@ -311,14 +311,14 @@ def cxcywh_to_xyxy(box):
 
 
 def obb_corners(cx, cy, width, height, angle):
-    """旋转框四角，**顺时针**（屏幕坐标，y 向下），起点在「左上」。
+    """旋转框四角，顺时针（屏幕坐标，y 向下），起点在「左上」。
 
-    宽向量是 (w/2·cos, w/2·sin)，高向量必须与它**垂直**，即 (−h/2·sin, h/2·cos)。
+    宽向量是 (w/2·cos, w/2·sin)，高向量必须与它垂直，即 (−h/2·sin, h/2·cos)。
     写成 (h/2·sin, h/2·cos) 会得到一组斜平行四边形而不是矩形：45° 时四点还会
     退化成一条直线。
 
     输出顺序是「左上 → 左下 → 右下 → 右上」，与手绘旋转框
-    （`shape_io.rect_to_rotation_points`：左上 → 右上 → 右下 → 左下）**同为顺时针**。
+    （`shape_io.rect_to_rotation_points`：左上 → 右上 → 右下 → 左下）同为顺时针。
     绕向不能反：画布的旋转手柄沿 p0→p1 的外法线放，绕向反了手柄就落到框内。
     """
     cos_a, sin_a = math.cos(float(angle)), math.sin(float(angle))

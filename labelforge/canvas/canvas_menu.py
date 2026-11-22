@@ -113,13 +113,13 @@ class CanvasMenuMixin:
         return recent, frequent
 
     def _active_regions(self):
-        """**当前模式**该操作/显示的那份区域列表。
+        """当前模式该操作/显示的那份区域列表。
 
         区域分成两份，各自属于一种模式：
         - 贴图模式 → `paste_region_boxes`（贴图落点）
         - 标注模式 → `region_boxes`（推理范围）
 
-        画布上所有区域相关的读写都经这里取列表，**不要**直接摸
+        画布上所有区域相关的读写都经这里取列表，不要直接摸
         `region_boxes`——否则贴图模式会改到推理的那份。
         """
         if getattr(self._editor, '_image_tools_active', False):
@@ -203,7 +203,7 @@ class CanvasMenuMixin:
     def _region_at(self, mouse_pos, include_locked=False):
         """返回鼠标位置下的区域索引（画布坐标转图像坐标判断）。
 
-        `include_locked=False`（默认）跳过**已锁定**的区域：锁定 = 「最底层、
+        `include_locked=False`（默认）跳过已锁定的区域：锁定 = 「最底层、
         不可修改」，所以它必须从交互里彻底消失，点上去直接落到
         它下面的检测框或画布。只有「这里有没有区域」这类纯几何查询才传
         `True`（比如往外拖文件的守卫，那里关心的是有没有东西挡着，与能否
@@ -249,12 +249,12 @@ class CanvasMenuMixin:
         """锁定/解锁第 index 条区域；返回是否真的改了。
 
         锁定的语义：
-        - **不锁定**：画在检测框**之上**，和检测框一样可拖动/缩放/改顶点；
-        - **锁定**：落到检测框**之下**，不可修改，点击也穿透到下面的框；
-        - 只是「不许在画布上改」，**区域照常参与推理**——锁不等于禁用。
+        - 不锁定：画在检测框之上，和检测框一样可拖动/缩放/改顶点；
+        - 锁定：落到检测框之下，不可修改，点击也穿透到下面的框；
+        - 只是「不许在画布上改」，区域照常参与推理——锁不等于禁用。
 
         锁只写在区域字典自己身上。`region_fixed`（右键菜单里的「固定区域」）
-        是**贴图模式**的全局开关，两者互不相干，不去动它。
+        是贴图模式的全局开关，两者互不相干，不去动它。
         """
         regions = self._active_regions()
         if not regions or not (0 <= index < len(regions)):
@@ -346,12 +346,12 @@ class CanvasMenuMixin:
         region['height'] = float(max(ys) - region['y'])
 
     def _region_handle_at(self, mouse_pos, index):
-        """返回区域缩放手柄名称：**四角 + 四边**都算。
+        """返回区域缩放手柄名称：四角 + 四边都算。
 
         四角 `tl/tr/bl/br` 改两个方向，四边 `t/b/l/r` 只改一个方向，
         口径与检测框的缩放一致。
 
-        命中容差**不写死像素**：`handle_size` 是设计尺寸（8），实际比较用
+        命中容差不写死像素：`handle_size` 是设计尺寸（8），实际比较用
         `_region_handle_hit_size()`，它会随 `background_scale` 放大——图缩小
         后区域框在屏上只有几十像素，固定 8px 的方框基本点不中。
         四角优先于四边：角上同时落在两条边的
@@ -391,16 +391,16 @@ class CanvasMenuMixin:
     def _region_handle_hit_size(self):
         """区域手柄的命中边长（画布像素）；与绘制共用 `_region_handle_size()`。
 
-        手柄只比检测框大一点、且**不随缩放忽大忽小**，所以这里跟检测框一样
+        手柄只比检测框大一点、且不随缩放忽大忽小，所以这里跟检测框一样
         是恒定像素（`_region_handle_size()`），不随 `background_scale` 变化。
         命中区与绘制必须同源，否则会出现「看着能抓却抓不到」。
         """
         return self._region_handle_size()
 
     def _region_handle_size(self):
-        """区域句柄边长（画布像素）= **检测框句柄 + 3**，**不随缩放变化**。
+        """区域句柄边长（画布像素）= 检测框句柄 + 3，不随缩放变化。
 
-        句柄只比检测框大一点。关键点是**不能缩放**：检测框
+        句柄只比检测框大一点。关键点是不能缩放：检测框
         `_draw_box_handles()` 用的是写死的 `DETECTION_BOX_CONFIG
         ['resize_handle_size']`，无论 `background_scale` 是多少都是 8px。
         区域若按 `handle_size / scale` 放大（上限 24），图一缩小句柄就会
@@ -440,7 +440,7 @@ class CanvasMenuMixin:
     def _add_matte_action(self, menu, box=None, region=None):
         """追加单个「抠图素材」项。
 
-        两种模式都保留，但标注模式只对**检测框**开放：区域在标注模式下是
+        两种模式都保留，但标注模式只对检测框开放：区域在标注模式下是
         推理范围，不当作可抠素材。没有抠图模型时置灰并说明先加载模型；
         抠图只读区域/标注，不改标注数据，所以区域固定时同样可用。
         """
@@ -473,13 +473,13 @@ class CanvasMenuMixin:
         add_poly_action.triggered.connect(self._start_add_region_polygon)
         menu.addAction(add_poly_action)
 
-        # 「固定区域」**不用 `setCheckable`**：Qt 会给可勾选项的文字额外缩进
+        # 「固定区域」不用 `setCheckable`：Qt 会给可勾选项的文字额外缩进
         # 一个 `PM_MenuButtonIndicator` 的宽度（本主题下 12px），于是它比同菜单
         # 里其它项多空出一个字。按 Qt 画菜单项的口径复算，可勾选时缩进是
         # [0, 12, 0]，去掉 checkable 后是 [0, 0, 0]。
         #
-        # 但勾**仍然要有**，所以把勾画进文案本身：未固定显示「固定区域」，
-        # 已固定显示「✔ 固定区域」，点一下照样来回切。这样勾看得见、
+        # 但勾仍然要有，所以把勾画进文案本身：未固定显示「固定区域」，
+        # 已固定时在文案前加一个勾号，点一下照样来回切。这样勾看得见、
         # 各项也严格左对齐。
         fix_action = QAction(
             tr("✔ 固定区域") if fixed else tr("固定区域"), self)
@@ -527,7 +527,7 @@ class CanvasMenuMixin:
         self.update()
 
     def _toggle_fix_regions(self):
-        """固定/取消固定**当前模式**那把锁（两份各记各的）。"""
+        """固定/取消固定当前模式那把锁（两份各记各的）。"""
         new_state = not self._active_region_fixed()
         if self._is_paste_mode():
             self._editor.paste_region_fixed = new_state
@@ -592,7 +592,7 @@ class CanvasMenuMixin:
         return None
 
     def _collect_dataset_labels(self):
-        """All labels known for the current background dataset (for box context menu)."""
+        """当前背景数据集里的全部标签，供检测框右键菜单使用。"""
         labels = set()
         bg = getattr(self._editor, 'background_dataset_labels', None) or set()
         if isinstance(bg, (set, list, tuple)):
@@ -704,9 +704,9 @@ class CanvasMenuMixin:
         menu.exec_(QPoint(self.mapToGlobal(mouse_pos)))
 
     def _modify_box_label(self, box_index):
-        """修改**这一个**检测框的标签（不动同名的其它框）。
+        """修改这一个检测框的标签（不动同名的其它框）。
 
-        不能用 `rename_detection_label`：那是**按标签名全局改名**，
+        不能用 `rename_detection_label`：那是按标签名全局改名，
         右键一个框会把当前图乃至整个数据集里所有同名框一起改掉。
 
         这里只改选中的那一个框，复用 `_change_box_label()`——那条路径（右键
@@ -714,7 +714,7 @@ class CanvasMenuMixin:
         delta=1、写盘都齐了，不再另写一套。分组（`group_id`）它不管，这里
         单独处理。
 
-        注意：如果用户想给**整个类别**改名，入口是背景图标签列表的
+        注意：如果用户想给整个类别改名，入口是背景图标签列表的
         「修改标签」（`LabelManager.modify_label`，stats 模式），那里才是
         按名字全改的语义。
         """
@@ -920,7 +920,7 @@ class CanvasMenuMixin:
         remove_action.triggered.connect(self._remove_current_background)
         menu.addAction(remove_action)
 
-        # 区域那一整段**只在贴图模式**给：推理区域的增删改全部走
+        # 区域那一整段只在贴图模式给：推理区域的增删改全部走
         # 「推理范围」面板（`ScopePanel`），标注模式的右键不再留入口，
         # 否则同一个推理区域有两个地方能改。
         # 贴图模式下的这段作用于贴图那份（`_active_regions()`）。
@@ -931,7 +931,7 @@ class CanvasMenuMixin:
         menu.exec_(QPoint(self.mapToGlobal(mouse_pos)))
 
     def _delete_current_label_file(self):
-        """Delete the current image's sidecar LabelMe JSON and clear in-memory boxes."""
+        """删除当前图的 sidecar JSON，并清空内存里的框。"""
         if self._editor._is_delete_view:
             return
         idx = self._editor.current_background_index
@@ -1160,7 +1160,7 @@ class CanvasMenuMixin:
     def _rotate_paste_item(self, item_index, degrees, record_undo=True):
         """旋转贴图项。degrees=None 表示归零。
 
-        角度是**顺时针**、单位度，归一到 [0, 360)。非 0 时该贴图按 rotation
+        角度是顺时针、单位度，归一到 [0, 360)。非 0 时该贴图按 rotation
         写盘（OBB 任务），归零回到 rectangle。
         """
         if self._editor._is_delete_view:

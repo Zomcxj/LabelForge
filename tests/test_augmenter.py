@@ -53,7 +53,7 @@ def _run_real_qt(script):
 # ---------- 注册表 ----------
 
 def test_base_twelve_transforms_are_registered():
-    """原有 12 项必须在注册表里；图像处理工具会追加更多，故用子集断言。"""
+    """原有 12 项必须在注册表里；图像编辑工具会追加更多，故用子集断言。"""
     names = set(get_all_transforms())
     assert {
         "bright", "contrast", "fliph", "flipv", "gauss", "hue",
@@ -85,29 +85,29 @@ def test_build_kwargs_is_reproducible_for_same_seed():
     assert a["delta"] == b["delta"]
 
 
-def test_build_kwargs_maps_angle_to_max_angle():
+def test_build_kwargs_passes_the_constructor_names_through():
+    """参数名就是构造参数名，不再经类名映射中转。"""
     kwargs = Augmenter("out", seed=1)._build_kwargs(
-        RandomRotation, {"angle": (5, 20)}, "all")
+        RandomRotation, {"max_angle": (5, 20)}, "all")
 
-    assert "angle" not in kwargs
     assert 5 <= kwargs["max_angle"] <= 20
+    assert "rng" in kwargs
 
 
-def test_build_kwargs_maps_scale_to_min_max_around_one():
+def test_build_kwargs_keeps_min_below_max():
+    """上下限各自采样，采样后必须仍满足 min <= max。"""
     kwargs = Augmenter("out", seed=1)._build_kwargs(
-        RandomScale, {"scale": (0.8, 1.2)}, "all")
+        RandomScale, {"min": (1.4, 1.9), "max": (0.5, 0.9)}, "all")
 
-    assert "scale" not in kwargs
-    assert kwargs["min"] <= 1.0 <= kwargs["max"]
+    assert kwargs["min"] <= kwargs["max"]
 
 
-def test_build_kwargs_maps_offset_to_dx_dy():
+def test_build_kwargs_samples_each_translate_axis_separately():
     kwargs = Augmenter("out", seed=1)._build_kwargs(
-        RandomTranslate, {"offset": (5, 20)}, "all")
+        RandomTranslate, {"max_dx": (5, 20), "max_dy": (5, 20)}, "all")
 
-    assert "offset" not in kwargs
-    assert kwargs["max_dx"] == kwargs["max_dy"]
     assert 5 <= kwargs["max_dx"] <= 20
+    assert 5 <= kwargs["max_dy"] <= 20
 
 
 def test_build_kwargs_truncates_delta_and_sigma_to_int():
@@ -396,8 +396,8 @@ src = os.path.join(src_dir, "a.png")
 img.save(src)
 boxes = {0: [{"label": "cat", "x": 5, "y": 5, "width": 20, "height": 15}]}
 specs = [(Brightness, {"delta": (10, 40)}),
-         (RandomRotation, {"angle": (5, 20)}),
-         (RandomScale, {"scale": (0.8, 1.2)})]
+         (RandomRotation, {"max_angle": (5, 20)}),
+         (RandomScale, {"min": (0.8, 1.0), "max": (1.0, 1.2)})]
 
 def run(seed):
     out = tempfile.mkdtemp()

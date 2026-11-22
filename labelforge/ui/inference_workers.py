@@ -305,7 +305,7 @@ class VideoExtractWorker(QThread):
 
 
 class VideoComposeWorker(QThread):
-    """后台合成（④B）。progress: (done, total)；完成后带回 ComposeResult。
+    """后台合成抽帧视频。progress: (done, total)；完成后带回 ComposeResult。
 
     有清单时按清单时长合成（不用帧率），没有清单才用 `output_fps`。
     `render` 给一个 `video_render.RenderSpec` 时在画面上叠加标签框；
@@ -351,9 +351,9 @@ class VideoComposeWorker(QThread):
 
 
 class VideoRenderWorker(QThread):
-    """后台逐帧推理编码（④A）。progress: (done, total) 按帧。
+    """后台逐帧推理编码。progress: (done, total) 按帧。
 
-    源视频的**每一帧**都跑一次推理并绘制，所以比 ④B 慢得多：进度按帧上报、
+    源视频的每一帧都跑一次推理并绘制，所以比 抽帧合成 慢得多：进度按帧上报、
     必须能取消。`render`/`scope`/`class_filter` 都由主线程定稿后传入——
     `get_label_color()` 会写缓存与配置，后台线程不能调用它。
     `tracking`/`dataset` 同样由主线程构造（写盘目录、会话状态都在主线程定稿）。

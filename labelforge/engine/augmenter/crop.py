@@ -117,7 +117,7 @@ def pad_overflow(length: int, size: int, overlap: int) -> int:
     """等步长（填充）网格下，末窗越出图像边界、需要补边的像素数。
 
     = 末窗起点 + size - length = n*size - (n-1)*overlap - length。
-    这是**填充口径专属**的量：不开填充时窗口起点在整段余量上均摊，末窗必贴边
+    这是填充口径专属的量：不开填充时窗口起点在整段余量上均摊，末窗必贴边
     （末窗起点恒为 length-size），不存在越界，该式对那种落位方式没有意义。
     """
     if size >= length:
@@ -173,7 +173,7 @@ def pad_compliant_size_run(length: int, size: int, overlap: int,
                            max_size: int = MAX_WINDOW) -> tuple:
     """返回包含 size（size 违规时取最近段）的那一段「补边合规」尺寸段 (lo, hi)。
 
-    固定重叠时合规尺寸集是**锯齿状多段**（窗口数每变一次 pad 就跳回 0），不是连续区间，
+    固定重叠时合规尺寸集是锯齿状多段（窗口数每变一次 pad 就跳回 0），不是连续区间，
     所以硬墙必须按「当前值所在的段」来设，不能只钳最外端上下界——否则用户会停在
     两段之间的空洞里（600 图上 ov=60 有 15 段）。
     无任何合规值时返回 hi < lo。
@@ -353,10 +353,9 @@ def normalized_window(iw: int, ih: int, spec: dict) -> tuple:
 
 
 def normalized_window_axes(iw: int, ih: int, spec: dict) -> tuple:
-    """Return ``(cw, ch, overlap_x, overlap_y)`` with legacy fallback.
+    """返回 (cw, ch, overlap_x, overlap_y)，并兼容旧模板。
 
-    ``overlap`` is retained as the compatibility fallback for configurations
-    written before horizontal and vertical overlap became independent.
+    横向与纵向重叠分开之前写下的模板只有单个 overlap，仍按它取值。
     """
     if spec.get("fill"):
         cw, ch = int(spec["w"]), int(spec["h"])
@@ -376,7 +375,7 @@ def visible_ratio(box, window):
     零交集返回 0.0；退化框（宽或高为 0）按点处理：落在窗内（含边界）算 1.0，
     否则 0.0——与 `crop_boxes` 对退化框的处理保持一致。
 
-    抽出来是为了让**推理侧**也能用同一条判据：滑窗推理按窗口裁图后，模型的框
+    抽出来是为了让推理侧也能用同一条判据：滑窗推理按窗口裁图后，模型的框
     会被钳进裁剪图，跨窗去重前先按「它在原图窗口里露了多少」过滤掉只露一角的
     框。原来这段判定内联在 `crop_boxes` 里，推理侧无从复用。
     """

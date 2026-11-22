@@ -1,15 +1,15 @@
-"""视频画面上的标注叠加绘制（④A/④B 共用）。
+"""视频画面上的标注叠加绘制（推理成片与抽帧合成共用）。
 
 为什么要单独一个模块：时间轴、清单、编码这些逻辑不该依赖 Qt，而这个
 模块必须用 Qt——`cv2.putText` 画不出中文，只能 `QImage`/`QPainter` 离屏。
 
 两条硬约束：
-- **不在模块级导入 Qt**，让不需要绘制的路径（清单校验、纯逻辑测试）
+- 不在模块级导入 Qt，让不需要绘制的路径（清单校验、纯逻辑测试）
   能在无 Qt 环境下导入。
-- **颜色必须由调用方预先取好传进来**：`editor.get_label_color()` 会写
+- 颜色必须由调用方预先取好传进来：`editor.get_label_color()` 会写
   缓存和配置，后台线程不能碰它，主线程先算好 `label_colors` 再交给 worker。
 
-坐标约定：所有 `points`/`x,y,width,height` 都是**原图像素坐标**，与画布
+坐标约定：所有 `points`/`x,y,width,height` 都是原图像素坐标，与画布
 和 labelme 一致，不做缩放。框可能来自推理（越界）或人工（退化尺寸），
 都必须能画，不能抛异常。
 """
@@ -92,17 +92,17 @@ def _auto_pen_width(height):
     return max(MIN_PEN_WIDTH, min(MAX_PEN_WIDTH, value))
 
 
-# 字号滑块的量程。**0 表示自动**（按画面高度算），1..MAX 是手动像素值。
+# 字号滑块的量程。0 表示自动（按画面高度算），1..MAX 是手动像素值。
 # 上限取 MAX_FONT_PIXELS：自动档的天花板已经是 72，手动再往上放只会糊。
 FONT_SLIDER_MIN = 0
 FONT_SLIDER_MAX = MAX_FONT_PIXELS
 
 
 def label_font_pixels(height):
-    """视频里的字号：**跟设置里的「类别名字号」走**，与画布观感对齐。
+    """视频里的字号：跟设置里的「类别名字号」走，与画布观感对齐。
 
     设置窗口给的是 5..15 的抽象字号（`DETECTION_BOX_CONFIG['label_font_size']`，
-    默认 9）。画布那边把它当**点**用（`QFont.setPointSize`），视频这边为了
+    默认 9）。画布那边把它当点用（`QFont.setPointSize`），视频这边为了
     分辨率无关用的是像素（`setPixelSize`），所以不能把这个数直接搬过来——
     1080p 上「9 px」小得看不见。
 
@@ -148,7 +148,7 @@ def _buffer(qimage, writable):
     `np.frombuffer` 可以直接用；PyQt5 那套「先 `setsize` 再 frombuffer」
     在这里不存在（`memoryview` 没有 `setsize`）。
 
-    **返回的视图不持有 `qimage`**（实测 `memoryview.obj is None`）：调用方必须
+    返回的视图不持有 `qimage`（实测 `memoryview.obj is None`）：调用方必须
     在视图存活期间自己保活那张 QImage，否则内存回收后读到随机像素、且不报错。
     本文件的使用者都在同一函数内用完，别再让视图外泄。
     """
@@ -159,7 +159,7 @@ def _buffer(qimage, writable):
 def _copy_into_qimage(qimage, canvas):
     """把 HxWx3 连续 RGB 拷贝进 QImage 自己的内存。
 
-    `QImage(canvas.data, ...)` 是**零拷贝**：QImage 只是包住那块外部缓冲，
+    `QImage(canvas.data, ...)` 是零拷贝：QImage 只是包住那块外部缓冲，
     像素所有权不在 QImage 手上。这里显式拷进去、画完再读回结果，让像素
     归属 QImage，不依赖调用方是否保活那块数组。
 
@@ -174,7 +174,7 @@ def _copy_into_qimage(qimage, canvas):
 def _read_back(qimage, width, height):
     """从 QImage 读回连续 HxWx3 RGB 数组。
 
-    必须**真的拷贝**：`ascontiguousarray` 碰到本就连续的切片会原样返回视图，
+    必须真的拷贝：`ascontiguousarray` 碰到本就连续的切片会原样返回视图，
     那样返回的数组指着 QImage 的内存，QImage 一析构（函数返回时）就悬空，
     调用方读到的就是被复用的垃圾内存——表现为随机花屏、随机丢框。
     """
@@ -210,7 +210,7 @@ def _draw_label(painter, anchor_x, anchor_y, text, bg_color, font):
 
 
 def draw_boxes(image_rgb, boxes, spec=None):
-    """在 RGB 数组上叠加标注，返回**新**数组（输入不被修改）。
+    """在 RGB 数组上叠加标注，返回新数组（输入不被修改）。
 
     通道顺序必须是 RGB：调用方从 cv2 拿到的是 BGR，要先 `cvtColor`
     再传进来，否则颜色会红蓝颠倒。

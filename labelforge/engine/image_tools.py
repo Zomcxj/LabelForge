@@ -1,9 +1,10 @@
-"""图像处理工具的操作清单与处理链。
+"""图像编辑工具的操作清单与处理链。
 
 对单张图按顺序执行若干变换，可选只在选区内生效。变换本身全部来自
 `engine.augmenter` 的注册表，本模块只负责「清单 + 编排 + 蒙版合成」。
 """
 import inspect
+import os
 import random
 from typing import List, Optional, Tuple
 
@@ -12,165 +13,42 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPolygonF
 
 from .augmenter import get_all_transforms
+from .augmenter import spec as augmenter_spec
 from .augmenter.base import (
     qimage_gray_to_array,
     qimage_to_rgb_array,
     rgb_array_to_qimage,
 )
+from .augmenter.spec import (
+    GEOMETRIC_KEYS, OPERATION_ORDER, OP_SPECS, default_params, group_of,
+    is_geometric, keys_in, label_of,
+)
+from .augmenter.spec import params_of as _params_of
 
 # 预览降采样的长边上限；实时预览只在这个尺度上跑处理链
 PREVIEW_MAX_SIDE = 1280
 
 # 分组名（界面按此顺序渲染）
-GROUP_GEOMETRY = "几何"
-GROUP_COLOR = "色彩"
-GROUP_FILTER = "滤镜"
-GROUP_NOISE = "噪声"
+GROUP_GEOMETRY = augmenter_spec.GEOMETRY
+GROUP_COLOR = augmenter_spec.COLOR
+GROUP_FILTER = augmenter_spec.FILTER
+GROUP_NOISE = augmenter_spec.NOISE
 
-_KSIZE_CHOICES = [3, 5, 7, 9, 15, 21, 31]
-
-# key -> (分组, 显示名, 参数列表)
-# 参数为 (name, kind, min, max, default)；choice 为 (name, "choice", 选项, 默认)
-# name 必须与变换构造器的形参同名，加载时由 build_transform 校验。
+#: key -> (分组, 显示名, 参数五元组列表)。参数五元组是 (名字, 类型, 下限, 上限, 默认)，
+#: 供界面按同一份规格生成控件；真正的默认值只有算子类里那一处。
 OPERATION_META: dict = {
-    # ---- 几何 ----
-    "fliph": (GROUP_GEOMETRY, "水平翻转", []),
-    "flipv": (GROUP_GEOMETRY, "垂直翻转", []),
-    "trans": (GROUP_GEOMETRY, "平移", [
-        ("max_dx", "int", 0, 100, 20),
-        ("max_dy", "int", 0, 100, 20),
-    ]),
-    "rotate": (GROUP_GEOMETRY, "旋转", [
-        ("max_angle", "float", 0.0, 45.0, 15.0),
-    ]),
-    "scale": (GROUP_GEOMETRY, "缩放", [
-        ("min", "float", 0.1, 1.0, 0.8),
-        ("max", "float", 1.0, 3.0, 1.2),
-    ]),
-    "rotate90": (GROUP_GEOMETRY, "旋转 90 度", [
-        ("angle", "choice", [90, 180, 270], 90),
-    ]),
-    "skew": (GROUP_GEOMETRY, "错切", [
-        ("x_angle", "float", -45.0, 45.0, 0.0),
-        ("y_angle", "float", -45.0, 45.0, 0.0),
-    ]),
-    "perspective": (GROUP_GEOMETRY, "透视", [
-        ("offset", "int", 0, 200, 0),
-    ]),
-    "crop_region": (GROUP_GEOMETRY, "按选区裁剪", []),
-    "pad": (GROUP_GEOMETRY, "边框填充", [
-        ("top", "int", 0, 500, 0),
-        ("bottom", "int", 0, 500, 0),
-        ("left", "int", 0, 500, 0),
-        ("right", "int", 0, 500, 0),
-    ]),
-    # ---- 色彩 ----
-    "bright": (GROUP_COLOR, "亮度", [
-        ("delta", "int", -100, 100, 30),
-    ]),
-    "contrast": (GROUP_COLOR, "对比度", [
-        ("factor", "float", 0.5, 2.0, 1.5),
-    ]),
-    "hue": (GROUP_COLOR, "色相", [
-        ("delta", "int", -180, 180, 30),
-    ]),
-    "saturation": (GROUP_COLOR, "饱和度", [
-        ("factor", "float", 0.0, 2.0, 1.5),
-    ]),
-    "value": (GROUP_COLOR, "明度", [
-        ("delta", "int", -100, 100, 30),
-    ]),
-    "invert": (GROUP_COLOR, "反色", []),
-    "gamma": (GROUP_COLOR, "Gamma", [
-        ("gamma", "float", 0.1, 3.0, 1.0),
-    ]),
-    "white_balance": (GROUP_COLOR, "白平衡", [
-        ("temperature", "int", -100, 100, 0),
-    ]),
-    "hist_equal": (GROUP_COLOR, "直方图均衡", []),
-    "grayscale": (GROUP_COLOR, "灰度", []),
-    "levels": (GROUP_COLOR, "色阶", [
-        ("black", "int", 0, 254, 0),
-        ("white", "int", 1, 255, 255),
-    ]),
-    "channel": (GROUP_COLOR, "通道提取", [
-        ("channel", "choice", ["r", "g", "b"], "r"),
-    ]),
-    # ---- 滤镜 ----
-    "gauss_blur": (GROUP_FILTER, "高斯模糊", [
-        ("ksize", "choice", _KSIZE_CHOICES, 5),
-    ]),
-    "box_blur": (GROUP_FILTER, "均值模糊", [
-        ("ksize", "choice", _KSIZE_CHOICES, 5),
-    ]),
-    "median": (GROUP_FILTER, "中值滤波", [
-        ("ksize", "choice", _KSIZE_CHOICES, 3),
-    ]),
-    "sharpen": (GROUP_FILTER, "锐化", [
-        ("strength", "float", 0.0, 3.0, 1.0),
-    ]),
-    "sobel": (GROUP_FILTER, "边缘检测", [
-        ("strength", "float", 0.0, 3.0, 1.0),
-    ]),
-    "emboss": (GROUP_FILTER, "浮雕", [
-        ("strength", "float", 0.0, 1.0, 1.0),
-    ]),
-    "dilate": (GROUP_FILTER, "膨胀", [
-        ("ksize", "choice", _KSIZE_CHOICES, 3),
-    ]),
-    "erode": (GROUP_FILTER, "腐蚀", [
-        ("ksize", "choice", _KSIZE_CHOICES, 3),
-    ]),
-    "threshold": (GROUP_FILTER, "二值化", [
-        ("thresh", "int", 0, 255, 128),
-        ("invert", "bool", False),
-    ]),
-    "adaptive_thresh": (GROUP_FILTER, "自适应二值化", [
-        ("block_size", "choice", [3, 5, 7, 11, 15, 21, 31], 11),
-        ("c", "float", 0.0, 20.0, 2.0),
-    ]),
-    # ---- 噪声 ----
-    "gauss": (GROUP_NOISE, "高斯噪声", [
-        ("mean", "int", 0, 60, 0),
-        ("sigma", "int", 1, 100, 25),
-    ]),
-    "saltpepper": (GROUP_NOISE, "椒盐噪声", [
-        ("prob", "float", 0.0, 0.5, 0.05),
-    ]),
+    key: (item.group, item.label, [p.as_tuple() for p in item.params])
+    for key, item in OP_SPECS.items()
 }
 
-_GROUP_ORDER = [GROUP_GEOMETRY, GROUP_COLOR, GROUP_FILTER, GROUP_NOISE]
+#: 预设文件的版本号；将来改格式时靠它区分
+PRESET_VERSION = 1
 
-# 全部 key，按分组顺序展开
-OPERATION_ORDER: List[str] = [
-    key for group in _GROUP_ORDER
-    for key in OPERATION_META if OPERATION_META[key][0] == group
-]
-
-# 几何类会改变画布尺寸或像素位置，不能做选区合成
-GEOMETRIC_KEYS = frozenset(
-    key for key, meta in OPERATION_META.items() if meta[0] == GROUP_GEOMETRY)
-
-
-def group_of(key: str) -> str:
-    return OPERATION_META[key][0]
-
-
-def label_of(key: str) -> str:
-    return OPERATION_META[key][1]
 
 
 def params_of(key: str) -> list:
-    return OPERATION_META[key][2]
-
-
-def default_params(key: str) -> dict:
-    """按 meta 取出一个操作的默认参数（各项末位即默认值）。"""
-    return {spec[0]: spec[-1] for spec in params_of(key)}
-
-
-def is_geometric(key: str) -> bool:
-    return key in GEOMETRIC_KEYS
+    """参数五元组列表 (名字, 类型, 下限, 上限, 默认)，供界面生成控件。"""
+    return [item.as_tuple() for item in _params_of(key)]
 
 
 def build_transform(name: str, params: Optional[dict] = None,
@@ -179,7 +57,7 @@ def build_transform(name: str, params: Optional[dict] = None,
     registry = get_all_transforms()
     cls = registry.get(name)
     if cls is None:
-        raise ValueError(f"未知的图像处理操作: {name}")
+        raise ValueError(f"未知的图像编辑操作: {name}")
     kwargs = dict(params or {})
     accepted = set(inspect.signature(cls.__init__).parameters) - {"self", "rng"}
     unknown = set(kwargs) - accepted
@@ -273,3 +151,330 @@ def selection_mask_from_points(points: List[Tuple[float, float]],
 
 def _clamp01(value: float) -> float:
     return 0.0 if value < 0.0 else (1.0 if value > 1.0 else float(value))
+
+
+def save_result(image: QImage, path: str) -> bool:
+    """把处理结果写成图片文件。
+
+    jpg/bmp 不带透明通道，有 alpha 时先合成到白底，否则透明区会变成黑块。
+    目标目录不存在时先建出来，返回值是 `QImage.save` 的结果。
+    """
+    if image.isNull():
+        return False
+    ext = os.path.splitext(path)[1].lower()
+    target = _opaque_for_format(image, ext) if ext in (".jpg", ".jpeg", ".bmp") else image
+    folder = os.path.dirname(os.path.abspath(path))
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    return bool(target.save(path))
+
+
+def _opaque_for_format(image: QImage, ext: str) -> QImage:
+    if not image.hasAlphaChannel():
+        return image
+    canvas = QImage(image.width(), image.height(), QImage.Format_RGB32)
+    canvas.fill(QColor(255, 255, 255))
+    painter = QPainter(canvas)
+    painter.drawImage(0, 0, image)
+    painter.end()
+    return canvas
+
+
+def specs_to_preset(specs: List[dict]) -> dict:
+    """处理项列表 → 预设字典。
+
+    每一步同时带两份视图：`params` 是单值（图像编辑用），`ranges` 是区间
+    （批量增强用）。只给单值时区间就是「上下限相同」，只给区间时单值取中点，
+    这样两个面板存出来的预设彼此都能打开。
+    """
+    steps = []
+    for spec in specs or []:
+        if not isinstance(spec, dict):
+            continue
+        name = spec.get("name")
+        if name not in OP_SPECS:
+            continue
+        params, ranges = _clean_step(name, spec.get("params"), spec.get("ranges"))
+        step = {"name": name, "params": params}
+        if ranges:
+            step["ranges"] = {key: list(pair) for key, pair in ranges.items()}
+        steps.append(step)
+    return {"version": PRESET_VERSION, "steps": steps}
+
+
+def specs_from_preset(data) -> List[dict]:
+    """预设字典 → 处理项列表（每项都补齐 params 与 ranges 两份）。
+
+    预设是用户之间传来传去的文件，坏了不能崩：结构不对返回空列表，未知
+    算子与算子不认识的参数被跳过，剩下的照常执行。
+    """
+    if not isinstance(data, dict):
+        return []
+    steps = data.get("steps")
+    if not isinstance(steps, list):
+        return []
+    result = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        name = step.get("name")
+        if name not in OP_SPECS:
+            continue
+        params, ranges = _clean_step(name, step.get("params"), step.get("ranges"))
+        result.append({"name": name, "params": params, "ranges": ranges})
+    return result
+
+
+def _clean_step(name, raw_params, raw_ranges):
+    """一步操作 → (单值参数, 区间参数)，都按算子规格收敛一遍。"""
+    params, ranges = {}, {}
+    for item in OP_SPECS[name].params:
+        default = item.default
+        numeric = isinstance(default, (int, float)) and not isinstance(default, bool)
+        raw_range = (raw_ranges or {}).get(item.name) if isinstance(raw_ranges, dict) else None
+        if numeric and raw_range is not None:
+            pair = _as_pair(raw_range)
+            if pair is None:
+                continue
+            ranges[item.name] = pair
+            params[item.name] = _midpoint(pair, default)
+            continue
+        if not isinstance(raw_params, dict) or item.name not in raw_params:
+            continue
+        value = _coerce_param(raw_params[item.name], default)
+        params[item.name] = value
+        if numeric:
+            ranges[item.name] = (value, value)
+    return params, ranges
+
+
+def _as_pair(value):
+    """[下限, 上限] → (小, 大)；结构不对返回 None。"""
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    low, high = _as_number(value[0]), _as_number(value[1])
+    if low is None or high is None:
+        return None
+    return (min(low, high), max(low, high))
+
+
+def _midpoint(pair, default):
+    """区间中点，按默认值决定要不要取整。"""
+    middle = (pair[0] + pair[1]) / 2.0
+    return int(round(middle)) if isinstance(default, int) else float(middle)
+
+
+#: 预设槽位：A~E 五个，满了覆盖最旧的
+PRESET_SLOTS = ("A", "B", "C", "D", "E")
+
+#: 配置里存预设的那一段
+PRESETS_KEY = "image_tools_presets"
+
+
+def preset_name(slot: str) -> str:
+    """槽位 → 界面上的名字。"""
+    return f"预设{slot}"
+
+
+def load_presets() -> List[dict]:
+    """读配置里的预设，按槽位 A~E 返回。
+
+    每项 `{"slot": "A", "steps": [...], "saved_at": "2026-11-21 12:00:00"}`。
+    配置是手改得坏的普通 JSON：结构不对的整项丢掉，未知算子按步骤规则跳过。
+    """
+    from ..core.config_manager import load_config
+
+    raw = load_config().get(PRESETS_KEY)
+    return normalize_presets(raw)
+
+
+def normalize_presets(raw) -> List[dict]:
+    """配置里的预设 → 合法槽位列表（按 A~E 顺序、同一槽位只留一条）。"""
+    if not isinstance(raw, list):
+        return []
+    seen = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        slot = str(item.get("slot") or "").strip().upper()
+        if slot not in PRESET_SLOTS or slot in seen:
+            continue
+        steps = specs_from_preset({"steps": item.get("steps")})
+        if not steps:
+            continue
+        seen[slot] = {"slot": slot, "steps": steps,
+                      "saved_at": str(item.get("saved_at") or "")}
+    return [seen[slot] for slot in PRESET_SLOTS if slot in seen]
+
+
+def preset_summary(steps) -> str:
+    """预设内容的一句话摘要，给数据增强面板的下拉框用。"""
+    labels = []
+    for step in steps or []:
+        spec = OP_SPECS.get(step.get("name"))
+        if spec is not None:
+            labels.append(spec.label)
+    return "、".join(labels)
+
+
+def store_preset(specs) -> str:
+    """把当前设置存成预设，返回落到的槽位（A~E）。
+
+    依次占空槽；五个都满了就覆盖最旧的那个——按 `saved_at` 比，时间相同时
+    按槽位顺序，保证结果确定。
+    """
+    from ..core.config_manager import load_config, save_config
+    from datetime import datetime
+
+    steps = specs_to_preset(specs)["steps"]
+    if not steps:
+        return ""
+    presets = load_presets()
+    used = {item["slot"]: item for item in presets}
+    free = next((slot for slot in PRESET_SLOTS if slot not in used), None)
+    if free is None:
+        free = min(presets, key=lambda item: (item["saved_at"], item["slot"]))["slot"]
+    used[free] = {"slot": free, "steps": steps,
+                  "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    config = load_config()
+    config[PRESETS_KEY] = [used[slot] for slot in PRESET_SLOTS if slot in used]
+    if not save_config(config):
+        # 写不进去就当没存，别让界面报「已存为预设A」却什么都没落盘
+        return ""
+    return free
+
+
+def preset_steps_of(slot: str) -> List[dict]:
+    """某个槽位的处理项；槽位为空返回空列表。"""
+    for item in load_presets():
+        if item["slot"] == slot:
+            return item["steps"]
+    return []
+
+
+def derived_output_path(source: str, suffix: str = "_edit",
+                        folder: str = None) -> str:
+    """按原图名派生一个不冲突的新文件名。
+
+    `folder` 为空时落在原图旁边，给了就落在那个文件夹里。图像编辑不改原图：
+    结果一律写成新文件，重名时依次用 `_2`、`_3`。
+    """
+    folder = folder or os.path.dirname(os.path.abspath(source))
+    stem, ext = os.path.splitext(os.path.basename(source))
+    ext = ext or ".png"
+    candidate = os.path.join(folder, f"{stem}{suffix}{ext}")
+    index = 2
+    while os.path.exists(candidate) and index < 1000:
+        candidate = os.path.join(folder, f"{stem}{suffix}_{index}{ext}")
+        index += 1
+    return candidate
+
+
+#: 输出目录：与数据集同级的 exports
+OUTPUT_SUBDIR = ("exports",)
+
+#: 文件名里最多带多少个字符的操作名，超了就截断
+_MAX_SUFFIX_CHARS = 60
+
+
+def default_output_dir(image_path: str) -> str:
+    """默认输出目录：`<数据集父目录>/exports`。
+
+    数据集就是图片所在的那一层，输出目录与它同级，不写进数据集本身。
+    """
+    dataset = os.path.dirname(os.path.abspath(image_path or ""))
+    base = os.path.dirname(dataset) or dataset
+    return os.path.join(base, *OUTPUT_SUBDIR)
+
+
+def ops_suffix(specs) -> str:
+    """按处理顺序拼出文件名后缀，例如 `_rotate90_invert_gauss`。
+
+    用算子键名而不是界面名称：文件名不随界面语言变化，也全是 ASCII。
+    拼太长就截断并以「等」结尾。
+    """
+    names = []
+    for spec in specs or []:
+        if not isinstance(spec, dict):
+            continue
+        key = spec.get("name")
+        if key in OPERATION_META:
+            names.append(str(key))
+    if not names:
+        return "_edit"
+    suffix = ""
+    for name in names:
+        candidate = f"{suffix}_{name}"
+        if len(candidate) > _MAX_SUFFIX_CHARS:
+            return f"{suffix}_etc"
+        suffix = candidate
+    return suffix
+
+
+#: 配置文件里存图像编辑参数的那一段
+PARAMS_KEY = "image_tools_params"
+
+
+def normalize_params(raw) -> dict:
+    """配置里读回的参数：未知算子、未知参数、类型不对的一律丢掉。
+
+    配置是手改得坏的普通 JSON，读进来先过一遍；面板只认这里剩下的东西。
+    """
+    if not isinstance(raw, dict):
+        return {}
+    result = {}
+    for key, params in raw.items():
+        if key not in OP_SPECS or not isinstance(params, dict):
+            continue
+        defaults = OP_SPECS[key].defaults()
+        clean = {}
+        for name, value in params.items():
+            if name in defaults:
+                clean[name] = _coerce_param(value, defaults[name])
+        if clean:
+            result[key] = clean
+    return result
+
+
+def _coerce_param(value, default):
+    """按默认值的类型转一下；转不动就退回默认值。"""
+    if isinstance(default, bool):
+        return bool(value) if isinstance(value, (bool, int)) else default
+    if isinstance(default, (int, float)):
+        number = _as_number(value)
+        if number is None:
+            return default
+        return int(number) if isinstance(default, int) else float(number)
+    if isinstance(default, str):
+        return value if isinstance(value, str) else default
+    return default
+
+
+def _as_number(value):
+    """数字或数字字符串 -> float；其它返回 None（bool 不算数字）。"""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def load_saved_params() -> dict:
+    """读取上次用过的参数（不含勾选）。"""
+    from ..core.config_manager import load_config
+
+    return normalize_params(load_config().get(PARAMS_KEY))
+
+
+def save_saved_params(entries) -> bool:
+    """把参数写进配置，方便下次打开面板接着调。"""
+    from ..core.config_manager import load_config, save_config
+
+    config = load_config()
+    config[PARAMS_KEY] = normalize_params(entries)
+    return save_config(config)

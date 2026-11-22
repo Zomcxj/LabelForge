@@ -1,4 +1,4 @@
-"""Toolbar UI building mixin."""
+"""工具栏的界面构建混入类。"""
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QFrame
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt
@@ -10,7 +10,7 @@ from ..i18n import t as tr
 
 
 class ToolbarMixin:
-    """Toolbar widgets and behavior."""
+    """工具栏的控件与行为。"""
 
     def init_ui(self):
         """初始化用户界面"""

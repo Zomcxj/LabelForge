@@ -20,7 +20,8 @@ from ..core.config_manager import add_crop_template
 from ..engine.yolo_exporter import YoloExporter
 from ..engine.splitter import Splitter
 from ..engine.augmenter import Augmenter, get_all_transforms
-from .mixins.processing_panel_builder import ProcessingPanelBuilderMixin, SPLIT_KEYS, TRANSFORM_META
+from .mixins.processing_panel_builder import ProcessingPanelBuilderMixin, SPLIT_KEYS
+from ..engine.augmenter.spec import label_of_class
 from ..widgets.processing import Worker, CollapsibleSection
 
 
@@ -158,7 +159,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
 
 
     def _scan_labels_from_json(self):
-        """Scan background image sidecar JSONs only (no detection boxes / paste)."""
+        """只扫背景图的 sidecar JSON，不读检测框与贴图。"""
         labels = set()
         bg_labels = getattr(self._editor, 'background_dataset_labels', None)
         if bg_labels:
@@ -198,7 +199,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         return sorted(labels)
 
     def _fast_labels(self):
-        """Return background-dataset labels only, or None if not ready."""
+        """只返回背景数据集里的标签；还没准备好时返回 None。"""
         completed = getattr(self._editor, '_background_label_scan_completed', False)
         bg_labels = getattr(self._editor, 'background_dataset_labels', None)
         if completed:
@@ -254,12 +255,32 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             cb = QCheckBox(lbl)
             cb.setChecked(True)
             cb.setFixedWidth(_CELL_W)
+            # 行高按勾选框自身需要给足：压到 12px 时 18px 的指示块会被裁掉
+            # 圆角，看着像方角、还跟下一行叠在一起。
+            cb.setMinimumHeight(cb.sizeHint().height())
             row, col = divmod(i, _COLS)
             self._exp_label_grid.addWidget(cb, row, col)
             self._exp_label_checkboxes[lbl] = cb
         for col in range(_COLS):
             self._exp_label_grid.setColumnMinimumWidth(col, _CELL_W)
             self._exp_label_grid.setColumnStretch(col, 0)
+        # 滚动区按内容自然高度撑开，超出上限才出现滚动条
+        self._fit_label_grid_height(len(labels), _COLS, cb.sizeHint().height())
+
+    def _fit_label_grid_height(self, count, columns, row_height):
+        """类别勾选区高度：够放就按内容撑开，放不下才封顶并滚动。
+
+        行高与间距都按实际值算，不取布局的 sizeHint——控件刚加进去时布局还
+        没算完，sizeHint 会给出一个偏小的旧值，滚动区于是被压成一行高。
+        """
+        from .mixins.processing_panel_builder import (
+            _LABEL_GRID_MAX_HEIGHT, _LABEL_GRID_SPACING,
+        )
+        rows = max(1, (count + columns - 1) // columns)
+        needed = rows * row_height + (rows - 1) * _LABEL_GRID_SPACING + 4
+        self._exp_label_scroll.setFixedHeight(
+            max(row_height + 4, min(needed, _LABEL_GRID_MAX_HEIGHT)))
+        self._exp_label_grid_container.setMinimumHeight(needed)
 
     def _clear_grid(self):
         for w in list(self._exp_label_grid_container.children()):
@@ -276,11 +297,9 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         self._path_lbl.setText(tr("数据集目录:"))
         self._browse_btn.setText(tr("选择"))
         self._aug_section.set_title(tr("数据增强"))
-        for name, (cb, param_spins, cn_name) in self._aug_widgets.items():
-            if name == "__orig__":
-                cb.setText(tr("原图"))
-            else:
-                cb.setText(tr(cn_name))
+        self._aug_preset_lbl.setText(tr("预设:"))
+        self._aug_edit_btn.setText(tr("去图像编辑"))
+        self._refresh_augment_presets()
         self._ratio_lbl.setText(tr("图片比例:"))
         self._mode_lbl.setText(tr("模式:"))
         idx = self._aug_mode.currentIndex()
@@ -288,8 +307,8 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         self._aug_mode.addItems([tr("全部增强"), tr("随机几项")])
         self._aug_mode.setCurrentIndex(idx)
         self._aug_btn.setText(tr("增强"))
+        self._aug_inc_orig.setText(tr("包含原图"))
         self._aug_skip_empty.setText(tr("跳过空标签"))
-        self._aug_uncheck_all_btn.setText(tr("取消全选"))
         self._aug_clear_btn.setText(tr("清空"))
         self._crop_check.setText(tr("滑窗裁剪"))
         self._crop_config_btn.setText(tr("配置…"))
@@ -368,9 +387,9 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
     def _busy_guarded(self, btn, clear_btn, fn):
         """置忙后执行同步前奏 fn；前奏抛异常必须恢复按钮。
 
-        置忙提前到读盘之前后（审计 P5），busy 与 worker.start() 之间的
+        置忙提前到读盘之前后，busy 与 worker.start() 之间的
         同步代码一旦抛异常，不会再有任何回调碰这些按钮——不恢复的话
-        数据处理面板四个按钮永久 disabled（终审 I-2）。
+        数据处理面板四个按钮永久 disabled。
         """
         self._button_busy(btn, clear_btn=clear_btn)
         try:
@@ -530,11 +549,74 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         box.exec_()
         return box.clickedButton() == yes_btn
 
-    def _uncheck_all_transforms(self):
-        """一键取消所有已勾选的增强方式（含原图与滑窗裁剪），便于从零重新挑选。"""
-        for _name, (cb, _params, _disp) in self._aug_widgets.items():
-            cb.setChecked(False)
-        self._crop_check.setChecked(False)
+    def _refresh_augment_presets(self):
+        """重读配置里的预设，填进下拉框并保留原选择。"""
+        from ..engine.image_tools import PRESET_SLOTS, load_presets, preset_name, preset_summary
+
+        if getattr(self, '_aug_preset_combo', None) is None:
+            return
+        presets = {item["slot"]: item for item in load_presets()}
+        keep = self._aug_preset_combo.currentData()
+        self._aug_preset_combo.blockSignals(True)
+        self._aug_preset_combo.clear()
+        for slot in PRESET_SLOTS:
+            item = presets.get(slot)
+            name = tr(preset_name(slot))
+            if item is None:
+                self._aug_preset_combo.addItem(f"{name}（{tr('空')}）", slot)
+                index = self._aug_preset_combo.count() - 1
+                item = self._aug_preset_combo.model().item(index)
+                if item is not None:
+                    item.setEnabled(False)
+            else:
+                summary = preset_summary(item["steps"])
+                if len(summary) > 28:
+                    summary = summary[:28] + "…"
+                self._aug_preset_combo.addItem(f"{name} · {summary}", slot)
+        target = self._aug_preset_combo.findData(keep)
+        if target < 0 or presets.get(str(keep)) is None:
+            # 原选择没了（被覆盖或清空）：落到第一个有内容的槽位
+            target = next((i for i, slot in enumerate(PRESET_SLOTS)
+                           if slot in presets), 0)
+        self._aug_preset_combo.setCurrentIndex(target)
+        self._aug_preset_combo.blockSignals(False)
+        self._update_augment_preset_summary()
+
+    def _selected_preset_slot(self):
+        data = self._aug_preset_combo.currentData()
+        return str(data) if data else ""
+
+    def _update_augment_preset_summary(self):
+        """下拉框下面那行灰字：这个预设具体包含哪些处理项。"""
+        from ..engine.image_tools import load_presets, preset_name, preset_summary
+
+        slot = self._selected_preset_slot()
+        item = next((p for p in load_presets() if p["slot"] == slot), None)
+        if item is None:
+            self._aug_preset_summary.setText(
+                tr("还没有预设：点「去图像编辑」调好参数后存为预设"))
+            return
+        summary = preset_summary(item["steps"])
+        saved = item.get("saved_at") or ""
+        text = f"{tr(preset_name(slot))}：{summary}"
+        if saved:
+            text += f"　（{saved}）"
+        self._aug_preset_summary.setText(text)
+
+    def _open_image_editor_for_preset(self):
+        """跳到图像编辑面板：参数在那里调，调完存成预设。"""
+        opener = getattr(self._editor, "_open_image_tools", None)
+        if opener is None:
+            self._log(tr("图像编辑面板不可用"))
+            return
+        opener()
+        # 编辑面板关掉时再拉预设：用户此刻才可能已经点过「存为预设」
+        editor_panel = getattr(self._editor, '_image_tools_panel', None)
+        if editor_panel is not None:
+            try:
+                editor_panel.closed.connect(self._refresh_augment_presets)
+            except (RuntimeError, TypeError):
+                pass
 
     def _clear_aug(self):
         if not self._require_path():
@@ -598,16 +680,38 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         sb = self._log_area.verticalScrollBar()
         sb.setValue(sb.maximum())
 
+    @staticmethod
+    def _augment_has_work(specs, crop_spec, include_original):
+        """这次增强有没有活可干。
+
+        三者任一成立即可：预设给了变换、勾了滑窗裁剪、或勾了包含原图。
+        """
+        return bool(specs or crop_spec or include_original)
+
     def _get_transform_specs(self):
+        """选中预设 → 增强器要的 (算子类, 采样区间) 列表。
+
+        预设里存的是单值，这里落成「上下限相同」的区间——批量增强的随机取值
+        逻辑不用改，只是每一档都只有一个可能值。
+        """
+        from ..engine.image_tools import load_presets
+
         all_t = get_all_transforms()
+        slot = self._selected_preset_slot()
+        item = next((p for p in load_presets() if p["slot"] == slot), None)
+        if item is None:
+            return []
         specs = []
-        for name, (cb, param_spins, _) in self._aug_widgets.items():
-            if not cb.isChecked() or name not in all_t:
+        for step in item["steps"]:
+            cls = all_t.get(step.get("name"))
+            if cls is None:
                 continue
-            cls = all_t[name]
-            ranges = {}
-            for pname, (smin, smax) in param_spins.items():
-                ranges[pname] = (smin.value(), smax.value())
+            # 数值参数落成「上下限相同」的区间；字符串/枚举这类没法取区间，
+            # 按固定值原样传，别悄悄丢掉（否则通道提取永远按默认通道跑）
+            ranges = {name: (value, value)
+                      if isinstance(value, (int, float))
+                      and not isinstance(value, bool) else value
+                      for name, value in (step.get("params") or {}).items()}
             specs.append((cls, ranges))
         return specs
 
@@ -627,7 +731,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
                 "fill": False, "fill_rgb": FILL_RGB_DEFAULT}
 
     def _on_path_changed(self, _text=""):
-        """切换数据集目录：清空本轮裁剪配置与缓存，摘要回到默认口径。"""
+        """切换数据集目录：清空本次裁剪配置与缓存，摘要回到默认口径。"""
         self._crop_spec = None
         self._run_images = []
         self._run_boxes = {}
@@ -675,12 +779,14 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
 
     def _run_augment(self):
         # 置忙必须先于 _ensure_boxes_loaded：后者每 5 张图 processEvents()
-        # 一次，读盘期间按钮尚未 disabled 时连点可重入（审计 P5）。
-        # 置忙之后的提前 return 都要 _button_ready，否则校验失败卡死按钮；
-        # 同步前奏抛出异常时由 _busy_guarded 负责恢复状态（终审 I-2）。
+        # 一次，读盘期间按钮还没 disabled，连点会重入。
+        # 置忙之后的提前 return 都要 _button_ready，否则校验失败会卡死按钮；
+        # 同步前奏抛出异常时由 _busy_guarded 负责恢复状态。
         self._busy_guarded(self._aug_btn, self._aug_clear_btn, self._run_augment_body)
 
     def _run_augment_body(self):
+        # 先按配置重读预设：槽位可能在别的面板里刚被覆盖，显示与执行要对得上
+        self._refresh_augment_presets()
         self._ensure_boxes_loaded()
         if self._interrupted:
             # 读盘期间用户点了停止：不检查的话 _interrupted 会被下面
@@ -695,17 +801,18 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             return
         specs = self._get_transform_specs()
         crop_spec = self._get_crop_spec()
-        if not specs and not crop_spec:
+        # 「包含原图」不依赖预设：只勾它也能把原图导出成一份
+        include_original = self._aug_inc_orig.isChecked()
+        if not self._augment_has_work(specs, crop_spec, include_original):
+            self._log(tr("没有可增强的内容：选一个预设，或勾选包含原图/滑窗裁剪"))
             self._pipe_finish(True)
             self._button_ready(self._aug_btn, clear_btn=self._aug_clear_btn)
             return
         ratio = self._aug_ratio.value()
         mode = "all" if self._aug_mode.currentIndex() == 0 else "random"
-        include_original = self._aug_inc_orig.isChecked()
         skip_empty = self._aug_skip_empty.isChecked()
         output_dir = self._get_output_dir()
-        transform_names = [name for name, (cb, _, _) in self._aug_widgets.items()
-                          if cb.isChecked() and not name.startswith("__")]
+        transform_names = [tr(label_of_class(spec[0].__name__)) for spec in specs]
         if crop_spec:
             transform_names.append(tr("滑窗裁剪"))
         self._log(tr("log_aug_start").format(
@@ -717,7 +824,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
 
         def _aug_task(log_fn, progress_fn):
             def _on_transform_progress(tname, cur, tot):
-                display = TRANSFORM_META.get(tname, (tname,))[0]
+                display = label_of_class(tname)
                 progress_fn(cur, total, tr(display))
             aug = Augmenter(
                 output_dir,
@@ -754,7 +861,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
         worker.start()
 
     def _run_export(self):
-        # 同 _run_augment：置忙先于同步读盘（审计 P5）
+        # 同 _run_augment：置忙先于同步读盘。
         self._busy_guarded(self._exp_btn, self._exp_clear_btn, self._run_export_body)
 
     def _run_export_body(self):
@@ -884,7 +991,7 @@ class ProcessingPanel(ProcessingPanelBuilderMixin, QWidget):
             f"color: {color}; background: transparent; font-weight: bold;")
 
     def _run_split(self):
-        # 同 _run_augment：置忙先于同步读盘（审计 P5）
+        # 同 _run_augment：置忙先于同步读盘。
         self._busy_guarded(self._split_btn, self._split_clear_btn, self._run_split_body)
 
     def _run_split_body(self):

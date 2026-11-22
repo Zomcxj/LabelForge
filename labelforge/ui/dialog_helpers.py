@@ -28,17 +28,17 @@ def center_on_parent(dialog, parent=None):
 def place_within(dialog, rect, align="center"):
     """把对话框浮到 rect（父窗口坐标）那块，并钳到所在屏幕的可用区。
 
-    rect 是**右侧侧栏那块**（面板盖在它上面，而不是画布上）。**不要求弹窗
-    装进 rect**：范围弹窗比侧栏宽，几何上装不下。弹窗浮在侧栏上层即可，
+    rect 是右侧侧栏那块（面板盖在它上面，而不是画布上）。不要求弹窗
+    装进 rect：范围弹窗比侧栏宽，几何上装不下。弹窗浮在侧栏上层即可，
     不要盖住画布。
 
     竖直方向：
-    - `align="center"`（默认）：按 rect 的**中心**居中。范围弹窗原来用这个。
+    - `align="center"`（默认）：按 rect 的中心居中。范围弹窗原来用这个。
     - `align="top-left"`：弹窗左上角对齐 rect 左上角（范围弹窗现在用这个，
       即始终对齐「标签管理」区域的左上角）。
 
-    水平方向：以 rect 的中心线对齐弹窗中心，但**优先保住左边不越过 rect
-    左边界**。不能用 `rect.left() + 8` 当左上角、且 rect.x 可能被上游写成 0，
+    水平方向：以 rect 的中心线对齐弹窗中心，但优先保住左边不越过 rect
+    左边界。不能用 `rect.left() + 8` 当左上角、且 rect.x 可能被上游写成 0，
     那样面板会跑到屏幕左边挡住画布。这里先按居中算，再钳到「不小于
     rect.left()」，让弹窗向右溢出（压住侧栏右侧的空白）而不是向左盖画布
     （画布在主窗左侧）。
@@ -46,7 +46,7 @@ def place_within(dialog, rect, align="center"):
     if rect is None or rect.isEmpty():
         center_on_parent(dialog)
         return
-    # 统一到**全局**坐标再算：rect 是父窗口坐标（局部），而屏幕可用区是全局的，
+    # 统一到全局坐标再算：rect 是父窗口坐标（局部），而屏幕可用区是全局的，
     # 混着比会把弹窗放到别的地方（实测主窗不在屏幕原点时，面板会整体左移一个
     # 主窗 x 的量，落到画布上）。算完直接用全局坐标 `move()`。
     parent = dialog.parent()
@@ -58,7 +58,7 @@ def place_within(dialog, rect, align="center"):
     center_x = origin.x() + rect.center().x()
     center_y = origin.y() + rect.center().y()
 
-    # 用**整窗**尺寸（含窗口边框）而不是客户区宽度：`frameGeometry` 才是屏幕上
+    # 用整窗尺寸（含窗口边框）而不是客户区宽度：`frameGeometry` 才是屏幕上
     # 真正占的地方，拿客户区宽度去钳，边框会多探出几像素。
     frame = dialog.frameGeometry()
     span_x = max(dialog.width(), frame.width())
@@ -87,7 +87,7 @@ def place_within(dialog, rect, align="center"):
                  min(gx, available.right() + 1 - span_x - inset_x))
         gy = max(available.top() - inset_y,
                  min(gy, available.bottom() + 1 - span_y - inset_y))
-    # 直接用**全局**坐标 move()：`ScopePanel` 是顶层窗口，`QWidget.move()` 对
+    # 直接用全局坐标 move()：`ScopePanel` 是顶层窗口，`QWidget.move()` 对
     # 顶层窗口按全局坐标解释（实测 move(1056,323) 后 pos() 就是 1056,323）。
     # 不能减掉 `origin`：那等于把面板整体左移一个主窗 x 的量，
     # 主窗不在屏幕原点时面板就会跑到画布上、遮挡画布。

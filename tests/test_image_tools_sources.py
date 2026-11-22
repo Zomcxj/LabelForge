@@ -1,4 +1,4 @@
-"""图像处理面板的换图入口（真实 Qt 子进程）。"""
+"""图像编辑面板的换图入口（真实 Qt 子进程）。"""
 import os
 import subprocess
 import sys

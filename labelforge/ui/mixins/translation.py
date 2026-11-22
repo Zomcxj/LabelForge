@@ -1,4 +1,4 @@
-"""Language switching and translated UI text refresh behavior."""
+"""语言切换与已显示文案的刷新行为。"""
 
 
 class TranslationMixin:

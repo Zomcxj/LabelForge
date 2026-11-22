@@ -120,7 +120,7 @@ def unletterbox_boxes(boxes, geometry, src_w, src_h):
 def unletterbox_points(points, geometry, src_w, src_h, clip=True):
     """模型的顶点坐标（多边形 / 旋转框角点 / 关键点）还原到原图。
 
-    `clip=True` 时钳到图内；**旋转框要传 False**：逐点钳制会把矩形切成四边形
+    `clip=True` 时钳到图内；旋转框要传 False：逐点钳制会把矩形切成四边形
     （贴边的框尤其明显），四个角不再互相垂直。图外的旋转框是正常情况，
     画布照常绘制。
     """
@@ -786,7 +786,7 @@ class OnnxDetector:
 
     @staticmethod
     def _nms_pose(items, iou):
-        """姿态按**实例**去重：只对实例框做 NMS，关键点跟着自己的实例走。
+        """姿态按实例去重：只对实例框做 NMS，关键点跟着自己的实例走。
 
         直接把所有形状丢进 NMS 会出事：关键点的框是零面积，与任何框的 IoU 都是
         0，实例框被抑制后它们照样留着，结果是一堆挂在已消失实例上的孤儿点。

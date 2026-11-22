@@ -1,4 +1,4 @@
-"""图像处理面板的控件结构测试（真实 Qt 子进程）。"""
+"""图像编辑面板的控件结构测试（真实 Qt 子进程）。"""
 import os
 import subprocess
 import sys
@@ -20,7 +20,7 @@ def _run_qt(script):
     return result.stdout
 
 
-def test_panel_lists_every_operation_and_has_no_save_or_list():
+def test_panel_lists_every_operation_and_has_no_list():
     out = _run_qt('''
 from PySide6.QtWidgets import QApplication, QListWidget, QPushButton
 from labelforge.engine import image_tools as it
@@ -28,8 +28,6 @@ from labelforge.ui.image_tools_panel import ImageToolsPanel
 app = QApplication([])
 panel = ImageToolsPanel(None)
 assert sorted(panel._checks) == sorted(it.OPERATION_ORDER)
-texts = [b.text() for b in panel.findChildren(QPushButton)]
-assert "保存结果" not in texts, texts
 assert not panel.findChildren(QListWidget)
 assert panel.region_mode() == "rect"
 print("OK")
@@ -53,7 +51,8 @@ print("OK")
     assert "OK" in out
 
 
-def test_geometric_preview_reports_that_annotations_are_hidden():
+def test_annotations_stay_hidden_while_editing():
+    """图像编辑开着就提示标注已隐藏，与勾没勾处理项无关。"""
     out = _run_qt('''
 import os, tempfile
 from PySide6.QtGui import QColor, QImage
@@ -70,18 +69,41 @@ window.background_images = [path]
 window.current_background_index = 0
 window.load_image_by_index(0)
 window._open_image_tools()
+# 状态提示常显：勾不勾处理项都一样
+assert "标注已隐藏" in window._image_tools_panel._status.text()
 window._image_tools_panel._checks["fliph"].setChecked(True)
 window._image_tools_apply()
 assert "标注已隐藏" in window._image_tools_panel._status.text()
 window._image_tools_panel._checks["fliph"].setChecked(False)
 window._image_tools_apply()
-assert "标注已隐藏" not in window._image_tools_panel._status.text()
+assert "标注已隐藏" in window._image_tools_panel._status.text(), "取消勾选后提示仍在"
 print("OK")
 ''')
     assert "OK" in out
 
 
-def test_no_save_paths_remain():
-    source = (ROOT / "labelforge/ui/image_tools_panel.py").read_text(encoding="utf-8")
-    assert "_processed" not in source
-    assert "_save_btn" not in source
+def test_saving_asks_the_host_and_uses_the_engine_writer():
+    """面板只发信号，写盘一律走 engine 那一份实现。"""
+    out = _run_qt('''
+from PySide6.QtWidgets import QApplication, QPushButton
+from labelforge.engine import image_tools as it
+from labelforge.ui.image_tools_panel import ImageToolsPanel
+app = QApplication([])
+panel = ImageToolsPanel(None)
+texts = [b.text() for b in panel.findChildren(QPushButton)]
+assert "保存图片" in texts, texts
+assert "另存为…" in texts, texts
+# 保存与另存为是两个独立按钮，不再藏在菜单里
+assert not hasattr(panel, "_save_menu"), "保存结果不该再挂菜单"
+calls = []
+panel.save_new_requested.connect(lambda: calls.append("new"))
+panel.save_copy_requested.connect(lambda: calls.append("copy"))
+panel._save_btn.click()
+panel._save_copy_btn.click()
+assert calls == ["new", "copy"], calls
+assert callable(it.save_result)
+source = open("labelforge/ui/image_tools_panel.py", encoding="utf-8").read()
+assert "_processed" not in source
+print("OK")
+''')
+    assert "OK" in out

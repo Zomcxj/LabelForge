@@ -34,7 +34,7 @@ def quantise_alpha(alpha):
 def alpha_bbox(alpha, pad=1):
     """alpha > 0 的包围盒 (top, left, bottom, right)；全透明返回 None。
 
-    「> 0」按 **8 位量化后** 的 alpha 判：PNG 里存的就是 8 位 alpha，
+    「> 0」按 8 位量化后 的 alpha 判：PNG 里存的就是 8 位 alpha，
     sigmoid 输出的极小概率在 float 下永远不为 0，按 float 判会让包围盒
     恒等于整块裁窗，det 框比物体大一圈。
     """

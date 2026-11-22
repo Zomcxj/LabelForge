@@ -1,7 +1,7 @@
 """几何类变换：90 度旋转、错切、透视、区域裁剪、边框填充。
 
 纯 numpy / cv2 内核。几何变换会改变画布尺寸，`boxes` 仍原样返回——
-图像处理工具不处理标注，由调用方自行决定标注是否失效。
+图像编辑工具不处理标注，由调用方自行决定标注是否失效。
 """
 from typing import List, Tuple
 
@@ -157,3 +157,29 @@ class EdgePad(_GeomBase):
     def _run(self, arr):
         t, b, l, r = self._edges
         return pad_array(arr, t, b, l, r, self._color)
+
+
+def resize_long_side_array(arr: np.ndarray, long_side: int) -> np.ndarray:
+    """按长边等比缩放：只定长边，短边跟着算，不改变宽高比。"""
+    h, w = arr.shape[:2]
+    target = max(16, int(long_side))
+    if w <= 0 or h <= 0:
+        return arr.copy()
+    scale = target / float(max(w, h))
+    new_w = max(1, int(round(w * scale)))
+    new_h = max(1, int(round(h * scale)))
+    if (new_w, new_h) == (w, h):
+        return arr.copy()
+    return cv2.resize(arr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+
+@register_transform
+class ResizeLongSide(_GeomBase):
+    name = "resize"
+
+    def __init__(self, long_side: int = 1024, rng=None):
+        super().__init__(rng)
+        self._long_side = max(16, int(long_side))
+
+    def _run(self, arr):
+        return resize_long_side_array(arr, self._long_side)

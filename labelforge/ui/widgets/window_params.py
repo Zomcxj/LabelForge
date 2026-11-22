@@ -1,10 +1,10 @@
 """滑窗参数控件：宽 / 高 / 重叠 + 窗口数预估 + 模板按钮。
 
 抽成控件而不是留在某个对话框里，是因为它有两个宿主：
-- `ScopePanel` 把它**内嵌**在范围弹窗里；
+- `ScopePanel` 把它内嵌在范围弹窗里；
 - `SlidingWindowDialog` 仍单独存在，供需要独立窗口的路径使用。
 
-**这里没有预览图**：窗口网格直接画在编辑区的**主画布**上，不另开小窗显示
+这里没有预览图：窗口网格直接画在编辑区的主画布上，不另开小窗显示
 全图。控件只负责参数与「现在会切出多少窗」的文字，网格的绘制由
 `mixins/inference.py` 交给画布完成；本控件把 `changed` 发出去，
 宿主据此重画网格。
@@ -13,14 +13,14 @@
 ——后者取整后可能多出一窗。非法参数的口径也与引擎一致（`重叠 >= 窗口尺寸`
 不算错，引擎会钳；真失败是尺寸越界/非正/超 `MAX_WINDOWS`）。
 
-模板与数据增强**共用同一份** `crop_templates`（双向同步，最多 3 条）。点击
-模板只回填输入框，**不生效**：必须由宿主的「确定」才写回。控件自身不写模板
+模板与数据增强共用同一份 `crop_templates`（双向同步，最多 3 条）。点击
+模板只回填输入框，不生效：必须由宿主的「确定」才写回。控件自身不写模板
 ——写模板由调用方在确定之后做。
 
-**只有选中「滑窗」时才可编辑**：`set_editable(False)` 会把输入框一并禁用，
+只有选中「滑窗」时才可编辑：`set_editable(False)` 会把输入框一并禁用，
 既无法点击也无法修改。
 
-**没有模板**：模板按钮与数据增强的 `crop_templates` 同步逻辑都不在这里，
+没有模板：模板按钮与数据增强的 `crop_templates` 同步逻辑都不在这里，
 滑窗参数只认当前输入框里的值。
 """
 from PySide6.QtCore import Signal
@@ -130,9 +130,7 @@ class WindowParamsWidget(QWidget):
         params.addStretch()
         body.addLayout(params, 1)
 
-        # 曾经这里有个缩略预览小图，已删除：网格改画在主画布上。
-        # 曾经这里还有一排「模板」按钮（与数据增强共用 `crop_templates`），
-        # 也已删除，滑窗参数就是当前输入框里的值，不受另一处的模板列表影响。
+        # 滑窗参数取当前输入框里的值，不引用数据增强的模板列表。
 
         root.addLayout(body)
 
@@ -171,7 +169,7 @@ class WindowParamsWidget(QWidget):
         return self._ov_x
 
     def set_spec(self, spec):
-        """外部写入参数（如点模板）会**保留**未给出的字段。"""
+        """外部写入参数（如点模板）会保留未给出的字段。"""
         spec = dict(spec or {})
         legacy_overlap = spec.get("overlap")
         if legacy_overlap is not None:
@@ -212,7 +210,7 @@ class WindowParamsWidget(QWidget):
         return self._editable
 
     def spins_enabled(self):
-        """各个输入框是否**实际可用**（测试与调用方用来核对禁用生效）。"""
+        """各个输入框是否实际可用（测试与调用方用来核对禁用生效）。"""
         return all(spin.isEnabled()
                    for spin in self._editable_widgets())
 

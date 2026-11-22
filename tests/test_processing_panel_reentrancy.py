@@ -117,7 +117,6 @@ def _make_panel(tmp_path, monkeypatch, order, on_ensure=None):
     panel._aug_mode = _Check()
     panel._aug_inc_orig = _Check()
     panel._aug_skip_empty = _Check()
-    panel._aug_widgets = {}
     panel._get_transform_specs = lambda: []
     panel._get_crop_spec = lambda: None
     panel._get_selected_labels = lambda: []

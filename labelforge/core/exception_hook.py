@@ -23,8 +23,8 @@ def _write_log(message):
 
 # 已知无害、但每次启动都会写一行的 Qt6 告警：像素字号（QSS 的 `font-size: Npx`）
 # 会让 QFont.pointSize() 返回 -1，Qt6 内部再拿它调 setPointSize(-1) 并告警。
-# 字号本身是对的（pixelSize 正常、渲染不变），Qt 只是拒绝了非法值。PyQt5 时代没有。
-# 每次进程只发生一次；不记日志是因为这份日志是用户报障时发给我们的。
+# 字号本身是对的（pixelSize 正常、渲染不变），Qt 只是拒绝了非法值。
+# 每个进程只触发一次；不写进日志，免得用户反馈问题时发来的日志里全是这条。
 _IGNORED_QT_MESSAGES = (
     "QFont::setPointSize: Point size <= 0",
 )

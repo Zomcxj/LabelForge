@@ -116,9 +116,13 @@ il.collect_background_label_stats_and_tasks = boom
 
 orig = QDialog.exec_
 def fake_exec(self, *a):
+    # 先在「刚打开」这一刻采集断言要的值，再等后台扫描收尾：
+    # 扫描线程还在跑就退出进程，Qt 对象会在收尾阶段被拆，子进程崩在
+    # 0xC0000409（不是断言失败，输出其实已经打印完整）。
     print('打开那一刻表行数:', self._bg_table.rowCount())
     print('打开那一刻总计标签:', self._total_label.text())
     print('打开没触发同步扫盘: True')
+    wait_for(lambda: getattr(self, '_scan_applied', False))
     return 0
 QDialog.exec_ = fake_exec
 try:

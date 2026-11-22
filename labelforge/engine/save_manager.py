@@ -333,16 +333,15 @@ class SaveManager(SaveManagerMixin, QObject):
     def save_current_json(self):
         """仅保存当前图的标注 JSON，用于切图和关闭窗口时的保底写入。
 
-        Annotate mode: save when there are boxes, or when all boxes were
-        cleared but a sidecar JSON already exists (persist empty / 空标签).
-        Never create a brand-new empty JSON for never-annotated images.
+        标注模式：有框时保存；框被清空但 sidecar JSON 已经存在时也保存，
+        用来把空标签写进去。从没标注过的图不会因此新建一份空 JSON。
 
-        画布被清空时（默认行为，可在「选项」里关掉）**删除**已存在的
+        画布被清空时（默认行为，可在「选项」里关掉）删除已存在的
         sidecar JSON：留着空 json 会让「这张图没标过」变成「这张图标过但
         一个标签都没有」，下游训练/统计都得额外分辨这两种情况。
 
-        判空以 **json 原文的 `shapes`** 为准，不看内存里的 `detection_boxes`。
-        内存状态会漏判两类真有内容的文件，而这是**删用户数据**：
+        判空以 json 原文的 `shapes` 为准，不看内存里的 `detection_boxes`。
+        内存状态会漏判两类真有内容的文件，而这是删用户数据：
           1. 贴图写在 `canvas_items`，不进 `detection_boxes`；
           2. 工具解析不出的 shape（如 `points` 为空的多边形）载入后不产生框。
         两者都会让「非空 json」看起来像空画布。读原文则一律保留。
@@ -397,7 +396,7 @@ class SaveManager(SaveManagerMixin, QObject):
     def _json_shapes_empty(json_path):
         """sidecar json 的 `shapes` 是否确实为空（可以安全删除）。
 
-        只有**读成功且 `shapes` 是非空列表以外的东西**才算空。以下情况一律
+        只有读成功且 `shapes` 是非空列表以外的东西才算空。以下情况一律
         返回 False（= 不删），因为无法证明它没有内容：
         - 文件读不出来 / 不是合法 JSON；
         - 顶层不是对象，或没有 `shapes` 键；

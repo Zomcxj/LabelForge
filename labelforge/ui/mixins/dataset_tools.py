@@ -1,4 +1,4 @@
-"""Dataset format conversion entry point behavior for the main window."""
+"""主窗口的数据集格式转换入口。"""
 import os
 
 

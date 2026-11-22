@@ -316,7 +316,7 @@ class EventHandlerMixin:
             self.switch_background_to_index(new_index)
 
     def _next_visible_background_index(self, direction, step=1):
-        """Find next background index skipping rows hidden by annotation filter."""
+        """找下一张背景图的下标，跳过被标注筛选隐藏的行。"""
         if not self.background_images:
             return None
         n = len(self.background_images)
@@ -331,7 +331,7 @@ class EventHandlerMixin:
                 return None
             return target
 
-        # Walk visible rows only
+        # 只在可见行里找，跳过被筛选隐藏的行
         visible_indexes = []
         for row in range(bg_list.count()):
             item = bg_list.item(row)
@@ -345,7 +345,7 @@ class EventHandlerMixin:
         try:
             pos = visible_indexes.index(cur)
         except ValueError:
-            # current hidden: jump to nearest in direction
+            # 当前行被隐藏：沿这个方向跳到最近的可见行
             if direction > 0:
                 for idx in visible_indexes:
                     if idx > cur:

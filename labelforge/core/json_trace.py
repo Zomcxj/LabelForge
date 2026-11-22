@@ -1,15 +1,15 @@
 """诊断探针：追踪「json 为什么不见了」。
 
-⚠️ 这是**临时排查工具**，不是产品功能。用来回答一个问题：
+这是临时排查工具，不是产品功能。用来回答一个问题：
 
-    某个 sidecar json 到底是**谁**删的？还是**从来就没写过**？
+    某个 sidecar json 到底是谁删的？还是从来就没写过？
 
 做法是在所有会改动/删除 sidecar 的位置埋点，把「谁、对哪个文件、当时
 文件在不在、shapes 有几条」写进日志；同时在切图时记录当前图的 json 状态。
-用户跑一遍出问题的流程，日志就能直接指认凶手，而不是靠猜。
+复现一次出问题的流程，日志即可指出删除动作来自哪一处，不必靠猜。
 
-开法：环境变量 `LABELFORGE_TRACE_JSON=1`（debug exe 里默认开）。
-关法：不设那个变量。**正常版本完全不受影响**——所有埋点先问 `_on()`。
+开启：环境变量 `LABELFORGE_TRACE_JSON=1`（调试版可执行文件默认开启）。
+关闭：不设该变量。正常版本完全不受影响——所有埋点先问 `_on()`。
 """
 import os
 import traceback
@@ -58,7 +58,7 @@ def trace(where, json_path, **extra):
 
 
 def trace_delete(where, json_path, survived):
-    """记一次「删除 sidecar 的尝试」，**带调用栈**——这是定位凶手的关键。"""
+    """记一次「删除 sidecar 的尝试」，带调用栈——这是定位凶手的关键。"""
     if not _on():
         return
     stack = ' <- '.join(
@@ -82,7 +82,7 @@ def trace_load_result(index, image_path, memory_boxes, from_cache):
     disk = _shapes_count(json_path) if json_path and os.path.exists(json_path) else None
     flag = ''
     if isinstance(disk, int) and disk > 0 and memory_boxes == 0:
-        flag = '  ⚠️磁盘有框但内存为 0（缓存被污染！）'
+        flag = '  磁盘有框但内存为 0（缓存与文件不一致）'
     _write_log(
         f"[JSONTRACE] 读框 index={index} 磁盘shapes={disk} "
         f"内存框数={memory_boxes} 来自缓存={from_cache}{flag}")

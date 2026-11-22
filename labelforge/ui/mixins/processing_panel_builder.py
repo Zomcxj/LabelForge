@@ -1,50 +1,20 @@
-"""Section construction methods for ProcessingPanel."""
+"""ProcessingPanel 的区块构建方法。"""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSpinBox, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox, QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel,
+    QPushButton, QScrollArea, QWidget,
+)
 
 from ..i18n import t as tr
-from ...engine.augmenter import get_all_transforms
 from ...widgets.processing import _ScanSpinnerWidget
 
 SPLIT_KEYS = ["train", "val", "test"]
 
-TRANSFORM_META = {
-    "fliph":       ("水平翻转", []),
-    "flipv":       ("垂直翻转", []),
-    "bright":      ("亮度", [("delta", QSpinBox, -100, 100, -30, 30)]),
-    "contrast":    ("对比度", [("factor", QDoubleSpinBox, 0.5, 2.0, 1.2, 1.8)]),
-    "hue":         ("色相(H)", [("delta", QSpinBox, -180, 180, -30, 30)]),
-    "saturation":  ("饱和度(S)", [("factor", QDoubleSpinBox, 0.0, 2.0, 1.2, 1.8)]),
-    "value":       ("明度(V)", [("delta", QSpinBox, -100, 100, -30, 30)]),
-    "gauss":       ("高斯噪声", [("sigma", QSpinBox, 1, 100, 10, 40)]),
-    "saltpepper":  ("椒盐噪声", [("prob", QDoubleSpinBox, 0.0, 0.5, 0.02, 0.08)]),
-    "trans":       ("随机平移", [("offset", QSpinBox, 0, 100, 10, 30)]),
-    "rotate":      ("随机旋转", [("angle", QSpinBox, 0, 45, 5, 25)]),
-    "scale":       ("随机缩放", [("scale", QDoubleSpinBox, 0.5, 1.5, 0.8, 1.2)]),
-    "crop":        ("滑窗裁剪", []),
-}
+#: 类别勾选区的高度上限；超出后滚动，不再压缩每一行
+_LABEL_GRID_MAX_HEIGHT = 132
 
-# 按语义分成三组再排：几何（翻转/平移/旋转/缩放）→ 色彩（亮度/对比度/
-# 色相/饱和度/明度）→ 噪声。原顺序沿自历史累积，色彩、噪声与几何混排，
-# 难以判断哪些项属于同一类。
-_TRANSFORM_ORDER = [
-    # 几何
-    "fliph", "flipv", "trans", "rotate", "scale",
-    # 色彩
-    "bright", "contrast", "hue", "saturation", "value",
-    # 噪声
-    "gauss", "saltpepper",
-]
-
-# 数据增强网格的列数。4 列比 3 列更省纵向空间，且 12 个变换正好铺满 3 行。
-_COLS = 4
-
-# 分组标题：key 是组内第一个变换名，插入到它前面。
-_TRANSFORM_GROUPS = {
-    "fliph": "几何",
-    "bright": "色彩",
-    "gauss": "噪声",
-}
+#: 类别勾选框之间的间距，算滚动区高度时要用同一个值
+_LABEL_GRID_SPACING = 8
 
 
 def _style_pipe_step(wrap, checkbox):
@@ -59,106 +29,57 @@ def _style_pipe_step(wrap, checkbox):
 
 
 class ProcessingPanelBuilderMixin:
-    """Build the processing panel's four operation sections."""
+    """构建数据处理面板的四个操作区块。"""
 
     def _build_augment_section(self, parent_layout):
+        """数据增强：只选预设，不在这里配参数。
+
+        几何/色彩/噪声那三组算子都在图像编辑面板里，参数也在那里调；
+        这里只负责挑一个存好的预设去批量跑。
+        """
         section = self._collapsible_section("", parent_layout, "#F44336")
         layout = section.content_layout()
-        transforms = get_all_transforms()
-        order = [n for n in _TRANSFORM_ORDER if n in transforms]
-        self._aug_widgets = {}
-        grid = QGridLayout()
-        grid.setSpacing(6)
-        self._aug_inc_orig = QCheckBox()
-        self._aug_inc_orig.setChecked(True)
-        self._aug_widgets["__orig__"] = (self._aug_inc_orig, {}, "原图")
-        orig_cell = QWidget()
-        orig_cell.setMinimumWidth(140)
-        orig_cl = QHBoxLayout(orig_cell)
-        orig_cl.setContentsMargins(2, 1, 2, 1)
-        orig_cl.setSpacing(2)
-        orig_cl.addWidget(self._aug_inc_orig)
-        orig_cl.addStretch()
-        grid.addWidget(orig_cell, 0, 0)
-        # 先把「每个变换落在第几行第几列」算完，再统一放置。插分组标题会让
-        # 后续行号顺延，边算边放会把后面的格子挤错位。
-        _slots = {}
-        _heads = {}                # 分组标题单独记，不能和变换共用 key：
-                                   # 「几何」组的第一项就是 fliph，共用会让
-                                   # fliph 自己被当成标题，复选框永远建不出来
-        _row, _col = 0, 1          # 第 0 行第 0 列已被「原图」占用
-        for name in order:
-            group = _TRANSFORM_GROUPS.get(name)
-            if group is not None:
-                if _col != 0:
-                    _row, _col = _row + 1, 0
-                _heads[group] = (_row, _col)
-                _row, _col = _row + 1, 0
-            _slots[name] = (_row, _col)
-            _col += 1
-            if _col >= _COLS:
-                _row, _col = _row + 1, 0
-        for group, (grow, gcol) in _heads.items():
-            # 分组标题独占一整行，不占列宽
-            head = QLabel(tr(group))
-            head.setStyleSheet(
-                "color: #9E9E9E; font-size: 11px; background: transparent;")
-            grid.addWidget(head, grow, 0, 1, _COLS)
-        for name in order:
-            row, col = _slots[name]
-            meta = TRANSFORM_META.get(name, (name, []))
-            display_name, param_defs = meta
-            cell = QWidget()
-            cell.setMinimumWidth(140)
-            cl = QHBoxLayout(cell)
-            cl.setContentsMargins(2, 1, 2, 1)
-            cl.setSpacing(2)
-            cb = QCheckBox(display_name)
-            cb.setChecked(name in ("fliph", "flipv", "bright", "rotate", "trans"))
-            # 勾选框里直接带文字，不再用 QLabel + QCheckBox 两件套：
-            # 那样文字与方框的基线差 1~2px，整列看上去是歪的。
-            cl.addWidget(cb)
-            cl.addStretch()
-            param_spins = {}
-            for pname, ptype, pmin, pmax, dmin, dmax in param_defs:
-                sep = QLabel("~")
-                sep.setFixedWidth(10)
-                # 居中而不是默认靠上，否则 ~ 会比两侧输入框的基线高出一截
-                sep.setAlignment(Qt.AlignCenter)
-                spin_min = self._make_spin(ptype, pmin, pmax, dmin)
-                spin_max = self._make_spin(ptype, pmin, pmax, dmax)
-                # 两侧输入框统一右/左对齐，数字位数不同时也能对齐小数点
-                for _sp, _al in ((spin_min, Qt.AlignRight), (spin_max, Qt.AlignLeft)):
-                    _sp.setAlignment(_al)
-                    _sp.setFixedWidth(56)
-                cl.addWidget(spin_min)
-                cl.addWidget(sep)
-                cl.addWidget(spin_max)
-                param_spins[pname] = (spin_min, spin_max)
-            grid.addWidget(cell, row, col)
-            self._aug_widgets[name] = (cb, param_spins, display_name)
-        crop_cell = QWidget()
-        crop_cell.setMinimumWidth(140)
-        crop_cl = QHBoxLayout(crop_cell)
-        crop_cl.setContentsMargins(2, 1, 2, 1)
-        crop_cl.setSpacing(2)
+
+        preset_row = QHBoxLayout()
+        preset_row.setContentsMargins(0, 2, 0, 2)
+        preset_row.setSpacing(6)
+        self._aug_preset_lbl = QLabel()
+        preset_row.addWidget(self._aug_preset_lbl)
+        self._aug_preset_combo = QComboBox()
+        self._aug_preset_combo.setMinimumWidth(240)
+        self._aug_preset_combo.currentIndexChanged.connect(
+            lambda _index: self._update_augment_preset_summary())
+        preset_row.addWidget(self._aug_preset_combo)
+        self._aug_edit_btn = QPushButton()
+        self._aug_edit_btn.setObjectName("accentBtn")
+        self._aug_edit_btn.setToolTip(tr("打开图像编辑面板调整参数并存成预设"))
+        self._aug_edit_btn.clicked.connect(self._open_image_editor_for_preset)
+        preset_row.addWidget(self._aug_edit_btn)
+        preset_row.addStretch()
+        layout.addLayout(preset_row)
+
+        self._aug_preset_summary = QLabel()
+        self._aug_preset_summary.setWordWrap(True)
+        self._aug_preset_summary.setStyleSheet(
+            "color: #9E9E9E; font-size: 11px; background: transparent;")
+        layout.addWidget(self._aug_preset_summary)
+
+        crop_row = QHBoxLayout()
+        crop_row.setContentsMargins(0, 2, 0, 2)
+        crop_row.setSpacing(2)
         self._crop_check = QCheckBox(tr("滑窗裁剪"))
         self._crop_check.toggled.connect(lambda _checked: self._update_crop_summary())
-        crop_cl.addWidget(self._crop_check)
-        crop_cl.addSpacing(6)
+        crop_row.addWidget(self._crop_check)
+        crop_row.addSpacing(6)
         self._crop_config_btn = QPushButton(tr("配置…"))
         # 只保底不封顶：英文 "Configure…" 比中文宽，固定 56px 会把文字截断
         self._crop_config_btn.setMinimumWidth(56)
         self._crop_config_btn.clicked.connect(self._open_crop_config)
-        crop_cl.addWidget(self._crop_config_btn)
+        crop_row.addWidget(self._crop_config_btn)
         self._crop_summary_lbl = QLabel()
-        crop_cl.addWidget(self._crop_summary_lbl, 1)
-        # 滑窗裁剪跟噪声组之后，单独占一整行（它带「配置…」按钮和摘要）
-        _last_row = max(v[0] for v in _slots.values()) if _slots else 0
-        grid.addWidget(crop_cell, _last_row + 1, 0, 1, _COLS)
-        for c in range(_COLS):
-            grid.setColumnStretch(c, 1)
-        layout.addLayout(grid)
+        crop_row.addWidget(self._crop_summary_lbl, 1)
+        layout.addLayout(crop_row)
+
         rl = QHBoxLayout()
         self._ratio_lbl = QLabel()
         rl.addWidget(self._ratio_lbl)
@@ -177,17 +98,16 @@ class ProcessingPanelBuilderMixin:
         self._aug_mode.setFixedWidth(100)
         rl.addWidget(self._aug_mode)
         rl.addSpacing(10)
+        self._aug_inc_orig = QCheckBox()
+        self._aug_inc_orig.setChecked(True)
+        rl.addWidget(self._aug_inc_orig)
+        rl.addSpacing(10)
         self._aug_skip_empty = QCheckBox()
         self._aug_skip_empty.setChecked(True)
         rl.addWidget(self._aug_skip_empty)
-        rl.addSpacing(10)
-        self._aug_uncheck_all_btn = QPushButton()
-        self._aug_uncheck_all_btn.setObjectName("accentBtn")
-        self._aug_uncheck_all_btn.setToolTip(tr("uncheck_all_hint"))
-        self._aug_uncheck_all_btn.clicked.connect(self._uncheck_all_transforms)
-        rl.addWidget(self._aug_uncheck_all_btn)
         rl.addStretch()
         layout.addLayout(rl)
+
         btn_layout = QHBoxLayout()
         self._aug_btn = QPushButton()
         self._aug_btn.setObjectName("successBtn")
@@ -210,14 +130,23 @@ class ProcessingPanelBuilderMixin:
         # 需要 COCO/VOC 时用工具栏的「格式」按钮，那里支持四格式互转。
         self._exp_label_title = QLabel()
         layout.addWidget(self._exp_label_title)
-        self._exp_label_grid_container = QWidget()
-        self._exp_label_grid_container.setMaximumHeight(130)
-        self._exp_label_grid = QGridLayout(self._exp_label_grid_container)
-        self._exp_label_grid.setSpacing(8)
+        # 类别多时按行自然高度铺开，超过上限就滚动。不能给容器设最大高度硬
+        # 压：行被压到 12px 而指示块是 18px，圆角被裁掉、看着成了方角，行与
+        # 行之间还会叠在一起。
+        self._exp_label_grid = QGridLayout()
+        self._exp_label_grid.setSpacing(_LABEL_GRID_SPACING)
         self._exp_label_grid.setContentsMargins(0, 2, 0, 2)
         self._exp_label_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self._exp_label_checkboxes = {}
-        layout.addWidget(self._exp_label_grid_container, 0, Qt.AlignLeft)
+        self._exp_label_scroll = QScrollArea()
+        self._exp_label_scroll.setWidgetResizable(True)
+        self._exp_label_scroll.setFrameShape(QScrollArea.NoFrame)
+        self._exp_label_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._exp_label_scroll.setMaximumHeight(_LABEL_GRID_MAX_HEIGHT)
+        self._exp_label_grid_container = QWidget()
+        self._exp_label_grid_container.setLayout(self._exp_label_grid)
+        self._exp_label_scroll.setWidget(self._exp_label_grid_container)
+        layout.addWidget(self._exp_label_scroll, 0)
         self._exp_scan_label = _ScanSpinnerWidget()
         self._exp_scan_label.setVisible(False)
         layout.addWidget(self._exp_scan_label)
@@ -288,7 +217,7 @@ class ProcessingPanelBuilderMixin:
         self._pipe_split.setChecked(True)
         # 三个步骤做成有色块的步骤条：勾选时块变强调色，未勾选时淡灰。
         # 只用三个复选框 + 两个 → 的话，勾选状态不够醒目，观感也不完整。
-        # 文字由 QCheckBox 自己带（_refresh_texts 里 setText），这里**不再**
+        # 文字由 QCheckBox 自己带（_refresh_texts 里 setText），这里不再
         # 另加 QLabel —— 两处都给文字，界面上会显示成「增强 增强」。
         _steps = (self._pipe_aug, self._pipe_exp, self._pipe_split)
         for _i, _cb in enumerate(_steps):

@@ -12,18 +12,18 @@ class CanvasDrawingMixin:
     def _can_edit_canvas(self):
         """画布现在能不能改。
 
-        图像处理面板开着时只放行**区域绘制态**：按选区裁剪要在同一块画布上
+        图像编辑面板开着时只放行区域绘制态：按选区裁剪要在同一块画布上
         画矩形，其余（标注框、多边形、点、贴图拖动）一律锁住——预览态下多画
         一个框就会写进真实数据。
         """
         if getattr(self._editor, '_is_delete_view', False):
             return False
-        # 图像处理面板开着时**放行**：既要在画布上画选区，也要能拖动/缩放已有
+        # 图像编辑面板开着时放行：既要在画布上画选区，也要能拖动/缩放已有
         # 选区。标注与贴图的写入由各自的处理函数单独挡住（见 `_handle_left_click`）。
         return True
 
     def _region_editing_allowed(self):
-        """现在允许编辑区域框吗（**当前模式是否有在调的入口**）。
+        """现在允许编辑区域框吗（当前模式是否有在调的入口）。
 
         两种模式的编辑入口不对称：
         - 标注模式 → 范围面板（`_scope_panel_open`）开着才允许，管推理区域
@@ -33,7 +33,7 @@ class CanvasDrawingMixin:
         标注模式下画布常停在标注模式，只靠 `_is_paste_mode()` 会让区域框
         完全拖不动，所以这里要额外看范围面板的开关。
 
-        只放行**未锁定**的区域：锁定的区域要「最底层、不可修改」，由
+        只放行未锁定的区域：锁定的区域要「最底层、不可修改」，由
         `_region_at()` 跳过它，这里不必再判一次。
         """
         if getattr(self._editor, '_image_tools_active', False):
@@ -43,13 +43,13 @@ class CanvasDrawingMixin:
         return bool(getattr(self._editor, '_scope_panel_open', False))
 
     def _region_editable(self, index=None):
-        """区域现在可编辑吗——**点击与滚轮共用同一把尺子**。
+        """区域现在可编辑吗——点击与滚轮共用同一把尺子。
 
         区域的编辑口径与标签一致：滚动缩放、单边调整、四个角拖动。
         平移/缩放/手柄都走 `_region_editing_allowed()`，滚轮那条分支也必须走
         同一个判据——否则面板开着（画布停在标注模式）时滚轮会静默失效。
 
-        所以把判据收拢到这一处：贴图模式**或**面板开着都能编辑。锁定的区域不算
+        所以把判据收拢到这一处：贴图模式或面板开着都能编辑。锁定的区域不算
         （`index` 给定时顺带查一下）。
         """
         if not (self._is_paste_mode() or self._region_editing_allowed()):
@@ -125,8 +125,8 @@ class CanvasDrawingMixin:
         要再画就再点一次按钮。宿主那侧靠回调把新区域刷进面板列表，
         所以复位前后都要通知一声。
 
-        图像处理面板是例外：它的选区就是「处理的边界」，画布画什么必须等于
-        处理用什么，所以只保留最后一笔并**留在绘制态**，让用户能直接重画。
+        图像编辑面板是例外：它的选区就是「处理的边界」，画布画什么必须等于
+        处理用什么，所以只保留最后一笔并留在绘制态，让用户能直接重画。
         """
         self._notify_region_changed()
         self._reset_region_drawing_state()
@@ -515,7 +515,7 @@ class CanvasDrawingMixin:
                              group_id=group_id)
 
     def _label_choices_for_draw(self):
-        """Labels offered after drawing a box (dataset-wide, not only current list)."""
+        """画完框后可选标签：取整个数据集的，不只是当前列表里的。"""
         if hasattr(self, '_collect_dataset_labels'):
             labels = self._collect_dataset_labels()
             if labels:

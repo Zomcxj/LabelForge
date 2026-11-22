@@ -1,4 +1,4 @@
-"""Options Popup UI building mixin."""
+"""选项弹窗的界面构建混入类。"""
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QPushButton, QFrame
 from PySide6.QtCore import Qt, QTimer, QPoint
 from ..theme import ThemeManager
@@ -9,7 +9,7 @@ from ..segmented_control import AnimatedSegmentedControl
 
 
 class OptionsPopupMixin:
-    """Options Popup widgets and behavior."""
+    """选项弹窗的控件与行为。"""
 
     def _create_options_menu(self, layout):
         """创建选项下拉菜单按钮"""
@@ -294,7 +294,7 @@ class OptionsPopupMixin:
     def _on_delete_empty_json_menu_changed(self, checked):
         """切换「空标签文件删除」。
 
-        只改标志位，不删也不补任何已存在的 json：这是**切图时**的行为开关，
+        只改标志位，不删也不补任何已存在的 json：这是切图时的行为开关，
         下次切图才生效。否则一关掉就得凭空生成大量空 json 才算「一致」。
         """
         self._delete_empty_json_on_switch = bool(checked)

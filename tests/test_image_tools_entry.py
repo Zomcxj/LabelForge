@@ -1,4 +1,4 @@
-"""图像处理工具的入口与文案测试（真实 Qt 子进程）。"""
+"""图像编辑工具的入口与文案测试（真实 Qt 子进程）。"""
 import os
 import subprocess
 import sys
@@ -37,7 +37,10 @@ QMenu.exec_ = fake_exec
 app = QApplication([])
 window = ImageEditor()
 window._show_export_menu()
-assert any("图像处理" in text for text in captured["texts"]), captured["texts"]
+texts = captured["texts"]
+assert any("图像编辑" in text for text in texts), texts
+# 顺序：增强划分 / 图像编辑 / 数据集分组
+assert texts.index("增强划分") < texts.index("图像编辑") < texts.index("数据集分组"), texts
 print("OK")
 ''')
     assert "OK" in out
@@ -52,7 +55,7 @@ window = ImageEditor()
 assert hasattr(window, "_open_image_tools")
 window._open_image_tools()
 assert window._image_tools_panel is not None
-assert window._image_tools_panel.windowTitle() == "图像处理"
+assert window._image_tools_panel.windowTitle() == "图像编辑"
 window._open_image_tools()
 assert window._image_tools_panel is not None
 print("OK")
@@ -73,8 +76,8 @@ def test_every_operation_label_and_group_has_english():
 
 def test_dialog_strings_have_english():
     keys = [
-        "图像处理", "未打开图片", "选区:", "无选区", "矩形", "椭圆", "多边形",
-        "清除选区", "仅选区内生效", "打开图片", "保存结果", "无法读取该图片",
+        "图像编辑", "未打开图片", "选区:", "无选区", "矩形", "椭圆", "多边形",
+        "清除选区", "打开图片", "保存结果", "无法读取该图片",
         "选择图片", "请先打开一张图片", "没有勾选任何处理项", "已保存", "保存失败",
         "几何类操作会改变画布尺寸, 标注不再适用",
         "图片文件 (*.png *.jpg *.jpeg *.bmp)",

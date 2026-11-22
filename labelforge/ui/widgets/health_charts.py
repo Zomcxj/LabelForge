@@ -206,7 +206,7 @@ class HealthBarChart(QWidget):
         n = len(self._counts)
         col_w = max(2, w // max(1, n))
         fmc = painter.fontMetrics()
-        # 柱顶计数只横向写。柱子窄到放不下时**不标**，而不是竖排——竖排的
+        # 柱顶计数只横向写。柱子窄到放不下时不标，而不是竖排——竖排的
         # 数字要一位一位往下读，比不标更难用。不标的柱子靠悬停 tooltip 补足。
         self._bar_hits = []          # (x0, x1, 计数) 供 mouseMoveEvent 查
         last_label_right = {}

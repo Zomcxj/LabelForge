@@ -26,7 +26,7 @@ def rgb888_buffer(image: QImage) -> bytearray:
     `asstring`，`bytes()` 就是整块像素的拷贝（PyQt5 那套 `setsize` +
     `asstring(byteCount())` 在这里全都不存在）。
 
-    这里的 `bytes()` 拷贝是必须的另一个原因：`bits()` 返回的视图**不持有**
+    这里的 `bytes()` 拷贝是必须的另一个原因：`bits()` 返回的视图不持有
     `image`，不拷贝而直接外泄会在 QImage 回收后指向垃圾内存。
     """
     img = image.convertToFormat(QImage.Format_RGB888)

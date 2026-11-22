@@ -1,1 +1,1 @@
-"""UI behavior mixins used by the main window."""
+"""主窗口用的界面行为混入类。"""

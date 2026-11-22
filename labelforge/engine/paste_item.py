@@ -6,7 +6,7 @@ import math
 class PasteItem:
     """画布贴图项。
 
-    历史上贴图是三元组 `(pixmap, rect, label)`，散落在 20 处解包点。
+    早期版本的贴图是三元组 `(pixmap, rect, label)`，散落在 20 处解包点。
     形状由角度派生：0° 记 rectangle（det 任务），非 0° 记 rotation（obb 任务）。
     贴图不提供 polygon 形态，需要分割标注的由用户删掉后手画。
     """
@@ -52,7 +52,7 @@ class PasteItem:
         return out
 
     def __iter__(self):
-        """过渡期兼容：仍按旧三元组 `(pixmap, rect, label)` 解包。
+        """兼容旧写法：仍按旧三元组 `(pixmap, rect, label)` 解包。
 
         只覆盖外部（第三方脚本、旧测试替身）残留的三元组解包方式，
         仓库内代码一律用属性访问；新代码不得依赖本方法。

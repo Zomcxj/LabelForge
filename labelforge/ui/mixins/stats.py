@@ -1,4 +1,4 @@
-"""Label statistics behavior for the main window."""
+"""主窗口的标签统计行为。"""
 
 from ...engine.paste_item import as_paste_item
 
@@ -20,7 +20,7 @@ def _stacked(g1, g2):
 def _equalize_dock_sizes(host, docks, last_norm, qt):
     """同一行的 dock 等宽（1:1）；单列时等高。
 
-    `last_norm` 记的是上一次**观察到的宽度组合**，用来挡住「布局还没生效、
+    `last_norm` 记的是上一次观察到的宽度组合，用来挡住「布局还没生效、
     又读到同一份旧几何」造成的重复 resizeDocks。不能按目标宽度记：把一行
     拖成 200/400 时平均值还是原来的 300，会被判成「已经归一化过」而永远
     跳过，这一行再也回不到 1:1。读到已均衡就删掉记录，
@@ -113,7 +113,7 @@ class StatsMixin:
         return stats
 
     def _collect_bg_stats_for_dialog(self):
-        """Background label counts: reuse full-dataset cache when fresh, else seed disk+memory."""
+        """背景标签计数：缓存新鲜时直接用，否则按磁盘加内存重建。"""
         cached = getattr(self, '_cached_bg_label_stats', None) or []
         current_path = getattr(self, '_memory_background_path', '') or ''
         cache_path = getattr(self, '_cached_bg_label_stats_path', '') or ''
@@ -125,7 +125,7 @@ class StatsMixin:
             self._dataset_stats_dirty = False
             cached = getattr(self, '_cached_bg_label_stats', None) or []
         current_path = getattr(self, '_memory_background_path', '') or ''
-        # Prefer any non-empty live cache (renames/canvas edits update it without path).
+        # 优先用非空的实时缓存：改名与画布编辑会直接更新它，不需要路径。
         if cached:
             from ...core.utils import parse_label_stat_item
             bg_stats = {}
@@ -198,7 +198,7 @@ class StatsMixin:
         self._dataset_stats_dirty = False
 
     def _cached_bg_stats_only(self):
-        """只读**内存缓存**的背景标签计数；不做任何磁盘扫描。
+        """只读内存缓存的背景标签计数；不做任何磁盘扫描。
 
         统计弹窗现在先弹窗、再后台扫描（见 `_show_label_stats`）。首次打开时
         这份缓存通常还没建立，返回空表、由后台扫描填充；已经有缓存时（列表已
@@ -369,7 +369,7 @@ class StatsMixin:
         central_layout.setContentsMargins(0, 0, 0, 0)
         host.setCentralWidget(central)
         layout.addWidget(host)
-        # ⑦ 先在 UI 线程拿**内存缓存**（有就是现成的，立刻显示），磁盘扫描交给
+        # 先在 UI 线程取内存缓存（有的话就是现成的，立刻显示），磁盘扫描交给
         # 后台线程：原先 `_collect_bg_stats_for_dialog()` 会在主线程把每个
         # sidecar json 解析两遍，数据集一大就要好几秒。现在弹窗先出来，
         # 扫描完成再填充。
@@ -415,7 +415,7 @@ class StatsMixin:
             bg_table.blockSignals(False)
 
         def _mark_bg_scanning():
-            """扫描期间的空态：**不加假行**，改用总计标签说一句「正在统计…」。
+            """扫描期间的空态：不加假行，改用总计标签说一句「正在统计…」。
 
             早先试过在表里插一行「正在统计…」，但那行会被「背景表求和」看到
             （总计标签与表是同源的，测试也这么钉），于是出现 `int('')` 之类的
@@ -440,7 +440,7 @@ class StatsMixin:
                 item.setText(old_label)
                 bg_table.blockSignals(False)
                 return
-            # 故意**不拦重名**：改成已存在的标签 = 把这一类合并进那一类
+            # 故意不拦重名：改成已存在的标签 = 把这一类合并进那一类
             # （例如把 `drone` 并进 `Drone`）。底层 `rename_detection_label`
             # 本来就支持合并——它显式取 `target_exists`，把两组的框合到一起、
             # 数量相加、保留目标颜色。挡一道「重名就弹回原名」会让改名的操作
@@ -503,7 +503,7 @@ class StatsMixin:
             # 「背景图能合并、贴图不能合并」这种不一致状态。
             if self.label_manager.rename_paste_label(old_label, new_label, rewrite_disk=True):
                 self._health_scan_generation = getattr(self, '_health_scan_generation', 0) + 1
-                # 必须**重建整张表**，不能只改当前行：改名到已存在的标签是
+                # 必须重建整张表，不能只改当前行：改名到已存在的标签是
                 # 合并，两行要并成一行（只改本行的话会出现两行同名的 `badge`
                 # 各带一个计数，看起来像没改成功）。
                 # 背景图表走的是 `_reload_stats_bg_table`，这里与之对齐。
@@ -540,12 +540,12 @@ class StatsMixin:
             dialog, bg_count=sum(bg_stats.values()),
             paste_count=sum(paste_stats.values()))
 
-        # ⑦ 立刻显示弹窗，再后台扫盘填充背景表：扫描期间先摆一句「正在统计…」，
+        # 立刻显示弹窗，再后台扫盘填充背景表：扫描期间先摆一句「正在统计…」，
         # 免得对着空表以为没数据。`exec_()` 之前就起线程，弹窗一出来扫描
         # 已经在跑了。
         def _on_stats_ready(counts, tasks):
             # 结果一律先落缓存（重命名/改色走的是同一份缓存），再决定要不要刷新表格。
-            # **不能**用 `dialog.isVisible()` 当「是否已关掉」的判据：首帧
+            # 不能用 `dialog.isVisible()` 当「是否已关掉」的判据：首帧
             # 还没来得及显示时它就是 False，那样表格会永远停在「正在统计…」。
             # 关掉弹窗的信号是 `finished`（见下方 _on_closed）。
             self._cache_bg_stats(counts, tasks)
@@ -566,10 +566,10 @@ class StatsMixin:
             _fill_bg_table(bg_stats, self._cached_bg_tasks_only())
         else:
             # 还没扫过：表先空着（0 行，求和不含假数据）。加载中这件事不改总计
-            # 标签的**格式**（它是 `总计: ... | ...`，别处按 `|` 拆开读），而是
+            # 标签的格式（它是 `总计: ... | ...`，别处按 `|` 拆开读），而是
             # 在标签前面挂一句提示，扫描完再被正常的总计覆盖。
             _mark_bg_scanning()
-            # 格式必须与正常总计**完全一致**（`总计: ... | ...`，两段）：别处按
+            # 格式必须与正常总计完全一致（`总计: ... | ...`，两段）：别处按
             # `|` 拆开读，多一段就会 unpack 失败。加载中只是在前面挂一句提示。
             dialog._total_label.setText(
                 f"{tr('正在统计…')} · {tr('总计')}: "
@@ -591,8 +591,8 @@ class StatsMixin:
         if label is None:
             return
         if not isinstance(bg_count, int) or isinstance(bg_count, bool):
-            # 用**缓存**而不是 `_collect_bg_stats_for_dialog()`：后者会同步扫盘，
-            # 正是 ⑦ 要避免的那件事。这里只是补一个缺省值，缓存没有就按 0 算，
+            # 用缓存而不是 `_collect_bg_stats_for_dialog()`：后者会同步扫盘，
+            # 正是这里要避免的那件事。这里只是补一个缺省值，缓存没有就按 0 算，
             # 后台扫描完成时 `_on_stats_ready` 会带着真实数字再刷一次。
             cached = self._cached_bg_stats_only()
             bg_count = sum(cached.values())
@@ -951,7 +951,7 @@ class StatsMixin:
         dialog.finished.connect(lambda *_a: self._close_health_worker())
 
     def _reload_stats_bg_table(self, bg_table, dialog):
-        """Rebuild stats dialog background table from live cache after rename/color."""
+        """改名或改色之后，用实时缓存重建统计窗口的背景表。"""
         from PySide6.QtWidgets import QTableWidgetItem, QPushButton
         from PySide6.QtCore import Qt as QtCore
         bg_stats = self._collect_bg_stats_for_dialog()

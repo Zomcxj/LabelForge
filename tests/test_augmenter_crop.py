@@ -1208,40 +1208,6 @@ print("OK_CONFIG_BTN_WIDTH")
     assert "OK_CONFIG_BTN_WIDTH" in _run_real_qt(script)
 
 
-def test_panel_uncheck_all_transforms_button(tmp_path):
-    # 「跳过空标签」右侧新增一键取消全部增强方式的按钮。
-    script = f'''
-import os
-from PySide6.QtWidgets import QApplication
-app = QApplication.instance() or QApplication([])
-from labelforge.ui.processing_panel import ProcessingPanel
-from labelforge.ui.i18n import t as tr
-
-d = r"{tmp_path.as_posix()}"
-editor = type("E", (), {{"background_images": []}})()
-panel = ProcessingPanel(editor)
-btn = panel._aug_uncheck_all_btn
-assert btn.text() == tr("取消全选"), btn.text()
-
-# 同一行、且在「跳过空标签」右侧
-panel.show()
-app.processEvents()
-assert btn.parentWidget() is panel._aug_skip_empty.parentWidget()
-assert btn.x() > panel._aug_skip_empty.x(), (btn.x(), panel._aug_skip_empty.x())
-assert abs(btn.y() - panel._aug_skip_empty.y()) < 20
-
-# 点一下：所有增强方式（含原图与滑窗裁剪）全部取消勾选
-for _n, (cb, _p, _d) in panel._aug_widgets.items():
-    cb.setChecked(True)
-panel._crop_check.setChecked(True)
-btn.click()
-assert all(not cb.isChecked() for _n, (cb, _p, _d) in panel._aug_widgets.items())
-assert not panel._crop_check.isChecked()
-print("OK_UNCHECK_ALL")
-'''
-    assert "OK_UNCHECK_ALL" in _run_real_qt(script)
-
-
 def test_default_window_gives_two_by_three_grid_with_fifteen_percent_overlap():
     """默认网格 2 行 3 列、重叠为窗口的 15%：逐尺寸验证实际排布严格等于目标。
 
@@ -2105,3 +2071,69 @@ def test_nearest_pad_compliant_size_breaks_segment_ties_toward_smaller():
         assert abs(small - v) == abs(big - v), (L, ov, v, small, big)
         # 多次调用结果一致
         assert all(nearest_pad_compliant_size(L, v, ov) == got for _ in range(5))
+
+
+def test_label_checkboxes_keep_full_height_and_scroll(tmp_path):
+    """类别勾选框不能被压扁：压到 12px 时 18px 的指示块会丢掉圆角。"""
+    script = f'''
+from PySide6.QtWidgets import QApplication, QCheckBox
+app = QApplication.instance() or QApplication([])
+from labelforge.ui.processing_panel import ProcessingPanel
+editor = type("E", (), {{"background_images": []}})()
+panel = ProcessingPanel(editor)
+panel.resize(900, 644)
+panel.show()
+app.processEvents()
+labels = [f"class_{{i}}" for i in range(38)]
+for i, lbl in enumerate(labels):
+    cb = QCheckBox(lbl)
+    cb.setChecked(True)
+    cb.setFixedWidth(112)
+    cb.setMinimumHeight(cb.sizeHint().height())
+    row, col = divmod(i, 6)
+    panel._exp_label_grid.addWidget(cb, row, col)
+    panel._exp_label_checkboxes[lbl] = cb
+panel._fit_label_grid_height(len(labels), 6, 18)
+app.processEvents()
+first = panel._exp_label_checkboxes["class_0"]
+# 行高必须给足勾选框自身需要的高度，压扁就会裁掉指示块的圆角
+assert first.height() >= first.sizeHint().height(), (
+    first.height(), first.sizeHint().height())
+# 与「跳过空标签」等高，圆角与指示块尺寸才一致
+assert first.height() == panel._exp_skip_empty.height(), (
+    first.height(), panel._exp_skip_empty.height())
+# 放不下时出现滚动条，而不是把行压扁
+assert panel._exp_label_scroll.verticalScrollBar().maximum() > 0
+print("OK_LABEL_HEIGHT")
+'''
+    assert "OK_LABEL_HEIGHT" in _run_real_qt(script)
+
+
+def test_augment_section_lists_presets_instead_of_operators(tmp_path):
+    """数据增强不再列算子与参数：只有预设下拉、去图像编辑与原有全局选项。"""
+    script = f'''
+import os, tempfile
+os.environ["LABELFORGE_CONFIG_PATH"] = os.path.join(tempfile.mkdtemp(), "c.json")
+from PySide6.QtWidgets import QApplication, QCheckBox, QDoubleSpinBox, QSpinBox
+app = QApplication.instance() or QApplication([])
+from labelforge.ui.processing_panel import ProcessingPanel
+editor = type("E", (), {{"background_images": []}})()
+panel = ProcessingPanel(editor)
+panel.show()
+app.processEvents()
+# 面板里不该再有算子的勾选框与参数输入框
+labels = [cb.text() for cb in panel.findChildren(QCheckBox)]
+for name in ("水平翻转", "垂直翻转", "亮度", "高斯噪声", "椒盐噪声"):
+    assert name not in labels, (name, labels)
+section = panel._aug_section
+assert not section.findChildren(QSpinBox), "增强区不该有整数参数框"
+spins = section.findChildren(QDoubleSpinBox)
+assert all(w is panel._aug_ratio for w in spins), "只留「图片比例」一个"
+# 预设下拉是 A~E 五个槽位
+texts = [panel._aug_preset_combo.itemText(i)
+         for i in range(panel._aug_preset_combo.count())]
+assert len(texts) == 5, texts
+assert all(t.startswith("预设") for t in texts), texts
+print("OK_PRESET_ONLY")
+'''
+    assert "OK_PRESET_ONLY" in _run_real_qt(script)

@@ -1,4 +1,4 @@
-"""Background image list and deleted-image view behavior for the main window."""
+"""主窗口的背景图列表与已删除图片视图。"""
 
 import os
 
@@ -143,7 +143,7 @@ class BackgroundListMixin:
                                  else f"{tr('按分组筛选')}: {', '.join(names)}")
 
     def _toggle_bg_label_list_mode(self):
-        """Switch background label list between stats counts and per-box rows."""
+        """在统计计数与逐框列表之间切换背景标签列表。"""
         current = getattr(self, '_bg_label_list_mode', 'stats')
         self._bg_label_list_mode = 'all' if current == 'stats' else 'stats'
         self._refresh_bg_label_mode_button()
@@ -167,7 +167,7 @@ class BackgroundListMixin:
         btn.setIconSize(QSize(14, 14))
 
     def _bg_label_mode_icon(self, kind):
-        """Paint a tiny mode glyph: list rows or count bars."""
+        """画一个小的模式图形：列表行或计数柱。"""
         from PySide6.QtGui import QPixmap, QPainter, QColor, QPen
         from PySide6.QtCore import Qt
         size = 14
@@ -180,11 +180,11 @@ class BackgroundListMixin:
             color = QColor("#5a5e66")
         p.setPen(QPen(color, 1.6))
         if kind == 'list':
-            # three equal horizontal rows
+            # 三条等高的横线
             for y in (3, 7, 11):
                 p.drawLine(2, y, 12, y)
         else:
-            # three vertical bars of different height (stats)
+            # 三根不等高的竖条，表示统计
             p.setBrush(color)
             p.setPen(Qt.NoPen)
             p.drawRect(2, 8, 2, 5)
@@ -230,7 +230,7 @@ class BackgroundListMixin:
         btn.setVisible(not in_delete)
 
     def _apply_bg_annotation_filter(self, navigate=False):
-        """Hide list rows that do not match the current annotation filter."""
+        """把不符合当前标注筛选的列表行隐藏掉。"""
         if getattr(self, '_is_delete_view', False):
             return
         bg_list = getattr(self, 'background_list', None)
@@ -266,7 +266,7 @@ class BackgroundListMixin:
         if mode in ('unannotated', 'empty'):
             target_row = first_visible_row
         else:
-            # all / annotated: restore remembered work position when possible
+            # 全部 / 已标注：能恢复记忆位置就恢复
             saved = getattr(self, '_bg_filter_saved_index', self.current_background_index)
             target_row = self._find_bg_list_row_for_index(saved)
             if target_row is None or (bg_list.item(target_row) and bg_list.item(target_row).isHidden()):
@@ -300,7 +300,7 @@ class BackgroundListMixin:
         return None
 
     def _refresh_background_item_status(self, image_index=None, image_path=None):
-        """Refresh status icon for one background list row after save/load."""
+        """保存或加载之后，刷新某一行的状态图标。"""
         if getattr(self, '_is_delete_view', False):
             return
         bg_list = getattr(self, 'background_list', None)

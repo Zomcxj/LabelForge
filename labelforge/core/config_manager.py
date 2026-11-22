@@ -149,7 +149,7 @@ def _normalize_label_colors(colors, extend=False):
                 return list(LABEL_COLORS)
             if not extend:
                 return normalized
-            # Keep custom colors first, then fill from defaults without duplicates.
+            # 自定义颜色排前面，其余用默认值补齐并去重。
             palette = []
             for color in normalized + list(LABEL_COLORS):
                 if color not in palette:
@@ -314,7 +314,7 @@ def _normalize_memory_path(value):
 
 
 def _normalize_bg_label_stats(value):
-    """Normalize background label stats snapshot for memory records."""
+    """把背景标签统计快照规整成可写进记忆记录的形式。"""
     if not isinstance(value, list):
         return []
     result = []
@@ -328,7 +328,7 @@ def _normalize_bg_label_stats(value):
 
 
 def _normalize_recent_labels(value):
-    """Normalize recently used labels for memory records (max 3, deduped)."""
+    """规整最近使用的标签：最多三个，重复的去掉。"""
     if not isinstance(value, list):
         return []
     result = []
@@ -429,7 +429,7 @@ DEFAULT_CROP_MIN_VISIBLE = 0.7
 def _normalize_crop_template(spec):
     """裁剪模板：{w, h, overlap, min_visible, square, fill, fill_rgb}，非法条目返回 None。
 
-    `min_visible` 是**数据增强侧**的概念（跨窗标注的最低可见比例），推理侧
+    `min_visible` 是数据增强侧的概念（跨窗标注的最低可见比例），推理侧
     不使用。调用方不传该字段时按 `DEFAULT_CROP_MIN_VISIBLE` 补齐，而不是让
     整条模板因为缺字段被丢掉（那会让用户点确定后「什么都没记住」，且失败是
     静默的）。

@@ -13,7 +13,7 @@ class HoverDismissPopup(QWidget):
     """
 
     def __init__(self, parent=None, flags=None):
-        # `flags` 默认值不能直接写 `Qt.Popup`：默认参数在**类定义时**求值，
+        # `flags` 默认值不能直接写 `Qt.Popup`：默认参数在类定义时求值，
         # 而测试桩（`tests/conftest.py` 的假 Qt）只注册了用到的那几个枚举名，
         # 没有 `Popup`，会以 `AttributeError` 让导入就失败。放到函数体里取。
         if flags is None:

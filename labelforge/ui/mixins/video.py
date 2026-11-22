@@ -1,7 +1,7 @@
 """视频抽帧 UI：弹窗配置、后台任务生命周期、完成后加载为数据集。
 
 工具栏的胶片图标打开配置弹窗（按钮位置不变）；弹窗按「开始」只发信号，
-任务由这里起后台线程。**弹窗在任务期间保持打开**并显示底部进度条，参数锁住；
+任务由这里起后台线程。弹窗在任务期间保持打开并显示底部进度条，参数锁住；
 跑完（成功、失败或取消）由这里 `accept()` 关掉，结果再报给用户。
 """
 import os
@@ -272,7 +272,7 @@ class VideoMixin:
         from ..dialog_helpers import information
         information(self, tr("完成"), message)
 
-    # ---------- 推理成片（④A） ----------
+    # ---------- 推理成片 ----------
 
     @staticmethod
     def _dataset_root_for(output_path):
@@ -369,7 +369,7 @@ class VideoMixin:
     def _on_render_finished(self, result):
         self._busy = False
         if result.cancelled:
-            # ④A 最慢（18 秒视频要推理 541 次），跑完的帧不白费：引擎会留一个
+            # 推理成片最慢（18 秒视频要推理 541 次），跑完的帧不白费：引擎会留一个
             # 能播的半成品。报出它在哪、有多长，可直接使用，不用从头再来。
             partial = getattr(result, "partial_path", "")
             self._close_video_dialog(tr("已取消推理成片"))

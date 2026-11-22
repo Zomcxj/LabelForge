@@ -103,16 +103,23 @@ print("OK")
     assert "OK" in out
 
 
-def test_panel_shows_no_path_and_no_navigation():
-    """面板顶部不再显示路径，也没有上一张/下一张。"""
+def test_navigation_buttons_step_through_the_dataset():
+    """翻图按钮接在切图那套规则上，不另写一套取图逻辑。"""
     out = _run_qt(_SETUP + '''
-from PySide6.QtWidgets import QPushButton
 window = build()
 panel = window._image_tools_panel
-texts = [b.text() for b in panel.findChildren(QPushButton)]
-assert not any("上一张" in t or "下一张" in t for t in texts), texts
-assert "a.png" not in panel._info.text() if hasattr(panel, "_info") else True
-assert not hasattr(panel, "_info"), "顶部信息行应当整行去掉"
+# 翻图与对比都是图标按钮，文字只放在提示里
+for btn, tip in ((panel._prev_btn, "上一张"), (panel._next_btn, "下一张"),
+                 (panel._compare_btn, "按住看原图")):
+    assert btn.text() == "", btn.text()
+    assert not btn.icon().isNull(), tip
+    assert tip in btn.toolTip(), btn.toolTip()
+assert not hasattr(panel, "_info"), "顶部信息行不显示路径"
+moves = []
+window._image_tools_step = lambda direction: moves.append(direction)
+panel._prev_btn.click()
+panel._next_btn.click()
+assert moves == [-1, 1], moves
 print("OK")
 ''')
     assert "OK" in out
